@@ -1,0 +1,14 @@
+[package]
+name = "delirium-room"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+delirium = { path = "../delirium", features = ["bevy"] }
+delirium-data = { path = "../delirium-data" }
+bevy = { version = "=0.18.1" }
+bevy_egui = "=0.39.1"
+rapier3d = "0.36.1"
+

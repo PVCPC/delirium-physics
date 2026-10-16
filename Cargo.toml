@@ -1,0 +1,12 @@
+[workspace]
+members = ["crates/delirium-data", "crates/delirium", "crates/delirium-sdk", "crates/delirium-room"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[profile.dev]
+opt-level = 3

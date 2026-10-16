@@ -1,0 +1,10 @@
+[package]
+name = "delirium-data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aes = "0.8"
+miniz_oxide = "0.8"

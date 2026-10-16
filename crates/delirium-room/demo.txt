@@ -1,0 +1,6 @@
+# A shot from the front with the drives drawn; the screenshot mid-stagger.
+0.5 !arrows
+1.0 !shoot1
+1.45 !screenshot sandbox_demo.png
+1.2 bodyBalance ?
+2.0 !quit

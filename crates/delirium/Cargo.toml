@@ -1,0 +1,16 @@
+[package]
+name = "delirium"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+bevy = ["dep:bevy_ecs"]
+
+[dependencies]
+delirium-data = { path = "../delirium-data" }
+bevy_math = { version = "=0.18.1", default-features = false, features = ["std"] }
+bevy_transform = { version = "=0.18.1", default-features = false, features = ["std"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+bevy_ecs = { version = "=0.18.1", optional = true }
