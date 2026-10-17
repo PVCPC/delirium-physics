@@ -271,8 +271,8 @@ impl Arm {
             m.b
         };
         let p = cf.p;
-        let from = c.b.joint_pos(l.e[1]) + out * cf.forward.max(p.backwards_min_arm_offset).min(p.forward_max_arm_offset);
-        let to = from + cf.dir * PROBE;
+        let from = out.mul_add(Vec3::splat(cf.forward.max(p.backwards_min_arm_offset).min(p.forward_max_arm_offset)), c.b.joint_pos(l.e[1]));
+        let to = cf.dir.mul_add(Vec3::splat(PROBE), from);
         let hand = c.b.part(l.p[3]).m.d;
         let dir = (to - from).normalize_or_zero();
         #[allow(unused_mut)]

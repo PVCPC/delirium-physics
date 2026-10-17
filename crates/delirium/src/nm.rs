@@ -267,6 +267,7 @@ impl Balance {
 pub struct Agent {
     pub doll: Ragdoll,
     pub push: Vec<(usize, Vec3, Vec3)>,
+    pub contact_wake: bool,
     roles: Roles,
     zero: Vec<Quat>,
     pelvis_up: Quat,
@@ -294,6 +295,7 @@ pub struct Agent {
     nm_fl_msg: Option<UpperBodyFlinch>,
     pub(crate) nm_bw: Option<crate::nmbw::Writhe>,
     nm_bw_msg: Option<BodyWrithe>,
+    pub extras: crate::extras::Extras,
     nm_aw: crate::nmaw::Windmill,
     nm_aw_msg: Option<ArmsWindmill>,
     nm_pd: crate::nmpd::Pedal,
@@ -378,9 +380,9 @@ impl Agent {
             .map(|(i, p)| p.parent.map_or(frames[i].rotation, |j| frames[j].rotation.inverse() * frames[i].rotation)).collect();
         let roles = Roles::new(build);
         let pelvis_up = facing.inverse() * frames[roles.pelvis].rotation;
-        let mut a = Agent { doll, msgs: Default::default(), push: vec![], roles, zero, pelvis_up, facing, random: Random::new((seed * 1000.0) as u32 + 1), time: 0.0,
+        let mut a = Agent { doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * 1000.0) as u32 + 1), time: 0.0,
                 stiffness: (10.0, 1.0), relax: None, config: ConfigureBalance::default(), feedback: vec![], balance: None, lean: None,
-                shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), hands_back: false, nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
+                shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), hands_back: false, nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, extras: Default::default(), nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
                 brace: None, head_look: vec![], shot_look: false, eff_override: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -0.22, hip_yaw: crate::nmdbm::CHAR_YAW, legs: crate::nmdbm::CHAR_LEGS,
                 ch: crate::nmrs::ASSET[build.nm].get().and_then(|a| crate::nmrs::joints(build, a)).map(|j| {
                     let mut c = crate::nmrs::Character::new(j, &frames);
@@ -398,6 +400,7 @@ impl Agent {
     }
 
     pub fn stop_all_behaviours(&mut self) {
+        self.extras = Default::default();
         if let Some(ch) = self.ch.as_mut().filter(|_| self.bb_on) {
             crate::nmbb::BodyBalance::deactivate(ch);
         }
@@ -417,6 +420,7 @@ impl Agent {
             Some(ch) => self.nm_gr.deactivate(ch, &mut self.nm_head, &mut self.nm_twist, self.balance.as_mut().and_then(|b| b.dbm.as_mut())),
             None => self.nm_gr_msg = Some(None),
         }
+        self.nm_twist.deactivate();
         self.head_look.clear();
         self.shot_look = false;
         self.relax = None;
@@ -857,6 +861,14 @@ impl Agent {
         }
     }
 
+    pub fn muscle_stiffness_x(&mut self, k: f32) {
+        if let Some(ch) = self.ch.as_mut() {
+            for (j, e) in ch.joints.iter().zip(ch.eff.iter_mut()) {
+                e.muscle_stiffness = j.muscle_stiffness * k;
+            }
+        }
+    }
+
     pub fn set_stiffness_mask(&mut self, body_stiffness: f32, damping: f32, mask: &str) {
         if mask == "fb" {
             self.stiffness = (body_stiffness, damping);
@@ -1172,6 +1184,11 @@ impl Agent {
         let n = substeps(dt);
         let h = dt / n as f32;
         for _ in 0..n {
+            for (a, _, b, ob, _) in agents.iter_mut().filter(|a| a.0.contact_wake && a.0.held.is_none()) {
+                a.doll.fresh = false;
+                a.behave(b, world, h, ob);
+            }
+            agents.iter_mut().for_each(|a| a.0.contact_wake = false);
             let kept: Vec<Option<crate::ragdoll::Kept>> = agents.iter_mut().map(|(a, _, b, ..)| a.physics_drive(b, h)).collect();
             let mut ms: Vec<crate::ragdoll::Member> = agents.iter_mut().zip(&kept).filter_map(|((a, id, b, ob, ot), k)| {
                 k.as_ref().map(|k| crate::ragdoll::Member { doll: &mut a.doll, id: *id, build: b, drive: k.drive(), obstacles: ob, others: ot })
@@ -1622,6 +1639,7 @@ impl Agent {
             if let Some(w) = self.nm_bw.as_mut() {
                 w.tick(&mut c, dt);
             }
+            self.extras.tick(&mut c, dt);
             if !waits(walk_actives!(self), W_PD) {
                 self.nm_pd.tick(&mut c, dt);
             }

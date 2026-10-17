@@ -44,16 +44,24 @@ pub fn lean_dir(hand: Vec3, at: Vec3) -> Vec3 {
     d * (-x).mul_add(e * e, 1.0).mul_add(0.5 * e, e)
 }
 
-pub fn jump_grab(instance: i32, points: &[(Vec3, Vec3)], rand: &mut delirium_data::rng::Rand, player: bool) -> crate::grabhelper::GrabHelper {
+pub fn jump_grab(instance: i32, part: i32, points: &[(Vec3, Vec3)], rand: &mut delirium_data::rng::Rand, player: bool) -> crate::grabhelper::GrabHelper {
     let mut g = crate::grabhelper::GrabHelper::new();
     let p = |k: usize| points.get(k).map(|x| x.0);
     let n = |k: usize| points.get(k).map(|x| x.1);
-    g.set_points(Some((instance, 0)), [p(0), n(0), p(1), n(1), None, None]);
+    g.set_points(Some((instance, part)), [p(0), n(0), p(1), n(1), None, None]);
     g.strength = rand.float_in_range(80.0, 110.0);
     g.find_left = 1.0;
     if player {
         g.hold_left = 5.0;
     }
     g
+}
+
+pub fn door_dir(at: Vec3, hit: Option<Vec3>, forward: Vec3) -> Vec3 {
+    hit.map_or(forward, |h| Vec3::new(h.x - at.x, h.y - at.y, 0.0).normalize_or_zero())
+}
+
+pub fn door_grab(instance: i32, part: i32, hit: Option<(Vec3, Vec3)>, rand: &mut delirium_data::rng::Rand, player: bool) -> crate::grabhelper::GrabHelper {
+    jump_grab(instance, part, hit.as_slice(), rand, player)
 }
 

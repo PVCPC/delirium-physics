@@ -313,9 +313,20 @@ pub struct ObPart {
     pub at: Vec3,
     pub lo: Vec3,
     pub hi: Vec3,
+    pub mesh: Option<&'static crate::sphere::Mesh>,
 }
 
 impl Obstacle {
+    pub fn sphere(&self, c: Vec3, r: f32) -> Option<crate::sphere::Hit> {
+        if self.parts.iter().all(|p| p.mesh.is_none()) {
+            return None;
+        }
+        let (inst, ms): ([Vec3; 4], Vec<[Vec3; 4]>) = ([self.rot * Vec3::X, self.rot * Vec3::Y, self.rot * Vec3::Z, self.at],
+                                                       self.parts.iter().map(|p| [p.m.x_axis, p.m.y_axis, p.m.z_axis, p.at]).collect());
+        let parts: Vec<_> = self.parts.iter().zip(&ms).map(|(p, m)| (m, p.mesh)).collect();
+        crate::sphere::probe(&inst, &parts, c, r)
+    }
+
     pub fn find(obstacles: &[Obstacle], id: i32) -> Option<&Obstacle> {
         if id < 0 { None } else { obstacles.iter().find(|o| o.id == id) }
     }
@@ -1382,6 +1393,7 @@ impl Ragdoll {
         let mut hits: Vec<(usize, Vec3, Vec3, f32, f32, Vec3, f32, Option<(usize, usize)>)> = vec![];
         let fresh = self.fresh;
         self.held_car.retain(|h| !h.3.is_empty() && !fresh && pose[h.0].is_none() && obstacles.iter().any(|o| o.id == h.1 && !o.parts.is_empty()));
+        self.held_pairs.resize(self.pairs.len(), vec![]);
         let car_base = self.held.len() + self.held_pairs.len();
         let mut hit_ob: Vec<(usize, i32, Vec3, Vec3)> = vec![];
         for (_, held) in self.held.iter_mut().enumerate().filter(|&(i, _)| pose[i].is_some() || self.fresh) {
@@ -1561,7 +1573,6 @@ impl Ragdoll {
                 }
             }
         }
-        self.held_pairs.resize(self.pairs.len(), vec![]);
         for (pi, &(a, c)) in self.pairs.clone().iter().enumerate() {
             let (fa, fc) = ((self.bodies[a].x, turns[a]), (self.bodies[c].x, turns[c]));
             let ((xa, qa), (xc, qc)) = (fa, fc);

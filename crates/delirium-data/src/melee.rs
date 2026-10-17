@@ -1,5 +1,5 @@
-use crate::actiontable::{Action, Impulse};
-use crate::controls::{index, pick, Controls, IoValue, AXIS_PAIRS};
+use crate::actiontable::{Action, ActionTable, Impulse, ResultDef};
+use crate::controls::{index, pick as pair_pick, Controls, IoValue, AXIS_PAIRS};
 
 fn back(at: u8, i: u8) -> usize {
     (if i <= at { at - i } else { at.wrapping_sub(i.min(0x3F)).wrapping_add(0x40) }) as usize
@@ -99,7 +99,7 @@ impl Impulse {
             return true;
         }
         let v = |off: u32| &c.values[index(off)];
-        let axis = |n: usize| v(pick(AXIS_PAIRS[n], v(AXIS_PAIRS[n].0)));
+        let axis = |n: usize| v(pair_pick(AXIS_PAIRS[n], v(AXIS_PAIRS[n].0)));
         let (a, b) = match self.impulse {
             1 => (v(0xBDC), None),
             2 => (v(0xBE8), None),
@@ -224,5 +224,323 @@ pub fn ped_takes(a: &Action, f: &Fighter, receiving_hit: bool, blocking: bool, j
         c if c == h("rifle") => bit(5) && bit(12),
         c => w.kind == WEAPON_TYPES.iter().position(|t| h(t) == c).map_or(0x37, |i| i as u32),
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct Target<'a> {
+    pub entity_type: u32,
+    pub point: &'a dyn Fn(u32, [f32; 3]) -> Option<[f32; 3]>,
+    pub opponent: Option<&'a Opponent<'a>>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Opponent<'a> {
+    pub task: Option<(u32, Option<(f32, f32)>)>,
+    pub lies: u8,
+    pub crouched: bool,
+    pub ask: &'a Ask<'a>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Ask<'a> {
+    pub fighter: Fighter,
+    pub groups: [i32; 7],
+    pub receiving_hit: bool,
+    pub blocking: bool,
+    pub just_struck: bool,
+    pub target: Option<Target<'a>>,
+    pub lock_on: bool,
+    pub impulses: bool,
+    pub controls: Option<&'a Controls>,
+    pub setting: u32,
+    pub kind: Option<u32>,
+    pub idle: Option<bool>,
+    pub pos: [f32; 3],
+    pub heading: f32,
+    pub opponent_res: u32,
+    pub special: &'a dyn Fn(&Action) -> bool,
+}
+
+pub fn anim_in(a: &Action, results: &[ResultDef], groups: &[i32; 7]) -> bool {
+    let h = |s: &str| crate::map::hash_bytes(s.as_bytes(), 0);
+    if a.move_ == 0 {
+        return true;
+    }
+    let Some(r) = results.iter().rev().find(|r| r.name == a.move_) else { return true };
+    if r.anim_group == -1 {
+        return true;
+    }
+    if a.weapon_class != crate::actiontable::none() && a.weapon_class != h("unarmed") || a.kind == h("HitReaction") {
+        return true;
+    }
+    groups.contains(&r.anim_group)
+}
+
+pub fn target_fits(kind: u32, t: Option<&Target>) -> bool {
+    let Some(t) = t else { return false };
+    match kind {
+        0 | 1 => true,
+        2..=7 => t.entity_type == 3,
+        8..=15 => t.entity_type == 2,
+        _ => false,
+    }
+}
+
+pub fn angle_in(x: f32, r: [f32; 2]) -> bool {
+    let x = crate::actiontable::wrap(x);
+    if r[0] > r[1] {
+        x >= r[0] || x <= r[1]
+    } else {
+        !(x < r[0] || x > r[1])
+    }
+}
+
+pub fn opponent_holds(a: &Action, t: &ActionTable, ask: &Ask) -> bool {
+    let o = ask.target.and_then(|t| t.opponent).filter(|_| ask.target.is_some_and(|t| t.entity_type == 3));
+    if a.opponent_res != 0 {
+        let Some(o) = o else { return false };
+        let cur = if ask.opponent_res != 0 {
+            ask.opponent_res
+        } else {
+            match o.task {
+                Some((r, _)) => r,
+                None if a.opponent_res_not => 0,
+                None => return false,
+            }
+        };
+        if ask.opponent_res != 0 || o.task.is_some() {
+            if (cur == a.opponent_res) == a.opponent_res_not {
+                return false;
+            }
+        }
+    }
+    if a.check_opponent_anim_time {
+        let Some((t, step)) = o.and_then(|o| o.task).and_then(|t| t.1) else { return false };
+        let [lo, hi] = a.opponent_anim_time;
+        let d = if t >= lo { t - hi } else { lo - (step + t) };
+        if d >= 0.0 {
+            return false;
+        }
+    }
+    if a.opponent_pose != 1 {
+        let Some(o) = o else { return false };
+        let ok = match a.opponent_pose {
+            2 => o.lies == 4,
+            3 => o.crouched,
+            4 => o.lies <= 3,
+            5..=8 => o.lies as u32 == a.opponent_pose - 5,
+            _ => false,
+        };
+        if !ok {
+            return false;
+        }
+    }
+    if a.opponents_action_to_test == 0 {
+        return true;
+    }
+    let Some(o) = o else { return false };
+    let Some(b) = t.actions.iter().find(|b| b.name == a.opponents_action_to_test) else { return false };
+    action_test(b, t, &Ask { kind: None, idle: None, opponent_res: 0, ..*o.ask })
+}
+
+pub fn rel_pos_holds(a: &Action, ask: &Ask) -> bool {
+    if !a.check_rel_pos {
+        return true;
+    }
+    let Some(t) = &ask.target else { return false };
+    let Some(p) = (t.point)(a.rel_point, ask.pos) else { return false };
+    let d = [p[0] - ask.pos[0], p[1] - ask.pos[1], p[2] - ask.pos[2]];
+    let out = |x: f32, r: [f32; 2]| x < r[0] || x > r[1];
+    if out(d[2], a.height_range) || out(d[1].mul_add(d[1], d[0] * d[0]).sqrt(), a.distance_range) {
+        return false;
+    }
+    let w = crate::actiontable::wrap;
+    let dir = w((-d[0] as f64).atan2(d[1] as f64) as f32);
+    angle_in(dir - w(ask.heading), a.angle_range)
+}
+
+pub fn action_test(a: &Action, t: &ActionTable, ask: &Ask) -> bool {
+    if ask.kind.is_some_and(|k| a.kind != k) || ask.idle.is_some_and(|i| a.available_from_idle != i) {
+        return false;
+    }
+    if !anim_in(a, &t.results, &ask.groups)
+        || !ped_takes(a, &ask.fighter, ask.receiving_hit, ask.blocking, ask.just_struck)
+        || ask.impulses && !impulses_hold(a, ask.controls, ask.setting)
+    {
+        return false;
+    }
+    let player = ask.fighter.player;
+    let needs = who_takes(a.require_target, player);
+    if needs && ask.target.is_none() || who_takes(a.require_lock_on, player) && !ask.lock_on {
+        return false;
+    }
+    if (needs || ask.target.is_some())
+        && !(target_fits(a.required_target_type, ask.target.as_ref()) && opponent_holds(a, t, ask) && rel_pos_holds(a, ask))
+    {
+        return false;
+    }
+    if !(ask.special)(a) {
+        return false;
+    }
+    if a.additional_action_test == 0 {
+        return true;
+    }
+    let Some(b) = t.actions.iter().find(|b| b.name == a.additional_action_test) else { return false };
+    action_test(b, t, &Ask { kind: None, idle: None, impulses: ask.controls.is_some(), ..*ask })
+}
+
+pub fn crt_qsort<T>(v: &mut [T], cmp: impl Fn(&T, &T) -> i32) {
+    if v.len() < 2 {
+        return;
+    }
+    let c = |v: &[T], a: isize, b: isize| cmp(&v[a as usize], &v[b as usize]);
+    let mut stack = vec![];
+    let (mut lo, mut hi) = (0isize, v.len() as isize - 1);
+    loop {
+        let size = hi - lo + 1;
+        if size <= 8 {
+            let mut h = hi;
+            while h > lo {
+                let mut max = lo;
+                for p in lo + 1..=h {
+                    if c(v, p, max) > 0 {
+                        max = p;
+                    }
+                }
+                v.swap(max as usize, h as usize);
+                h -= 1;
+            }
+        } else {
+            let mut mid = lo + size / 2;
+            for (a, b) in [(lo, mid), (lo, hi), (mid, hi)] {
+                if c(v, a, b) > 0 {
+                    v.swap(a as usize, b as usize);
+                }
+            }
+            let (mut lg, mut hg) = (lo, hi);
+            loop {
+                if mid > lg {
+                    loop {
+                        lg += 1;
+                        if !(lg < mid && c(v, lg, mid) <= 0) {
+                            break;
+                        }
+                    }
+                }
+                if mid <= lg {
+                    loop {
+                        lg += 1;
+                        if !(lg <= hi && c(v, lg, mid) <= 0) {
+                            break;
+                        }
+                    }
+                }
+                loop {
+                    hg -= 1;
+                    if !(hg > mid && c(v, hg, mid) > 0) {
+                        break;
+                    }
+                }
+                if hg < lg {
+                    break;
+                }
+                v.swap(lg as usize, hg as usize);
+                if mid == hg {
+                    mid = lg;
+                }
+            }
+            hg += 1;
+            if mid < hg {
+                loop {
+                    hg -= 1;
+                    if !(hg > mid && c(v, hg, mid) == 0) {
+                        break;
+                    }
+                }
+            }
+            if mid >= hg {
+                loop {
+                    hg -= 1;
+                    if !(hg > lo && c(v, hg, mid) == 0) {
+                        break;
+                    }
+                }
+            }
+            if hg - lo >= hi - lg {
+                if lo < hg {
+                    stack.push((lo, hg));
+                }
+                if lg < hi {
+                    lo = lg;
+                    continue;
+                }
+            } else {
+                if lg < hi {
+                    stack.push((lg, hi));
+                }
+                if lo < hg {
+                    hi = hg;
+                    continue;
+                }
+            }
+        }
+        match stack.pop() {
+            Some(p) => (lo, hi) = p,
+            None => return,
+        }
+    }
+}
+
+pub fn pick<'t>(mut hits: Vec<&'t Action>, rand: impl FnOnce() -> u32) -> Option<&'t Action> {
+    if hits.len() < 2 {
+        return hits.first().copied();
+    }
+    crt_qsort(&mut hits, |a, b| b.priority.wrapping_sub(a.priority));
+    let top = hits[0].priority as u32;
+    hits.retain(|a| a.priority as u32 >= top);
+    if hits.len() == 1 {
+        return Some(hits[0]);
+    }
+    let sum = hits.iter().fold(0.0f32, |s, a| a.bias + s);
+    let r = rand() as f32 * f32::from_bits(0x3800_0100) * sum;
+    let mut i = 0;
+    if r > 0.0 {
+        let mut acc = 0.0f32;
+        loop {
+            acc = hits[i].bias + acc;
+            if !(acc < r) || i == hits.len() - 1 {
+                break;
+            }
+            i += 1;
+        }
+    }
+    Some(hits[i])
+}
+
+pub fn choose<'t>(t: &'t ActionTable, ask: &Ask, rand: impl FnOnce() -> u32) -> Option<&'t Action> {
+    let mut hits: Vec<&Action> = t.actions.iter().filter(|a| action_test(a, t, ask)).collect();
+    if hits.is_empty() {
+        let bare = Ask { target: None, lock_on: false, ..*ask };
+        hits = t.actions.iter().filter(|a| action_test(a, t, &bare)).collect();
+    }
+    pick(hits, rand)
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Reaction<'t> {
+    pub action: Option<&'t Action>,
+    pub result: Option<&'t ResultDef>,
+    pub ragdoll: bool,
+}
+
+pub fn hit_reaction<'t>(t: &'t ActionTable, ask: &Ask, gate: bool, tasks: [bool; 2], rand: impl FnOnce() -> u32) -> Reaction<'t> {
+    let ask = Ask { kind: Some(crate::map::hash_bytes(b"HitReaction", 0)), idle: Some(true), receiving_hit: true, just_struck: false, ..*ask };
+    let action = choose(t, &ask, rand);
+    let result = action.filter(|a| a.move_ != 0).and_then(|a| t.results.iter().rfind(|r| r.name == a.move_));
+    let special = result.is_some_and(|r| r.special_result != crate::actiontable::none());
+    let low = ask.fighter.health < 125.0;
+    let ragdoll = gate
+        && (action.is_some_and(|a| a.prefer_ragdoll) || if tasks[0] && !tasks[1] { low } else { !special || low });
+    Reaction { action, result, ragdoll }
 }
 

@@ -992,7 +992,7 @@ impl Shot {
         let s = sdot(dh, v, b"zyx");
         dh -= v * if -s >= 0.0 { 0.0 } else { s };
         let len = slen(dh, b"zyx");
-        let t2 = t + v * len.fma(0.5, -0.05).min(0.25);
+        let t2 = v.mul_add(Vec3::splat(len.fma(0.5, -0.05).min(0.25)), t);
         let pelvis = c.b.at(SP[0]);
         let (a, b) = (t - pelvis, c.b.at(SP[4]) - pelvis);
         let along = (sdot(a, b, b"zyx") / sdot(b, b, b"zyx")).clamp(0.0, 0.8);

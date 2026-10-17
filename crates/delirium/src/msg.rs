@@ -23,14 +23,14 @@ pub enum Value {
 }
 
 impl Value {
-    fn f(&self) -> Result<f32, Error> {
+    pub(crate) fn f(&self) -> Result<f32, Error> {
         match self {
             Value::Float(x) => Ok(*x),
             Value::Int(i) => Ok(*i as f32),
             _ => Err(Error::Type),
         }
     }
-    fn i(&self) -> Result<i32, Error> {
+    pub(crate) fn i(&self) -> Result<i32, Error> {
         match self {
             Value::Int(i) => Ok(*i),
             Value::Float(x) if x.fract() == 0.0 => Ok(*x as i32),
@@ -38,20 +38,20 @@ impl Value {
             _ => Err(Error::Type),
         }
     }
-    fn b(&self) -> Result<bool, Error> {
+    pub(crate) fn b(&self) -> Result<bool, Error> {
         match self {
             Value::Bool(b) => Ok(*b),
             Value::Int(i) => Ok(*i != 0),
             _ => Err(Error::Type),
         }
     }
-    fn v(&self) -> Result<Vec3, Error> {
+    pub(crate) fn v(&self) -> Result<Vec3, Error> {
         match self {
             Value::Vec3(v) => Ok(*v),
             _ => Err(Error::Type),
         }
     }
-    fn s(&self) -> Result<&str, Error> {
+    pub(crate) fn s(&self) -> Result<&str, Error> {
         match self {
             Value::Str(s) => Ok(s),
             _ => Err(Error::Type),
@@ -591,10 +591,13 @@ fn intern(s: &str) -> &'static str {
 }
 
 pub fn find(name: &str) -> Option<&'static Message> {
-    MESSAGES.iter().find(|m| m.name == name)
+    MESSAGES.iter().chain(crate::extras::messages()).find(|m| m.name == name)
 }
 
 pub fn send(a: &mut Agent, build: &Build, world: &Collision, st: &mut State, msg: &str, params: &[(&str, Value)]) -> Result<usize, Error> {
+    if let Some(r) = a.extras.send(msg, params) {
+        return r;
+    }
     let m = find(msg).ok_or(Error::Message)?;
     let start = params.iter().find(|(n, _)| *n == "start").map(|(_, v)| v.b()).transpose()?;
     let one_shot = matches!(msg, "activePose" | "applyImpulse" | "bodyRelax" | "defineAttachedObject" | "leanInDirection"

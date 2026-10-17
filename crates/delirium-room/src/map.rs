@@ -5,6 +5,67 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 pub fn load(game: &str, at: Vec2, radius: f32) -> Result<Vec<CollisionMesh>, String> {
+    thread_local! {
+        static LOADED: std::cell::RefCell<std::collections::HashMap<String, Vec<CollisionMesh>>> = Default::default();
+    }
+    let k = format!("{game}|{at}|{radius}");
+    if let Some(v) = LOADED.with_borrow(|l| l.get(&k).cloned()) {
+        return Ok(v);
+    }
+    let v = load_near(game, at, radius)?;
+    LOADED.with_borrow_mut(|l| l.insert(k, v.clone()));
+    Ok(v)
+}
+
+fn load_near(game: &str, at: Vec2, radius: f32) -> Result<Vec<CollisionMesh>, String> {
+    let mut out = vec![];
+    let mut open: Option<(String, std::fs::File)> = None;
+    for e in index(game)? {
+        let near = Vec2::new(at.x.clamp(e.lo.x, e.hi.x), at.y.clamp(e.lo.y, e.hi.y)).distance(at) < radius;
+        if radius != 0.0 && !near {
+            continue;
+        }
+        if open.as_ref().is_none_or(|o| o.0 != e.img) {
+            open = Some((e.img.clone(), std::fs::File::open(&e.img).map_err(|x| x.to_string())?));
+        }
+        let f = &mut open.as_mut().unwrap().1;
+        let Ok((meshes, _)) = read_xbn(f, e.offset, e.blocks).and_then(|r| bounds::read(&r)) else { continue };
+        out.extend(meshes.into_iter().filter(|m| radius == 0.0 || m.positions.iter().any(|p| Vec2::new(p[0], p[1]).distance(at) < radius)));
+    }
+    Ok(out)
+}
+
+struct Entry {
+    img: String,
+    offset: u64,
+    blocks: u32,
+    lo: Vec2,
+    hi: Vec2,
+}
+
+fn read_xbn(f: &mut std::fs::File, offset: u64, blocks: u32) -> Result<resource::Resource, String> {
+    let mut raw = vec![];
+    f.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    f.take(blocks as u64 * 2048).read_to_end(&mut raw).map_err(|e| e.to_string())?;
+    resource::parse(&raw)
+}
+
+fn index(game: &str) -> Result<Vec<Entry>, String> {
+    let file = crate::getup::config_dir().join("mapindex.txt");
+    if let Ok(t) = std::fs::read_to_string(&file) {
+        let mut lines = t.lines();
+        if lines.next() == Some(game) {
+            let v: Option<Vec<Entry>> = lines.map(|l| {
+                let c: Vec<&str> = l.split('\t').collect();
+                let n = |i: usize| c.get(i)?.parse::<f32>().ok();
+                Some(Entry { img: c.first()?.to_string(), offset: c.get(1)?.parse().ok()?, blocks: c.get(2)?.parse().ok()?,
+                             lo: Vec2::new(n(3)?, n(4)?), hi: Vec2::new(n(5)?, n(6)?) })
+            }).collect();
+            if let Some(v) = v {
+                return Ok(v);
+            }
+        }
+    }
     let dir = Path::new(game);
     let key = crate::getup::key(dir)?;
     let (mut imgs, mut dirs) = (vec![], vec![dir.join("xbox360")]);
@@ -18,19 +79,25 @@ pub fn load(game: &str, at: Vec2, radius: f32) -> Result<Vec<CollisionMesh>, Str
             }
         }
     }
+    imgs.sort();
     let mut out = vec![];
     for path in imgs {
         let mut f = std::fs::File::open(&path).map_err(|e| e.to_string())?;
         let mut head = vec![];
         (&mut f).take(4 << 20).read_to_end(&mut head).map_err(|e| e.to_string())?;
         for e in img::read_table(&head, Some(&key)).unwrap_or_default().into_iter().filter(|e| e.name.to_lowercase().ends_with(".xbn")) {
-            let mut raw = vec![];
-            f.seek(SeekFrom::Start(e.offset)).map_err(|e| e.to_string())?;
-            (&mut f).take(e.used_blocks as u64 * 2048).read_to_end(&mut raw).map_err(|e| e.to_string())?;
-            let Ok((meshes, _)) = resource::parse(&raw).and_then(|r| bounds::read(&r)) else { continue };
-            out.extend(meshes.into_iter().filter(|m| radius == 0.0 || m.positions.iter().any(|p| Vec2::new(p[0], p[1]).distance(at) < radius)));
+            let Ok((meshes, _)) = read_xbn(&mut f, e.offset, e.used_blocks as u32).and_then(|r| bounds::read(&r)) else { continue };
+            let ps = meshes.iter().flat_map(|m| m.positions.iter().map(|p| Vec2::new(p[0], p[1])));
+            let (lo, hi) = ps.fold((Vec2::MAX, Vec2::MIN), |(lo, hi), p| (lo.min(p), hi.max(p)));
+            if lo.x <= hi.x {
+                out.push(Entry { img: path.to_string_lossy().into_owned(), offset: e.offset, blocks: e.used_blocks as u32, lo, hi });
+            }
         }
     }
+    let text: String = std::iter::once(game.to_string()).chain(out.iter().map(|e| format!("{}\t{}\t{}\t{}\t{}\t{}\t{}", e.img, e.offset, e.blocks, e.lo.x, e.lo.y, e.hi.x, e.hi.y)))
+        .collect::<Vec<_>>().join("
+");
+    let _ = std::fs::create_dir_all(file.parent().unwrap()).and_then(|_| std::fs::write(&file, text));
     Ok(out)
 }
 

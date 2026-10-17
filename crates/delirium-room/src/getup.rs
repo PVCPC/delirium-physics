@@ -8,13 +8,20 @@ pub const DOWN_SECS: f32 = 2.0;
 const RISE_BLEND: f32 = 0.25;
 pub const IDLE: usize = 2;
 pub const WALK: usize = 3;
-pub const SWINGS: usize = 6;
 
+pub const GUN_CLIPS: [&str; 7] = ["gun@handgun", "gun@deagle", "gun@mp5k", "gun@ak47", "gun@rifle", "gun@shotgun", "gun@rocket"];
+
+#[derive(Clone)]
 pub struct Clips {
     parents: Vec<Option<usize>>,
     bind: Vec<(Vec3, Quat)>,
     clips: Vec<(anim::Animation, Vec<Option<usize>>)>,
-    pub hero: Option<delirium::ragdoll::Rig>,
+    pub hero: Option<std::rc::Rc<delirium::ragdoll::Rig>>,
+    pub guns: Vec<Option<(usize, usize)>>,
+    names: Vec<String>,
+    ids: Vec<u16>,
+    pub fight: Option<(std::rc::Rc<crate::melee::Data>, std::collections::HashMap<String, usize>)>,
+    fight_from: usize,
     parts: Vec<(usize, Transform)>,
     chest: usize,
 }
@@ -29,9 +36,13 @@ pub struct Rise {
 
 const XEX_KEY_SRC: &str = "https://raw.githubusercontent.com/xenia-project/xenia/95a5c3ee250f80c3b9d139658649d9ffb6db3eec/src/xenia/cpu/xex_module.cc";
 
+pub fn config_dir() -> std::path::PathBuf {
+    std::env::var_os("APPDATA").map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))).unwrap_or_default().join("delirium")
+}
+
 fn xex_key() -> Result<[u8; 16], String> {
-    let dir = std::env::var_os("APPDATA").map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))).unwrap_or_default().join("delirium");
+    let dir = config_dir();
     if let Some(k) = std::fs::read(dir.join("xex.key")).ok().and_then(|b| <[u8; 16]>::try_from(b).ok()) {
         return Ok(k);
     }
@@ -124,9 +135,38 @@ impl Clips {
         for c in ["idle", "walk", "run", "sprint"] {
             clips.push(clip("move_player.xad", c)?);
         }
-        for c in ["hook_r", "hook_l", "uppercut_r"] {
-            clips.push(clip("melee_player_unarmed.xad", c)?);
+        let mut guns = vec![];
+        for d in GUN_CLIPS {
+            let pair = clip(&format!("{d}.xad"), "fire").and_then(|f| Ok((f, clip(&format!("{d}.xad"), "reload")?))).ok();
+            guns.push(pair.map(|(f, r)| {
+                clips.extend([f, r]);
+                (clips.len() - 2, clips.len() - 1)
+            }));
         }
+        let mut fight_from = clips.len();
+        let fight = (|| -> Result<crate::melee::Data, String> {
+            let c = rd("common.rpf")?;
+            let toc = rpf::read_toc(&c, &key)?;
+            let f = |p: &str| toc.iter().find(|e| e.path.eq_ignore_ascii_case(p)).and_then(|e| rpf::read(&c, e).ok()).ok_or(format!("no {p} in common.rpf"));
+            Ok(crate::melee::load(&f("data/meleeanims.dat")?, &f("data/action_table.csv")?, &f("data/pedpersonality.dat")?))
+        })().map_err(|e| eprintln!("fights: {e}")).ok().map(|d| {
+            let (mut at, mut dicts) = (std::collections::HashMap::new(), std::collections::HashMap::<String, Vec<anim::Animation>>::new());
+            let stance: Vec<String> = crate::melee::STANCE_IDS.iter().filter_map(|&id| d.stance_key(-1, id)).collect();
+            for (n, k) in stance.iter().cloned().chain(d.clip_keys()).enumerate() {
+                if n == stance.len() {
+                    fight_from = clips.len();
+                }
+                let Some((dict, name)) = k.split_once('/') else { continue };
+                let list = dicts.entry(dict.to_string())
+                    .or_insert_with(|| img_read(&table, &mut f, &format!("{dict}.xad")).and_then(|r| anim::read_dictionary(&r)).unwrap_or_default());
+                if let (None, Some(a)) = (at.get(&k), list.iter().find(|a| a.name.eq_ignore_ascii_case(name))) {
+                    let map = a.tracks.iter().map(|t| bones.iter().position(|b| b.id == t.bone).filter(|&b| b != 0)).collect();
+                    clips.push((a.clone(), map));
+                    at.insert(k, clips.len() - 1);
+                }
+            }
+            (std::rc::Rc::new(d), at)
+        });
         let parts = build.parts.iter().map(|p| bones.iter().position(|b| b.name == p.name).map(|b| (b, p.offset)).ok_or(format!("no bone {}", p.name)))
             .collect::<Result<_, _>>()?;
         let chest = build.parts.iter().position(|d| d.parent == Some(0) && !d.lower).unwrap_or(0);
@@ -136,8 +176,8 @@ impl Clips {
             hero: delirium_data::ragdoll::read(&frag).ok().and_then(|p| {
                 let bind: Vec<(Vec3, Quat)> = bones.iter().map(|b| (Vec3::from(b.translation), Quat::from_array(b.rotation).normalize())).collect();
                 delirium::ragdoll::Rig::new(&p, &bones.iter().map(|b| b.parent).collect::<Vec<_>>(), &bind, &bones, delirium::nmrs::HOMER)
-            }),
-            clips, parts, chest,
+            }).map(std::rc::Rc::new),
+            clips, parts, chest, guns, names: bones.iter().map(|b| b.name.clone()).collect(), ids: bones.iter().map(|b| b.id).collect(), fight, fight_from,
         })
     }
 
@@ -162,6 +202,9 @@ impl Clips {
     }
 
     pub fn play(&self, c: usize, phase: f32) -> Vec<(Vec3, Quat)> {
+        if c >= self.fight_from {
+            return self.play_fight(c, phase);
+        }
         let mut out = self.pose(c, phase);
         let a = &self.clips[c].0;
         let x = phase.clamp(0.0, 1.0) * (a.frames - 1) as f32;
@@ -181,6 +224,71 @@ impl Clips {
             }
         }
         out
+    }
+
+    fn play_fight(&self, c: usize, phase: f32) -> Vec<(Vec3, Quat)> {
+        let mut out = self.pose(c, phase);
+        let a = &self.clips[c].0;
+        let x = phase.clamp(0.0, 1.0) * (a.frames - 1) as f32;
+        let (i, f) = (x.floor() as usize, x.fract());
+        let q = |v: &[f32]| Quat::from_xyzw(v[0], v[1], v[2], v[3]).normalize();
+        let (mut at, mut turn) = (Vec3::ZERO, Quat::IDENTITY);
+        for t in a.tracks.iter().filter(|t| t.bone == 0) {
+            match t.kind {
+                anim::BONE_ROTATION => turn = q(&t.sample(i)).slerp(q(&t.sample(i + 1)), f),
+                anim::BONE_TRANSLATION => at = Vec3::from_slice(&t.sample(i)).lerp(Vec3::from_slice(&t.sample(i + 1)), f),
+                _ => {}
+            }
+        }
+        let start = a.tracks.iter().find(|t| t.kind == anim::MOVER_TRANSLATION).map_or(Vec3::ZERO, |t| Vec3::from_slice(&t.sample(0)));
+        let start_turn = a.mover_rotation.as_ref().map_or(Quat::IDENTITY, |t| q(&t.sample(0)));
+        let turn = start_turn * turn;
+        out[0] = if turn.xyz().length() > 1e-3 { (start + start_turn * at, turn) } else { self.bind[0] };
+        out
+    }
+
+    pub fn bone(&self, pose: &[(Vec3, Quat)], body: Transform, name: &str) -> Option<(Vec3, Quat)> {
+        let i = self.names.iter().position(|n| n == name)?;
+        Some(delirium::ragdoll::pose_frames(&self.parents, pose, body)[i])
+    }
+
+    pub fn bend(&self, pose: &mut [(Vec3, Quat)], body: Transform, axis: Vec3, angle: f32) {
+        let world = delirium::ragdoll::pose_frames(&self.parents, pose, body);
+        let q = Quat::from_axis_angle(axis, angle / 3.0);
+        for name in ["Char_Spine1", "Char_Spine2", "Char_Spine3"] {
+            let Some(i) = self.names.iter().position(|n| n == name) else { continue };
+            let Some(p) = self.parents[i] else { continue };
+            let wp = world[p].1;
+            pose[i].1 = (wp.inverse() * q * wp * pose[i].1).normalize();
+        }
+    }
+
+    pub fn points<'n>(&self, parts: impl Iterator<Item = &'n str> + Clone, frames: &[Transform]) -> [Option<Vec3>; 5] {
+        crate::melee::POINT_BONES.map(|tag| {
+            let name = &self.names[self.ids.iter().position(|&i| i == tag)?];
+            frames.get(parts.clone().position(|p| p == name)?).map(|f| f.translation)
+        })
+    }
+
+    pub fn world(&self, pose: &[(Vec3, Quat)], body: Transform) -> Vec<(Vec3, Quat)> {
+        delirium::ragdoll::pose_frames(&self.parents, pose, body)
+    }
+
+    pub fn tagged(&self, world: &[(Vec3, Quat)], tag: u16) -> Option<Vec3> {
+        world.get(self.ids.iter().position(|&i| i == tag)?).map(|b| b.0)
+    }
+
+    pub fn fight_clip(&self, key: &str) -> Option<(usize, &anim::Animation)> {
+        let &c = self.fight.as_ref()?.1.get(key)?;
+        Some((c, &self.clips[c].0))
+    }
+
+    pub fn mover(&self, c: usize, phase: f32) -> Vec3 {
+        let a = &self.clips[c].0;
+        let x = phase.clamp(0.0, 1.0) * (a.frames - 1) as f32;
+        let (i, f) = (x.floor() as usize, x.fract());
+        a.tracks.iter().find(|t| t.kind == anim::MOVER_TRANSLATION)
+            .map_or(Vec3::ZERO, |t| Vec3::from_slice(&t.sample(i)).lerp(Vec3::from_slice(&t.sample(i + 1)), f))
     }
 
     pub fn duration(&self, c: usize) -> f32 {

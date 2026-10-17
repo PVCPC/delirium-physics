@@ -439,6 +439,17 @@ impl Collision {
         self.hit(from, Vec3::NEG_Z, len, true).map(|(t, _, (slot, id))| (from.z - t, self.chunks[slot as usize].as_ref().map_or(0, |c| c.materials[id as usize])))
     }
 
+    pub fn ground_hit(&self, from: Vec3, len: f32) -> Option<(f32, u8, u64)> {
+        let (t, _, (slot, id)) = self.hit(from, Vec3::NEG_Z, len, true)?;
+        let key = self.keys.iter().find(|(_, s)| **s == slot).map(|(&k, _)| k)?;
+        Some((from.z - t, self.chunks[slot as usize].as_ref().map_or(0, |c| c.materials[id as usize]), key))
+    }
+
+    pub fn chunks_near(&self, at: Vec3, r: f32) -> Vec<u64> {
+        self.keys.iter().filter(|(_, s)| self.chunks[**s as usize].as_ref()
+            .is_some_and(|c| c.bounds.0.cmple(c.bounds.1).all() && (at.clamp(c.bounds.0, c.bounds.1) - at).length_squared() <= r * r)).map(|(&k, _)| k).collect()
+    }
+
     pub fn ground_stairs(&self, from: Vec3, len: f32) -> Option<(f32, bool)> {
         self.hit(from, Vec3::NEG_Z, len, true).map(|(t, _, (slot, id))| (from.z - t, self.chunks[slot as usize].as_ref().is_some_and(|c| c.flags[id as usize] & 1 != 0)))
     }
@@ -523,10 +534,22 @@ impl Walker {
             let rest = motion - dir * free;
             motion = dir * free + (rest - n * rest.dot(n));
         }
+        if self.grounded && let Some((_, n)) = world.cast(self.feet + Vec3::Z * 0.5, Vec3::NEG_Z, 0.8).filter(|(_, n)| n.z >= 0.5) {
+            motion.z = -(n.x * motion.x + n.y * motion.y) / n.z;
+        }
         self.feet += motion;
 
         if jump && self.grounded {
             self.fall = -5.0;
+            self.grounded = false;
+        }
+        if self.grounded && let Some(z) = world.ground(self.feet + Vec3::Z * STEP, STEP + 0.3) {
+            let up = -self.fall;
+            let a = GRAVITY * (6.0 * (z - self.feet.z) + 1.0).min(10.0) - GRAVITY - (2.0 * 58.86f32.sqrt() * up).clamp(-50.0, 50.0);
+            let up = up + a * dt;
+            self.feet.z += up * dt;
+            self.fall = -up;
+            return;
         }
         self.fall += GRAVITY * dt;
         let drop = self.fall * dt;

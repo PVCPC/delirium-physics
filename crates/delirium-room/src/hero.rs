@@ -1,8 +1,8 @@
 use crate::getup::{self, Clips};
+use crate::melee;
 use bevy::prelude::*;
 use delirium::ragdoll::Capsule;
 
-const DAMAGE: [f32; 3] = [7.0, 7.0, 9.0];
 pub const MELEE_PUSH: f32 = 30.0;
 pub const BUMP_SPEED: f32 = 2.5;
 const STAGGER_TIME: f32 = 2.5;
@@ -17,14 +17,22 @@ pub struct Hero {
     pub vel: Vec3,
     clip: usize,
     phase: f32,
-    swing: Option<(usize, f32, bool)>,
-    combo: usize,
+    fight: melee::Melee,
+    pad: melee::Pad,
+    press: u32,
+    pub keys: u32,
+    pub scripted: u32,
+    clock: f32,
+    rand: delirium_data::rng::Rand,
+    bones: Vec<(Vec3, Quat)>,
     speeds: [f32; 3],
     pub caps: Vec<Transform>,
     last: Vec<Transform>,
     dt: f32,
     stagger: f32,
     pub go: (Vec3, usize),
+    pub hold: Option<(usize, f32, Vec3)>,
+    pub hand: Vec3,
 }
 
 pub enum Hit {
@@ -36,9 +44,11 @@ impl Hero {
     pub fn new(clips: &Clips, homer: Vec3, fwd: Vec3) -> Hero {
         let speed = |c: usize| (clips.pose(c, 1.0)[0].0 - clips.pose(c, 0.0)[0].0).truncate().length() / clips.duration(c).max(0.01);
         let feet = (homer + fwd * 1.5).with_z(0.0);
-        let mut n = Hero { feet, yaw: (-fwd.y).atan2(-fwd.x), vel: Vec3::ZERO, clip: getup::IDLE, phase: 0.0, swing: None, combo: 0,
+        let mut n = Hero { feet, yaw: (-fwd.y).atan2(-fwd.x), vel: Vec3::ZERO, clip: getup::IDLE, phase: 0.0, fight: Default::default(), pad: Default::default(),
+                           press: 0, keys: 0, scripted: 0, clock: 0.0, rand: Default::default(), bones: vec![],
                            speeds: [speed(getup::WALK), speed(getup::WALK + 1), speed(getup::WALK + 2)],
-                           caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0) };
+                           caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
+                           hold: None, hand: feet + Vec3::Z * 1.0 };
         n.pose(clips);
         n
     }
@@ -52,52 +62,68 @@ impl Hero {
     }
 
     pub fn punch(&mut self) {
-        if self.swing.is_none() {
-            self.swing = Some((getup::SWINGS + self.combo % 3, 0.0, false));
-            self.combo += 1;
-        }
+        self.press |= melee::ATTACK_BIT;
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn update(&mut self, clips: &Clips, world: &delirium::collision::Collision, dt: f32, mv: Vec3, gait: usize, homer: Option<Vec3>,
-                  range: f32, body: &[Capsule]) -> Option<Hit> {
+    pub fn update(&mut self, clips: &Clips, world: &delirium::collision::Collision, dt: f32, mv: Vec3, gait: usize, homer: Option<(Vec3, f32, f32, [Option<Vec3>; 5])>,
+                  weapon: &delirium_data::weapons::Weapon, body: &[Capsule]) -> Option<Hit> {
         if dt <= 0.0 {
             return None;
         }
         self.stagger -= dt;
         let mut hit = None;
-        let (facing, feet) = (self.facing(), self.feet);
-        if let Some((c, t, done)) = self.swing.as_mut() {
-            *t += dt;
-            let dur = clips.duration(*c);
-            (self.clip, self.phase, self.vel) = (*c, *t / dur, Vec3::ZERO);
-            if !*done && *t >= dur * 0.45 {
-                *done = true;
-                let off = homer.map(|f| (f - feet).with_z(0.0));
-                if let Some(off) = off.filter(|o| o.length() < range + 0.5 && o.normalize_or_zero().dot(facing) > 0.5) {
-                    hit = Some(Hit::Swing(DAMAGE[*c - getup::SWINGS], feet + off + Vec3::Z * 1.4, facing * MELEE_PUSH));
-                }
-            }
-            if *t >= dur {
-                self.swing = None;
-            }
+        let fight = clips.fight.as_ref().map(|f| f.0.clone());
+        let mut locked = false;
+        let was = self.fight.mv.as_ref().and_then(|m| Some((clips.fight_clip(m.key.as_deref()?)?.0, m.phase())));
+        if let Some(d) = fight.as_deref() {
+            self.clock += dt;
+            let bits = std::mem::take(&mut self.press) | self.keys | self.scripted;
+            self.pad.feed(bits, [0x7F; 2], [if bits & 1 != 0 { 255 } else { 0 }, 0], (self.clock * 1000.0) as u32);
+            let reach = if weapon.target_range > 0.0 { weapon.target_range } else { 10.0 };
+            let foe = homer.map(|(p, heading, health, bones)| melee::Foe { feet: p.with_z(self.feet.z), heading, health, bones, ..Default::default() })
+                .filter(|f| f.feet.distance(self.feet) <= reach);
+            locked = foe.is_some() && self.pad.value(melee::LOCK_LT) >= melee::LOCK_FULL;
+            let c = melee::Ctx { pad: &self.pad, pos: self.feet + Vec3::Z, health: 200.0, weapon, foe, me: None, lock_on: locked };
+            let mut heading = self.yaw - std::f32::consts::FRAC_PI_2;
+            let rand = &mut self.rand;
+            self.fight.step(d, &c, &mut heading, dt, &|k| clips.fight_clip(k).map(|c| c.1), &mut || rand.next());
+            self.yaw = heading + std::f32::consts::FRAC_PI_2;
+        }
+        let stance = fight.as_deref().filter(|_| self.fight.on || locked).and_then(|d| {
+            clips.fight_clip(&d.stance_key(-1, 0x0F)?).map(|c| c.0)
+        });
+        let playing = self.fight.mv.as_ref().and_then(|m| Some((clips.fight_clip(m.key.as_deref()?)?.0, m.phase())));
+        if let Some((c, phase)) = playing {
+            let heading = self.yaw - std::f32::consts::FRAC_PI_2;
+            let from = was.filter(|w| w.0 == c && !self.fight.started).map_or(0.0, |w| w.1);
+            let at = clips.mover(c, phase);
+            let (anim, travel) = ((at - clips.mover(c, from)).truncate() / dt, (at - clips.mover(c, 0.0)).y);
+            let v = self.fight.home.map_or(anim, |h| Vec2::new(anim.x, h.speed(self.feet + Vec3::Z, heading, anim, if h.push { 0.0 } else { travel }, dt).unwrap_or(anim.y)));
+            (self.clip, self.phase, self.vel) = (c, phase, Quat::from_rotation_z(heading) * v.extend(0.0));
         } else if mv.length_squared() > 1e-4 {
             let want = mv.y.atan2(mv.x);
             let d = (want - self.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
             self.yaw += d.clamp(-TURN * dt, TURN * dt);
             let c = getup::WALK + gait.min(2);
-            if self.clip != c && !(getup::WALK..getup::SWINGS).contains(&self.clip) {
+            if self.clip != c && !(getup::WALK..getup::WALK + 3).contains(&self.clip) {
                 self.phase = 0.0;
             }
             self.clip = c;
             self.phase = (self.phase + dt / clips.duration(c)).fract();
             self.vel = self.facing() * self.speeds[gait.min(2)];
+        } else if let Some((c, phase, at)) = self.hold {
+            let to = (at - self.feet).with_z(0.0);
+            let d = (to.y.atan2(to.x) - self.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+            self.yaw += d.clamp(-TURN * dt, TURN * dt);
+            (self.clip, self.phase, self.vel) = (c, phase, Vec3::ZERO);
         } else {
-            if self.clip != getup::IDLE {
+            let c = stance.unwrap_or(getup::IDLE);
+            if self.clip != c {
                 self.phase = 0.0;
             }
-            self.clip = getup::IDLE;
-            self.phase = (self.phase + dt / clips.duration(getup::IDLE)).fract();
+            self.clip = c;
+            self.phase = (self.phase + dt / clips.duration(c)).fract();
             self.vel = Vec3::ZERO;
         }
         self.feet += self.vel * dt;
@@ -111,7 +137,7 @@ impl Hero {
                 self.feet += out.normalize_or(-self.facing()) * (BOUND + r - out.length()) * 0.5;
             }
         }
-        if let Some(f) = homer {
+        if let Some((f, ..)) = homer {
             let into = (f - self.feet).with_z(0.0);
             if self.stagger <= 0.0 && into.length() < 0.7 && self.vel.length() > BUMP_SPEED && self.vel.dot(into) > 0.0 {
                 self.stagger = STAGGER_TIME;
@@ -120,13 +146,31 @@ impl Hero {
         }
         self.dt = dt;
         self.pose(clips);
+        if let Some(d) = fight.as_deref().filter(|_| self.fight.on) {
+            let caps: Vec<(Vec3, Vec3, f32, u16)> = body.iter().filter(|_| homer.is_some()).map(|c| (c.0, c.1, c.2, 0)).collect();
+            let (bones, heading) = (&self.bones, self.yaw - std::f32::consts::FRAC_PI_2);
+            let part = |tag: u32| melee::part(tag, &|t| clips.tagged(bones, t));
+            for (.., at, dmg) in self.fight.strike(d, self.feet, heading, &part, None, &[(0, &caps)]) {
+                hit = hit.or(Some(Hit::Swing(dmg, at, self.facing() * MELEE_PUSH)));
+            }
+        }
         hit
     }
 
     fn pose(&mut self, clips: &Clips) {
         let Some(rig) = clips.hero.as_ref() else { return };
-        let p = clips.play(self.clip, self.phase.clamp(0.0, 1.0));
+        let mut p = clips.play(self.clip, self.phase.clamp(0.0, 1.0));
         let body = Transform::from_translation(self.feet + Vec3::Z * PELVIS).with_rotation(Quat::from_rotation_z(self.yaw - std::f32::consts::FRAC_PI_2));
+        if let Some((c, _, at)) = self.hold.filter(|h| h.0 == self.clip) {
+            let chest = self.feet + Vec3::Z * 1.4;
+            let pitch = (at.z - chest.z).atan2((at - chest).with_z(0.0).length().max(0.1));
+            let _ = c;
+            clips.bend(&mut p, body, self.facing().cross(Vec3::Z).normalize_or(Vec3::X), pitch.clamp(-1.0, 1.0));
+        }
+        if let Some((at, _)) = clips.bone(&p, body, "Char_R_Hand") {
+            self.hand = at;
+        }
+        self.bones = clips.world(&p, body);
         let frames = rig.place(&p, body);
         let doll = delirium::ragdoll::Ragdoll::new(&rig.build, &frames, Vec3::ZERO);
         self.last = std::mem::replace(&mut self.caps, doll.capsules().collect());
