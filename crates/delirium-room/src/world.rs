@@ -80,6 +80,7 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
             v.extend((0..PLANKS).map(|i| b([0.0, plank_y(i), BRIDGE_TOP - PLANK_HALF.z], PLANK_HALF.to_array(), concrete)));
             (v, Vec3::new(0.0, 0.8, BRIDGE_TOP))
         }
+        "cab" => (vec![], Vec3::ZERO),
         "trampoline" => (vec![b([0.0, 0.0, PAD_HALF.z], PAD_HALF.to_array(), concrete)], Vec3::new(0.0, 0.0, 2.0 * PAD_HALF.z)),
         _ => return None,
     })
@@ -209,6 +210,17 @@ impl Room {
                     w.remove_body_with_colliders(p, true);
                 }
             }
+        }
+    }
+
+    pub fn steer(&mut self, j: usize, at: Vec3) {
+        let h = self.objs[j].h[0];
+        let w = &mut self.w[0];
+        let pins: Vec<_> = w.impulse_joints.attached_joints(h).map(|(a, b, _, _)| if a == h { b } else { a }).collect();
+        for p in pins {
+            let b = &mut w.bodies[p];
+            let z = bv(b.translation()).z;
+            b.set_translation(rv(at.with_z(z)), true);
         }
     }
 

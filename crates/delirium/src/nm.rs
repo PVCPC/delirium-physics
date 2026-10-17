@@ -1209,6 +1209,7 @@ impl Agent {
     fn physics_drive(&mut self, build: &Build, dt: f32) -> Option<crate::ragdoll::Kept> {
         let mut held = self.held.take()?;
         self.incoming_pose(dt);
+        self.extras.hard_step(&mut self.doll, &self.incoming, dt);
         if self.nm_shot.is_none() && self.nm_hit.is_some() && self.doll.awake() && self.ch.is_some() {
             let frames: Vec<Transform> = self.doll.frames().collect();
             self.nm_shot_started = Some(self.nm_shot_step(build, &frames, false, self.nm_dt.unwrap_or(dt), false));
@@ -1639,7 +1640,7 @@ impl Agent {
             if let Some(w) = self.nm_bw.as_mut() {
                 w.tick(&mut c, dt);
             }
-            self.extras.tick(&mut c, dt);
+            self.extras.tick(&mut c, obstacles, dt);
             if !waits(walk_actives!(self), W_PD) {
                 self.nm_pd.tick(&mut c, dt);
             }

@@ -290,6 +290,7 @@ pub struct Rigid {
     pub jc: Option<crate::rigid::JointConst>,
     pub target: [f32; 3],
     pub gain: [f32; 2],
+    pub soft: [crate::nmrs::SoftLimit; 3],
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -834,6 +835,7 @@ pub struct Ragdoll {
     pub stage_lim: Vec<Vec3>,
     stiff: Vec<f32>,
     pins: Vec<Option<Transform>>,
+    cons: Vec<(Option<Vec3>, Option<Quat>)>,
     pub grips: Vec<(usize, Vec3, Vec3, f32, f32)>,
     pub snapped: Vec<usize>,
     grip_rows: Vec<(usize, usize, f32)>,
@@ -924,7 +926,7 @@ impl Ragdoll {
             at += 1;
             order.extend((0..n).filter(|&c| build.parts[c].parent == Some(k)));
         }
-        Ragdoll { nm: build.nm, pins: vec![None; n], grips: vec![], snapped: vec![], grip_rows: vec![], touch: vec![0; n], contact_off: 0, hit: vec![None; n], contact: crate::bump::ContactRecord::new(), ob_hits: vec![], held: vec![vec![]; n], stage_vel: vec![], stage_lt: vec![], stage_lim: vec![], stiff: vec![], bodies, order, mode: 1, still: [SLEEP_STOP - 2, SLEEP_SLEEP - 2],
+        Ragdoll { nm: build.nm, pins: vec![None; n], cons: vec![(None, None); n], grips: vec![], snapped: vec![], grip_rows: vec![], touch: vec![0; n], contact_off: 0, hit: vec![None; n], contact: crate::bump::ContactRecord::new(), ob_hits: vec![], held: vec![vec![]; n], stage_vel: vec![], stage_lt: vec![], stage_lim: vec![], stiff: vec![], bodies, order, mode: 1, still: [SLEEP_STOP - 2, SLEEP_SLEEP - 2],
                   sleep_tol: [SLEEP_V2, SLEEP_W2, SLEEP_MEAN2], asleep: false, age: 0.0, fresh: false, pending: vec![], pairs: vec![], seen: vec![], coll: vec![], held_pairs: vec![], held_car: vec![], prep_twist: vec![], rigid: None, inertia: None, inst: None, out: vec![(Vec3::ZERO, Vec3::ZERO); n], joint_torque: vec![Vec3::ZERO; n], armature: vec![0.0; n], o, bound_off: Vec3::ZERO,
                   rejuv: 0, mwc: (1, 0) }
     }
@@ -938,6 +940,13 @@ impl Ragdoll {
 
     pub fn pin(&mut self, k: usize, to: Transform) {
         self.pins[k] = Some(Transform { translation: to.translation - self.o, ..to });
+    }
+
+    pub fn constrain(&mut self, k: usize, at: Option<Vec3>, turn: Option<Quat>) {
+        self.cons[k] = (at, turn);
+        if at.is_some() || turn.is_some() {
+            self.wake();
+        }
     }
 
     pub fn restiffen(&mut self) {
@@ -1220,6 +1229,36 @@ impl Ragdoll {
         }
     }
 
+    fn soft_limits(&self, artic: &Artic, joints: &[Option<Joint>], drive: &Drive, lt: &mut [V6], out: &mut [Vec3]) {
+        let b = &self.bodies;
+        for (i, r) in drive.rigid.iter().enumerate().filter(|(_, r)| r.soft.iter().any(|l| l.enabled)) {
+            let Some(j) = joints.get(i).copied().flatten() else { continue };
+            let (pl, cl) = (b[j.parent].link(), b[i].link());
+            let speed = |a: Vec3, o: &[u8; 3]| sdot(cl.w, a, o) - sdot(pl.w, a, o);
+            let t = if r.hinge {
+                let n = crate::rigid::hinge_axis(&j.jc, &cl);
+                let acc = r.soft[0].accel(crate::rigid::hinge(&j.jc, &pl, &cl), speed(n, b"yzx"));
+                let k = n.as_dvec3().dot(answer(artic, i, n.as_dvec3())) as f32;
+                if k > 1e-12 { n * (acc / k) } else { Vec3::ZERO }
+            } else {
+                let st = crate::rigid::swing3(&j.jc, &pl, &cl);
+                let (cs, sn) = (sdot(st.s, crate::rigid::col(&st.pr, 1), b"zyx"), -sdot(st.s, crate::rigid::col(&st.pr, 0), b"yzx"));
+                let (q, ls, ts) = (speed(st.across, b"zyx") / st.k, speed(st.s, b"zyx"), speed(st.bis, b"zyx") * st.k);
+                let at = [st.theta * cs, st.theta * sn, st.twist];
+                let v = [ls.fma(cs, q * sn), ls.fma(sn, -(q * cs)), ts];
+                let acc: [f32; 3] = std::array::from_fn(|k| r.soft[k].accel(at[k], v[k]));
+                let (sw, qw, tw) = (acc[0].fma(cs, acc[1] * sn), acc[0].fma(sn, -(acc[1] * cs)) * st.k, acc[2] / st.k);
+                let world = st.bis.mul_add(Vec3::splat(tw), st.across.mul_add(Vec3::splat(qw), st.s * sw));
+                let cols = [DVec3::X, DVec3::Y, DVec3::Z].map(|e| answer(artic, i, e));
+                (DMat3::from_cols(cols[0], cols[1], cols[2]).inverse() * world.as_dvec3()).as_vec3()
+            };
+            if t != Vec3::ZERO {
+                pair(joints, i, t.as_dvec3(), lt);
+                out[i] += t;
+            }
+        }
+    }
+
     fn limits(&self, artic: &Artic, joints: &[Option<Joint>], h: f32, lt: &mut [V6]) {
         let b = &self.bodies;
         for (k, j) in joints.iter().enumerate() {
@@ -1373,6 +1412,21 @@ impl Ragdoll {
             for e in [Vec3::X, Vec3::Y, Vec3::Z] {
                 for (j, to) in [(lrow(k, d(b.x), d(e), DVec3::ZERO), v.dot(e)), (lrow(k, d(b.x), DVec3::ZERO, d(e)), w.dot(e))] {
                     let to = to as f64 - fv(&j);
+                    rows.push(Row::new(artic, j, to, RowKind::Equal));
+                }
+            }
+        }
+        for (k, &(at, turn)) in self.cons.iter().enumerate().filter(|&(k, _)| pose[k].is_none()) {
+            let b = &self.bodies[k];
+            for e in [Vec3::X, Vec3::Y, Vec3::Z] {
+                if let Some(at) = at {
+                    let j = lrow(k, d(b.x), d(e), DVec3::ZERO);
+                    let to = ((at - o - b.x) / h).dot(e) as f64 - fv(&j);
+                    rows.push(Row::new(artic, j, to, RowKind::Equal));
+                }
+                if let Some(q) = turn {
+                    let j = lrow(k, d(b.x), DVec3::ZERO, d(e));
+                    let to = (short(q * b.q.inverse()).to_scaled_axis() / h).dot(e) as f64 - fv(&j);
                     rows.push(Row::new(artic, j, to, RowKind::Equal));
                 }
             }
@@ -1849,6 +1903,7 @@ impl Ragdoll {
         }).collect();
         let mut jt = vec![Vec3::ZERO; self.bodies.len()];
         self.muscles(&artic, &joints, &drive, h, &mut lt, &mut jt);
+        self.soft_limits(&artic, &joints, &drive, &mut lt, &mut jt);
         for (k, b) in self.bodies.iter().enumerate() {
             let f = (fall + Vec3::Z * GRAVITY) * b.m + drive.force.get(k).copied().unwrap_or(Vec3::ZERO);
             self.out[k] = (f, drive.torque.get(k).copied().unwrap_or(Vec3::ZERO) + jt[k]);
@@ -1977,7 +2032,8 @@ impl Ragdoll {
             }
         }
         self.sleep();
-        self.asleep = self.mode == 2 && lift == 0.0 && self.pins.iter().all(Option::is_none) && self.grips.is_empty();
+        self.asleep = self.mode == 2 && lift == 0.0 && self.pins.iter().all(Option::is_none) && self.grips.is_empty()
+            && self.cons.iter().all(|c| c.0.is_none() && c.1.is_none());
     }
 }
 
@@ -2034,6 +2090,13 @@ struct Entry {
 impl Ragdoll {
     pub fn step_group(ms: &mut [Member], world: &Collision, dt: f32, group: &mut Group) {
         let n = ms.len();
+        let mut st: Vec<Option<Stage>> = (0..n).map(|_| None).collect();
+        Self::group_wake(ms);
+        par_each(&mut ms.iter_mut().zip(st.iter_mut()).collect::<Vec<_>>(), |(m, s)| **s = m.doll.begin(m.build, world, dt, &m.drive, m.obstacles, m.others));
+        Self::group_solve(ms, st, group);
+    }
+
+    fn group_boxes(ms: &[Member]) -> Vec<(Vec3, Vec3)> {
         let reach = |m: &Member| -> (Vec3, Vec3) {
             let d = &m.doll;
             let (lo, hi) = d.bodies.iter().zip(&m.build.parts).fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), (b, p)| {
@@ -2042,7 +2105,12 @@ impl Ragdoll {
             });
             (lo + d.o, hi + d.o)
         };
-        let boxes: Vec<(Vec3, Vec3)> = ms.iter().map(reach).collect();
+        ms.iter().map(reach).collect()
+    }
+
+    fn group_wake(ms: &mut [Member]) {
+        let n = ms.len();
+        let boxes = Self::group_boxes(ms);
         let meet = |i: usize, k: usize| boxes[i].0.cmple(boxes[k].1).all() && boxes[k].0.cmple(boxes[i].1).all();
         for i in 0..n {
             for k in 0..n {
@@ -2051,7 +2119,12 @@ impl Ragdoll {
                 }
             }
         }
-        let mut st: Vec<Option<Stage>> = ms.iter_mut().map(|m| m.doll.begin(m.build, world, dt, &m.drive, m.obstacles, m.others)).collect();
+    }
+
+    fn group_solve(ms: &mut [Member], mut st: Vec<Option<Stage>>, group: &mut Group) {
+        let n = ms.len();
+        let boxes = Self::group_boxes(ms);
+        let meet = |i: usize, k: usize| boxes[i].0.cmple(boxes[k].1).all() && boxes[k].0.cmple(boxes[i].1).all();
         let mut held = std::collections::HashMap::new();
         let mut cross: Vec<(usize, usize, Block, Block, Src)> = vec![];
         let mut joined: Vec<usize> = (0..n).collect();
@@ -2118,14 +2191,13 @@ impl Ragdoll {
             }
         }
         group.held = held;
+        let tops: Vec<usize> = (0..n).map(|i| root(&mut joined, i)).collect();
+        let alone: Vec<bool> = (0..n).map(|i| st[i].is_some() && (0..n).filter(|&k| st[k].is_some() && tops[k] == tops[i]).count() == 1).collect();
+        for (m, s) in ms.iter_mut().zip(st.iter_mut()).zip(&alone).filter(|x| *x.1).map(|x| x.0) {
+            m.doll.finish(s.take().unwrap(), m.drive.lift);
+        }
         for top in 0..n {
-            let mut is: Vec<usize> = (0..n).filter(|&i| st[i].is_some() && root(&mut joined, i) == top).collect();
-            if is.len() == 1 {
-                let i = is[0];
-                let s = st[i].take().unwrap();
-                ms[i].doll.finish(s, ms[i].drive.lift);
-                continue;
-            }
+            let mut is: Vec<usize> = (0..n).filter(|&i| st[i].is_some() && tops[i] == top).collect();
             if is.is_empty() {
                 continue;
             }
@@ -2512,3 +2584,11 @@ fn island_order_as_the_game() {
     assert_eq!(island_order(&[(Some(1), None), (Some(2), None), (Some(3), None), (Some(1), Some(2)), (Some(2), Some(3))]), [0, 3, 1, 4, 2]);
 }
 
+pub(crate) fn par_each<T: Send>(items: &mut [T], f: impl Fn(&mut T) + Sync) {
+    let cores = std::thread::available_parallelism().map_or(1, |c| c.get()).min(items.len() / 3);
+    if cores < 2 {
+        return items.iter_mut().for_each(f);
+    }
+    let f = &f;
+    std::thread::scope(|s| items.chunks_mut(items.len().div_ceil(cores)).for_each(|c| { s.spawn(move || c.iter_mut().for_each(f)); }));
+}

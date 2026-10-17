@@ -6,6 +6,7 @@ use delirium::ragdoll::Capsule;
 pub const MELEE_PUSH: f32 = 30.0;
 pub const BUMP_SPEED: f32 = 2.5;
 const STAGGER_TIME: f32 = 2.5;
+pub type Held = (f32, f32, f32);
 const TURN: f32 = 10.0;
 const EYE: f32 = 1.6;
 const PELVIS: f32 = 1.0;
@@ -33,6 +34,8 @@ pub struct Hero {
     pub go: (Vec3, usize),
     pub hold: Option<(usize, f32, Vec3)>,
     pub hand: Vec3,
+    pub grip: Quat,
+    pub homer: Vec<Transform>,
 }
 
 pub enum Hit {
@@ -48,13 +51,40 @@ impl Hero {
                            press: 0, keys: 0, scripted: 0, clock: 0.0, rand: Default::default(), bones: vec![],
                            speeds: [speed(getup::WALK), speed(getup::WALK + 1), speed(getup::WALK + 2)],
                            caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
-                           hold: None, hand: feet + Vec3::Z * 1.0 };
+                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![] };
         n.pose(clips);
         n
     }
 
     pub fn facing(&self) -> Vec3 {
         Vec3::new(self.yaw.cos(), self.yaw.sin(), 0.0)
+    }
+
+    pub fn held_axis(&self, (back, ahead, big): Held) -> (Vec3, Vec3, f32, f32) {
+        let d = self.grip * Vec3::X;
+        (self.hand - d * back, self.hand + d * ahead, big, back / (back + ahead))
+    }
+
+    pub fn playing(&self) -> bool {
+        self.fight.mv.is_some()
+    }
+
+    pub fn blocking(&self, clips: &Clips) -> bool {
+        let r = clips.fight.as_ref().zip(self.fight.mv.as_ref()).map(|(f, m)| &f.0.table.results[m.result]);
+        r.is_some_and(|r| r.is_a_block)
+    }
+
+    pub fn hit_by(&mut self, clips: &Clips, by: &Hero, weapon: &delirium_data::weapons::Weapon) -> Option<String> {
+        let d = &clips.fight.as_ref()?.0;
+        let from = melee::Foe { feet: by.feet, heading: by.yaw - std::f32::consts::FRAC_PI_2, health: 200.0, ..Default::default() }.with_move(d, by.fight.mv.as_ref());
+        let (res, clip) = from.task.unwrap_or((0, None));
+        let blow = melee::Blow { by: from, player: false, res, clip };
+        let me = melee::Foe { feet: self.feet, heading: self.yaw - std::f32::consts::FRAC_PI_2, health: 200.0, ..Default::default() };
+        let rand = &mut self.rand;
+        let r = melee::react(d, &me, true, Some(weapon), self.fight.mv.as_ref(), &blow, false, [false; 2], false, &mut || rand.next());
+        melee::play_result(&mut self.fight.mv, d, r.action?, true, &|k| clips.fight_clip(k).map(|c| c.1.duration));
+        self.fight.on |= self.fight.mv.is_some();
+        r.result.and_then(|r| d.clip(r))
     }
 
     pub fn head(&self) -> Vec3 {
@@ -67,7 +97,7 @@ impl Hero {
 
     #[allow(clippy::too_many_arguments)]
     pub fn update(&mut self, clips: &Clips, world: &delirium::collision::Collision, dt: f32, mv: Vec3, gait: usize, homer: Option<(Vec3, f32, f32, [Option<Vec3>; 5])>,
-                  weapon: &delirium_data::weapons::Weapon, body: &[Capsule]) -> Option<Hit> {
+                  weapon: &delirium_data::weapons::Weapon, held: Option<Held>, body: &[Capsule]) -> Option<Hit> {
         if dt <= 0.0 {
             return None;
         }
@@ -150,7 +180,8 @@ impl Hero {
             let caps: Vec<(Vec3, Vec3, f32, u16)> = body.iter().filter(|_| homer.is_some()).map(|c| (c.0, c.1, c.2, 0)).collect();
             let (bones, heading) = (&self.bones, self.yaw - std::f32::consts::FRAC_PI_2);
             let part = |tag: u32| melee::part(tag, &|t| clips.tagged(bones, t));
-            for (.., at, dmg) in self.fight.strike(d, self.feet, heading, &part, None, &[(0, &caps)]) {
+            let axis = held.map(|h| self.held_axis(h));
+            for (.., at, dmg) in self.fight.strike(d, self.feet, heading, &part, axis, &[(0, &caps)]) {
                 hit = hit.or(Some(Hit::Swing(dmg, at, self.facing() * MELEE_PUSH)));
             }
         }
@@ -167,10 +198,11 @@ impl Hero {
             let _ = c;
             clips.bend(&mut p, body, self.facing().cross(Vec3::Z).normalize_or(Vec3::X), pitch.clamp(-1.0, 1.0));
         }
-        if let Some((at, _)) = clips.bone(&p, body, "Char_R_Hand") {
-            self.hand = at;
+        if let Some((at, q)) = clips.bone(&p, body, "Char_R_Hand") {
+            (self.hand, self.grip) = (at, q);
         }
         self.bones = clips.world(&p, body);
+        self.homer = clips.place(&p, body);
         let frames = rig.place(&p, body);
         let doll = delirium::ragdoll::Ragdoll::new(&rig.build, &frames, Vec3::ZERO);
         self.last = std::mem::replace(&mut self.caps, doll.capsules().collect());

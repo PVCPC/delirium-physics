@@ -295,7 +295,7 @@ impl Clips {
         self.clips[c].0.duration
     }
 
-    fn place(&self, pose: &[(Vec3, Quat)], body: Transform) -> Vec<Transform> {
+    pub fn place(&self, pose: &[(Vec3, Quat)], body: Transform) -> Vec<Transform> {
         let mut bones: Vec<(Vec3, Quat)> = Vec::with_capacity(pose.len());
         for (i, &(t, r)) in pose.iter().enumerate() {
             let (pt, pr) = self.parents[i].map_or((body.translation, body.rotation), |p| bones[p]);
@@ -344,6 +344,10 @@ impl Clips {
                 .map(|(n, l)| Transform::from_translation(l.translation.lerp(n.translation, k)).with_rotation(l.rotation.slerp(n.rotation, k)))
                 .collect()
         })
+    }
+
+    pub fn standing(r: &Rise) -> bool {
+        r.hold
     }
 
     pub fn end(&self, r: &Rise) -> Vec<Transform> {

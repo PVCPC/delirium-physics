@@ -2,14 +2,15 @@ use bevy_math::Vec3;
 
 use crate::extras::{Extra, P};
 use crate::msg::{Error, Kind, Message, Param};
-use crate::nmrs::{Character, ANKLE, CLAVICLE, ELBOW, HIP, NECK, SHOULDER, SPINE, WRIST};
+use crate::nmrs::{Character, ANKLE, CLAVICLE, ELBOW, HIP, KNEE, NECK, SHOULDER, SPINE, WRIST};
 use crate::nmshot::Ctx;
+use bevy_math::Quat;
 
 const CHEST: usize = 10;
 const HANDS: [usize; 2] = [16, 20];
 const FEET: [usize; 2] = [3, 6];
 
-pub static MESSAGES: [Message; 9] = [
+pub static MESSAGES: [Message; 15] = [
     Message { name: "yanked", params: &[
         Param { name: "point", kind: Kind::Vec3, used: true, doc: "world point he is pulled toward (zero: 2 m in front of the chest)" },
         Param { name: "part", kind: Kind::Int, used: true, doc: "the part pulled (10, the chest)" },
@@ -196,6 +197,98 @@ pub static MESSAGES: [Message; 9] = [
         Param { name: "rate", kind: Kind::Float, used: true, doc: "waves a second (2)" },
         Param { name: "size", kind: Kind::Float, used: true, doc: "how far the hand sways each side, m (0.18)" },
     ] },
+    Message { name: "breathe", params: &[
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "the spine's stiffness while breathing (10)" },
+        Param { name: "effectorMask", kind: Kind::Str, used: true, doc: "the joints that breathe (us: the spine)" },
+        Param { name: "breathingScale", kind: Kind::Float, used: true, doc: "how deep, 0 none (1)" },
+    ] },
+    Message { name: "softKeyframe", params: &[
+        Param { name: "followMultiplier", kind: Kind::Float, used: true, doc: "how hard each part chases its place, 1/s^2 (10)" },
+        Param { name: "maxAcceleration", kind: Kind::Float, used: true, doc: "the chase's most, m/s^2 (20)" },
+        Param { name: "goSlowerWhenWeaker", kind: Kind::Bool, used: true, doc: "a weak joint's part chases less (true)" },
+        Param { name: "yawOffset", kind: Kind::Float, used: true, doc: "rad, the pose turned about up (0)" },
+        Param { name: "targetPosition", kind: Kind::Vec3, used: true, doc: "where the pose's pelvis is (zero: wherever his pelvis is)" },
+        Param { name: "mask", kind: Kind::Str, used: true, doc: "the joints whose parts follow (fb)" },
+    ] },
+    Message { name: "splitBody", params: &[
+        Param { name: "aimTarget", kind: Kind::Vec3, used: true, doc: "the point the gun aims at (zero: straight ahead)" },
+        Param { name: "activePoseMask", kind: Kind::Str, used: true, doc: "joints held in their start pose (uk: spine and neck)" },
+        Param { name: "hardConstraintMask", kind: Kind::Str, used: true, doc: "joints whose parts are pinned where they start (none)" },
+        Param { name: "softConstraintMask", kind: Kind::Str, used: true, doc: "joints whose parts are eased back to where they start (none)" },
+        Param { name: "collisionMask", kind: Kind::Str, used: true, doc: "kept, not used (fb)" },
+        Param { name: "gravityCompensationMask", kind: Kind::Str, used: true, doc: "joints that hold up against gravity (ub)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "the pose's stiffness (12)" },
+        Param { name: "damping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "controllerStiffness", kind: Kind::Float, used: true, doc: "the aiming arm's stiffness (14)" },
+        Param { name: "controllerDamping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "leftHandWeaponIndex", kind: Kind::Int, used: true, doc: "the left hand's gun, -1 none (-1)" },
+        Param { name: "rightHandWeaponIndex", kind: Kind::Int, used: true, doc: "the right hand's gun, -1 none (0)" },
+        Param { name: "constrainHands", kind: Kind::Bool, used: true, doc: "the support hand pinned on the grip (true)" },
+        Param { name: "controlHandOrientation", kind: Kind::Bool, used: true, doc: "the support hand turns with the gun hand (true)" },
+        Param { name: "leftHandStatus", kind: Kind::Int, used: true, doc: "0 free, 1 on the gun, 2 supporting (2)" },
+        Param { name: "rightHandStatus", kind: Kind::Int, used: true, doc: "(1)" },
+        Param { name: "adjustJointLimits", kind: Kind::Bool, used: true, doc: "soft limits on the elbows, a steadier aim (true)" },
+        Param { name: "handStable", kind: Kind::Bool, used: true, doc: "the wrists stiffer (false)" },
+        Param { name: "handStableStiff", kind: Kind::Float, used: true, doc: "(14)" },
+        Param { name: "handStableDamp", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "recoilRelax", kind: Kind::Bool, used: true, doc: "the arms give on each shot (true)" },
+        Param { name: "recoilRelaxAmount", kind: Kind::Float, used: true, doc: "how much, 0..1 (0.5)" },
+        Param { name: "recoilRelaxTime", kind: Kind::Float, used: true, doc: "s back to stiff (0.3)" },
+        Param { name: "breathingScale", kind: Kind::Float, used: true, doc: "the breathing sway, 0 none (1)" },
+        Param { name: "fireWeapon", kind: Kind::Bool, used: true, doc: "send alone while it runs: a shot" },
+    ] },
+    Message { name: "shootDodge", params: &[
+        Param { name: "rightArmTarget", kind: Kind::Vec3, used: true, doc: "the right arm aims here (zero: not aiming)" },
+        Param { name: "leftArmTarget", kind: Kind::Vec3, used: true, doc: "the left arm aims here (zero: not aiming)" },
+        Param { name: "targetValid", kind: Kind::Bool, used: true, doc: "aim at all (true)" },
+        Param { name: "collisionPoint", kind: Kind::Vec3, used: true, doc: "kept, not used" },
+        Param { name: "collisionNormal", kind: Kind::Vec3, used: true, doc: "kept, not used" },
+        Param { name: "collisionObjectVelocity", kind: Kind::Vec3, used: true, doc: "kept, not used" },
+        Param { name: "collisionIndex", kind: Kind::Int, used: true, doc: "kept, not used" },
+        Param { name: "collisionTime", kind: Kind::Float, used: true, doc: "kept, not used" },
+        Param { name: "collisionTimeThreshold", kind: Kind::Float, used: true, doc: "s touching that ends it (0.2)" },
+        Param { name: "collisionAccelThreshold", kind: Kind::Float, used: true, doc: "m/s^2 of a hit that ends it (40)" },
+        Param { name: "collisionVelThreshold", kind: Kind::Float, used: true, doc: "m/s lost in a step that ends it (2)" },
+        Param { name: "collisionReaction", kind: Kind::Int, used: true, doc: "after: 0 catchFall, 1 bodyRollUp, 2 bodyBalance, 3 nothing (0)" },
+        Param { name: "trunkStiffness", kind: Kind::Float, used: true, doc: "(12)" },
+        Param { name: "trunkDamping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "legStiffness", kind: Kind::Float, used: true, doc: "(10)" },
+        Param { name: "legDamping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "legTaper", kind: Kind::Float, used: true, doc: "each joint down the leg this times softer (0.8)" },
+        Param { name: "aimingArmStiffness", kind: Kind::Float, used: true, doc: "(14)" },
+        Param { name: "aimingArmDamping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "notAimingArmStiffness", kind: Kind::Float, used: true, doc: "(6)" },
+        Param { name: "notAimingArmDamping", kind: Kind::Float, used: true, doc: "(0.7)" },
+        Param { name: "notAimingArmTaper", kind: Kind::Float, used: true, doc: "each joint down the arm this times softer (0.7)" },
+        Param { name: "headStiffness", kind: Kind::Float, used: true, doc: "(10)" },
+        Param { name: "headDamping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "wristMuscleStiffness", kind: Kind::Float, used: true, doc: "the aiming wrist's muscle stiffness (10)" },
+        Param { name: "oriStiff", kind: Kind::Float, used: true, doc: "holding the dive's attitude, 1/s^2 (30)" },
+        Param { name: "oriDamp", kind: Kind::Float, used: true, doc: "1/s (8)" },
+        Param { name: "oriSplit", kind: Kind::Float, used: true, doc: "its share on the pelvis, the rest on the chest (0.5)" },
+        Param { name: "supportedHeightThreshold", kind: Kind::Float, used: true, doc: "kept, not used" },
+        Param { name: "legNoiseScale", kind: Kind::Float, used: true, doc: "the legs' drift, rad (0.05)" },
+        Param { name: "breathingScale", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "armAnimTask", kind: Kind::Bool, used: true, doc: "kept, not used (no animation stream)" },
+        Param { name: "leftArmAnimTaskParent", kind: Kind::Int, used: true, doc: "kept, not used" },
+        Param { name: "rightArmAnimTaskParent", kind: Kind::Int, used: true, doc: "kept, not used" },
+        Param { name: "state", kind: Kind::Int, used: true, doc: "where it starts: 0 enter, 1 hold (0)" },
+    ] },
+    Message { name: "armHang", params: &[
+        Param { name: "constraintPosition", kind: Kind::Vec3, used: true, doc: "the world point his hands hang on, carried with the object after (zero: between them where they are)" },
+        Param { name: "targetPosition", kind: Kind::Vec3, used: true, doc: "where the arm reaches and he looks (zero: the anchor)" },
+        Param { name: "instanceIndex", kind: Kind::Int, used: true, doc: "the object hung from, -1 the world (-1)" },
+        Param { name: "boundIndex", kind: Kind::Int, used: true, doc: "its part, from 1 (0: the object as a whole)" },
+    ] },
+    Message { name: "crushReaction", params: &[
+        Param { name: "effectorMask", kind: Kind::Str, used: true, doc: "the joints that react, an arm only if all of it is in (ub)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "(12)" },
+        Param { name: "damping", kind: Kind::Float, used: true, doc: "(1)" },
+        Param { name: "obstacleID", kind: Kind::Int, used: true, doc: "the object crushing him, -1 none (-1)" },
+        Param { name: "flinchMode", kind: Kind::Int, used: true, doc: "0 cover the head, 1 brace the arms at it (0)" },
+        Param { name: "useInjuries", kind: Kind::Bool, used: true, doc: "a hurt arm doesn't cover or brace (false)" },
+        Param { name: "obstaclePosition", kind: Kind::Vec3, used: true, doc: "room: where the thing crushing him is without an obstacleID (zero: 1 m over his head)" },
+    ] },
 ];
 
 pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
@@ -212,6 +305,12 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "armsWindmill" => b(ArmsWindmill::new(p)),
         "spineTwist" => b(Twist::new(p)),
         "wave" => b(Wave::new(p)),
+        "breathe" => b(Breathe::new(p)),
+        "softKeyframe" => b(SoftKeyframe::new(p)),
+        "splitBody" => b(SplitBody::new(p)),
+        "shootDodge" => b(ShootDodge::new(p)),
+        "armHang" => b(ArmHang::new(p)),
+        "crushReaction" => b(CrushReaction::new(p)),
         _ => None,
     }
 }
@@ -980,5 +1079,508 @@ impl Extra for Wave {
     fn done(&self) -> bool {
         self.t > WAVE_UP + self.time + WAVE_DOWN
     }
+}
+
+pub struct Breathe { s: f32, joints: Vec<usize>, scale: f32, t: f32, last: f32, wrote: Vec<f32> }
+
+const BREATH: f32 = 4.0;
+const BREATH_LEAN: f32 = 0.03;
+
+impl Breathe {
+    fn new(p: &mut P) -> Result<Breathe, Error> {
+        Ok(Breathe { s: p.f("stiffness", 10.0)?, joints: Character::mask(&p.s("effectorMask", "us")?), scale: p.f("breathingScale", 1.0)?,
+                     t: 0.0, last: 0.0, wrote: vec![] })
+    }
+}
+
+impl Extra for Breathe {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let lean = -BREATH_LEAN * self.scale * (0.5 - 0.5 * (self.t * std::f32::consts::TAU / BREATH).cos());
+        self.wrote.resize(self.joints.len(), f32::NAN);
+        for (&j, w) in self.joints.iter().zip(&mut self.wrote) {
+            c.ch.eff[j].set_stiffness(self.s, 1.0, None);
+            let d = &mut c.ch.eff[j].desired[0];
+            *d += if *d == *w { lean - self.last } else { lean };
+            *w = *d;
+        }
+        c.ch.eff[NECK[0]].set_stiffness(self.s * 0.9, 1.0, None);
+        self.last = lean;
+    }
+}
+
+pub struct SoftKeyframe { follow: f32, most: f32, slower: bool, yaw: f32, target: Vec3, parts: Vec<usize>, pose: Vec<Vec3> }
+
+impl SoftKeyframe {
+    fn new(p: &mut P) -> Result<SoftKeyframe, Error> {
+        let (follow, most, slower, yaw, target) = (p.f("followMultiplier", 10.0)?, p.f("maxAcceleration", 20.0)?,
+                                                   p.b("goSlowerWhenWeaker", true)?, p.f("yawOffset", 0.0)?, p.v("targetPosition", Vec3::ZERO)?);
+        let parts = Character::mask(&p.s("mask", "fb")?).into_iter().map(|j| j + 1).collect();
+        Ok(SoftKeyframe { follow, most, slower, yaw, target, parts, pose: vec![] })
+    }
+}
+
+impl Extra for SoftKeyframe {
+    fn tick(&mut self, c: &mut Ctx, _dt: f32) {
+        let pelvis = pos(c, 0);
+        if self.pose.is_empty() {
+            self.pose = self.parts.iter().map(|&k| pos(c, k) - pelvis).collect();
+        }
+        let (anchor, v0) = if self.target == Vec3::ZERO { (pelvis, c.b.part(0).v) } else { (self.target, Vec3::ZERO) };
+        let turn = bevy_math::Quat::from_rotation_z(self.yaw);
+        for (&k, &off) in self.parts.iter().zip(&self.pose) {
+            let gap = anchor + turn * off - pos(c, k);
+            let mut a = (gap * self.follow - (c.b.part(k).v - v0) * 2.0 * self.follow.max(0.0).sqrt()).clamp_length_max(self.most);
+            if self.slower {
+                a *= (c.ch.eff[k - 1].strength.max(0.0).sqrt() / 12.0).min(1.0);
+            }
+            c.out.force(k, a * c.b.doll.part_mass(k));
+        }
+    }
+}
+
+fn aim(c: &mut Ctx, i: usize, at: Vec3, s: f32, d: f32) {
+    let shoulder = pos(c, crate::nmshot::limb(i).p[0]);
+    let dir = if at == Vec3::ZERO { facing(c) } else { (at - shoulder).normalize_or(facing(c)) };
+    reach(c, i, shoulder + dir * 0.55, s, d);
+}
+
+fn reach(c: &mut Ctx, i: usize, at: Vec3, s: f32, d: f32) {
+    let l = crate::nmshot::limb(i);
+    c.ch.set_stiffness(s, d, ["ul", "ur"][i], None);
+    crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[3], at, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+}
+
+fn v3(p: Vec3) -> String {
+    format!("{},{},{}", p.x, p.y, p.z)
+}
+
+pub struct SplitBody {
+    aim: Vec3,
+    pose_mask: Vec<usize>,
+    hard: Vec<usize>,
+    soft: SoftKeyframe,
+    grav: Vec<usize>,
+    s: (f32, f32),
+    ctrl: (f32, f32),
+    gun: Option<usize>,
+    support: Option<usize>,
+    constrain: bool,
+    orient: bool,
+    limits: bool,
+    stable: Option<(f32, f32)>,
+    recoil: Option<(f32, f32)>,
+    breathe: Breathe,
+    pose: Vec<(usize, [f32; 3])>,
+    hold: Vec<(usize, Vec3, Quat)>,
+    turn: Quat,
+    relax: f32,
+    kick: bool,
+    cons: Vec<(usize, Option<Vec3>, Option<Quat>)>,
+    start: Vec<Vec3>,
+    t: f32,
+}
+
+impl SplitBody {
+    fn new(p: &mut P) -> Result<SplitBody, Error> {
+        let aim = p.v("aimTarget", Vec3::ZERO)?;
+        let pose_mask = Character::mask(&p.s("activePoseMask", "uk")?);
+        let parts = |m: String| Character::mask(&m).into_iter().map(|j| j + 1).collect::<Vec<_>>();
+        let hard = if p.s("hardConstraintMask", "")?.is_empty() { vec![] } else { parts(p.s("hardConstraintMask", "")?) };
+        let soft_parts = if p.s("softConstraintMask", "")?.is_empty() { vec![] } else { parts(p.s("softConstraintMask", "")?) };
+        let _ = p.s("collisionMask", "fb")?;
+        let grav = Character::mask(&p.s("gravityCompensationMask", "ub")?);
+        let (s, ctrl) = ((p.f("stiffness", 12.0)?, p.f("damping", 1.0)?), (p.f("controllerStiffness", 14.0)?, p.f("controllerDamping", 1.0)?));
+        let weapon = [p.i("leftHandWeaponIndex", -1)?, p.i("rightHandWeaponIndex", 0)?];
+        let status = [p.i("leftHandStatus", 2)?, p.i("rightHandStatus", 1)?];
+        let gun = (0..2).find(|&i| status[i] == 1 && weapon[i] >= 0);
+        let support = gun.and_then(|g| (status[1 - g] == 2).then_some(1 - g));
+        let (constrain, orient, limits) = (p.b("constrainHands", true)?, p.b("controlHandOrientation", true)?, p.b("adjustJointLimits", true)?);
+        let stable = p.b("handStable", false)?.then_some(()).map(|()| (0.0, 0.0));
+        let stable_g = (p.f("handStableStiff", 14.0)?, p.f("handStableDamp", 1.0)?);
+        let recoil = p.b("recoilRelax", true)?;
+        let recoil_g = (p.f("recoilRelaxAmount", 0.5)?, p.f("recoilRelaxTime", 0.3)?);
+        let breathe = Breathe { s: s.0, joints: Character::mask("us"), scale: p.f("breathingScale", 1.0)?, t: 0.0, last: 0.0, wrote: vec![] };
+        let _ = p.b("fireWeapon", false)?;
+        Ok(SplitBody { aim, pose_mask, hard, soft: SoftKeyframe { follow: 10.0, most: 20.0, slower: true, yaw: 0.0, target: Vec3::ZERO, parts: soft_parts, pose: vec![] },
+                       grav, s, ctrl, gun, support, constrain, orient, limits, stable: stable.map(|_| stable_g), recoil: recoil.then_some(recoil_g),
+                       breathe, pose: vec![], hold: vec![], turn: Quat::IDENTITY, relax: 0.0, kick: false, cons: vec![], start: vec![], t: 0.0 })
+    }
+
+    fn hand(i: usize) -> usize {
+        crate::nmshot::limb(i).p[3]
+    }
+}
+
+const GRIP_ON: f32 = 0.4;
+const GRIP_W: f32 = 25.0;
+const GRIP_MOST: f32 = 200.0;
+
+impl Extra for SplitBody {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        let f = c.b.frames;
+        if self.pose.is_empty() {
+            self.pose = self.pose_mask.iter().map(|&j| (j, c.ch.actual(j, f))).collect();
+            self.hold = self.hard.iter().map(|&k| (k, f[k].translation, f[k].rotation)).collect();
+            if let (Some(g), Some(h)) = (self.gun, self.support) {
+                self.turn = f[Self::hand(g)].rotation.inverse() * f[Self::hand(h)].rotation;
+            }
+            self.start = (0..2).map(|i| f[Self::hand(i)].translation).collect();
+        }
+        self.t += dt;
+        let give = match self.recoil {
+            Some((amount, time)) if self.relax > 0.0 => 1.0 - amount * (self.relax / time.max(1e-3)),
+            _ => 1.0,
+        };
+        self.relax = (self.relax - dt).max(0.0);
+        for &(j, a) in &self.pose {
+            c.ch.eff[j].set_stiffness(self.s.0 * give, self.s.1, None);
+            c.ch.eff[j].desired = a;
+            c.ch.eff[j].oppose_gravity = if self.grav.contains(&j) { 1.0 } else { 0.0 };
+        }
+        self.breathe.tick(c, dt);
+        self.cons = self.hold.iter().map(|&(k, x, q)| (k, Some(x), Some(q))).collect();
+        self.soft.tick(c, dt);
+        let Some(g) = self.gun else { return };
+        aim(c, g, self.aim, self.ctrl.0 * give, self.ctrl.1);
+        if self.limits {
+            for e in ELBOW {
+                let at = c.ch.eff[e].desired[0];
+                let mut l = crate::nmrs::SoftLimit { stiffness: 200.0, damping: 1.0, enabled: true, ..Default::default() };
+                l.set_limit(at + 0.15 * at.signum(), at.signum(), false);
+                c.ch.eff[e].soft[0] = l;
+            }
+        }
+        if let Some((s, d)) = self.stable {
+            c.ch.eff[WRIST[g]].set_stiffness(s * give, d, None);
+        }
+        let gh = Self::hand(g);
+        if std::mem::take(&mut self.kick) {
+            let back = -facing(c);
+            c.out.force(gh, (Vec3::Z + back).normalize() * (2.0 / dt));
+        }
+        if let (Some(h), true) = (self.support, self.constrain) {
+            let across = Vec3::Z.cross(facing(c)) * if h == 0 { 1.0 } else { -1.0 };
+            let grip = f[gh].translation + across * 0.07 - Vec3::Z * 0.03;
+            let on = (self.t / GRIP_ON).min(1.0);
+            let hand = Self::hand(h);
+            let to = self.start[h].lerp(grip, on);
+            reach(c, h, to, self.ctrl.0 * give, self.ctrl.1);
+            let (m, w) = (c.b.doll.part_mass(hand), GRIP_W);
+            let (a, b) = (c.b.part(hand), c.b.part(gh));
+            let pull = ((to - a.m.d) * (m * w * w) - (a.v - b.v) * (2.0 * m * w)).clamp_length_max(GRIP_MOST);
+            c.out.force(hand, pull);
+            c.out.force(gh, -pull);
+            if self.orient {
+                let to = f[hand].rotation.slerp(f[gh].rotation * self.turn, on);
+                let i = m * 0.002;
+                let twist = (short_turn(to * f[hand].rotation.inverse()) * (i * w * w) - (a.w - b.w) * (2.0 * i * w)).clamp_length_max(GRIP_MOST * 0.05);
+                c.out.torque(hand, twist);
+                c.out.torque(gh, -twist);
+            }
+        }
+    }
+
+    fn constraints(&self) -> Vec<(usize, Option<Vec3>, Option<Quat>)> {
+        self.cons.clone()
+    }
+
+    fn fire(&mut self) {
+        self.kick = true;
+        if let Some((_, time)) = self.recoil {
+            self.relax = time;
+        }
+    }
+
+    fn stop(&mut self, c: &mut Ctx) {
+        if self.limits {
+            for e in ELBOW {
+                c.ch.eff[e].soft[0].set_enabled(false);
+            }
+        }
+    }
+}
+
+pub struct ShootDodge {
+    targets: [Vec3; 2],
+    valid: bool,
+    ends: (f32, f32, f32),
+    reaction: i32,
+    trunk: (f32, f32),
+    legs: (f32, f32, f32),
+    aiming: (f32, f32),
+    loose: (f32, f32, f32),
+    head: (f32, f32),
+    wrist_ms: f32,
+    ori: (f32, f32, f32),
+    noise: f32,
+    breathe: Breathe,
+    state: u8,
+    t: f32,
+    touching: f32,
+    last_vel: Option<Vec3>,
+    attitude: Quat,
+    leg_pose: Vec<(usize, [f32; 3])>,
+    done: bool,
+    out: Vec<String>,
+}
+
+const SD_ENTER: u8 = 0;
+const SD_HOLD: u8 = 1;
+
+impl ShootDodge {
+    fn new(p: &mut P) -> Result<ShootDodge, Error> {
+        let targets = [p.v("leftArmTarget", Vec3::ZERO)?, p.v("rightArmTarget", Vec3::ZERO)?];
+        let valid = p.b("targetValid", true)?;
+        for n in ["collisionPoint", "collisionNormal", "collisionObjectVelocity"] {
+            p.v(n, Vec3::ZERO)?;
+        }
+        let _ = (p.i("collisionIndex", -1)?, p.f("collisionTime", 0.0)?, p.f("supportedHeightThreshold", 0.0)?);
+        let _ = (p.b("armAnimTask", false)?, p.i("leftArmAnimTaskParent", -1)?, p.i("rightArmAnimTaskParent", -1)?);
+        let ends = (p.f("collisionTimeThreshold", 0.2)?, p.f("collisionAccelThreshold", 40.0)?, p.f("collisionVelThreshold", 2.0)?);
+        Ok(ShootDodge {
+            targets, valid, ends, reaction: p.i("collisionReaction", 0)?,
+            trunk: (p.f("trunkStiffness", 12.0)?, p.f("trunkDamping", 1.0)?),
+            legs: (p.f("legStiffness", 10.0)?, p.f("legDamping", 1.0)?, p.f("legTaper", 0.8)?),
+            aiming: (p.f("aimingArmStiffness", 14.0)?, p.f("aimingArmDamping", 1.0)?),
+            loose: (p.f("notAimingArmStiffness", 6.0)?, p.f("notAimingArmDamping", 0.7)?, p.f("notAimingArmTaper", 0.7)?),
+            head: (p.f("headStiffness", 10.0)?, p.f("headDamping", 1.0)?),
+            wrist_ms: p.f("wristMuscleStiffness", 10.0)?,
+            ori: (p.f("oriStiff", 30.0)?, p.f("oriDamp", 8.0)?, p.f("oriSplit", 0.5)?.clamp(0.0, 1.0)),
+            noise: p.f("legNoiseScale", 0.05)?,
+            breathe: Breathe { s: 12.0, joints: Character::mask("us"), scale: p.f("breathingScale", 1.0)?, t: 0.0, last: 0.0, wrote: vec![] },
+            state: if p.i("state", 0)? == 1 { SD_HOLD } else { SD_ENTER },
+            t: 0.0, touching: 0.0, last_vel: None, attitude: Quat::IDENTITY, leg_pose: vec![], done: false, out: vec![],
+        })
+    }
+
+    fn aiming_arm(&self) -> Option<usize> {
+        if !self.valid { None } else if self.targets[1] != Vec3::ZERO { Some(1) } else if self.targets[0] != Vec3::ZERO { Some(0) } else { None }
+    }
+}
+
+impl Extra for ShootDodge {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        if self.done {
+            return;
+        }
+        self.t += dt;
+        let f = c.b.frames;
+        if self.state == SD_ENTER || self.leg_pose.is_empty() {
+            self.attitude = f[0].rotation;
+            self.leg_pose = Character::mask("lb").into_iter().map(|j| (j, c.ch.actual(j, f))).collect();
+            let look = self.aiming_arm().map_or(pos(c, 12) + facing(c) * 5.0, |i| self.targets[i]);
+            self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping={}", look.x, look.y, look.z, self.head.0, self.head.1));
+            self.out.push("#say shootDodge hold".into());
+            self.state = SD_HOLD;
+        }
+        c.ch.set_stiffness(self.trunk.0, self.trunk.1, "us", None);
+        c.ch.set_stiffness(self.head.0, self.head.1, "un", None);
+        let (ls, ld, lt) = self.legs;
+        for (k, (j, a)) in self.leg_pose.iter().enumerate() {
+            let down = [HIP, KNEE, ANKLE].iter().position(|set| set.contains(j)).unwrap_or(0) as i32;
+            c.ch.eff[*j].set_stiffness(ls * lt.powi(down), ld, None);
+            let drift = self.noise * (self.t * 1.7 + k as f32 * 2.1).sin();
+            c.ch.eff[*j].desired = [a[0] + drift, a[1], a[2]];
+        }
+        let arm = self.aiming_arm();
+        for i in 0..2 {
+            if Some(i) == arm {
+                aim(c, i, self.targets[i], self.aiming.0, self.aiming.1);
+                c.ch.eff[WRIST[i]].muscle_stiffness = self.wrist_ms;
+            } else {
+                let (s, d, taper) = self.loose;
+                for (n, &j) in [CLAVICLE[i], SHOULDER[i], ELBOW[i], WRIST[i]].iter().enumerate() {
+                    c.ch.eff[j].set_stiffness(s * taper.powi(n.saturating_sub(1) as i32), d, None);
+                }
+            }
+        }
+        for (k, share) in [(0, self.ori.2), (10, 1.0 - self.ori.2)] {
+            let err = short_turn(self.attitude * f[0].rotation.inverse());
+            let t = (err * self.ori.0 - c.b.part(0).w * self.ori.1) * (c.b.doll.part_mass(k) * 0.1 * share);
+            c.out.torque(k, t);
+        }
+        self.breathe.tick(c, dt);
+        let touching = c.b.doll.collided(&(0..21).collect::<Vec<_>>());
+        self.touching = if touching { self.touching + dt } else { 0.0 };
+        let (accel, lost) = self.last_vel.map_or((0.0, 0.0), |v: Vec3| ((c.vel - v).length() / dt, v.length() - c.vel.length()));
+        self.last_vel = Some(c.vel);
+        if touching && (accel > self.ends.1 || lost > self.ends.2 || self.touching > self.ends.0) {
+            self.out.push("headLook start=false".into());
+            match self.reaction {
+                0 => self.out.push("catchFall start=true".into()),
+                1 => self.out.push("bodyRollUp start=true".into()),
+                2 => self.out.push("bodyBalance start=true".into()),
+                _ => {}
+            }
+            self.out.push("#say shootDodge end".into());
+            self.done = true;
+        }
+    }
+
+    fn lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.out)
+    }
+
+    fn done(&self) -> bool {
+        self.done
+    }
+}
+
+pub struct ArmHang {
+    anchor: Vec3,
+    target: Vec3,
+    inst: (i32, i32),
+    frame: Option<(Vec3, Quat)>,
+    local: Option<[Vec3; 2]>,
+    start: Vec<Vec3>,
+    across: Vec3,
+    t: f32,
+    cons: Vec<(usize, Option<Vec3>, Option<Quat>)>,
+    out: Vec<String>,
+}
+
+const HANG_ON: f32 = 0.5;
+
+impl ArmHang {
+    fn new(p: &mut P) -> Result<ArmHang, Error> {
+        let (anchor, target) = (p.v("constraintPosition", Vec3::ZERO)?, p.v("targetPosition", Vec3::ZERO)?);
+        let inst = (p.i("instanceIndex", -1)?, p.i("boundIndex", 0)?);
+        Ok(ArmHang { anchor, target, inst, frame: None, local: None, start: vec![], across: Vec3::X, t: 0.0, cons: vec![], out: vec![] })
+    }
+}
+
+impl Extra for ArmHang {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        if self.start.is_empty() {
+            self.start = HANDS.iter().map(|&k| pos(c, k)).collect();
+            self.across = Vec3::Z.cross(facing(c));
+            if self.anchor == Vec3::ZERO {
+                self.anchor = (self.start[0] + self.start[1]) * 0.5;
+            }
+            let to = v3(if self.target == Vec3::ZERO { self.anchor } else { self.target });
+            self.out.extend(["bodyBalance start=false".into(), format!("pointArm start=true useLeftArm=false target={to}"),
+                             format!("headLook start=true pos={to} stiffness=10 damping=1"), format!("spineTwist start=true pos={to}"),
+                             "pedalLegs start=true".into()]);
+        }
+        self.t += dt;
+        let on = (self.t / HANG_ON).min(1.0);
+        let mut pins = [0, 1].map(|i| self.anchor + self.across * (0.15 - 0.3 * i as f32));
+        if let Some((at, q)) = self.frame {
+            let local = *self.local.get_or_insert_with(|| pins.map(|p| q.inverse() * (p - at)));
+            pins = local.map(|l| at + q * l);
+            (self.anchor, self.across) = ((pins[0] + pins[1]) * 0.5, (pins[0] - pins[1]).normalize_or(self.across));
+        }
+        self.cons = (0..2).map(|i| (HANDS[i], Some(self.start[i].lerp(pins[i], on)), None)).collect();
+        for i in 0..2 {
+            reach(c, i, self.cons[i].1.unwrap(), 8.0, 0.8);
+        }
+        c.ch.set_stiffness(3.0, 0.3, "us", None);
+    }
+
+    fn constraints(&self) -> Vec<(usize, Option<Vec3>, Option<Quat>)> {
+        self.cons.clone()
+    }
+
+    fn lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.out)
+    }
+
+    fn stop(&mut self, _c: &mut Ctx) {
+        self.out.extend(["pointArm", "headLook", "spineTwist", "pedalLegs"].map(|n| format!("{n} start=false")));
+    }
+
+    fn objects(&mut self, obs: &[crate::ragdoll::Obstacle]) {
+        if let Some(o) = crate::ragdoll::Obstacle::find(obs, self.inst.0) {
+            self.frame = Some(match self.inst.1 {
+                k @ 1.. => { let (at, m) = o.component(k as usize); (at, Quat::from_mat3(&m)) }
+                _ => (o.at, o.rot),
+            });
+        }
+    }
+}
+
+pub struct CrushReaction {
+    mask: Vec<usize>,
+    s: (f32, f32),
+    mode: i32,
+    id: i32,
+    ob: Option<crate::ragdoll::Obstacle>,
+    use_hurt: bool,
+    obstacle: Vec3,
+    started: bool,
+    fell: bool,
+    out: Vec<String>,
+}
+
+impl CrushReaction {
+    fn new(p: &mut P) -> Result<CrushReaction, Error> {
+        let mask = Character::mask(&p.s("effectorMask", "ub")?);
+        let s = (p.f("stiffness", 12.0)?, p.f("damping", 1.0)?);
+        let (id, use_hurt) = (p.i("obstacleID", -1)?, p.b("useInjuries", false)?);
+        Ok(CrushReaction { mask, s, mode: p.i("flinchMode", 0)?, id, ob: None, use_hurt, obstacle: p.v("obstaclePosition", Vec3::ZERO)?,
+                           started: false, fell: false, out: vec![] })
+    }
+}
+
+impl Extra for CrushReaction {
+    fn tick(&mut self, c: &mut Ctx, _dt: f32) {
+        let head = pos(c, NECK[1] + 1);
+        if let Some(o) = self.ob {
+            let local = o.rot.inverse() * (pos(c, CHEST) - o.centre);
+            self.obstacle = o.centre + o.rot * local.clamp(-o.half, o.half);
+        }
+        if !self.started {
+            self.started = true;
+            if self.obstacle == Vec3::ZERO {
+                self.obstacle = head + Vec3::Z;
+            }
+            let look = if self.mode == 1 { self.obstacle } else { pos(c, CHEST) + facing(c) - Vec3::Z * 1.5 };
+            self.out.extend(["bodyBalance start=true".into(),
+                             format!("upperBodyFlinch start=true useLeftArm=false useRightArm=false pos={}", v3(self.obstacle)),
+                             format!("headLook start=true pos={} stiffness={} damping={}", v3(look), self.s.0, self.s.1)]);
+        }
+        for &j in &self.mask {
+            c.ch.eff[j].set_stiffness(self.s.0, self.s.1, None);
+        }
+        let across = Vec3::Z.cross(facing(c));
+        for i in 0..2 {
+            let arm = [CLAVICLE[i], SHOULDER[i], ELBOW[i], WRIST[i]];
+            if (self.use_hurt && arm.iter().any(|&j| c.ch.eff[j].injury > 0.0)) || !arm.iter().all(|j| self.mask.contains(j)) {
+                continue;
+            }
+            let at = if self.mode == 1 {
+                let shoulder = pos(c, crate::nmshot::limb(i).p[0]);
+                let gap = self.obstacle - shoulder;
+                shoulder + gap.normalize_or(Vec3::Z) * gap.length().min(0.6)
+            } else {
+                head + across * (0.12 - 0.24 * i as f32) + Vec3::Z * 0.1 + facing(c) * 0.06
+            };
+            reach(c, i, at, self.s.0, self.s.1);
+        }
+        if c.dbm_failed && !self.fell {
+            self.fell = true;
+            self.out.push("catchFall start=true".into());
+        }
+    }
+
+    fn lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.out)
+    }
+
+    fn stop(&mut self, _c: &mut Ctx) {
+        self.out.extend(["upperBodyFlinch", "headLook", "bodyBalance"].map(|n| format!("{n} start=false")));
+        if self.fell {
+            self.out.push("catchFall start=false".into());
+        }
+    }
+
+    fn objects(&mut self, obs: &[crate::ragdoll::Obstacle]) {
+        self.ob = crate::ragdoll::Obstacle::find(obs, self.id).copied();
+    }
+}
+
+fn short_turn(q: Quat) -> Vec3 {
+    (if q.w < 0.0 { -q } else { q }).to_scaled_axis()
 }
 

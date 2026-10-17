@@ -21,6 +21,7 @@ pub mod lodtree;
 pub mod map;
 pub mod mathrt;
 pub mod melee;
+pub mod melee_task;
 pub mod meleeanims;
 pub mod model;
 pub mod movement;

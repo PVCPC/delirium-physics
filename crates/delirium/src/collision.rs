@@ -19,7 +19,7 @@ pub struct Collision {
     free: Vec<u32>,
     cells: HashMap<(i32, i32), Vec<(u32, u32)>>,
     count: usize,
-    neighbours: std::sync::Mutex<HashMap<(u32, u32), [Option<(u32, u32)>; 3]>>,
+    neighbours: std::sync::RwLock<HashMap<(u32, u32), [Option<(u32, u32)>; 3]>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -322,18 +322,22 @@ impl Collision {
         let tri = |e: (u32, u32)| chunk(e).triangles[e.1 as usize];
         let normal = |[a, b, c]: [Vec3; 3]| (b - a).cross(c - a).normalize_or_zero();
         let near: Vec<((u32, u32), [Vec3; 3])> = ids.into_iter().map(|e| (e, tri(e))).collect();
-        let mut cache = self.neighbours.lock().unwrap();
         let face = |e: (u32, u32)| chunk(e).faces.get(e.1 as usize).and_then(|f| f.as_ref());
         let quad = |a: (u32, u32)| face(a).is_some_and(|f| f.half == 1) && face((a.0, a.1 + 1)).is_some_and(|f| f.half == 2);
         near.into_iter().map(|(e, t)| {
             let (n, across) = match &chunk(e).faces[e.1 as usize] {
                 Some(f) => (f.n, f.across),
                 None => {
-                    let found = *cache.entry(e).or_insert_with(|| std::array::from_fn(|k| {
-                        let (p, q) = (t[k], t[(k + 1) % 3]);
-                        self.cells.get(&(cell(p.x), cell(p.y))).into_iter().flatten().copied()
-                            .filter(|&o| o.0 == e.0).filter(|&e| { let o = tri(e); o != t && o.contains(&p) && o.contains(&q) }).min()
-                    }));
+                    let cached = self.neighbours.read().unwrap().get(&e).copied();
+                    let found = cached.unwrap_or_else(|| {
+                        let f = std::array::from_fn(|k| {
+                            let (p, q) = (t[k], t[(k + 1) % 3]);
+                            self.cells.get(&(cell(p.x), cell(p.y))).into_iter().flatten().copied()
+                                .filter(|&o| o.0 == e.0).filter(|&e| { let o = tri(e); o != t && o.contains(&p) && o.contains(&q) }).min()
+                        });
+                        self.neighbours.write().unwrap().insert(e, f);
+                        f
+                    });
                     (normal(t), found.map(|o| o.map(|o| normal(tri(o)))))
                 }
             };

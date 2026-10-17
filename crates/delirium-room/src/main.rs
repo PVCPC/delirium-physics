@@ -98,8 +98,9 @@ fn saved_look() -> Look {
 fn help_seen() -> bool {
     std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(HELP_SEEN))).is_some_and(|p| p.exists())
 }
-const WEAPONS: [(&str, &str, f32); 7] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
-                                         ("ak47", "AK47", 50.0), ("sniper", "SNIPERRIFLE", 50.0), ("shotgun", "SHOTGUN", 50.0), ("rpg", "RLAUNCHER", 50.0)];
+const WEAPONS: [(&str, &str, f32); 11] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
+                                         ("ak47", "AK47", 50.0), ("sniper", "SNIPERRIFLE", 50.0), ("shotgun", "SHOTGUN", 50.0), ("rpg", "RLAUNCHER", 50.0),
+                                          ("grenade", "GRENADE", 50.0), ("molotov", "MOLOTOV", 50.0), ("bat", "BASEBALLBAT", 50.0), ("knife", "KNIFE", 50.0)];
 
 const LEAN_SECS: f32 = 1.5;
 
@@ -137,6 +138,9 @@ struct Gun {
     shells: Vec<(Vec3, Vec3, f32)>,
     rockets: Vec<(Vec3, Vec3, f32)>,
     blasts: Vec<(Vec3, f32)>,
+    thrown: Vec<(Vec3, Vec3, f32, bool)>,
+    fires: Vec<(Vec3, f32)>,
+    swing: f32,
 }
 
 impl Gun {
@@ -146,17 +150,28 @@ impl Gun {
     }
 }
 
-const KICK: [f32; 7] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6];
-const GUN_FALLBACK: [(f32, f32, f32); 7] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
-                                            (1000.0, 0.0, 0.0)];
+const KICK: [f32; 11] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8];
+const GUN_FALLBACK: [(f32, f32, f32); 11] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
+                                            (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (600.0, 0.0, 0.0), (400.0, 0.0, 0.0)];
 const TAXI_RADIUS: f32 = 0.303;
 const TAXI_AXLE: Vec2 = Vec2::new(0.73, 1.326);
 const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916, 2.466, 1.05)];
 const TAXI_BELT: f32 = 0.62;
 const TAXI_ID: i32 = 100;
+const INJURY_MAX: f32 = 0.8;
+const CRUSH_SPEED: f32 = 2.5;
+const DODGE_GAP: f32 = 3.0;
+const HANG_SECS: f32 = 3.0;
+const CAB_GAP: f32 = 1.45;
+const CAB_OFF: f32 = 0.12;
+const CAB_GO: f32 = 1.5;
+const CAB_GAS: f32 = 0.7;
+const CAB_LET_GO: f32 = 12.0;
+const CAB_HOLD: f32 = 6.0;
+const CAB_STOP: f32 = 14.0;
 const TAXIS: usize = 4;
 
-const CLIP_FALLBACK: [u32; 7] = [17, 9, 30, 30, 5, 8, 1];
+const CLIP_FALLBACK: [u32; 11] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1];
 
 const ROCKET_SPEED: f32 = 30.0;
 const ROCKET_LIFE: f32 = 4.0;
@@ -167,7 +182,7 @@ const BLAST_DAMAGE: f32 = 250.0;
 const PELLETS: usize = 16;
 const PELLET_SPREAD: f32 = 0.4;
 
-const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 7] = [
+const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 11] = [
     (&[([0.03, 0.035, 0.19], [0.0, 0.02, -0.015], 0.0), ([0.028, 0.11, 0.045], [0.0, -0.045, 0.045], -0.25), ([0.006, 0.025, 0.04], [0.0, -0.01, -0.01], 0.0)], 0.11),
     (&[([0.035, 0.045, 0.27], [0.0, 0.025, -0.04], 0.0), ([0.032, 0.12, 0.05], [0.0, -0.05, 0.05], -0.2), ([0.006, 0.03, 0.045], [0.0, -0.01, -0.015], 0.0)], 0.175),
     (&[([0.045, 0.06, 0.36], [0.0, 0.02, -0.08], 0.0), ([0.02, 0.02, 0.1], [0.0, 0.02, -0.31], 0.0), ([0.05, 0.05, 0.14], [0.0, 0.005, -0.2], 0.0),
@@ -180,7 +195,39 @@ const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 7] = [
        ([0.045, 0.1, 0.32], [0.0, -0.04, 0.3], 0.2)], 0.7),
     (&[([0.09, 0.09, 1.0], [0.0, 0.03, -0.1], 0.0), ([0.12, 0.12, 0.22], [0.0, 0.03, -0.7], 0.0), ([0.03, 0.1, 0.04], [0.0, -0.05, 0.05], -0.2),
        ([0.03, 0.09, 0.04], [0.0, -0.04, -0.25], 0.0), ([0.02, 0.06, 0.04], [0.0, 0.1, -0.25], 0.0)], 0.82),
+    (&[([0.06, 0.07, 0.06], [0.0, 0.0, -0.03], 0.0), ([0.015, 0.03, 0.015], [0.0, 0.045, -0.03], 0.0)], 0.06),
+    (&[([0.075, 0.075, 0.17], [0.0, 0.0, -0.1], 0.0), ([0.03, 0.03, 0.09], [0.0, 0.0, -0.22], 0.0), ([0.02, 0.02, 0.05], [0.0, 0.0, -0.28], 0.0)], 0.3),
+    (&[([0.035, 0.035, 0.3], [0.0, 0.0, -0.15], 0.0), ([0.06, 0.06, 0.51], [0.0, 0.0, -0.555], 0.0)], 0.81),
+    (&[([0.025, 0.03, 0.11], [0.0, 0.0, -0.055], 0.0), ([0.004, 0.03, 0.22], [0.0, 0.0, -0.22], 0.0)], 0.33),
 ];
+
+fn kind(w: usize) -> u8 {
+    match WEAPONS[w].0 {
+        "grenade" | "molotov" => 1,
+        "bat" | "knife" => 2,
+        _ => 0,
+    }
+}
+
+fn held(w: usize) -> Option<hero::Held> {
+    match WEAPONS[w].0 {
+        "bat" => Some((0.09, 0.72, 0.4)),
+        "knife" => Some((0.08, 0.25, 0.16)),
+        _ => None,
+    }
+}
+
+const HOMER_REST: f32 = 2.5;
+
+const SWING: f32 = 0.35;
+
+const THROW_SPEED: f32 = 15.0;
+const FUSE: f32 = 3.0;
+const BOUNCE: f32 = 0.35;
+const FIRE_R: f32 = 1.5;
+const FIRE_LIFE: f32 = 8.0;
+const BURN: f32 = 6.0;
+const BURN_DAMAGE: f32 = 25.0;
 
 #[derive(Component)]
 struct GunMesh(usize);
@@ -229,8 +276,14 @@ struct Sim {
     car_tune: Option<car::Tune>,
     reloading: Option<f32>,
     blast_task: Option<delirium::explosion::Explosion>,
+    burning: f32,
+    on_fire: Option<delirium::nm::OnFire>,
     god: bool,
     lean_stop: Option<f32>,
+    hurt: [f32; 4],
+    near_at: f32,
+    crush: Option<(i32, u64)>,
+    cab_gas: f32,
     shot_task: Option<(ShotTask, u64)>,
     rand: delirium_data::rng::Rand,
     getup: Option<getup::Clips>,
@@ -282,6 +335,10 @@ struct Sim {
     auto_balance: bool,
     dead: bool,
     hero: Option<hero::Hero>,
+    passive: bool,
+    homer: Option<hero::Hero>,
+    homer_wait: Option<f32>,
+    homer_rest: f32,
     agility: u8,
     walk: bool,
     walk_dir: Vec3,
@@ -293,6 +350,7 @@ struct Sim {
     learned: Option<(learn::Net, Vec<Quat>, usize, learn::Pick)>,
     ped_color: usize,
     eyes: bool,
+    skel: bool,
     brows: bool,
     scene: Option<String>,
     switch_to: Option<(String, bool)>,
@@ -383,7 +441,9 @@ impl Sim {
         let frames = self.frames.clone();
         let a = Agent::new(&self.build, Ragdoll::new(&self.build, &frames, Vec3::ZERO), Quat::IDENTITY, 0.3);
         (self.agent, self.msgs, self.steps, self.held) = (a, msg::State::default(), 0, true);
+        self.homer = None;
         self.crowd.clear();
+        self.hurt = [0.0; 4];
         self.say("ours  reset: pose held (pick a behaviour)".into());
     }
 
@@ -590,6 +650,11 @@ impl Sim {
                 (s.p(0) + left * (12.0 + 6.0 * k), -left)
             }
         };
+        self.spawn_taxi_at(at, f);
+        self.say(format!("room  taxi {}: Hero gets in and out with F; W / S drive, A / D steer, Space handbrake", self.taxis.len()));
+    }
+
+    fn spawn_taxi_at(&mut self, at: Vec3, f: Vec3) {
         let game = self.game_dir.clone();
         let tune = self.car_tune.get_or_insert_with(|| {
             let [h, ide, mats]: [Option<String>; 3] = game.map(|g| common(&g, &["data/handling.dat", "data/vehicles.ide", "data/materials/materials.dat"])
@@ -598,7 +663,6 @@ impl Sim {
         }).clone();
         let ground = at.with_z(self.world.ground(at + Vec3::Z * 1.5, 4.0).unwrap_or(at.z));
         self.taxis.push(car::Car::new(tune, ground, f32::atan2(-f.x, f.y), TAXI_RADIUS, TAXI_AXLE, TAXI_HULL, &self.world));
-        self.say(format!("room  taxi {}: Hero gets in and out with F; W / S drive, A / D steer, Space handbrake", self.taxis.len()));
     }
 
     fn taxi_door(&mut self) {
@@ -621,10 +685,13 @@ impl Sim {
 
     fn taxi_frame(&mut self, dt: f32) {
         let (pedal, wheel, hb) = self.pedals;
-        for t in self.taxis.iter_mut().filter(|t| !t.asleep) {
+        let gas = self.cab_gas;
+        for (k, t) in self.taxis.iter_mut().enumerate().filter(|t| !t.1.asleep || (t.0 == 0 && gas > 0.0)) {
+            let gas = if k == 0 { gas } else { 0.0 };
+            t.asleep = false;
             match t.player {
                 true => t.step(&self.world, pedal.max(0.0), (-pedal).max(0.0), -wheel, hb, dt),
-                false => t.step(&self.world, 0.0, 0.0, 0.0, true, dt),
+                false => t.step(&self.world, gas, 0.0, 0.0, gas == 0.0, dt),
             }
         }
         for i in 0..self.taxis.len() {
@@ -692,16 +759,36 @@ impl Sim {
         let n = self.crowd.len() + 1;
         self.car_hit.resize(n, None);
         self.car_reacts.resize(n, 0);
+        let mut pressing = None;
         for (i, a) in std::iter::once(&mut self.agent).chain(self.crowd.iter_mut().map(|c| &mut c.0)).enumerate() {
             for (id, j, at) in std::mem::take(&mut a.doll.ob_hits) {
                 let Some(t) = self.taxis.get_mut((id - TAXI_ID) as usize) else { continue };
                 t.ped_hit(j, at);
+                if i == 0 && (0.2..CRUSH_SPEED).contains(&t.speed.abs()) {
+                    pressing = Some(id);
+                }
+                if i == 0 && self.room.stage == "cab" && !self.room.fell {
+                    continue;
+                }
                 if self.steps < self.car_reacts[i] + 60 {
                     continue;
                 }
                 let h = self.car_hit[i].get_or_insert((id - TAXI_ID, Vec3::ZERO, at, self.steps));
                 h.1 += j;
             }
+        }
+        match (pressing, self.crush) {
+            (Some(id), None) if self.room.stage != "cab" => {
+                self.say(format!("room  taxi {} pressing on Homer: crushReaction", id - TAXI_ID + 1));
+                self.send_ours(vec![format!("crushReaction start=true flinchMode=1 obstacleID={id} useInjuries=true")]);
+                self.crush = Some((id, self.steps));
+            }
+            (Some(id), Some(_)) => self.crush = Some((id, self.steps)),
+            (None, Some((_, at))) if self.steps > at + 60 => {
+                self.crush = None;
+                self.send("crushReaction start=false");
+            }
+            _ => {}
         }
         for i in 0..n {
             let Some((k, sum, at, from)) = self.car_hit[i].filter(|h| self.steps >= h.3 + CAR_HIT_STEPS) else { continue };
@@ -724,6 +811,10 @@ impl Sim {
                 self.crowd_hp[i - 1] = left;
             }
             self.pop(at, amount);
+            if i == 0 {
+                let part = self.agent.doll.nearest(&self.build, at);
+                self.injure(part, (amount / 100.0).clamp(0.1, 0.5));
+            }
             self.sounds.push(sfx::Snd::Crash);
             let place = self.taxis.get(k as usize).map_or(at, |t| t.pos);
             let around = bump::Around { touching: vec![other], player: player.then_some(bump::Player { thing: other, place, in_car: true }),
@@ -797,16 +888,81 @@ impl Sim {
 
     fn play_hero(&mut self, dt: f32, mv: Vec3, gait: usize) {
         let fwd = self.ours().fwd;
+        let melee = self.hero_gun && kind(self.weapon) == 2;
+        let held = if melee { held(self.weapon) } else { None };
         let (Some(n), Some(clips)) = (self.hero.as_mut(), self.getup.as_ref()) else { return };
         let up = !self.agent.fallen && self.rises[0].is_none();
         let pelvis = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
-        let fists = self.weapons.iter().find(|w| w.name == "UNARMED").cloned().unwrap_or_default();
+        let fists = self.weapons.iter().find(|w| w.name == if melee { WEAPONS[self.weapon].1 } else { "UNARMED" }).cloned().unwrap_or_default();
         let frames: Vec<Transform> = self.agent.doll.frames().collect();
         let homer = up.then(|| (pelvis, (-fwd.x).atan2(fwd.y), self.health, clips.points(self.build.parts.iter().map(|p| p.name.as_str()), &frames)));
-        let hit = n.update(clips, &self.world, dt, mv, gait, homer, &fists, &caps_of(&self.build, &self.agent.doll));
+        let hit = n.update(clips, &self.world, dt, mv, gait, homer, &fists, held, &caps_of(&self.build, &self.agent.doll));
         let Some(hit) = hit else { return };
-        self.sounds.push(sfx::Snd::Punch);
         let head = n.head();
+        let what = if matches!(hit, hero::Hit::Bump(_)) { "hero  runs into Homer" } else { "hero  punch lands" };
+        self.land(hit, head, what);
+    }
+
+    fn homer_fight(&mut self, dt: f32) {
+        self.homer_rest -= dt;
+        let pelvis = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
+        let near = self.hero.as_ref().is_some_and(|n| n.feet.with_z(0.0).distance(pelvis.with_z(0.0)) < delirium_data::melee_task::SEEK_BEYOND);
+        if self.passive || self.driving || self.dead || !near || dt <= 0.0 {
+            return self.homer_out(true);
+        }
+        let standing = self.rises[0].as_ref().is_none_or(getup::Clips::standing);
+        if self.homer.is_none() && (self.homer_rest > 0.0 || self.agent.fallen || !standing || self.nm_t[0].is_some() || self.musc.is_some() || self.learned.is_some()) {
+            return;
+        }
+        let (Some(clips), Some(hero)) = (self.getup.as_ref(), self.hero.as_mut()) else { return };
+        let me = self.homer.get_or_insert_with(|| {
+            let fwd = (pelvis - hero.feet).with_z(0.0).normalize_or(Vec3::X);
+            hero::Hero::new(clips, pelvis - fwd * 1.5, fwd)
+        });
+        self.rises[0] = None;
+        let to = (hero.feet - me.feet).with_z(0.0);
+        self.homer_wait = self.homer_wait.map(|w| w - dt);
+        if !me.playing() && delirium_data::melee_task::wants_move(self.homer_wait, to.length(), false, self.rand.float_in_range(0.0, 1.0)) {
+            me.punch();
+            self.homer_wait = Some(delirium_data::melee_task::wait(&mut self.rand));
+        }
+        me.keys = 0x1;
+        let mv = if to.length() > 1.2 && !me.playing() { to.normalize() } else { Vec3::ZERO };
+        let fists = self.weapons.iter().find(|w| w.name == "UNARMED").cloned().unwrap_or_default();
+        let foe = (hero.feet + Vec3::Z, hero.yaw - std::f32::consts::FRAC_PI_2, 200.0, [None; 5]);
+        let body = hero.capsules(clips);
+        let hit = me.update(clips, &self.world, dt, mv, 0, Some(foe), &fists, None, &body);
+        let (frames, blocked) = (me.homer.clone(), hero.blocking(clips));
+        if frames.len() == self.build.parts.len() {
+            self.agent.doll = Ragdoll::new(&self.build, &frames, Vec3::ZERO);
+        }
+        if let Some(hero::Hit::Swing(dmg, ..)) = hit {
+            self.sounds.push(sfx::Snd::Punch);
+            let how = hero.hit_by(clips, me, &fists).unwrap_or_else(|| "no reaction".into());
+            self.say(format!("homer  punch lands on the Hero ({dmg:.0} damage{}): {how}", if blocked { ", blocking" } else { "" }));
+        }
+    }
+
+    fn homer_out(&mut self, balance: bool) {
+        let Some(me) = self.homer.take() else { return };
+        if me.homer.len() != self.build.parts.len() {
+            return;
+        }
+        let doll = std::mem::replace(&mut self.agent.doll, Ragdoll::new(&self.build, &me.homer, Vec3::ZERO));
+        self.agent = Agent::new(&self.build, doll, Quat::IDENTITY, 0.3);
+        self.msgs = msg::State::default();
+        if !balance {
+            self.homer_rest = HOMER_REST;
+        } else if self.tasks {
+            self.rises[0] = self.getup.as_ref().map(|c| c.stand(me.homer.clone()));
+        } else {
+            self.send("bodyBalance start=true");
+        }
+    }
+
+    fn land(&mut self, hit: hero::Hit, head: Vec3, what: &str) {
+        self.sounds.push(sfx::Snd::Punch);
+        let pelvis = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
         let ours = self.ours();
         let now = self.steps as f32 / 60.0;
         let imp = |k: usize, at: Vec3, j: Vec3| format!("applyImpulse start=true partIndex={k} hitPoint={} impulse={}", v3(at), v3(j));
@@ -837,8 +993,7 @@ impl Sim {
         if self.tasks {
             (self.exit, self.nm_t, self.failed) = (exit(task).unwrap_or(SHOT_EXIT), [Some(0.0); 2], [false; 2]);
         }
-        let what = if matches!(hit, hero::Hit::Bump(_)) { "runs into Homer" } else { "punch lands" };
-        self.say(format!("hero  {what}: {task} (health {:.0})", self.health));
+        self.say(format!("{what}: {task} (health {:.0})", self.health));
     }
 
     fn ours(&self) -> Side {
@@ -883,6 +1038,64 @@ impl Sim {
         self.send_ours(vec![format!("grab start=true linegrab=true useLeft=true useRight=true dontLetGo=true grabStrength=600 bodyStiffness=10                                      grabDist=4.4 reachAngle=2.8 oneSideReachAngle=1.4 pullUpStrengthLeft=0 pullUpStrengthRight=0 pullUpTime=1 pos1={} pos2={}",
                                     v3(edge + x), v3(edge - x)), "dangle start=true hold=false doGrab=true".into()]);
         self.say("bridge  a plank snapped: grab".into());
+    }
+
+    fn ledge(&mut self) {
+        const EDGE: f32 = 0.5;
+        if self.room.stage != "rooftop" || self.room.fell {
+            return;
+        }
+        let p = self.ours().p(0);
+        match self.room.snapped.as_mut() {
+            None if p.y > EDGE - 0.05 && (3.0..3.9).contains(&p.z) => {
+                self.room.snapped = Some(0.0);
+                self.send_ours(vec![format!("armHang start=true constraintPosition={}", v3(Vec3::new(p.x, EDGE, 4.0)))]);
+                self.say("rooftop  over the edge: he catches it (armHang)".into());
+            }
+            Some(t) => {
+                *t += 1.0 / 60.0;
+                if *t > HANG_SECS {
+                    self.room.fell = true;
+                    self.send_ours(vec!["armHang start=false".into(), "highFall start=true".into()]);
+                    self.say("rooftop  he lets go: highFall".into());
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn cab(&mut self) {
+        if self.room.stage != "cab" {
+            return;
+        }
+        let Some(t) = self.room.snapped.as_mut() else {
+            let s = self.ours();
+            let fwd = s.fwd.with_z(0.0).normalize_or(Vec3::NEG_Y);
+            self.spawn_taxi_at(s.p(0).with_z(0.0) + fwd * CAB_GAP, Vec3::Z.cross(fwd));
+            let o = self.taxis[0].obstacle(TAXI_ID, TAXI_BELT);
+            let local = o.rot.inverse() * (s.p(CHEST) - o.centre);
+            let door = o.centre + o.rot * local.clamp(-o.half, o.half) - Vec3::Z * 0.2 - fwd * CAB_OFF;
+            self.room.snapped = Some(0.0);
+            self.send_ours(vec![format!("armHang start=true constraintPosition={} instanceIndex={TAXI_ID}", v3(door))]);
+            return self.say("cab  his hands on the cab's door".into());
+        };
+        *t += 1.0 / 60.0;
+        let t = *t;
+        let at = |x: f32| t - 1.0 / 60.0 < x && t >= x;
+        let speed = self.taxis.first().map_or(0.0, |c| c.speed.abs());
+        if at(0.1) {
+            self.send_ours(vec!["pedalLegs start=false".into(), "bodyBalance start=true".into()]);
+        } else if at(CAB_GO) {
+            self.cab_gas = CAB_GAS;
+            self.send_ours(vec!["bodyBalance start=false".into(), "pedalLegs start=true".into(), "bodyWrithe start=true mask=uk".into()]);
+            self.say("cab  it pulls away with him on the door".into());
+        } else if !self.room.fell && t > CAB_GO && (speed > CAB_LET_GO || t > CAB_GO + CAB_HOLD) {
+            self.room.fell = true;
+            self.send_ours(["armHang", "pedalLegs", "bodyWrithe"].map(|n| format!("{n} start=false")).into_iter().chain(["smartFall start=true".to_string()]).collect());
+            self.say(format!("cab  he lets go at {:.0} km/h: smartFall", speed * 3.6));
+        } else if self.room.fell && self.cab_gas > 0.0 && self.taxis.first().is_some_and(|c| c.pos.distance(self.ours().p(0)) > CAB_STOP) {
+            self.cab_gas = 0.0;
+        }
     }
 
     fn trampoline(&mut self) {
@@ -982,6 +1195,7 @@ impl Sim {
         self.mark(0, part, at, n);
         if let Some((lost, _)) = hit {
             self.pop(at, lost);
+            self.injure(part, (lost / 100.0).clamp(0.15, 0.5));
         }
         let w = self.weapons.iter().find(|w| w.name == name);
         let set = w.map_or("*", |w| delirium::nm::weapon_set(w, if self.weak { 2 } else { 3 }));
@@ -1074,6 +1288,13 @@ impl Sim {
         }
     }
 
+    fn injure(&mut self, part: usize, by: f32) {
+        let Some(l) = [(13..=16, 0), (17..=20, 1), (1..=3, 2), (4..=6, 3)].into_iter().find(|r| r.0.contains(&part)).map(|r| r.1) else { return };
+        self.hurt[l] = (self.hurt[l] + by).min(INJURY_MAX);
+        let line = format!("injury mask={} amount={:.2}", ["ul", "ur", "ll", "lr"][l], self.hurt[l]);
+        self.send(&line);
+    }
+
     fn pop(&mut self, at: Vec3, amount: f32) {
         if amount >= 0.5 {
             self.pops.push((at, amount, 0.0));
@@ -1154,6 +1375,10 @@ impl Sim {
             "infinite health" => {
                 (self.god, self.health) = (!self.god, 200.0);
                 return self.say(format!("room  infinite health: {}", if self.god { "on (hits never hurt Homer, both sides)" } else { "off" }));
+            }
+            "passive" => {
+                self.passive = !self.passive;
+                return self.say(format!("room  Homer passive: {}", if self.passive { "on (he only takes hits)" } else { "off (near the Hero he fights back)" }));
             }
             "walk" => {
                 self.walk = !self.walk;
@@ -1283,6 +1508,16 @@ impl Sim {
     fn gun_fire(&mut self, fatal: bool) {
         let (_, acc, pellets, case) = self.gun_stats();
         let from = self.gun.at + self.gun.dir * GUN_MODELS[self.weapon].1;
+        match kind(self.weapon) {
+            1 => return self.throw_weapon(from, self.gun.aim),
+            2 => {
+                if self.gun.swing <= 0.0 {
+                    self.gun.swing = SWING;
+                }
+                return;
+            }
+            _ => {}
+        }
         if WEAPONS[self.weapon].0 == "rpg" {
             self.sounds.push(sfx::Snd::Shot(self.weapon));
             self.gun.rockets.push((from, self.gun.dir * ROCKET_SPEED, 0.0));
@@ -1357,6 +1592,105 @@ impl Sim {
         }
     }
 
+    fn throw_weapon(&mut self, from: Vec3, to: Vec3) {
+        let w = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1);
+        let speed = w.map_or(THROW_SPEED, |w| if w.target_range > 0.0 { w.target_range } else { THROW_SPEED });
+        let fuse = w.and_then(|w| w.projectile.as_ref()).filter(|p| p.kind == "FUSE" && p.fuse > 0.0).map_or(FUSE, |p| p.fuse / 1000.0);
+        let molotov = WEAPONS[self.weapon].0 == "molotov";
+        let d = to - from;
+        let t = (d.length() / speed).max(0.05);
+        self.gun.thrown.push((from, d / t + Vec3::Z * 4.905 * t, if molotov { f32::INFINITY } else { fuse }, molotov));
+        self.gun.kick = KICK[self.weapon];
+        self.sounds.push(sfx::Snd::Throw);
+    }
+
+    fn swing_weapon(&mut self) {
+        let w = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1).cloned();
+        let dir = (self.gun.aim - self.gun.at).normalize_or(Vec3::X);
+        let Some((_, at, _)) = self.agent.doll.probe(&self.build, self.gun.at, self.gun.aim + dir * 0.3) else {
+            self.sounds.push(sfx::Snd::Throw);
+            return self.say(format!("room  {}: missed", WEAPONS[self.weapon].0));
+        };
+        let (dmg, push) = w.map_or((20.0, hero::MELEE_PUSH), |w| (w.damage, w.force.max(hero::MELEE_PUSH)));
+        let what = format!("room  {} lands", WEAPONS[self.weapon].0);
+        self.land(hero::Hit::Swing(dmg, at, dir * push), self.gun.at, &what);
+    }
+
+    fn thrown_frame(&mut self, dt: f32) {
+        let (mut boom, mut fire) = (vec![], vec![]);
+        let mut thrown = std::mem::take(&mut self.gun.thrown);
+        thrown.retain_mut(|(p, v, fuse, molotov)| {
+            v.z -= 9.8 * dt;
+            *fuse -= dt;
+            let (d, len) = (v.normalize_or(Vec3::Z), v.length() * dt);
+            let hit = self.agent.doll.probe(&self.build, *p, *p + d * len).map(|h| (h.1, -d))
+                .or_else(|| self.world.contact(*p, d, len).map(|c| (*p + d * c.0, c.1)));
+            match hit {
+                Some((at, _)) if *molotov => {
+                    fire.push(at);
+                    return false;
+                }
+                Some((at, n)) => {
+                    *p = at + n * 0.03;
+                    *v = (*v - 2.0 * v.dot(n) * n) * BOUNCE;
+                }
+                None => *p += d * len,
+            }
+            if *fuse <= 0.0 {
+                boom.push(*p);
+                return false;
+            }
+            true
+        });
+        self.gun.thrown = thrown;
+        for at in boom {
+            self.explode(at);
+        }
+        for at in fire {
+            let z = self.world.ground(at + Vec3::Z, 3.0).unwrap_or(at.z);
+            self.gun.fires.push((at.with_z(z), 0.0));
+            self.sounds.push(sfx::Snd::Crash);
+            self.say("room  molotov: fire".into());
+        }
+    }
+
+    fn fire_frame(&mut self, dt: f32) {
+        for f in &mut self.gun.fires {
+            f.1 += dt;
+        }
+        self.gun.fires.retain(|f| f.1 < FIRE_LIFE);
+        let ours = self.ours();
+        let caught = self.gun.fires.iter().any(|&(at, _)| (0..ours.parts.len()).map(|k| ours.p(k)).any(|p| (p - at).with_z(0.0).length() < FIRE_R && p.z - at.z < 1.0));
+        if caught && !self.dead {
+            self.burning = BURN;
+        }
+        if self.dead {
+            (self.burning, self.on_fire) = (0.0, None);
+        }
+        if self.burning <= 0.0 && self.on_fire.is_none() {
+            return;
+        }
+        self.burning -= dt;
+        let burning = self.burning > 0.0;
+        if burning {
+            self.health = if self.god { 200.0 } else { (self.health - BURN_DAMAGE * dt).max(0.0) };
+        }
+        if burning && self.on_fire.is_none() {
+            let mut f = delirium::nm::OnFire::new("*");
+            f.start(&mut self.agent, &self.build, &self.world, &self.tp, &mut self.rand);
+            self.on_fire = Some(f);
+            self.say("room  Homer catches fire".into());
+        }
+        if let Some(f) = self.on_fire.as_mut() {
+            if self.agent.feedback.iter().any(|f| f.slot == 8 && f.name == "balance") {
+                f.balance_failed();
+            }
+            if f.update(&mut self.agent, &self.build, &self.world, &mut self.rand, dt, burning, self.health, self.health <= 0.0).is_some() {
+                self.on_fire = None;
+            }
+        }
+    }
+
     fn explode(&mut self, at: Vec3) {
         self.gun.blasts.push((at, 0.0));
         self.sounds.push(sfx::Snd::Boom);
@@ -1408,6 +1742,11 @@ impl Sim {
             return self.say(format!("room  shot: missed by {d:.1} m (too far to notice)"));
         }
         self.say(format!("room  shot: near miss, {d:.2} m from him"));
+        let now = self.steps as f32 / 60.0;
+        if now - std::mem::replace(&mut self.near_at, now) < DODGE_GAP {
+            self.say("room  shot at again: he dives (shootDodge)".into());
+            return self.send_ours(vec![format!("shootDodge start=true rightArmTarget={} leftArmTarget={}", v3(from), v3(from))]);
+        }
         let msgs = |p: Vec3| vec![format!("upperBodyFlinch start=true pos={} newHit=true", v3(p)), format!("headLook start=true pos={} alwaysLook=true", v3(p))];
         let o = msgs(p);
         self.send_ours(o);
@@ -1475,7 +1814,7 @@ impl Sim {
             n.hold = None;
         }
         self.gun.placed = false;
-        let has = self.getup.as_ref().is_some_and(|c| c.guns.get(self.weapon).copied().flatten().is_some());
+        let has = kind(self.weapon) > 0 || self.getup.as_ref().is_some_and(|c| c.guns.get(self.weapon).copied().flatten().is_some());
         self.say(format!("hero  {}", if !self.hero_gun { "fists".to_string() } else if has { WEAPONS[self.weapon].0.to_string() } else { format!("{}: no clips for it", WEAPONS[self.weapon].0) }));
     }
 
@@ -1565,6 +1904,12 @@ impl Sim {
     fn objects(&mut self) {
         let caps = |fr: Vec<Transform>| fr.into_iter().zip(&self.build.parts).map(|(t, p)| (t, p.radius, p.half)).collect::<Vec<_>>();
         let ours = caps(self.agent.doll.capsules().collect());
+        let pelvis = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
+        for j in 0..self.room.objs.len() {
+            if self.room.objs[j].kind == 4 && !self.room.objs[j].hit[0] && self.room.obj(0, j).0.translation.distance(pelvis) > 1.5 {
+                self.room.steer(j, pelvis);
+            }
+        }
         let sides = [Some(ours)];
         for (i, caps) in sides.into_iter().enumerate() {
             let Some(caps) = caps else { continue };
@@ -1573,6 +1918,10 @@ impl Sim {
                     self.room.objs[j].hit[i] = true;
                     self.say(format!("{}  {} hits {} ({:.1} N s)", WHO[i], world::KINDS[self.room.objs[j].kind].0,
                                      delirium_data::nm_asset::PARTS.get(k).unwrap_or(&"?"), imp.length()));
+                }
+                if imp.length() > 1.0 && self.homer.is_some() {
+                    self.homer_out(false);
+                    self.say("homer  knocked out of his fight".into());
                 }
                 self.held = false;
                 let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(k as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
@@ -1586,6 +1935,9 @@ impl Sim {
     }
 
     fn send_to(&mut self, who: usize, line: &str) {
+        if who == 0 {
+            self.homer_out(false);
+        }
         let mut w = line.split_whitespace();
         let Some(name) = w.next() else { return };
         if name == "?" {
@@ -1807,10 +2159,10 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, hero_gun: false, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, cam: None, look_z: 0.8,
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true };
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -1901,7 +2253,7 @@ fn main() {
     }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
-    let systems = (keys, console, mouse, scripted, step, switch, scene, apply_look, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw).chain();
+    let systems = (keys, console, mouse, scripted, step, switch, scene, apply_look, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window { title: "Delirium Physics Playroom".into(), resolution: (1600, 900).into(), ..default() }),
@@ -2169,7 +2521,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
 }
 
 fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut Assets<StandardMaterial>, sim: &Sim) {
-    let floor = if sim.room.stage == "street" { Color::srgb(0.2, 0.2, 0.22) } else { Color::srgb(0.58, 0.59, 0.61) };
+    let floor = if sim.room.stage == "street" || sim.room.stage == "cab" { Color::srgb(0.2, 0.2, 0.22) } else { Color::srgb(0.58, 0.59, 0.61) };
     commands.spawn((Mesh3d(meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(30.0)))),
                     MeshMaterial3d(mats.add(StandardMaterial { base_color: floor, perceptual_roughness: 1.0, ..default() })), RoomScenery, Floor));
     for (i, &(c, h, row)) in sim.room.blocks.iter().enumerate() {
@@ -2183,14 +2535,14 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         }
     }
     let sides = [(false, 1)];
-    let homer = sides.into_iter().map(|(g, l)| (g, l, None, None)).chain((0..4).map(|c| (false, 1, Some(c), None)))
+    let homer = sides.into_iter().map(|(g, l)| (g, l, None, None)).chain((0..24).map(|c| (false, 1, Some(c), None)))
         .chain((0..learn::LIVE).map(|w| (false, 1, None, Some(w))));
     for (game, layer, crowd, watch) in homer {
         let _ = game;
         for (k, p) in sim.build.parts.iter().enumerate() {
             let name = delirium_data::nm_asset::PARTS.get(k).copied().unwrap_or("");
             let c = part_color(0, name);
-            commands.spawn((Mesh3d(meshes.add(Capsule3d::new(p.radius, p.half * 2.0))),
+            commands.spawn((Mesh3d(part_mesh(meshes, p)),
                             MeshMaterial3d(mats.add(StandardMaterial { base_color: c, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.6, ..default() })),
                             Transform::default(), Visibility::Hidden, RenderLayers::layer(layer), PartMesh { k,  crowd, watch }));
         }
@@ -2203,9 +2555,16 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         commands.spawn((Mesh3d(mesh), MeshMaterial3d(mat), Transform::default(), Visibility::Hidden, RenderLayers::layer(1), FacePart(i)));
     }
     for (k, p) in sim.getup.as_ref().and_then(|c| c.hero.as_ref()).map_or(&[][..], |r| &r.build.parts[..]).iter().enumerate() {
-        commands.spawn((Mesh3d(meshes.add(Capsule3d::new(p.radius, p.half * 2.0))),
+        commands.spawn((Mesh3d(part_mesh(meshes, p)),
                         MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgba(0.3, 0.75, 0.4, 0.6), alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.6, ..default() })),
                         Transform::default(), Visibility::Hidden, RenderLayers::layer(1), HeroMesh(k)));
+    }
+}
+
+fn part_mesh(meshes: &mut Assets<Mesh>, p: &delirium::ragdoll::PartDef) -> Handle<Mesh> {
+    match p.boxed {
+        Some(e) => meshes.add(Cuboid { half_size: e }),
+        None => meshes.add(Capsule3d::new(p.radius, p.half * 2.0)),
     }
 }
 
@@ -2426,7 +2785,7 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity)>>, mut sk
 const SCENE_R: f32 = 40.0;
 const STAND: f32 = 0.95;
 const SCENES: [&str; 4] = ["room", "stairs", "wall", "ledge"];
-const EXTRAS: [(&str, &str); 2] = [("bridge", "rope bridge"), ("trampoline", "trampoline")];
+const EXTRAS: [(&str, &str); 3] = [("bridge", "rope bridge"), ("trampoline", "trampoline"), ("cab", "cab door")];
 const SNAP_CHUNK: u64 = 0xB41D6E;
 const STAGES: [(&str, &str); 6] = [("room", "room"), ("bigstairs", "big stairs"), ("rooftop", "rooftop"), ("lowwall", "low wall"), ("rail", "rail"), ("street", "street")];
 
@@ -2517,10 +2876,28 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     let (k, d) = (sim.gun.kick, sim.gun.dir);
     let right = d.cross(Vec3::Z).normalize_or(Vec3::X);
     let at = sim.gun.at - d * 0.05 * k;
-    let shown = Quat::from_axis_angle(right, 0.35 * k) * d;
+    let mut shown = Quat::from_axis_angle(right, 0.35 * k) * d;
+    let mut at = at;
+    if sim.gun.swing > 0.0 {
+        let s = 1.0 - sim.gun.swing / SWING;
+        if WEAPONS[sim.weapon].0 == "knife" {
+            at += d * 0.3 * (s * std::f32::consts::PI).sin();
+        } else {
+            shown = Quat::from_axis_angle(right, 1.4 - 2.2 * s) * d;
+        }
+        let was = sim.gun.swing;
+        sim.gun.swing -= dt;
+        if was > SWING * 0.5 && sim.gun.swing <= SWING * 0.5 && sim.hero.is_none() {
+            sim.swing_weapon();
+        }
+    }
+    let up = if WEAPONS[sim.weapon].0 == "molotov" { Vec3::Y } else { Vec3::Z };
+    if up == Vec3::Y {
+        shown = Vec3::Z;
+    }
     for (mut t, mut v, m) in &mut q {
         *v = if on && m.0 == sim.weapon { Visibility::Visible } else { Visibility::Hidden };
-        *t = Transform::from_translation(at).looking_to(shown, Vec3::Z);
+        *t = Transform::from_translation(at).looking_to(shown, up);
     }
     let muzzle = at + shown * GUN_MODELS[sim.weapon].1;
     for (mut t, mut v) in &mut flash {
@@ -2530,7 +2907,7 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     }
     sim.gun.kick *= (-14.0 * dt).exp();
     sim.gun.flash -= dt;
-    if on {
+    if on && kind(sim.weapon) == 0 {
         let reach = muzzle.distance(sim.gun.aim).max(0.5);
         let c = Color::srgba(0.4, 0.95, 1.0, 0.35);
         g.line(muzzle, muzzle + d * reach, c);
@@ -2566,6 +2943,25 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
         *age += dt;
     }
     sim.gun.blasts.retain(|b| b.1 < 0.8);
+    sim.thrown_frame(dt);
+    for &(p, _, _, molotov) in &sim.gun.thrown {
+        g.sphere(Isometry3d::from_translation(p), 0.05, if molotov { Color::srgb(1.0, 0.6, 0.2) } else { Color::srgb(0.4, 0.95, 1.0) });
+    }
+    let flick = time.elapsed_secs() * 9.0;
+    for &(at, age) in &sim.gun.fires {
+        let a = (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0);
+        for k in 0..6 {
+            let s = (flick + k as f32 * 1.7).sin() * 0.5 + 0.5;
+            g.circle(Isometry3d::from_translation(at + Vec3::Z * (0.02 + 0.12 * k as f32 * (0.5 + s))), FIRE_R * (1.0 - 0.14 * k as f32), Color::srgba(1.0, 0.35 + 0.1 * k as f32, 0.1, a));
+        }
+    }
+    if sim.burning > 0.0 {
+        let ours = sim.ours();
+        for k in 0..ours.parts.len() {
+            let s = (flick + k as f32 * 2.3).sin() * 0.5 + 0.5;
+            g.sphere(Isometry3d::from_translation(ours.p(k) + Vec3::Z * 0.08 * s), 0.07 + 0.05 * s, Color::srgba(1.0, 0.45 + 0.3 * s, 0.1, 0.9));
+        }
+    }
     let case = sim.gun_stats().3.max(0.02);
     let mut shells = std::mem::take(&mut sim.gun.shells);
     for (p, v, left) in &mut shells {
@@ -2581,6 +2977,31 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     }
     shells.retain(|s| s.2 > 0.0);
     sim.gun.shells = shells;
+}
+
+#[derive(Component)]
+struct Smooth {
+    prev: Transform,
+    cur: Transform,
+    step: u64,
+}
+
+fn smooth(sim: NonSend<Sim>, mut commands: Commands,
+          new: Query<(Entity, &Transform), (Or<(With<PartMesh>, With<HeroMesh>, With<TaxiMesh>, With<TaxiWheel>, With<CarMesh>)>, Without<Smooth>)>,
+          mut q: Query<(&mut Transform, &mut Smooth)>) {
+    for (e, t) in &new {
+        commands.entity(e).insert(Smooth { prev: *t, cur: *t, step: sim.steps });
+    }
+    let a = if sim.paused || sim.held || sim.replay.is_some() { 1.0 } else { (sim.acc * 60.0).clamp(0.0, 1.0) };
+    for (mut t, mut s) in &mut q {
+        if s.step != sim.steps {
+            (s.prev, s.cur, s.step) = (s.cur, *t, sim.steps);
+        } else if *t != s.cur {
+            (s.prev, s.cur) = (*t, *t);
+        }
+        *t = Transform { translation: s.prev.translation.lerp(s.cur.translation, a), rotation: s.prev.rotation.slerp(s.cur.rotation, a),
+                         scale: s.prev.scale.lerp(s.cur.scale, a) };
+    }
 }
 
 #[derive(Component)]
@@ -2772,7 +3193,8 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
             }
         }
         if sim.hero.is_some() {
-            for (k, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8]
+            for (k, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8,
+                             KeyCode::Digit9, KeyCode::Digit0, KeyCode::Minus, KeyCode::Equal]
                 .into_iter().enumerate() {
                 if keys.just_pressed(key) {
                     sim.hero_take(k.checked_sub(1));
@@ -2796,6 +3218,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
                 sim.pedals = (pedal, wheel, hb);
             } else {
                 sim.play_hero(dt, mv.with_z(0.0).normalize_or_zero(), gait);
+                sim.homer_fight(dt);
             }
             mv = Vec3::ZERO;
         }
@@ -2897,6 +3320,23 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
             sim.poke(g.part, g.press.2, g.press.1);
         }
     }
+    if sim.hero.is_some() && sim.hero_gun && !sim.driving && kind(sim.weapon) > 0 {
+        if let Some(n) = sim.hero.as_ref() {
+            let (at, tip) = held(sim.weapon).map(|h| n.held_axis(h)).map_or((n.hand, n.hand + n.facing() * 0.1), |(lo, hi, ..)| (lo, hi));
+            (sim.gun.at, sim.gun.dir, sim.gun.aim, sim.gun.placed, sim.gun.kick) = (at, (tip - at).normalize_or(Vec3::Z), tip, true, 0.0);
+        }
+        let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok()).map(|r| (r.origin, *r.direction));
+        let click = buttons.just_pressed(MouseButton::Left) && ray.is_some() && !sim.over_ui;
+        sim.gun.wait -= time.delta_secs();
+        if click && kind(sim.weapon) == 2 {
+            sim.hero.as_mut().unwrap().punch();
+        } else if click && sim.gun.wait <= 0.0 && let (Some((f, d)), Some(n)) = (ray, sim.hero.as_ref()) {
+            let (from, aim) = (n.head() + n.facing() * 0.3 + Vec3::Z * 0.2, sim.aim_at(f, d));
+            sim.gun.wait = sim.gun_stats().0 / 1000.0;
+            sim.throw_weapon(from, aim);
+        }
+        return;
+    }
     if sim.hero.is_some() && sim.hero_gun && !sim.driving {
         let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok()).map(|r| (r.origin, *r.direction));
         let aim = ray.map_or(sim.gun.aim, |(f, d)| sim.aim_at(f, d));
@@ -2955,6 +3395,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!look", Some(n)) => sim.skin = LOOKS.iter().find(|l| l.0 == n).map_or(sim.skin, |l| l.1),
             ("!pedcol", Some(n)) => sim.ped_color = PED_COLORS.iter().position(|c| c.0 == n).unwrap_or(sim.ped_color),
             ("!eyes", _) => sim.eyes = !sim.eyes,
+            ("!skel", _) => sim.skel = !sim.skel,
             ("!hero", _) => sim.toggle_hero(),
             ("!punch", _) => if let Some(n) = sim.hero.as_mut() { n.punch() },
             ("!pad", Some(a)) => if let (Some(n), Ok(b)) = (sim.hero.as_mut(), u32::from_str_radix(a.trim_start_matches("0x"), 16)) { n.scripted = b },
@@ -2971,7 +3412,14 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!hero_fire", Some(d)) => {
                 let v: Vec<f32> = d.split(',').filter_map(|x| x.parse().ok()).collect();
                 let aim = sim.ours().p(CHEST) + Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0));
-                sim.hero_gun_frame(aim, 0.0, true, false, false);
+                match (kind(sim.weapon), sim.hero.as_mut()) {
+                    (1, Some(n)) => {
+                        let from = n.head() + n.facing() * 0.3 + Vec3::Z * 0.2;
+                        sim.throw_weapon(from, aim);
+                    }
+                    (2, Some(n)) => n.punch(),
+                    _ => sim.hero_gun_frame(aim, 0.0, true, false, false),
+                }
             }
             ("!hero_go", Some(a)) => if let Some(n) = sim.hero.as_mut() {
                 let mut a = a.split_whitespace();
@@ -3079,6 +3527,8 @@ impl Sim {
         }
         self.bridge();
         self.trampoline();
+        self.ledge();
+        self.cab();
         if self.sounds.len() > 64 {
             self.sounds.clear();
         }
@@ -3128,6 +3578,7 @@ impl Sim {
             .chain(self.pusher.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
                 half: Vec3::new(0.7, 0.25, 0.9), vel: v, com: c, ..Default::default() })).chain(self.taxis.iter().enumerate().map(|(k, t)| t.obstacle(TAXI_ID + k as i32, TAXI_BELT))).collect();
         self.pull();
+        self.fire_frame(1.0 / 60.0);
         if self.steps % 2 == 0 {
             self.shot_frame();
             self.blast_frame();
@@ -3135,6 +3586,14 @@ impl Sim {
         }
         let t0 = std::time::Instant::now();
         let learning = self.learned.is_some();
+        if self.homer.is_some() && caps_of(&self.build, &self.agent.doll).iter().any(|c| car.iter().any(|o| {
+            let back = o.rot.inverse();
+            [c.0, (c.0 + c.1) * 0.5, c.1].iter().any(|&p| ((back * (p - o.centre)).abs() - o.half).max_element() < c.2)
+        })) {
+            self.homer_out(false);
+            self.say("homer  knocked out of his fight".into());
+        }
+        let learning = learning || self.homer.is_some();
         if let Some((net, zero, n, pick)) = self.learned.as_mut() {
             learn::step(net, &net.w, &mut self.agent, &self.build, &self.world, zero, pick);
             *n += 1;
@@ -3351,7 +3810,7 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
         for i in 0..w.tries.len() {
             skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| w.at(i, k), |_| false);
         }
-    } else {
+    } else if sim.skel {
         skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| fr.get(k).copied(), |k| doll.touch[k] & 0x48 != 0);
     }
     if let Some(p) = sim.throw_at {
@@ -3389,7 +3848,7 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
             ours.arrow(f.translation, f.translation + force * 0.0005, Color::srgb(0.3, 0.6, 1.0));
         }
     }
-    for (a, _) in &sim.crowd {
+    for (a, _) in sim.crowd.iter().filter(|_| sim.skel) {
         let f: Vec<Transform> = a.doll.frames().collect();
         skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| f.get(k).copied(), |k| a.doll.touch[k] & 0x48 != 0);
     }
@@ -3397,7 +3856,7 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
     let (com, v) = if rising { (fr[0].translation, Vec3::ZERO) } else { (com, v) };
     ours.sphere(Isometry3d::from_translation(com), 0.04, Color::srgb(1.0, 0.3, 0.2));
     ours.arrow(com.with_z(0.01), (com + v * 0.3).with_z(0.01), Color::srgb(1.0, 0.5, 0.2));
-    for (k, p) in sim.build.parts.iter().enumerate() {
+    for (k, p) in sim.build.parts.iter().enumerate().filter(|_| sim.skel) {
         let Some(e) = p.boxed else { continue };
         let c = Color::srgb(0.2, 0.9, 0.95);
         if let Some(f) = fr.get(k) {
@@ -3446,11 +3905,12 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
 }
 
 const RESET_TIP: &str = "Stand Homer back up (R)";
-const TIPS: [(&str, &str); 28] = [
+const TIPS: [(&str, &str); 30] = [
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
     ("car", "A taxi comes at Homer from his left at 8 m/s and hits him."),
     ("#ripples", "Cyan rings on the floor where a body part lands hard."),
+    ("#skel", "The skeleton's lines and joints drawn over Homer's body."),
     ("#eyes", "Homer's eyes: they look where he's reacting to, blink, squint when he's hurt and shut when he's out."),
     ("#brows", "Homer's eyebrows: they show when he's scared, hurt or stumbling."),
     ("explosion pile", "Barrels and crates in front of Homer that blow up 2 s later."), ("wrecking ball", "A 250 kg ball on a rope swings through Homer."),
@@ -3459,6 +3919,7 @@ const TIPS: [(&str, &str); 28] = [
     ("fall", "Lifts Homer 3 m and lets him fall."), ("clear", "Takes away thrown balls, boxes and crates."), ("ice", "Makes the floor ice. Again: back to concrete."),
     ("replay", "Plays the last 10 s again (the speed buttons slow it down). Press again to stop."),
     ("Hero", "Play as Hero beside Homer: WASD walk, Shift run, Ctrl sprint, click punch; walk into Homer to push him. Again: take Hero out."),
+    ("passive", "On: Homer only takes hits. Off: near the Hero he fights back (walks up, punches, kicks); a hit puts him on his ragdoll a while."),
     ("walk", "WASD steers Homer through his balance: he leans that way and steps to follow, and can trip."),
     ("game tasks", "NM -> animation (the game's tasks).\nOn: when the game's task would end (a shot, a balance, a fall...), Homer goes back to his animation: standing, or getting up if he's lying.\nOff: he stays in Delirium; he only gets up after lying still a while."),
     ("get-up", "When he lies still: animation = the game's get-up clip; muscles = his muscles try the clip's poses (he can fail); off = he stays down; learned = the trained network."),
@@ -3977,7 +4438,7 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<boo
             });
             sub(ui, "Play");
             pressed = pressed.take().or(tiles(ui, "play", &[("Hero", sim.hero.is_some(), "Hero".into()),
-                ("walk", sim.walk, onoff("walk Homer", sim.walk))]));
+                ("walk", sim.walk, onoff("walk Homer", sim.walk)), ("passive", sim.passive, onoff("Homer passive", sim.passive))]));
         }
 
         if sim.tab & (1 << 3) != 0 {
@@ -4021,7 +4482,8 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<boo
             if let Some(n) = tiles(ui, "pedcol", &cols) {
                 pressed = Some(format!("#pedcol {n}"));
             }
-            pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("eyes", sim.eyes)), ("#brows", sim.brows, onoff("eyebrows", sim.brows))]));
+            pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("eyes", sim.eyes)), ("#brows", sim.brows, onoff("eyebrows", sim.brows)),
+                ("#skel", sim.skel, onoff("skeleton", sim.skel))]));
             sub(ui, "Your own");
             centred(ui, 216.0, |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -4178,6 +4640,7 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<boo
             (Some("#grid"), _) => sim.skin.grid = !sim.skin.grid,
             (Some("#pedcol"), Some(n)) => sim.ped_color = PED_COLORS.iter().position(|c| c.0 == n).unwrap_or(sim.ped_color),
             (Some("#eyes"), _) => sim.eyes = !sim.eyes,
+            (Some("#skel"), _) => sim.skel = !sim.skel,
             (Some("#brows"), _) => sim.brows = !sim.brows,
             (Some("#fog"), _) => sim.skin.fog = !sim.skin.fog,
             (Some("#glow"), _) => sim.skin.glow = !sim.skin.glow,

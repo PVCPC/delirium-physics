@@ -368,6 +368,47 @@ pub fn effector_angles(raw: [f32; 3], limits: &[(f32, f32); 3], flip: [bool; 3])
     })
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SoftLimit {
+    pub stiffness: f32,
+    pub damping: f32,
+    pub angle: f32,
+    pub dir: f32,
+    pub velocity_scaled: bool,
+    pub enabled: bool,
+}
+
+impl SoftLimit {
+    pub fn set_limit(&mut self, angle: f32, dir: f32, velocity_scaled: bool) {
+        (self.angle, self.dir, self.velocity_scaled) = (angle, dir.signum(), velocity_scaled);
+    }
+
+    pub fn set_limit_angle(&mut self, angle: f32) {
+        self.angle = angle;
+    }
+
+    pub fn limit(&self) -> f32 {
+        self.angle.abs()
+    }
+
+    pub fn set_enabled(&mut self, on: bool) {
+        self.enabled = on;
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn accel(&self, at: f32, v: f32) -> f32 {
+        let err = at - self.angle;
+        if !self.enabled || err * self.dir <= 0.0 {
+            return 0.0;
+        }
+        let scale = if self.velocity_scaled { 1.0 + (v * self.dir).max(0.0) } else { 1.0 };
+        -(self.stiffness * err + 2.0 * self.damping * self.stiffness.max(0.0).sqrt() * v) * scale
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Effector {
     pub desired: [f32; 3],
@@ -377,11 +418,13 @@ pub struct Effector {
     pub muscle_stiffness: f32,
     pub oppose_gravity: f32,
     pub one: bool,
+    pub soft: [SoftLimit; 3],
+    pub injury: f32,
 }
 
 impl Effector {
     pub(crate) fn new(j: &JointDef, now: [f32; 3]) -> Effector {
-        Effector { desired: [0.0; 3], zero: now, strength: j.strength, damping: j.damping, muscle_stiffness: j.muscle_stiffness, oppose_gravity: 0.0, one: !j.three }
+        Effector { desired: [0.0; 3], zero: now, strength: j.strength, damping: j.damping, muscle_stiffness: j.muscle_stiffness, oppose_gravity: 0.0, one: !j.three, soft: Default::default(), injury: 0.0 }
     }
 
     pub fn set_stiffness(&mut self, s: f32, d: f32, ms: Option<f32>) {
@@ -624,12 +667,18 @@ impl Character {
     pub fn rigid(&self, dt: f32) -> Vec<Rigid> {
         let mut out = vec![Rigid::default(); self.joints.len() + 1];
         for (i, (j, e)) in self.joints.iter().zip(&self.eff).enumerate() {
-            let damping = e.damping.max(MIN_DAMPING);
-            let x = damping.fma(8.0, e.strength) * e.muscle_stiffness * dt * 0.5;
+            let well = 1.0 - e.injury;
+            let (strength, damping) = (e.strength * well, (e.damping * well).max(MIN_DAMPING));
+            let x = damping.fma(8.0, strength) * e.muscle_stiffness * dt * 0.5;
             let blend = (6.0 * dt).max(x / (x + 1.0)).clamp(0.0, 1.0);
             let target = if j.three { targets(j, e) } else { [e.desired[0], 0.0, 0.0] };
+            let soft = std::array::from_fn(|k| {
+                let (l, f) = (e.soft[k], j.three && j.flip[k]);
+                let mid = if j.three { (j.limits[k].0 + j.limits[k].1) * 0.5 } else { 0.0 };
+                SoftLimit { angle: if f { -l.angle } else { l.angle } - mid, dir: if f { -l.dir } else { l.dir }, ..l }
+            });
             out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: j.limits, max: j.max_torque, blend, hinge: !j.three, desired: e.desired[0], jc: j.rigid,
-                                target, gain: [e.strength, damping] };
+                                target, gain: [strength, damping], soft };
         }
         out
     }
