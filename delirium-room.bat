@@ -2,6 +2,17 @@
 rem Delirium room. Drag your game's disc image (.iso) onto this file, or pick the game folder when the room asks.
 setlocal
 cd /d "%~dp0"
+rem On its own (downloaded from the release page): fetch this version's source beside it, then run the copy in there.
+set "VERSION=0.1.1"
+if not exist "%~dp0Cargo.toml" (
+  if not exist "%~dp0delirium-physics-%VERSION%\Cargo.toml" (
+    echo Downloading Delirium Physics %VERSION% source...
+    curl -sSfL -o "%TEMP%\delirium-physics-%VERSION%.zip" "https://github.com/PVCPC/delirium-physics/archive/refs/tags/v%VERSION%.zip" || (echo Download failed. & pause & exit /b 1)
+    tar -xf "%TEMP%\delirium-physics-%VERSION%.zip" -C "%~dp0." || (echo Unzip failed. & pause & exit /b 1)
+  )
+  call "%~dp0delirium-physics-%VERSION%\delirium-room.bat" %*
+  exit /b
+)
 set "VIEWER=%~dp0target\release\delirium-room.exe"
 if exist "%USERPROFILE%\.cargo\bin\cargo.exe" set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 where cargo >nul 2>&1

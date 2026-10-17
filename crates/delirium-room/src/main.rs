@@ -220,6 +220,32 @@ fn held(w: usize) -> Option<hero::Held> {
 const HOMER_REST: f32 = 2.5;
 
 const SWING: f32 = 0.35;
+const BAT_SWING: f32 = 0.7;
+const BAT_PUSH: f32 = 2.5;
+const BAT_BLOOD: usize = 3;
+const KNIFE_BLOOD: usize = 8;
+
+fn swing_len(w: usize) -> f32 {
+    if WEAPONS[w].0 == "bat" { BAT_SWING } else { SWING }
+}
+
+fn bat_swing(s: f32) -> (f32, f32) {
+    let ease = |u: f32| {
+        let u = u.clamp(0.0, 1.0);
+        u * u * (3.0 - 2.0 * u)
+    };
+    let (rest, back, through) = (-0.35, -1.1, 2.5);
+    if s < 0.35 {
+        let e = ease(s / 0.35);
+        (rest + (back - rest) * e, -0.12 * e)
+    } else if s < 0.65 {
+        let e = ease((s - 0.35) / 0.3);
+        (back + (through - back) * e, -0.12 + 0.42 * e)
+    } else {
+        let e = ease((s - 0.65) / 0.35);
+        (through + (rest + std::f32::consts::TAU - through) * e, 0.3 * (1.0 - e))
+    }
+}
 
 const THROW_SPEED: f32 = 15.0;
 const FUSE: f32 = 3.0;
@@ -764,7 +790,7 @@ impl Sim {
             for (id, j, at) in std::mem::take(&mut a.doll.ob_hits) {
                 let Some(t) = self.taxis.get_mut((id - TAXI_ID) as usize) else { continue };
                 t.ped_hit(j, at);
-                if i == 0 && (0.2..CRUSH_SPEED).contains(&t.speed.abs()) {
+                if i == 0 && !self.dead && (0.2..CRUSH_SPEED).contains(&t.speed.abs()) {
                     pressing = Some(id);
                 }
                 if i == 0 && self.room.stage == "cab" && !self.room.fell {
@@ -970,6 +996,9 @@ impl Sim {
             hero::Hit::Swing(dmg, at, j) => {
                 self.health = if self.god { 200.0 } else { (self.health - dmg).max(1.0) };
                 let k = self.agent.doll.nearest(&self.build, at);
+                if kind(self.weapon) == 2 && (self.hero.is_none() || self.hero_gun) {
+                    self.cut(k, at, -j.normalize_or(Vec3::Z), dmg);
+                }
                 (if self.rand.float_in_range(0.0, 1.0) > 0.7 { "balance" } else { "flinch" }, vec![imp(k, at, j)])
             }
             hero::Hit::Bump(_) => ("balance", vec![]),
@@ -1165,11 +1194,12 @@ impl Sim {
     fn fire(&mut self, part: usize, aim: Option<(Vec3, Vec3, Vec3)>, fatal: bool) {
         (self.rises, self.still) = ([None, None], [0.0; 2]);
         let before = self.health;
+        let was_dead = self.dead || before <= 0.0;
         let (label, name, _) = WEAPONS[self.weapon];
         let hit = self.weapons.iter().find(|w| w.name == name).map(|w| {
             use delirium_data::ped;
             let mut h = ped::Health { health: self.health, ..Default::default() };
-            let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: false });
+            let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: true });
             let o = ped::damage(&mut h, &hit, &ped::Victim::default(), &mut self.rand);
             self.health = h.health;
             (o.lost, o.flags & ped::INSTANT != 0)
@@ -1195,13 +1225,18 @@ impl Sim {
         self.mark(0, part, at, n);
         if let Some((lost, _)) = hit {
             self.pop(at, lost);
-            self.injure(part, (lost / 100.0).clamp(0.15, 0.5));
+            if !was_dead {
+                self.injure(part, (lost / 100.0).clamp(0.15, 0.5));
+            }
         }
         let w = self.weapons.iter().find(|w| w.name == name);
         let set = w.map_or("*", |w| delirium::nm::weapon_set(w, if self.weak { 2 } else { 3 }));
         let (at, d, n) = aim.unwrap_or((ours.p(part) + ours.fwd * 0.1, -ours.fwd, ours.fwd));
         let vel = shottask::bullet(at, at - d.normalize() * 3.0, w.map_or(WEAPONS[self.weapon].2, |w| w.force));
         let mut o = vec![format!("applyImpulse partIndex={part} hitPoint={} impulse={}", v3(at), v3(vel))];
+        if was_dead {
+            return self.send_ours(o);
+        }
         let (hit, now) = (self.hit(), self.now());
         match self.shot_task.as_mut() {
             Some((t, _)) => o.extend(t.next_hit(&mut self.rand, &self.tp, &hit, now, set, part, at, vel, n).iter().map(shottask::text)),
@@ -1270,11 +1305,25 @@ impl Sim {
         }
     }
 
+    fn cut(&mut self, part: usize, at: Vec3, n: Vec3, dmg: f32) {
+        self.light(0, part, SHOT_GLOW);
+        self.bleed_some(at, n, if WEAPONS[self.weapon].0 == "bat" { BAT_BLOOD } else { KNIFE_BLOOD });
+        self.pop(at, dmg);
+        if let Some(f) = self.agent.doll.frames().nth(part) {
+            let back = f.rotation.inverse();
+            self.rings.push((0, part, back * (at - f.translation), back * n, 0.0));
+        }
+    }
+
     fn bleed(&mut self, at: Vec3, n: Vec3) {
+        self.bleed_some(at, n, BLOOD_PIX);
+    }
+
+    fn bleed_some(&mut self, at: Vec3, n: Vec3, count: usize) {
         if !self.pixel_blood {
             return;
         }
-        for _ in 0..BLOOD_PIX {
+        for _ in 0..count {
             let mut r = || {
                 self.fx_seed = self.fx_seed.wrapping_mul(1664525).wrapping_add(1013904223);
                 (self.fx_seed >> 8) as f32 / (1u32 << 24) as f32
@@ -1313,7 +1362,7 @@ impl Sim {
             w.as_ref().map_or(25.0, |w| {
                 use delirium_data::ped;
                 let mut h = ped::Health { health: hp, ..Default::default() };
-                let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: false });
+                let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: true });
                 ped::damage(&mut h, &hit, &ped::Victim::default(), &mut self.rand).lost
             })
         };
@@ -1512,7 +1561,7 @@ impl Sim {
             1 => return self.throw_weapon(from, self.gun.aim),
             2 => {
                 if self.gun.swing <= 0.0 {
-                    self.gun.swing = SWING;
+                    self.gun.swing = swing_len(self.weapon);
                 }
                 return;
             }
@@ -1612,8 +1661,9 @@ impl Sim {
             return self.say(format!("room  {}: missed", WEAPONS[self.weapon].0));
         };
         let (dmg, push) = w.map_or((20.0, hero::MELEE_PUSH), |w| (w.damage, w.force.max(hero::MELEE_PUSH)));
+        let j = if WEAPONS[self.weapon].0 == "bat" { (dir * 0.7 - dir.cross(Vec3::Z).normalize_or(Vec3::X)).normalize() * push * BAT_PUSH } else { dir * push };
         let what = format!("room  {} lands", WEAPONS[self.weapon].0);
-        self.land(hero::Hit::Swing(dmg, at, dir * push), self.gun.at, &what);
+        self.land(hero::Hit::Swing(dmg, at, j), self.gun.at, &what);
     }
 
     fn thrown_frame(&mut self, dt: f32) {
@@ -1743,7 +1793,7 @@ impl Sim {
         }
         self.say(format!("room  shot: near miss, {d:.2} m from him"));
         let now = self.steps as f32 / 60.0;
-        if now - std::mem::replace(&mut self.near_at, now) < DODGE_GAP {
+        if now - std::mem::replace(&mut self.near_at, now) < DODGE_GAP && !self.dead {
             self.say("room  shot at again: he dives (shootDodge)".into());
             return self.send_ours(vec![format!("shootDodge start=true rightArmTarget={} leftArmTarget={}", v3(from), v3(from))]);
         }
@@ -2878,16 +2928,22 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     let at = sim.gun.at - d * 0.05 * k;
     let mut shown = Quat::from_axis_angle(right, 0.35 * k) * d;
     let mut at = at;
+    let bat = sim.hero.is_none() && WEAPONS[sim.weapon].0 == "bat";
+    if bat {
+        let (th, lunge) = bat_swing(if sim.gun.swing > 0.0 { 1.0 - sim.gun.swing / BAT_SWING } else { 0.0 });
+        shown = (Vec3::Z * 0.8 + right * 0.6).normalize() * th.cos() + d * th.sin();
+        at += d * lunge;
+    }
     if sim.gun.swing > 0.0 {
-        let s = 1.0 - sim.gun.swing / SWING;
-        if WEAPONS[sim.weapon].0 == "knife" {
-            at += d * 0.3 * (s * std::f32::consts::PI).sin();
-        } else {
-            shown = Quat::from_axis_angle(right, 1.4 - 2.2 * s) * d;
-        }
-        let was = sim.gun.swing;
+        let len = swing_len(sim.weapon);
+        let was = 1.0 - sim.gun.swing / len;
         sim.gun.swing -= dt;
-        if was > SWING * 0.5 && sim.gun.swing <= SWING * 0.5 && sim.hero.is_none() {
+        let s = 1.0 - sim.gun.swing.max(0.0) / len;
+        if !bat {
+            at += d * 0.3 * (s * std::f32::consts::PI).sin();
+        }
+        let lands = if bat { bat_swing(was).0 < std::f32::consts::FRAC_PI_2 && bat_swing(s).0 >= std::f32::consts::FRAC_PI_2 } else { was < 0.5 && s >= 0.5 };
+        if lands && sim.hero.is_none() {
             sim.swing_weapon();
         }
     }
@@ -3469,6 +3525,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                     sim.switch_to = Some((n.to_string(), nm() == delirium::nmrs::MARGE));
                 }
             }
+            ("!gunfire", _) => sim.gun_fire(false),
             ("!weapon", Some(i)) => sim.weapon = i.parse::<usize>().unwrap_or(0).min(WEAPONS.len() - 1),
             ("!aim", Some(m)) => (sim.aim_gun, sim.gun.placed) = (m == "gun", false),
             ("!gun", Some(d)) => {
@@ -4373,6 +4430,17 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<boo
             let ui = &mut cols[c];
             ui.add_space(6.0);
             ui.vertical_centered(|ui| ui.label(caps(2, "Weapons & throwing")));
+            sub(ui, "Weapon: floating or from the camera");
+            centred(ui, 216.0, |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                for (on, name, key) in [(true, "floating", "#aim gun"), (false, "camera", "#aim camera")] {
+                    if wide(ui, name.into(), if sim.aim_gun == on { ON } else { egui::Color32::WHITE }).clicked() {
+                        pressed = Some(key.into());
+                    }
+                }
+            });
+            info(ui, if sim.aim_gun { "Floating: the weapon floats by the pointer; click to fire or swing." } else { "Camera: you shoot from the camera at what you click." });
+            ui.add_space(4.0);
             let per = per_row(ui, 171.0);
             egui::Grid::new("guns").spacing([10.0, 8.0]).show(ui, |ui| {
                 for (i, w) in WEAPONS.iter().enumerate() {
@@ -4389,8 +4457,7 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<boo
                     }
                 }
             });
-            for (title, now, items) in [("Aim from", sim.aim_gun, [(false, "camera", "#aim camera"), (true, "gun", "#aim gun")]),
-                                        ("Left click", sim.click_shoots, [(false, "poke", "#click poke"), (true, "shoot", "#click shoot")])] {
+            for (title, now, items) in [("Left click", sim.click_shoots, [(false, "poke", "#click poke"), (true, "shoot", "#click shoot")])] {
                 sub(ui, title);
                 centred(ui, 216.0, |ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
