@@ -3,7 +3,7 @@ rem Delirium room. Drag your game's disc image (.iso) onto this file, or pick th
 setlocal
 cd /d "%~dp0"
 rem On its own (downloaded from the release page): fetch this version's source beside it, then run the copy in there.
-set "VERSION=0.1.1"
+set "VERSION=0.1.2"
 if not exist "%~dp0Cargo.toml" (
   if not exist "%~dp0delirium-physics-%VERSION%\Cargo.toml" (
     echo Downloading Delirium Physics %VERSION% source...

@@ -153,6 +153,8 @@ pub const MENU: [(&str, bool); 40] = [
     ("dangle", true), ("carried", true), ("buoyancy", true), ("animPose", true), ("armsWindmill", true), ("spineTwist", true),
     ("wave", true), ("", false), ("", false), ("", false), ("", false)];
 const PICK_EVERY: usize = 15;
+const HURT_EVERY: u64 = 3;
+const HURT: f32 = 0.5;
 
 #[derive(Clone, Copy, Default)]
 pub struct Pick {
@@ -268,9 +270,12 @@ fn local(k: [Vec3; 11]) -> [Vec3; 11] {
     k.map(|p| inv * (p - mid))
 }
 
-fn episode(net: &Net, w: &[f32], start: &[Transform], build: &Build, world: &Collision, zero: &[Quat], mut rec: Option<&mut Vec<Vec<Transform>>>,
-           refm: Option<&[[Vec3; 11]]>) -> f32 {
+fn episode(net: &Net, w: &[f32], start: &[Transform], hurt: Option<&str>, build: &Build, world: &Collision, zero: &[Quat],
+           mut rec: Option<&mut Vec<Vec<Transform>>>, refm: Option<&[[Vec3; 11]]>) -> f32 {
     let mut a = agent(build, start);
+    if let Some(m) = hurt {
+        a.extras.send("injury", &[("mask", Value::Str(m.into())), ("amount", Value::Float(HURT))]);
+    }
     let mut r = 0.0;
     let (mut best, mut at, mut pick) = (0usize, 0usize, Pick::default());
     for _ in 0..STEPS {
@@ -305,6 +310,11 @@ fn episode(net: &Net, w: &[f32], start: &[Transform], build: &Build, world: &Col
         }
     }
     r / STEPS as f32
+}
+
+fn hurt(seed: u64, n: usize) -> Option<&'static str> {
+    let r = (seed >> (16 * n + 8)) % (4 * HURT_EVERY);
+    (r < 4).then(|| ["ul", "ur", "ll", "lr"][r as usize])
 }
 
 fn starts(build: &Build, world: &Collision, frames: &[Transform], n: usize, rng: &mut Rng) -> Vec<Vec<Transform>> {
@@ -384,7 +394,7 @@ pub fn train(build: &Build, world: &Collision, frames: &[Transform], gens: usize
                     for (s, sign) in [1.0f32, -1.0].iter().enumerate() {
                         let w: Vec<f32> = net.w.iter().zip(&e).map(|(a, b)| a + sign * SIGMA * b).collect();
                         let mut rec = (k < LIVE / 2).then(Vec::new);
-                        o[s] = tries[k].iter().enumerate().map(|(n, &t)| episode(net, &w, &pool[t], build, world, z, if n == 0 { rec.as_mut() } else { None }, refm)).sum::<f32>() / TRIES as f32;
+                        o[s] = tries[k].iter().enumerate().map(|(n, &t)| episode(net, &w, &pool[t], hurt(seeds[k], n), build, world, z, if n == 0 { rec.as_mut() } else { None }, refm)).sum::<f32>() / TRIES as f32;
                         if let Some(r) = rec {
                             live.lock().unwrap()[2 * k + s] = r;
                         }

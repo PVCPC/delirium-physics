@@ -251,6 +251,7 @@ pub struct Foe {
     pub bones: [Option<Vec3>; 5],
     pub task: Option<(u32, Option<(f32, f32)>)>,
     pub block: bool,
+    pub weapon: Option<delirium_data::melee::Held>,
 }
 
 impl Foe {
@@ -310,7 +311,7 @@ pub fn pick_score(from: Vec3, look: Vec3, at: Vec3, threat: f32) -> f32 {
     0.8 / d.max(1.0).powf(0.25) * h + 10.0 * threat
 }
 
-fn held(w: &delirium_data::weapons::Weapon) -> Held {
+pub fn held(w: &delirium_data::weapons::Weapon) -> Held {
     let kind = melee::WEAPON_TYPES.iter().position(|t| *t == w.name).unwrap_or(0) as u32;
     let flags = [(5, "GUN"), (9, "MELEE_CLUB"), (10, "MELEE_BLADE"), (12, "2HANDED")].iter().filter(|f| w.has(f.1)).fold(0, |b, f| b | 1 << f.0);
     Held { kind, flags, between_shots: w.between_shots as i32 }
@@ -354,8 +355,8 @@ impl Melee {
             None => Fighter { player: true, health: c.health, attack: p.attack, defend: p.defend, martial: p.melee_percent, weapon: Some(held(c.weapon)) },
         };
         let foe_fighter = |f: &Foe| match c.me {
-            Some(_) => Fighter { player: true, health: f.health, attack: p.attack, defend: p.defend, martial: p.melee_percent, weapon: None },
-            None => { let m = f.me.unwrap_or(BARE); Fighter { player: false, health: f.health, attack: m.attack, defend: m.defend, martial: m.martial, weapon: None } }
+            Some(_) => Fighter { player: true, health: f.health, attack: p.attack, defend: p.defend, martial: p.melee_percent, weapon: f.weapon },
+            None => { let m = f.me.unwrap_or(BARE); Fighter { player: false, health: f.health, attack: m.attack, defend: m.defend, martial: m.martial, weapon: f.weapon } }
         };
         let point = |k: u32, from: [f32; 3]| c.foe.and_then(|f| f.point(k, from));
         let base = |fighter: Fighter| Ask {

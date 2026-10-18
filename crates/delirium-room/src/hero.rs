@@ -36,6 +36,7 @@ pub struct Hero {
     pub hand: Vec3,
     pub grip: Quat,
     pub homer: Vec<Transform>,
+    pub foe: melee::Foe,
 }
 
 pub enum Hit {
@@ -51,7 +52,7 @@ impl Hero {
                            press: 0, keys: 0, scripted: 0, clock: 0.0, rand: Default::default(), bones: vec![],
                            speeds: [speed(getup::WALK), speed(getup::WALK + 1), speed(getup::WALK + 2)],
                            caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
-                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![] };
+                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![], foe: Default::default() };
         n.pose(clips);
         n
     }
@@ -67,6 +68,15 @@ impl Hero {
 
     pub fn playing(&self) -> bool {
         self.fight.mv.is_some()
+    }
+
+    pub fn as_foe(&self, clips: &Clips, weapon: Option<&delirium_data::weapons::Weapon>) -> melee::Foe {
+        let f = melee::Foe { weapon: weapon.map(melee::held), ..Default::default() };
+        clips.fight.as_ref().map_or(f, |d| f.with_move(&d.0, self.fight.mv.as_ref()))
+    }
+
+    pub fn disarmed(&self) -> bool {
+        self.fight.disarm_foe
     }
 
     pub fn blocking(&self, clips: &Clips) -> bool {
@@ -111,7 +121,7 @@ impl Hero {
             let bits = std::mem::take(&mut self.press) | self.keys | self.scripted;
             self.pad.feed(bits, [0x7F; 2], [if bits & 1 != 0 { 255 } else { 0 }, 0], (self.clock * 1000.0) as u32);
             let reach = if weapon.target_range > 0.0 { weapon.target_range } else { 10.0 };
-            let foe = homer.map(|(p, heading, health, bones)| melee::Foe { feet: p.with_z(self.feet.z), heading, health, bones, ..Default::default() })
+            let foe = homer.map(|(p, heading, health, bones)| melee::Foe { feet: p.with_z(self.feet.z), heading, health, bones, ..self.foe })
                 .filter(|f| f.feet.distance(self.feet) <= reach);
             locked = foe.is_some() && self.pad.value(melee::LOCK_LT) >= melee::LOCK_FULL;
             let c = melee::Ctx { pad: &self.pad, pos: self.feet + Vec3::Z, health: 200.0, weapon, foe, me: None, lock_on: locked };
@@ -218,7 +228,7 @@ impl Hero {
     }
 }
 
-fn closest(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> (Vec3, Vec3) {
+pub fn closest(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> (Vec3, Vec3) {
     let (d1, d2, r) = (b - a, d - c, a - c);
     let (aa, ee, f) = (d1.length_squared(), d2.length_squared(), d2.dot(r));
     let (s, t) = if aa <= 1e-9 && ee <= 1e-9 {

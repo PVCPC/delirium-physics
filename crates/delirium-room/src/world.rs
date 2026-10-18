@@ -67,6 +67,8 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
         }
         "rooftop" => (vec![b([0.0, -2.25, 2.0], [3.0, 2.75, 2.0], concrete)], Vec3::Z * 4.0),
         "lowwall" => (vec![b([0.0, 0.45, 0.45], [4.0, 0.15, 0.45], brick)], Vec3::ZERO),
+        "kerb" => (vec![b([0.0, 0.45, 0.22], [4.0, 0.15, 0.22], brick)], Vec3::ZERO),
+        "open" => (vec![], Vec3::ZERO),
         "rail" => (vec![b([0.0, -0.5, 1.18], [1.5, 0.03, 0.03], concrete), b([-1.5, -0.5, 0.6], [0.03, 0.03, 0.6], concrete),
                         b([1.5, -0.5, 0.6], [0.03, 0.03, 0.6], concrete)], Vec3::ZERO),
         "street" => {

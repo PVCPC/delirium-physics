@@ -414,7 +414,15 @@ impl Car {
     }
 
     pub fn obstacle(&self, id: i32, top: f32) -> delirium::ragdoll::Obstacle {
-        let [lo, hi] = self.hull.map(|p| p.with_z(p.z.min(top)));
+        self.obstacle_box(id, self.hull.map(|p| p.with_z(p.z.min(top))))
+    }
+
+    pub fn cabin(&self, id: i32, top: f32) -> delirium::ragdoll::Obstacle {
+        let [lo, hi] = self.hull;
+        self.obstacle_box(id, [Vec3::new(lo.x + 0.1, -1.2, top), Vec3::new(hi.x - 0.1, 0.6, hi.z)])
+    }
+
+    fn obstacle_box(&self, id: i32, [lo, hi]: [Vec3; 2]) -> delirium::ragdoll::Obstacle {
         let (vel, spin) = if self.asleep { (Vec3::ZERO, Vec3::ZERO) } else { (self.vel, self.ang) };
         delirium::ragdoll::Obstacle { id, at: self.pos, rot: self.rot, centre: self.pos + self.rot * ((lo + hi) / 2.0), half: (hi - lo) / 2.0,
                                      vel, spin, com: self.pos + self.rot * self.com, parts: &[], last: self.prev }
