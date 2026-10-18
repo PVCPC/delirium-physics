@@ -48,11 +48,21 @@ pub struct Portals {
 
 impl Portals {
     pub fn new() -> Portals {
-        let game = std::fs::read_to_string(PATH).ok().map(|s| s.trim().to_string()).filter(|g| is_portal2(g));
-        Portals { game, ..default() }
+        let typed = std::fs::read_to_string(PATH).unwrap_or_default().trim().to_string();
+        let game = Some(typed.clone()).filter(|g| is_portal2(g));
+        Portals { game, typed, ..default() }
     }
     pub fn on(&self) -> bool {
         self.game.is_some()
+    }
+
+    fn link(&mut self, path: Option<String>) -> bool {
+        let Some(path) = path.filter(|p| is_portal2(p)) else { self.asked = true; return false };
+        self.typed = path.clone();
+        self.game = Some(path);
+        self.asked = false;
+        self.model_tried = false;
+        true
     }
 }
 
@@ -203,30 +213,47 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, w
 }
 
 pub fn settings(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
+    crate::info(ui, "Optional bonus. Link your own Portal 2 installation here; the base room doesn't need it.");
+    ui.label("Portal 2 folder");
+    let r = ui.add(egui::TextEdit::singleline(&mut sim.portal.typed).desired_width(f32::INFINITY).hint_text("e.g. F:/SteamLibrary/steamapps/common/Portal 2"));
+    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        *pressed = Some("#portal2 typed".into());
+    }
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("Link folder").clicked() { *pressed = Some("#portal2 typed".into()); }
+        if ui.button("Find Steam install").clicked() { *pressed = Some("#portal2 auto".into()); }
+    });
+    if sim.portal.asked {
+        ui.colored_label(crate::HI, "Folder not found. Choose the Portal 2 folder containing portal2/pak01_dir.vpk.");
+    }
     if sim.portal.on() {
+        ui.add(egui::Label::new(format!("Linked: {}", sim.portal.game.as_deref().unwrap_or_default())).wrap());
         crate::info(ui, "The portal gun is in the weapons. Left click: blue, right click: orange. Homer goes through them.");
-    } else if sim.portal.asked {
-        crate::info(ui, "Portal 2 wasn't found. Paste its folder (the one with portal2 in it), then Enter:");
-        let r = ui.text_edit_singleline(&mut sim.portal.typed);
-        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            *pressed = Some("#portal2 typed".into());
-        }
     } else {
-        crate::info(ui, "Needs your own Portal 2 (not included).");
+        crate::info(ui, "Portal 2 mode is off. Link a folder or enable the mode to use the remembered installation.");
     }
 }
 
-pub fn toggle(sim: &mut Sim, typed: bool) {
+pub fn toggle(sim: &mut Sim, action: Option<&str>) {
     let p = &mut sim.portal;
-    if p.game.take().is_some() {
+    if action.is_none() && p.game.is_some() {
+        p.game = None;
         p.gun = false;
         return;
     }
     let t = p.typed.trim().trim_matches('"').replace('\\', "/");
-    p.game = if typed { Some(t).filter(|t| is_portal2(t)) } else { find_portal2() };
-    p.asked = p.game.is_none();
+    let path = match action {
+        Some("typed") => Some(t),
+        Some("auto") => find_portal2(),
+        _ => Some(t).filter(|t| is_portal2(t)).or_else(find_portal2),
+    };
+    if !p.link(path) {
+        return sim.say("portal  folder not found; any existing link kept".into());
+    }
     if let Some(g) = &p.game {
-        let _ = std::fs::write(PATH, g);
+        if let Err(e) = std::fs::write(PATH, g) {
+            return sim.say(format!("portal  linked for this session; couldn't remember folder: {e}"));
+        }
     }
     let say = p.game.as_ref().map_or("portal  Portal 2 not found".into(), |g| format!("portal  Portal 2 at {g}"));
     sim.say(say);

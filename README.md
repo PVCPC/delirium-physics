@@ -1,13 +1,13 @@
 > [!IMPORTANT]
-> **You need your own GTA IV for Xbox 360, PS3 or PC (not included).** Delirium reads the character, animations and settings from your own copy. Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it). A PS3 disc image straight off the disc is fine: its key is looked up online (or put its .dkey file beside it). On PS3 everything works except the animations for now: get-ups and the Hero's moves don't play yet, so Xbox 360 or PC is best. No game files come with it, and it won't run without them.
+> **You need your own GTA IV for Xbox 360, PS3 or PC (not included).** This requirement is for the Playroom. It reads the character, animations and settings from your own copy. Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it). A PS3 disc image straight off the disc is fine: its key is looked up online (or put its .dkey file beside it). On PS3 everything works except the animations for now: get-ups and the Hero's moves don't play yet, so Xbox 360 or PC is best. No game files come with it, and the Playroom won't run without them. For integrating the engine into another game, see [For developers](#for-developers).
 
 <p align="center">
   <img src="docs/homer-wave.gif" alt="Homer waving" width="320">
-  <img src="docs/world.gif" alt="The world: box, barrel, taxi, wrecking ball, low wall, ledge, rope bridge" width="320">
 </p>
 <p align="center">
-  <img src="docs/moves.gif" alt="Moves: ice, drunk, flinch, electrocute, stagger, windmill" width="320">
-  <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="320">
+  <img src="docs/world.gif" alt="The world: box, barrel, taxi, taxi grab, wrecking ball, low wall, ledge, rope bridge" width="260">
+  <img src="docs/moves.gif" alt="Moves: ice, drunk, flinch, electrocute, stagger, windmill" width="260">
+  <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="260">
 </p>
 
 # Delirium Physics
@@ -15,6 +15,11 @@
 A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
 
 Delirium is a character physics engine written in Rust. It comes with an SDK (C, C++, C#, Unity, Python) and the room you see here.
+
+## Releases and source code
+
+- **Want to try it?** The files in [Releases](../../releases) provide the compiled **Delirium Playroom**, a playable demonstration of the engine. The Windows release launcher downloads the ready-built room; you don't need to compile the repository.
+- **Want to use it in a mod or another game?** This repository contains the engine source, SDK, language bindings, examples and Playroom source needed to build your own integration. Delirium is intended for use in other games and mods, beyond this demonstration. You still need to connect it to the target game's character, animation, collision and update systems; it isn't a drop-in mod for every game.
 
 ## What's in it
 
@@ -36,7 +41,7 @@ You need your own copy of the game: Delirium reads the character, animations and
 
 Building it yourself: download this repo and run its `delirium-room.bat`. That offers to install Rust and Microsoft's C++ build tools (free, a few GB) and builds the room in a few minutes.
 
-**Portal mode**: install Portal 2 (Steam), then press **Portal 2** in the room's settings. It finds Portal 2 by itself, or asks for its folder. The portal gun is then in the weapons: left click shoots blue, right click shoots orange. No Portal 2 files are included; they're read from your install.
+**Portal mode (optional bonus)**: install Portal 2, then open **Interact → Portal 2 · bonus** inside the running room. Paste your Portal 2 installation folder and click **Link folder**, or click **Find Steam install**. The section shows the linked folder and lets you turn the bonus on or off. The portal gun is then in the weapons: left click shoots blue, right click shoots orange. Portal 2 isn't part of startup setup and isn't needed for the base room. No Portal 2 files are included; they're read from your install. The portal maths comes from **Stink-O**'s [Portal 2 Rust Engine](https://github.com/Stink-O/Portal2-rust-engine) (MIT; see [CREDITS](CREDITS.md)).
 
 **macOS / Linux**: run `delirium-room.command`. Install Rust first from [rustup.rs](https://rustup.rs).
 
@@ -55,7 +60,7 @@ Building it yourself: download this repo and run its `delirium-room.bat`. That o
 | **X** | stop all behaviours |
 | **H** | hide the panels |
 
-Behaviours are the buttons in the top left. Every control is listed under **Controls** in the room's panel.
+Choose reactions under **Reactions** in the left dock. **Scene** contains locations, people and the **Add one taxi** button; **Character** contains Homer and Hero controls. The bottom bar shows Homer's physical speed and acceleration beside the simulation timer. Every shortcut is listed under **Help**.
 
 **Hero mode** (the Hero button):
 
@@ -70,6 +75,8 @@ Behaviours are the buttons in the top left. Every control is listed under **Cont
 | **F** | get in or out of the taxi |
 
 ## For developers
+
+The Playroom is one application built on Delirium. For a mod or another game, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project.
 
 - `crates/delirium`: the engine
 - `crates/delirium-sdk`: the C API (`include/delirium_physics.h`) and bindings for C++, C#, Unity and Python, with examples

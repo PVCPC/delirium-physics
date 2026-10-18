@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use rapier3d::math::{Pose, Rotation, Vector};
 use rapier3d::prelude::{ColliderBuilder, ColliderHandle, Group, ImpulseJointHandle, InteractionGroups, InteractionTestMode, PhysicsWorld,
-                        RigidBodyBuilder, RigidBodyHandle, RopeJointBuilder};
+                        FixedJointBuilder, RigidBodyBuilder, RigidBodyHandle, RopeJointBuilder, SphericalJointBuilder};
 
 pub const KINDS: [(&str, f32, f32, f32); 5] = [("ball", 0.15, 2.0, 14.0), ("box", 0.2, 8.0, 9.0), ("crate", 0.45, 40.0, 0.0),
     ("barrel", 0.3, 30.0, 0.0), ("wrecking ball", 0.5, 250.0, 0.0)];
@@ -45,6 +45,7 @@ pub struct Room {
     pub broke: Vec<usize>,
     pub push: Vec3,
     pub com_v: Vec3,
+    pub com_a: Vec3,
     #[cfg(feature = "portal")]
     pub holes: Vec<delirium::collision::Hole>,
 }
@@ -66,38 +67,46 @@ pub const PAD_HALF: Vec3 = Vec3::new(1.5, 1.5, 0.25);
 pub const PLANKS: usize = 12;
 pub const BRIDGE_TOP: f32 = 8.0;
 pub const PLANK_HALF: Vec3 = Vec3::new(0.8, 0.15, 0.03);
+pub const PIECE_HALF: Vec3 = Vec3::new(0.4, 0.15, 0.03);
+pub const TEETH: usize = 8;
+const SPLINTER: f32 = 0.06;
+const SWING_DAMP: f32 = 3.5;
 pub fn plank_y(i: usize) -> f32 {
     -0.2 - 0.4 * i as f32
 }
 pub const BRIDGE_FAR: f32 = -0.4 * PLANKS as f32;
 pub const ROPE_X: f32 = 0.85;
-pub const ROPES: usize = 2 * (2 * PLANKS + 1) + 2 * (PLANKS + 1) + 2 * PLANKS;
+pub const ROPES: usize = 2 * (2 * PLANKS + 1) + 2 * (PLANKS + 1) + 2 * PLANKS + 2 * SIDE_ROPES.len() * (PLANKS + 1);
+pub const SIDE_ROPES: [f32; 2] = [1.0 / 3.0, 2.0 / 3.0];
+const ROPE_REACH: f32 = 0.1;
 pub const POST_HALF: Vec3 = Vec3::new(0.05, 0.05, 0.6);
-const HAND: f32 = 1.0;
-const SLACK: (f32, f32) = (1.03, 1.06);
-const LASH: (f32, f32) = (0.01, 0.06);
-const LASH_ROTTEN: (f32, f32) = (0.04, 0.12);
+const HAND: f32 = 1.25;
+const SLACK: (f32, f32) = (1.01, 1.025);
 const WIND_N: f32 = 25.0;
-const PLANK_KG: f32 = 5.0;
-const KNOT_KG: f32 = 0.7;
+const PLANK_KG: f32 = 12.0;
+const KNOT_KG: f32 = 1.5;
 pub const HOMER_KG: f32 = 77.7;
-const HOMER_N: f32 = HOMER_KG * 9.81;
-const ROT_CHANCE: f32 = 0.3;
-const ROT_HOLDS: (f32, f32) = (350.0, 800.0);
+pub const HOMER_N: f32 = HOMER_KG * 9.81;
+const ROTTEN: (usize, usize) = (2, 4);
+const ROT_HOLDS: (f32, f32) = (250.0, 500.0);
 const PARTS: Group = Group::GROUP_2;
 
 pub struct Plank {
-    pub h: RigidBodyHandle,
-    ends: [Option<[ImpulseJointHandle; 2]>; 2],
+    pub h: [RigidBodyHandle; 2],
+    seam: Option<ImpulseJointHandle>,
     pub rotten: bool,
+    pub teeth: Vec<f32>,
     holds: f32,
     pub load: f32,
+    f: Vec3,
+    at: Vec3,
 }
 
 pub struct Bridge {
     pub planks: Vec<Plank>,
     t: f32,
     knots: [[Vec<RigidBodyHandle>; 2]; 2],
+    pub seed: u32,
 }
 
 fn foot(i: usize, c: usize) -> usize {
@@ -119,7 +128,7 @@ impl Bridge {
                 let v = &mut knots[r][s];
                 for (k, &y) in at.iter().enumerate() {
                     let p = Vector::new(x, y, zr);
-                    let b = if k == 0 || k == at.len() - 1 { RigidBodyBuilder::fixed() } else { RigidBodyBuilder::dynamic().additional_mass(KNOT_KG).linear_damping(0.3) };
+                    let b = if k == 0 || k == at.len() - 1 { RigidBodyBuilder::fixed() } else { RigidBodyBuilder::dynamic().additional_mass(KNOT_KG).linear_damping(1.5) };
                     v.push(w.insert_body(b.translation(p)));
                     if k > 0 {
                         w.insert_impulse_joint(v[k - 1], v[k], RopeJointBuilder::new((at[k - 1] - y).abs() * slack));
@@ -132,28 +141,48 @@ impl Bridge {
                 w.insert_impulse_joint(knots[1][s][k], knots[0][s][foot(k - 1, 0)], RopeJointBuilder::new(HAND));
             }
         }
-        let planks = (0..PLANKS).map(|i| {
-            let h = w.insert(RigidBodyBuilder::dynamic().translation(Vector::new(0.0, plank_y(i), z)).angular_damping(2.0),
-                             ColliderBuilder::cuboid(PLANK_HALF.x, PLANK_HALF.y, PLANK_HALF.z).mass(PLANK_KG).friction(0.8).collision_groups(groups)).0;
-            let rotten = i > 0 && i + 1 < PLANKS && rand.float_in_range(0.0, 1.0) < ROT_CHANCE;
-            let lash = if rotten { LASH_ROTTEN } else { LASH };
-            let ends = [0, 1].map(|s| Some([0, 1].map(|c| w.insert_impulse_joint(h, knots[0][s][foot(i, c)],
-                RopeJointBuilder::new(rand.float_in_range(lash.0, lash.1)).local_anchor1(Vector::new([-ROPE_X, ROPE_X][s], [PLANK_HALF.y, -PLANK_HALF.y][c], 0.0))))));
+        let mut rot = [false; PLANKS];
+        let count = ROTTEN.0 + (rand.float_in_range(0.0, (ROTTEN.1 - ROTTEN.0 + 1) as f32) as usize).min(ROTTEN.1 - ROTTEN.0);
+        while rot.iter().filter(|r| **r).count() < count {
+            rot[1 + (rand.float_in_range(0.0, (PLANKS - 2) as f32) as usize).min(PLANKS - 3)] = true;
+        }
+        let planks: Vec<Plank> = (0..PLANKS).map(|i| {
+            let h = [0, 1].map(|s| {
+                let x = [-1.0, 1.0][s];
+                let h = w.insert(RigidBodyBuilder::dynamic().translation(Vector::new(0.0, plank_y(i), z)).linear_damping(0.8).angular_damping(8.0),
+                                 ColliderBuilder::cuboid(PIECE_HALF.x, PIECE_HALF.y, PIECE_HALF.z).translation(Vector::new(x * PIECE_HALF.x, 0.0, 0.0))
+                                     .mass(PLANK_KG / 2.0).friction(0.8).collision_groups(groups)).0;
+                for c in 0..2 {
+                    w.insert_impulse_joint(h, knots[0][s][foot(i, c)], SphericalJointBuilder::new().local_anchor1(Vector::new(x * ROPE_X, [PLANK_HALF.y, -PLANK_HALF.y][c], 0.0)));
+                }
+                h
+            });
+            let seam = Some(w.insert_impulse_joint(h[0], h[1], FixedJointBuilder::new().contacts_enabled(false)));
+            let rotten = rot[i];
+            let teeth = (0..=TEETH).map(|k| if rotten { [-1.0, 1.0][k % 2] * rand.float_in_range(0.3, 1.0) * SPLINTER } else { 0.0 }).collect();
             let holds = if rotten { rand.float_in_range(ROT_HOLDS.0, ROT_HOLDS.1) } else { f32::INFINITY };
-            Plank { h, ends, rotten, holds, load: 0.0 }
+            Plank { h, seam, rotten, teeth, holds, load: 0.0, f: Vec3::ZERO, at: Vec3::ZERO }
         }).collect();
         w.integration_parameters.num_solver_iterations = 30;
         w.integration_parameters.dt = 1.0 / 60.0;
         for _ in 0..240 {
             w.step();
         }
-        Bridge { planks, knots, t: 0.0 }
+        Bridge { planks, knots, t: 0.0, seed }
     }
 
     pub fn plank(&self, w: &PhysicsWorld, i: usize) -> Transform {
-        let b = &w.bodies[self.planks[i].h];
+        self.half(w, i, 0)
+    }
+
+    pub fn half(&self, w: &PhysicsWorld, i: usize, s: usize) -> Transform {
+        let b = &w.bodies[self.planks[i].h[s]];
         let q = b.rotation();
         Transform::from_translation(bv(b.translation())).with_rotation(Quat::from_xyzw(q.x, q.y, q.z, q.w))
+    }
+
+    pub fn piece(&self, w: &PhysicsWorld, i: usize, s: usize) -> Transform {
+        self.half(w, i, s) * Transform::from_translation(Vec3::X * [-1.0, 1.0][s] * PIECE_HALF.x)
     }
 
     pub fn ropes(&self, w: &PhysicsWorld) -> Vec<(Vec3, Vec3)> {
@@ -167,72 +196,72 @@ impl Bridge {
         for s in 0..2 {
             v.extend((1..=PLANKS).map(|k| (at(self.knots[1][s][k]), at(self.knots[0][s][foot(k - 1, 0)]))));
         }
+        for s in 0..2 {
+            for f in SIDE_ROPES {
+                v.extend((0..=PLANKS).map(|k| self.side(w, s, k, f)));
+            }
+        }
         v
     }
 
-    pub fn net_wall(&self, w: &PhysicsWorld, s: usize, row: u8) -> (Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>) {
-        let at = |h: RigidBodyHandle| bv(w.bodies[h].translation()).to_array();
+    fn side(&self, w: &PhysicsWorld, s: usize, k: usize, f: f32) -> (Vec3, Vec3) {
+        let at = |h: RigidBodyHandle| bv(w.bodies[h].translation());
         let under = |k: usize| if k == 0 { 0 } else if k > PLANKS { 2 * PLANKS + 1 } else { foot(k - 1, 0) };
+        let [f0, f1, h0, h1] = [at(self.knots[0][s][under(k)]), at(self.knots[0][s][under(k + 1)]), at(self.knots[1][s][k]), at(self.knots[1][s][k + 1])];
+        (f0.lerp(h0, f), f1.lerp(h1, f))
+    }
+
+    pub fn net_wall(&self, w: &PhysicsWorld, s: usize, row: u8) -> (Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>) {
         let (mut p, mut t, mut m) = (vec![], vec![], vec![]);
-        for k in 0..=PLANKS {
-            let o = p.len() as u32;
-            p.extend([at(self.knots[0][s][under(k)]), at(self.knots[0][s][under(k + 1)]), at(self.knots[1][s][k + 1]), at(self.knots[1][s][k])]);
-            t.extend([[o, o + 1, o + 2], [o, o + 2, o + 3]]);
-            m.extend([row, row]);
+        for f in [0.0].into_iter().chain(SIDE_ROPES).chain([1.0]) {
+            for k in 0..=PLANKS {
+                let (a, b) = self.side(w, s, k, f);
+                let o = p.len() as u32;
+                let up = Vec3::Z * ROPE_REACH;
+                p.extend([a - up, b - up, b + up, a + up].map(|v| v.to_array()));
+                t.extend([[o, o + 1, o + 2], [o, o + 2, o + 3]]);
+                m.extend([row, row]);
+            }
         }
         (p, t, m)
     }
 
-    pub fn net(&self, w: &PhysicsWorld) -> Vec<(Vec3, Vec3)> {
-        const ALONG: usize = 3;
-        const UP: usize = 7;
-        let at = |h: RigidBodyHandle| bv(w.bodies[h].translation());
-        let mut v = vec![];
-        for s in 0..2 {
-            let under = |k: usize| if k == 0 { 0 } else if k > PLANKS { 2 * PLANKS + 1 } else { foot(k - 1, 0) };
-            for k in 0..=PLANKS {
-                let (f0, f1, h0, h1) = (at(self.knots[0][s][under(k)]), at(self.knots[0][s][under(k + 1)]), at(self.knots[1][s][k]), at(self.knots[1][s][k + 1]));
-                let p = |a: usize, b: usize| {
-                    let u = a as f32 / ALONG as f32;
-                    f0.lerp(f1, u).lerp(h0.lerp(h1, u), b as f32 / UP as f32)
-                };
-                for a in 0..ALONG {
-                    for b in 0..UP {
-                        v.extend([(p(a, b), p(a + 1, b + 1)), (p(a + 1, b), p(a, b + 1))]);
-                    }
-                }
-            }
-        }
-        v
-    }
-
     fn load(&mut self, w: &mut PhysicsWorld, caps: &[(Transform, f32, f32)], push: Vec3, dt: f32) -> Vec<usize> {
         let mut touch = vec![];
-        for (i, p) in self.planks.iter().enumerate() {
-            let b = &w.bodies[p.h];
-            let q = b.rotation();
-            let (c, q) = (bv(b.translation()), Quat::from_xyzw(q.x, q.y, q.z, q.w));
-            for (t, r, h) in caps {
-                for e in [-1.0, 1.0] {
-                    let l = q.inverse() * (t.translation + t.rotation * Vec3::Y * (h * e) - c);
-                    if l.x.abs() < PLANK_HALF.x + r && l.y.abs() < PLANK_HALF.y + r && (-PLANK_HALF.z - r..PLANK_HALF.z + r + 0.05).contains(&l.z) {
-                        touch.push((i, c + q * l.with_z(PLANK_HALF.z).clamp(-PLANK_HALF, PLANK_HALF)));
+        let pieces: Vec<[Transform; 2]> = (0..self.planks.len()).map(|i| [0, 1].map(|s| self.piece(w, i, s))).collect();
+        for (i, ps) in pieces.iter().enumerate() {
+            for (c, q) in ps.iter().map(|t| (t.translation, t.rotation)) {
+                for (t, r, h) in caps {
+                    for e in [-1.0, 1.0] {
+                        let l = q.inverse() * (t.translation + t.rotation * Vec3::Y * (h * e) - c);
+                        if l.x.abs() < PIECE_HALF.x + r && l.y.abs() < PIECE_HALF.y + r && (-PIECE_HALF.z - r..PIECE_HALF.z + r + 0.05).contains(&l.z) {
+                            touch.push((i, c + q * l.with_z(PIECE_HALF.z).clamp(-PIECE_HALF, PIECE_HALF)));
+                        }
                     }
                 }
             }
         }
-        for p in &mut self.planks {
-            p.load = 0.0;
-        }
         let each = push / touch.len().max(1) as f32;
+        let mut want = vec![(Vec3::ZERO, Vec3::ZERO, 0.0); self.planks.len()];
         for &(i, at) in &touch {
-            self.planks[i].load += each.length();
-            w.bodies[self.planks[i].h].apply_impulse_at_point(rv(each * dt), rv(at), true);
+            want[i] = (want[i].0 + each, want[i].1 + at, want[i].2 + 1.0);
+        }
+        for ((p, (f, at, k)), ps) in self.planks.iter_mut().zip(want).zip(&pieces) {
+            if k > 0.0 {
+                p.at = at / k;
+            }
+            if p.seam.is_none() {
+                continue;
+            }
+            p.f += (f - p.f) * (dt / 0.1).min(1.0);
+            p.load = p.f.length();
+            let s = (ps[1].translation.distance(p.at) < ps[0].translation.distance(p.at)) as usize;
+            w.bodies[p.h[s]].apply_impulse_at_point(rv(p.f * dt), rv(p.at), true);
         }
         self.t += dt;
         let wind = WIND_N * (0.7 * self.t).sin() * (0.23 * self.t + 1.0).sin();
-        for p in &self.planks {
-            w.bodies[p.h].apply_impulse(rv(Vec3::X * wind * dt), true);
+        for h in self.planks.iter().flat_map(|p| p.h) {
+            w.bodies[h].apply_impulse(rv(Vec3::X * wind * dt / 2.0), true);
         }
         let broke: Vec<usize> = (0..self.planks.len()).filter(|&i| self.planks[i].load > self.planks[i].holds).collect();
         for &i in &broke {
@@ -241,10 +270,18 @@ impl Bridge {
         broke
     }
 
+    pub fn hold(&mut self, i: usize) {
+        self.planks[i].holds = f32::INFINITY;
+    }
+
     pub fn fall(&mut self, w: &mut PhysicsWorld, i: usize) {
         let p = &mut self.planks[i];
-        for j in p.ends.iter_mut().filter_map(Option::take).flatten() {
+        if let Some(j) = p.seam.take() {
             w.remove_impulse_joint(j);
+        }
+        for h in p.h {
+            w.bodies[h].set_angular_damping(SWING_DAMP);
+            w.bodies[h].wake_up(true);
         }
         p.holds = f32::INFINITY;
     }
@@ -301,10 +338,11 @@ impl Room {
             }
         }
         let snap = (name == "trampoline").then_some(0);
-        let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.subsec_nanos());
+        let seed = std::env::var("BRIDGE_SEED").ok().and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.subsec_nanos()));
         let bridge = (name == "bridge").then(|| Bridge::new(&mut w[0], seed));
         Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), start, snap, snapped: None, fell: false, bounced: 9.0,
-               bridge, broke: vec![], push: Vec3::NEG_Z * HOMER_N, com_v: Vec3::ZERO, #[cfg(feature = "portal")] holes: vec![] }
+               bridge, broke: vec![], push: Vec3::NEG_Z * HOMER_N, com_v: Vec3::ZERO, com_a: Vec3::ZERO, #[cfg(feature = "portal")] holes: vec![] }
     }
 
     fn blocks(row: &dyn Fn(&str) -> u8) -> Vec<(Vec3, Vec3, u8)> {
@@ -343,7 +381,7 @@ impl Room {
     pub fn plank_triangles(&self, i: usize) -> (Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>) {
         let b = self.bridge.as_ref().expect("the bridge");
         let row = self.surfaces.iter().position(|s| s.0.starts_with("WOOD")).or_else(|| self.surfaces.iter().position(|s| s.0 == "CONCRETE")).unwrap_or(0) as u8;
-        Self::boxes(std::iter::once((b.plank(&self.w[0], i), PLANK_HALF, row)))
+        Self::boxes([0, 1].into_iter().map(|s| (b.piece(&self.w[0], i, s), PIECE_HALF, row)))
     }
 
     fn tris(&self, which: impl Iterator<Item = usize>) -> (Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>) {

@@ -308,8 +308,10 @@ struct Sim {
     gun_up: f32,
     gun_off: Vec3,
     gun_aim_off: Vec3,
-    crane: Option<([f32; 4], [f32; 4], f32, f32)>,
-    crane_to: Option<([f32; 4], f32)>,
+    crane: Option<([f32; 4], [f32; 4], f32, f32, Option<(Vec3, Vec3)>)>,
+    crane_to: Option<([f32; 4], f32, Option<Vec3>)>,
+    shadow: f32,
+    strict: bool,
     film_vel: Vec3,
     photo_pending: bool,
     photo_follow: bool,
@@ -1275,7 +1277,7 @@ impl Sim {
         let Some(n) = self.room.bridge.as_ref().map(|b| b.planks.len()) else { return };
         if self.steps == 0 {
             let rotten: Vec<usize> = self.room.bridge.iter().flat_map(|b| b.planks.iter().enumerate()).filter(|p| p.1.rotten).map(|p| p.0 + 1).collect();
-            self.say(format!("bridge  rotten planks {rotten:?}"));
+            self.say(format!("bridge  rotten planks {rotten:?} (BRIDGE_SEED={})", self.room.bridge.as_ref().unwrap().seed));
         }
         for i in 0..n {
             let (p, t, m) = self.room.plank_triangles(i);
@@ -1289,22 +1291,26 @@ impl Sim {
             self.world.add_chunk(BRIDGE_CHUNK + 0x40 + side as u64, &p, &t, &m);
         }
         let v = self.agent.doll.com().1;
-        let a = (v - self.room.com_v) * 60.0;
+        self.room.com_a += ((v - self.room.com_v) * 60.0 - self.room.com_a) * (1.0 / 60.0 / 0.15);
         self.room.com_v = v;
-        self.room.push = (Vec3::NEG_Z * 9.81 - a).clamp_length_max(30.0) * world::HOMER_KG;
+        let f = (Vec3::NEG_Z * 9.81 - self.room.com_a) * world::HOMER_KG;
+        let side = f.truncate().clamp_length_max(0.3 * world::HOMER_N);
+        self.room.push = side.extend(f.z.clamp(-1.6 * world::HOMER_N, -0.2 * world::HOMER_N));
         let broke = std::mem::take(&mut self.room.broke);
         if let Some(t) = self.room.snapped.as_mut() {
             *t += 1.0 / 60.0;
-            if (*t * 60.0).round() as u32 % 60 == 0 {
-                let s = self.ours();
-                let gap = |h: Vec3| (0..n).map(|i| {
-                    let p = self.room.bridge.as_ref().unwrap().plank(&self.room.w[0], i);
-                    let l = p.rotation.inverse() * (h - p.translation);
-                    (l - l.clamp(-world::PLANK_HALF, world::PLANK_HALF)).length()
-                }).fold(f32::MAX, f32::min);
-                self.say(format!("bridge  hands from a plank: left {:.2} m, right {:.2} m", gap(s.p(16)), gap(s.p(20))));
+            let t = *t;
+            let s = self.ours();
+            let gap = |h: Vec3| (0..2 * n).map(|k| {
+                let p = self.room.bridge.as_ref().unwrap().piece(&self.room.w[0], k / 2, k % 2);
+                let l = p.rotation.inverse() * (h - p.translation);
+                (l - l.clamp(-world::PIECE_HALF, world::PIECE_HALF)).length()
+            }).fold(f32::MAX, f32::min);
+            let (l, r) = (gap(s.p(16)), gap(s.p(20)));
+            if (t * 60.0).round() as u32 % 60 == 0 {
+                self.say(format!("bridge  hands from a plank: left {l:.2} m, right {r:.2} m"));
             }
-            if !self.room.fell && self.ours().p(0).z < world::BRIDGE_TOP - 2.0 {
+            if !self.room.fell && t > 1.0 && l.min(r) > 0.4 {
                 self.room.fell = true;
                 self.send_ours(vec!["smartFall start=true".into()]);
                 self.say("bridge  he fell: smartFall".into());
@@ -1319,6 +1325,9 @@ impl Sim {
             self.room.bridge.as_mut().unwrap().fall(&mut self.room.w[0], step(i));
         }
         let j = step(step(i));
+        if j < n {
+            self.room.bridge.as_mut().unwrap().hold(j);
+        }
         let (edge, inst) = match j < n {
             true => (Vec3::new(0.0, if ahead { 1.0 } else { -1.0 } * world::PLANK_HALF.y, world::PLANK_HALF.z), PLANK_ID + j as i32),
             false => (Vec3::new(0.0, if ahead { world::BRIDGE_FAR } else { 0.0 }, world::BRIDGE_TOP), -1),
@@ -1655,6 +1664,7 @@ impl Sim {
         let line = |at: Vec3, d: Vec3| vec![format!("applyImpulse start=true partIndex={part} hitPoint={} impulse={}", v3(at), v3(d.normalize() * self.poke))];
         let o = line(hit, dir);
         self.light(0, part, TOUCH_GLOW);
+        self.sounds.push(sfx::Snd::Hit);
         self.say(format!("room  poke {} ({:.1} N s)", delirium_data::nm_asset::PARTS.get(part).unwrap_or(&"?"), self.poke));
         self.send_ours(o);
     }
@@ -1718,7 +1728,7 @@ impl Sim {
             }
             "walk" => {
                 self.walk = !self.walk;
-                return self.say(format!("ours  walk: {}", if self.walk { "on (WASD leans his balance; he steps to follow)" } else { "off (WASD moves the camera)" }));
+                return self.say(format!("ours  walk: {}", if self.walk { "on (WASD leans his balance; he steps to follow)" } else { "off (C selects free camera)" }));
             }
             "get-up" => {
                 self.getup_mode = (self.getup_mode + 1) % 4;
@@ -1778,6 +1788,7 @@ impl Sim {
                 }
                 return;
             }
+            "add taxi" => return self.spawn_taxi(),
             "clear taxis" => {
                 (self.taxis, self.driving) = (vec![], false);
                 return self.say("room  taxis: gone".into());
@@ -2539,7 +2550,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
@@ -2633,10 +2644,10 @@ fn main() {
     }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
-    let systems = (keys, console, mouse, scripted, step, switch, scene, apply_look, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
+    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, apply_look, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "Delirium Physics Playroom".into(), resolution: (1600, 900).into(), ..default() }),
+            primary_window: Some(Window { title: "Delirium Physics Playroom".into(), resolution: (1600, 900).into(), resize_constraints: WindowResizeConstraints { min_width: 960.0, min_height: 640.0, ..default() }, ..default() }),
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
@@ -2951,18 +2962,34 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
     for &(c, h, row) in &sim.room.blocks {
         let brick = sim.room.surfaces.get(row as usize).is_some_and(|s| s.0 == "BRICK_WALL");
         let post = sim.room.stage == "bridge" && h == world::POST_HALF;
-        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.4, 0.28, 0.16) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
-        commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(h * 2.0))), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
-                        Transform::from_translation(c), RenderLayers::layer(1), RoomScenery));
+        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.24, 0.25, 0.27) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
+        let (mesh, rot) = match post {
+            true => (meshes.add(Cylinder::new(h.x * 1.5, h.z * 2.0)), Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            false => (meshes.add(Cuboid::from_size(h * 2.0)), Quat::IDENTITY),
+        };
+        commands.spawn((Mesh3d(mesh), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
+                        Transform::from_translation(c).with_rotation(rot), RenderLayers::layer(1), RoomScenery));
     }
+    let wood = mats.add(StandardMaterial { base_color: Color::srgb(0.36, 0.35, 0.33), perceptual_roughness: 0.85, double_sided: true, cull_mode: None, ..default() });
     for (i, p) in sim.room.bridge.iter().flat_map(|b| b.planks.iter().enumerate()) {
-        let color = if p.rotten { Color::srgb(0.36, 0.3, 0.2) } else { Color::srgb(0.55, 0.38, 0.22) };
-        commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(world::PLANK_HALF * 2.0))), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
-                        Transform::default(), RenderLayers::layer(1), RoomScenery, Plank(i)));
+        for s in 0..2 {
+            commands.spawn((Mesh3d(meshes.add(plank_half(&p.teeth, s))), MeshMaterial3d(wood.clone()), Transform::default(), RenderLayers::layer(1), RoomScenery, Plank(i, s)));
+        }
     }
     if sim.room.bridge.is_some() {
-        let (mesh, mat) = (meshes.add(Cylinder::new(0.025, 1.0)), mats.add(StandardMaterial { base_color: Color::srgb(0.62, 0.52, 0.36), perceptual_roughness: 1.0, ..default() }));
+        let n = world::PLANKS;
+        let mut grey = |c: f32| mats.add(StandardMaterial { base_color: Color::srgb(c, c, c + 0.02), perceptual_roughness: 0.8, ..default() });
+        let (rail, hand, rod, side) = ((meshes.add(Cylinder::new(0.02, 1.0)), grey(0.7)), (meshes.add(Cylinder::new(0.035, 1.0)), grey(0.62)),
+                                       (meshes.add(Cylinder::new(0.012, 1.0)), grey(0.55)), (meshes.add(Cylinder::new(0.025, 1.0)), grey(0.62)));
         for k in 0..world::ROPES {
+            let foot = 2 * (2 * n + 1);
+            let (mesh, mat) = match k {
+                _ if k < foot => &rail,
+                _ if k < foot + 2 * (n + 1) => &hand,
+                _ if k >= foot + 2 * (n + 1) + 2 * n => &side,
+                _ if (k - foot - 2 * (n + 1)) % n % 3 == 1 => &rod,
+                _ => continue,
+            };
             commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), RenderLayers::layer(1), RoomScenery, Rope(k)));
         }
     }
@@ -3176,15 +3203,38 @@ fn save_view(key: &str, (r, a, t): (Quat, Vec3, Vec3)) {
 #[derive(Component)]
 struct RoomScenery;
 #[derive(Component)]
-struct Plank(usize);
+struct Plank(usize, usize);
 
 #[derive(Component)]
 struct Rope(usize);
 
+fn plank_half(teeth: &[f32], s: usize) -> Mesh {
+    let h = world::PLANK_HALF;
+    let n = teeth.len() - 1;
+    let out = [-h.x, h.x][s];
+    let mut o = vec![Vec2::new(out, -h.y), Vec2::new(out, h.y)];
+    o.extend((0..=n).rev().map(|k| Vec2::new(teeth[k], -h.y + 2.0 * h.y * k as f32 / n as f32)));
+    let mut v: Vec<[f32; 3]> = vec![];
+    let mut tri = |a: Vec2, b: Vec2, c: Vec2, z: f32| v.extend([a, b, c].map(|p| [p.x, p.y, z]));
+    for k in 0..n {
+        let (a, b) = (o[o.len() - 1 - k], o[o.len() - 2 - k]);
+        let (oa, ob) = (Vec2::new(out, a.y), Vec2::new(out, b.y));
+        for z in [-h.z, h.z] {
+            tri(oa, a, b, z);
+            tri(oa, b, ob, z);
+        }
+    }
+    for k in 0..o.len() {
+        let (a, b) = (o[k], o[(k + 1) % o.len()]);
+        v.extend([[a.x, a.y, -h.z], [b.x, b.y, -h.z], [b.x, b.y, h.z], [a.x, a.y, -h.z], [b.x, b.y, h.z], [a.x, a.y, h.z]]);
+    }
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, v).with_computed_flat_normals()
+}
+
 fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope>>, mut r: Query<(&Rope, &mut Transform), Without<Plank>>) {
     let Some(b) = sim.room.bridge.as_ref() else { return };
     for (p, mut t) in &mut q {
-        *t = b.plank(&sim.room.w[0], p.0);
+        *t = b.half(&sim.room.w[0], p.0, p.1);
     }
     let ropes = b.ropes(&sim.room.w[0]);
     for (k, mut t) in &mut r {
@@ -3205,12 +3255,12 @@ fn follow_floor(sim: NonSend<Sim>, mut q: Query<&mut Transform, With<Floor>>) {
     }
 }
 
-fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, Has<Fill>)>,
+fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, Has<Fill>)>,
               mut fill: ResMut<GlobalAmbientLight>,
               floor: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<Floor>>, mut mats: ResMut<Assets<StandardMaterial>>,
               cam: Query<Entity, With<OursCam>>, mut commands: Commands) {
     let (l, Ok((f, m))) = (sim.skin, floor.single()) else { return };
-    if *last == Some((l, f, sim.soft)) {
+    if *last == Some((l, f, sim.soft, sim.shadow)) {
         return;
     }
     if last.is_some_and(|o| o.0 != l) {
@@ -3220,13 +3270,14 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool)>>, 
             let _ = std::fs::write(p, n.map(|x| x.to_string()).join(" "));
         }
     }
-    *last = Some((l, f, sim.soft));
+    *last = Some((l, f, sim.soft, sim.shadow));
     fill.brightness = if sim.soft { 400.0 } else { GlobalAmbientLight::default().brightness };
     let [r, g, b] = l.sky;
     sky.0 = Color::srgb(r, g, b);
     for (mut s, fill) in &mut sun {
         let k = match (fill, sim.soft) { (false, true) => 0.75, (false, false) => 1.0, (true, true) => 0.3, (true, false) => 0.0 };
         s.illuminance = bevy::light::light_consts::lux::AMBIENT_DAYLIGHT * l.sun * k;
+        s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some(sim.shadow);
     }
     if sim.room.stage != "street" {
         if let Some(m) = mats.get_mut(&m.0) {
@@ -3582,8 +3633,8 @@ fn car_mesh(sim: NonSend<Sim>, mut commands: Commands, assets: Res<AssetServer>,
     }
 }
 
-fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>) {
-    if sim.typing {
+fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>, mut contexts: EguiContexts) {
+    if sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input()) {
         return;
     }
     if k.just_pressed(KeyCode::Space) {
@@ -3612,7 +3663,11 @@ fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>) {
     }
 }
 
-fn console(mut sim: NonSendMut<Sim>, mut typed: MessageReader<KeyboardInput>) {
+fn console(mut sim: NonSendMut<Sim>, mut typed: MessageReader<KeyboardInput>, mut contexts: EguiContexts) {
+    if !sim.typing && contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input()) {
+        typed.clear();
+        return;
+    }
     for e in typed.read().filter(|e| e.state.is_pressed()) {
         match &e.logical_key {
             Key::Enter if !sim.typing => sim.typing = true,
@@ -3645,10 +3700,35 @@ fn console(mut sim: NonSendMut<Sim>, mut typed: MessageReader<KeyboardInput>) {
     }
 }
 
-fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut last: Local<Option<Vec2>>, scroll: Res<AccumulatedMouseScroll>,
+type RoomCameras = With<OursCam>;
+
+fn room_viewport(rect: egui::Rect, scale: f32, split: bool, right: bool) -> bevy::camera::Viewport {
+    let origin = (Vec2::new(rect.min.x, rect.min.y) * scale).as_uvec2();
+    let size = (Vec2::new(rect.width(), rect.height()) * scale).as_uvec2().max(UVec2::ONE);
+    let left = if split { (size.x / 2).max(1) } else { size.x };
+    let offset = if right && split { left } else { 0 };
+    bevy::camera::Viewport {
+        physical_position: origin + UVec2::new(offset, 0),
+        physical_size: UVec2::new(if right && split { size.x.saturating_sub(left).max(1) } else { left }, size.y),
+        ..default()
+    }
+}
+
+fn viewports(sim: NonSend<Sim>, mut contexts: EguiContexts, windows: Query<&Window>, mut cams: Query<(&mut Camera, Has<OursCam>), RoomCameras>) {
+    let (Ok(ctx), Ok(window)) = (contexts.ctx_mut(), windows.single()) else { return };
+    let rect = if sim.show_ui { ctx.available_rect() } else { ctx.content_rect() };
+    if rect.width() < 2.0 || rect.height() < 1.0 || window.physical_width() == 0 || window.physical_height() == 0 { return; }
+    for (mut camera, ours) in &mut cams {
+        camera.is_active = ours || sim.split();
+        camera.viewport = Some(room_viewport(rect, ctx.pixels_per_point(), sim.split(), !ours));
+    }
+}
+
+fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<ButtonInput<MouseButton>>, mut last: Local<Option<Vec2>>, scroll: Res<AccumulatedMouseScroll>,
          keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, windows: Query<&Window>,
          mut cam: Query<(&mut Transform, &mut Orbit, &Camera, &GlobalTransform), With<OursCam>>,
          ) {
+    let editing = sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input());
     let Ok((mut t, mut o, camera, gt)) = cam.single_mut() else { return };
     let filming = sim.film > 0.0 && !sim.photo;
     let cur = windows.single().ok().and_then(|w| w.cursor_position()).filter(|_| !filming);
@@ -3664,21 +3744,24 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
     if let Some([yaw, pitch, dist]) = sim.cam.take() {
         (o.yaw, o.pitch, o.dist) = (yaw, pitch, dist);
     }
-    if let Some((to, secs)) = sim.crane_to.take() {
-        sim.crane = Some(([o.yaw, o.pitch, o.dist, sim.look_z], to, 0.0, secs));
+    if let Some((to, secs, at)) = sim.crane_to.take() {
+        sim.crane = Some(([o.yaw, o.pitch, o.dist, sim.look_z], to, 0.0, secs, at.map(|a| (o.target, a))));
     }
-    if let Some((from, to, t, secs)) = sim.crane {
+    if let Some((from, to, t, secs, at)) = sim.crane {
         let t = (t + time.delta_secs() * !sim.photo as u8 as f32).min(secs);
         let k = (t / secs.max(1e-3)).clamp(0.0, 1.0);
         let k = k * k * (3.0 - 2.0 * k);
         let v: [f32; 4] = std::array::from_fn(|i| from[i] + (to[i] - from[i]) * k);
         (o.yaw, o.pitch, o.dist, sim.look_z) = (v[0], v[1], v[2], v[3]);
-        sim.crane = (t < secs).then_some((from, to, t, secs));
+        if let Some((a, b)) = at {
+            (o.target, o.follow) = (a.lerp(b, k), 3);
+        }
+        sim.crane = (t < secs).then_some((from, to, t, secs, at));
     }
     if let Some(at) = sim.cam_at.take() {
         (o.target, o.follow) = (at, 3);
     }
-    if (keys.just_pressed(KeyCode::KeyP) && !sim.typing) || std::mem::take(&mut sim.photo_pending) {
+    if (keys.just_pressed(KeyCode::KeyP) && !editing) || std::mem::take(&mut sim.photo_pending) {
         sim.photo = !sim.photo;
         (sim.show_ui, sim.paused) = (!sim.photo, sim.photo);
         o.follow = if sim.photo && !sim.photo_follow { 3 } else { 0 };
@@ -3717,7 +3800,8 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
         }
         o.dist = (o.dist * (1.0 - wheel * 0.1)).clamp(0.3, 40.0);
     }
-    if !sim.typing {
+    sim.walk_dir = sim.script_walk;
+    if !editing {
         let mut mv = Vec3::ZERO;
         for (k, d) in [(KeyCode::KeyW, -flat), (KeyCode::KeyS, flat), (KeyCode::KeyA, -side), (KeyCode::KeyD, side), (KeyCode::KeyE, Vec3::Z), (KeyCode::KeyQ, -Vec3::Z)] {
             if keys.pressed(k) {
@@ -3755,21 +3839,18 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
             mv = Vec3::ZERO;
         }
         if sim.photo {
-            if sim.walk && sim.hero.is_none() {
-                sim.walk_dir = sim.script_walk;
-            }
             if sim.photo_follow {
                 sim.look_z += mv.z * time.delta_secs() * 1.5;
                 mv = Vec3::ZERO;
             }
-        } else if sim.walk && sim.hero.is_none() {
+        } else if walks_homer(sim.walk, sim.hero.is_some(), sim.photo, o.follow) {
             sim.walk_dir = if mv == Vec3::ZERO { sim.script_walk } else { mv.with_z(0.0).normalize_or_zero() };
             if mv != Vec3::ZERO {
                 o.follow = 0;
             }
             mv = Vec3::ZERO;
         }
-        if mv != Vec3::ZERO {
+        if mv != Vec3::ZERO && moves_camera(sim.photo, o.follow) {
             o.target += mv * time.delta_secs() * if sim.photo && shift_held(&keys) { 7.0 } else { 2.5 };
             o.follow = 3;
         }
@@ -3785,7 +3866,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
         let at = sim.taxis.iter().find(|t| t.player).map(|t| t.pos).or(sim.hero.as_ref().map(|n| n.feet))
             .unwrap_or_else(|| { let c = sim.shown().map_or(sim.agent.doll.com().0, |f| f.links[0].translation); c.with_z(c.z - STAND) });
         let mut at = at.with_z(at.z + sim.look_z);
-        if sim.film > 0.0 {
+        if sim.film > 0.0 && !sim.strict {
             let v = sim.agent.doll.vel(0).0.with_z(0.0);
             sim.film_vel = sim.film_vel.lerp(v, (time.delta_secs() * 1.5).min(1.0));
             at += (sim.film_vel * 0.3).clamp_length_max(1.2);
@@ -3794,7 +3875,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
                 at = at.lerp(c, 0.4);
             }
         }
-        let z = o.target.z + (at.z - o.target.z) * if sim.film > 0.0 { (time.delta_secs() * 1.5).min(1.0) } else { k };
+        let z = o.target.z + (at.z - o.target.z) * if sim.film > 0.0 && !sim.strict { (time.delta_secs() * 1.5).min(1.0) } else { k };
         o.target = o.target.lerp(at, k).with_z(z);
     }
     let off = Vec3::new(o.yaw.cos() * o.pitch.cos(), o.yaw.sin() * o.pitch.cos(), o.pitch.sin()) * dist;
@@ -3805,7 +3886,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
     t.rotate_local_x(shake * e.sin());
     t.rotate_local_y(shake * (e * 1.3).cos());
     sim.eye = t.translation;
-    let half = windows.single().map_or(0.0, |w| w.width() * if sim.split() { 0.5 } else { 1.0 });
+    let half = camera.logical_viewport_rect().map_or(0.0, |r| r.max.x);
     let hover = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| {
         let ray = camera.viewport_to_world(gt, c).ok()?;
         let (from, dir) = (ray.origin, *ray.direction);
@@ -3825,7 +3906,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
     }
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
     sim.throw_at = if ctrl && sim.hero.is_none() { sim.pointer.or(sim.throw_at) } else { None };
-    if sim.hero.is_none() && !sim.typing {
+    if sim.hero.is_none() && !editing {
         for (key, b) in [(KeyCode::Digit1, "throw ball"), (KeyCode::Digit2, "throw box"), (KeyCode::Digit3, "drop crate")] {
             if keys.just_pressed(key) {
                 let keep = sim.throw_at;
@@ -3903,7 +3984,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
             sim.gun.wait = between / 1000.0;
         }
         let fatal = shift_held(&keys) && buttons.just_pressed(MouseButton::Right) && ok;
-        let reload = keys.just_pressed(KeyCode::KeyR) && !sim.typing;
+        let reload = keys.just_pressed(KeyCode::KeyR) && !editing;
         sim.hero_gun_frame(aim, dt, pull, fatal, reload);
         return;
     }
@@ -3916,7 +3997,7 @@ fn mouse(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, mut l
     let auto = (shift || sim.click_shoots) && between > 0.0 && between < 200.0 && buttons.pressed(MouseButton::Left) && sim.gun.wait <= 0.0;
     if (buttons.just_pressed(MouseButton::Left) || fatal || auto) && !sim.over_ui {
         let Some(cursor) = windows.single().ok().and_then(|w| w.cursor_position()) else { return };
-        if sim.split() && windows.single().is_ok_and(|w| cursor.x > w.width() * 0.5) {
+        if camera.logical_viewport_rect().is_some_and(|r| !r.contains(cursor)) {
             return;
         }
         let Ok(ray) = camera.viewport_to_world(gt, cursor) else { return };
@@ -4036,10 +4117,12 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!film", Some(a)) => sim.film = a.parse().unwrap_or(0.0),
             ("!crane", Some(a)) => {
                 let v: Vec<f32> = a.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-                if let [yaw, pitch, dist, z, secs] = v[..] {
-                    sim.crane_to = Some(([yaw, pitch, dist, z], secs));
+                if let [yaw, pitch, dist, z, secs, ref at @ ..] = v[..] {
+                    sim.crane_to = Some(([yaw, pitch, dist, z], secs, (at.len() == 3).then(|| Vec3::from_slice(at))));
                 }
             }
+            ("!shadow", Some(a)) => sim.shadow = a.parse().unwrap_or(0.0),
+            ("!strict", _) => sim.strict = true,
             ("!cam", Some(a)) => {
                 let v: Vec<f32> = a.split_whitespace().filter_map(|x| x.parse().ok()).collect();
                 if let [yaw, pitch, dist, z] = v[..] {
@@ -4404,9 +4487,6 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
             ours.line(a, at, Color::srgb(0.2, 0.2, 0.22));
         }
     }
-    for (a, b) in sim.room.bridge.iter().flat_map(|b| b.net(&sim.room.w[0])) {
-        ours.line(a, b, Color::srgb(0.6, 0.5, 0.33));
-    }
     let void = dark && sim.skin.fog;
     let me = sim.ours().p(0).with_z(0.0);
     let (o, n, fade) = if sim.infinite { ((me / 0.5).round() * 0.5, 30, 12.0) } else { (Vec3::ZERO, 20, 6.0) };
@@ -4562,169 +4642,37 @@ const TIPS: [(&str, &str); 33] = [
 const DIM: egui::Color32 = egui::Color32::from_rgb(170, 190, 215);
 const HI: egui::Color32 = egui::Color32::from_rgb(130, 210, 255);
 const INK: egui::Color32 = egui::Color32::from_rgb(245, 245, 248);
-const ON: egui::Color32 = egui::Color32::from_rgb(27, 126, 216);
-const ON2: egui::Color32 = egui::Color32::from_rgb(20, 181, 192);
-
-fn glass(ui: &mut egui::Ui, size: egui::Vec2, on: bool, radius: f32) -> (egui::Response, egui::Rect, egui::Color32) {
-    let (r, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    let t = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
-    let d = ui.ctx().animate_bool_with_time(resp.id.with("d"), resp.is_pointer_button_down_on(), 0.05);
-    let r = r.expand(t * 1.0 - d * 2.5);
-    let cr = egui::CornerRadius::same(radius as u8);
-    let (fill, edge) = if on { (egui::Color32::WHITE, egui::Color32::WHITE) }
-                       else { (egui::Color32::from_white_alpha((t * 22.0) as u8), egui::Color32::from_white_alpha((70.0 + t * 110.0) as u8)) };
-    ui.painter().rect(r, cr, fill, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
-    (resp, r, if on { egui::Color32::BLACK } else { INK })
-}
-
-fn spaced(t: &str, size: f32, mono: bool, spacing: f32, color: egui::Color32) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::default();
-    let font = if mono { egui::FontId::monospace(size) } else { egui::FontId::new(size, egui::FontFamily::Name("big".into())) };
-    job.append(t, 0.0, egui::TextFormat { font_id: font, color, extra_letter_spacing: spacing, ..Default::default() });
-    job
-}
+const ON: egui::Color32 = egui::Color32::from_rgb(53, 107, 183);
 
 fn per_row(ui: &egui::Ui, w: f32) -> usize {
     ((ui.available_width() + 10.0) / (w + 10.0)).floor().max(1.0) as usize
 }
 
-fn glow_head(ui: &mut egui::Ui, title: &str, under: &str, glow: bool) {
-    let w = ui.available_width();
-    let (r, _) = ui.allocate_exact_size(egui::vec2(w, 100.0), egui::Sense::hover());
-    let p = ui.painter();
-    let (nx, ny) = (28, 14);
-    let mut m = egui::Mesh::default();
-    for y in 0..=ny {
-        for x in 0..=nx {
-            let (u, v) = (x as f32 / nx as f32, y as f32 / ny as f32);
-            let d = ((u - 0.5) / 0.5).powi(2) + ((v - 0.45) / 0.55).powi(2);
-            let a = (1.0 - d).clamp(0.0, 1.0).powf(1.1);
-            let c = egui::ecolor::Hsva::new(0.01 + u * 0.62, 0.8, 1.0, a);
-            m.colored_vertex(egui::pos2(r.min.x + u * r.width(), r.min.y + v * r.height()), egui::Color32::from(c));
-        }
-    }
-    for y in 0..ny {
-        for x in 0..nx {
-            let k = (y * (nx + 1) + x) as u32;
-            let n = nx as u32 + 1;
-            m.add_triangle(k, k + 1, k + n);
-            m.add_triangle(k + 1, k + n + 1, k + n);
-        }
-    }
-    if glow {
-        p.add(m);
-    }
-    let chip = |at: egui::Pos2, t: &str| {
-        let g = p.layout_job(spaced(t, 10.0, true, 3.0, egui::Color32::WHITE));
-        let box_ = egui::Rect::from_min_size(at, g.size()).expand2(egui::vec2(9.0, 5.0));
-        p.rect(box_, egui::CornerRadius::same(10), egui::Color32::from_black_alpha(120), egui::Stroke::new(1.0, egui::Color32::from_white_alpha(55)), egui::StrokeKind::Inside);
-        p.galley(at, g, egui::Color32::WHITE);
-    };
-    let width = |t: &str| p.layout_job(spaced(t, 10.0, true, 3.0, egui::Color32::WHITE)).size().x;
-    chip(r.min + egui::vec2(11.0, 9.0), "DELIRIUM");
-    chip(egui::pos2(r.max.x - width("PHYSICS") - 11.0, r.min.y + 9.0), "PHYSICS");
-    let size = 58.0f32.min(58.0 * (w - 30.0) / p.layout_no_wrap(title.to_string(), egui::FontId::new(58.0, egui::FontFamily::Name("big".into())), egui::Color32::WHITE).size().x);
-    let g = p.layout_job(spaced(title, size, false, -1.0, egui::Color32::WHITE));
-    let at = egui::pos2(r.center().x - g.size().x / 2.0, r.center().y - g.size().y / 2.0 - 6.0);
-    let c = egui::pos2((at.x + g.size().x + 10.0).min(r.max.x - 18.0), at.y + 2.0);
-    let mut star = egui::Mesh::default();
-    star.colored_vertex(c, egui::Color32::WHITE);
-    for k in 0..8 {
-        let (a, l) = (k as f32 * std::f32::consts::FRAC_PI_4, if k % 2 == 0 { 13.0 } else { 3.0 });
-        star.colored_vertex(c + egui::vec2(a.sin(), -a.cos()) * l, egui::Color32::WHITE);
-    }
-    for k in 0..8u32 {
-        star.add_triangle(0, 1 + k, 1 + (k + 1) % 8);
-    }
-    p.add(star);
-    let h = g.size().y;
-    p.galley(at, g, egui::Color32::WHITE);
-    chip(egui::pos2(r.center().x - width(under) / 2.0, at.y + h + 8.0), under);
-}
-
-fn leds(ui: &mut egui::Ui, x: f32) {
-    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 12.0), egui::Sense::hover());
-    let n = 10;
-    let step = r.width() / n as f32;
-    for k in 0..n {
-        for (j, c) in [(255, 61, 127), (232, 255, 61), (61, 220, 255)].into_iter().enumerate() {
-            let lit = (k as f32 + (j as f32 + 0.5) / 3.0) / n as f32 <= x;
-            let at = egui::pos2(r.min.x + k as f32 * step + j as f32 * 9.0, r.min.y);
-            ui.painter().rect_filled(egui::Rect::from_min_size(at, egui::vec2(7.0, 12.0)), 0.0,
-                                     egui::Color32::from_rgba_unmultiplied(c.0, c.1, c.2, if lit { 255 } else { 40 }));
-        }
-    }
-}
-
 fn slide(ui: &mut egui::Ui, name: &str, x: &mut f32, lo: f32, hi: f32, unit: &str) -> egui::Response {
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 50.0), egui::Sense::click_and_drag());
-    let track = egui::Rect::from_min_max(egui::pos2(r.min.x + 7.0, r.max.y - 12.0), egui::pos2(r.max.x - 7.0, r.max.y - 10.0));
-    if let Some(at) = resp.interact_pointer_pos() {
-        let f = ((at.x - track.min.x) / track.width()).clamp(0.0, 1.0);
-        *x = lo * (hi / lo).powf(f);
-    }
-    let f = ((*x / lo).ln() / (hi / lo).ln()).clamp(0.0, 1.0);
-    let t = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered() || resp.dragged(), 0.08);
-    let p = ui.painter();
-    let g = p.layout_job(spaced(&name.to_uppercase(), 10.0, true, 3.0, DIM));
-    p.galley(egui::pos2(r.min.x, r.min.y + 12.0), g, DIM);
-    p.text(egui::pos2(r.max.x, r.min.y + 24.0), egui::Align2::RIGHT_BOTTOM, format!("{x:.2}{unit}"), egui::FontId::new(18.0, egui::FontFamily::Name("big".into())), INK);
-    p.rect_filled(track, 1.0, egui::Color32::from_white_alpha(40));
-    let knob = egui::pos2(track.min.x + f * track.width(), track.center().y);
-    p.rect_filled(egui::Rect::from_min_max(track.min, egui::pos2(knob.x, track.max.y)), 1.0, egui::Color32::WHITE);
-    p.circle_filled(knob, 6.0 + t * 2.0, egui::Color32::WHITE);
-    resp
+    ui.add(egui::Slider::new(x, lo..=hi).logarithmic(true).text(name).suffix(unit))
 }
-
-fn health_bar(ui: &mut egui::Ui, x: f32) {
-    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 10.0), egui::Sense::hover());
-    let p = ui.painter();
-    p.rect_filled(r, 5.0, egui::Color32::from_white_alpha(25));
-    let fill = egui::Rect::from_min_size(r.min, egui::vec2(r.width() * x.max(0.03), r.height()));
-    p.rect_filled(fill, 5.0, egui::Color32::from(egui::ecolor::Hsva::new(x * 0.33, 0.85, 0.95, 1.0)));
-}
-
-fn row(ui: &mut egui::Ui, name: &str, value: &str, color: egui::Color32) {
-    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::hover());
-    let p = ui.painter();
-    let g = p.layout_job(spaced(name, 10.0, true, 3.0, DIM));
-    p.galley(egui::pos2(r.min.x, r.max.y - 8.0 - g.size().y), g, DIM);
-    p.text(egui::pos2(r.max.x, r.max.y - 6.0), egui::Align2::RIGHT_BOTTOM, value, egui::FontId::new(24.0, egui::FontFamily::Name("big".into())), color);
-    p.line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, egui::Color32::from_white_alpha(30)));
-}
-const NAV: [(&str, &str); 8] = [("\u{1F3C3}", "Behaviours"), ("\u{1F3AF}", "Weapons & throwing"), ("\u{1F3E0}", "Scene"), ("\u{1F464}", "Homer"),
-                                ("\u{2699}", "View & settings"), ("\u{2328}", "Controls"), ("\u{2139}", "Details"),
-                                ("\u{2605}", "Extras")];
 
 fn info(ui: &mut egui::Ui, text: &str) {
-    let w = ui.available_width();
-    let mut job = spaced(&text.to_uppercase(), 10.5, true, 1.5, DIM);
-    job.wrap.max_width = w - 40.0;
-    job.halign = egui::Align::Center;
-    let g = ui.painter().layout_job(job);
-    let (r, _) = ui.allocate_exact_size(egui::vec2(w, g.size().y + 6.0), egui::Sense::hover());
-    let x = r.center().x + 11.0;
-    let first = g.rows.first().map_or(egui::Rect::ZERO, |row| row.rect());
-    let c = egui::pos2(x + first.min.x - 13.0, r.min.y + 3.0 + first.center().y);
-    let p = ui.painter();
-    p.circle_stroke(c, 5.5, egui::Stroke::new(1.0, DIM));
-    p.text(c + egui::vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, "i", egui::FontId::monospace(9.0), DIM);
-    p.galley(egui::pos2(x, r.min.y + 3.0), g, DIM);
+    ui.add(egui::Label::new(egui::RichText::new(text).color(DIM)).wrap());
 }
 
-fn centred<R>(ui: &mut egui::Ui, w: f32, f: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    ui.horizontal(|ui| {
-        ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
-        f(ui)
-    }).inner
+fn walks_homer(walk: bool, hero: bool, photo: bool, follow: u8) -> bool {
+    walk && !hero && !photo && follow != 3
 }
 
-fn big(t: impl Into<String>, size: f32) -> egui::RichText {
-    egui::RichText::new(t).family(egui::FontFamily::Name("big".into())).size(size)
+fn moves_camera(photo: bool, follow: u8) -> bool {
+    photo || follow == 3
 }
 
-fn caps(n: usize, t: &str) -> egui::RichText {
-    egui::RichText::new(format!("{n:02} \u{b7} {}", t.to_uppercase())).monospace().size(11.0).extra_letter_spacing(2.0).color(DIM)
+fn section_title(t: &str) -> egui::RichText {
+    egui::RichText::new(t).family(egui::FontFamily::Name("big".into())).size(22.0).color(INK)
+}
+
+const NAV: [(u8, &str); 7] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (1, "Interact"),
+                                     (4, "View"), (6, "Inspect"), (5, "Help")];
+
+fn active_tab(bits: u8) -> u8 {
+    if bits & 0x7f != 0 { 1 << bits.trailing_zeros() } else if bits & 0x80 != 0 { 1 << 2 } else { 1 }
 }
 
 fn bar(ui: &mut egui::Ui, act: &[f32], des: &[f32], strength: f32) {
@@ -4739,7 +4687,7 @@ fn deg(v: &[f32]) -> String {
     v.iter().map(|x| format!("{:>5.0}", x.to_degrees())).collect::<String>()
 }
 
-fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<bool>) -> Result {
+fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut log_open: Local<bool>, mut joints_open: Local<bool>, mut fonts: Local<bool>, mut motion: Local<(u64, Vec3, f32)>) -> Result {
     let ctx = contexts.ctx_mut()?;
     if !*fonts {
         *fonts = true;
@@ -4751,33 +4699,34 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut fonts: Local<boo
         return Ok(());
     }
     ctx.style_mut(|s| {
-        s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
-        s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
-        s.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(17.0));
-        s.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
-        s.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.0));
-        s.spacing.item_spacing = egui::vec2(6.0, 4.0);
-        s.spacing.button_padding = egui::vec2(8.0, 4.0);
+        s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
+        s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(15.0));
+        s.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(21.0));
+        s.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(13.0));
+        s.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.0));
+        s.spacing.item_spacing = egui::vec2(10.0, 8.0);
+        s.spacing.button_padding = egui::vec2(12.0, 8.0);
+        s.spacing.interact_size.y = 34.0;
+        s.spacing.slider_width = 140.0;
+        s.spacing.scroll = egui::style::ScrollStyle::solid();
         let mut v = egui::Visuals::dark();
-        v.window_fill = egui::Color32::from_rgb(5, 5, 5);
-        v.panel_fill = v.window_fill;
-        v.window_corner_radius = egui::CornerRadius::same(24);
-        v.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_white_alpha(22));
-        v.window_shadow = egui::epaint::Shadow { offset: [0, 10], blur: 34, spread: 0, color: egui::Color32::from_black_alpha(110) };
-        v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: egui::Color32::from_black_alpha(90) };
-        v.extreme_bg_color = egui::Color32::from_rgb(40, 42, 46);
+        v.override_text_color = Some(INK);
+        v.window_fill = egui::Color32::from_rgb(24, 29, 38);
+        v.panel_fill = egui::Color32::from_rgb(20, 25, 33);
+        v.window_corner_radius = egui::CornerRadius::same(8);
+        v.window_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(58, 68, 83));
+        v.extreme_bg_color = egui::Color32::from_rgb(15, 19, 26);
         v.selection.bg_fill = ON;
-        v.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+        v.selection.stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
         v.hyperlink_color = HI;
         for w in [&mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
-            w.corner_radius = egui::CornerRadius::same(12);
-            w.fg_stroke = egui::Stroke::new(1.0, INK);
+            w.corner_radius = egui::CornerRadius::same(5);
+            w.fg_stroke = egui::Stroke::new(1.0_f32, INK);
         }
-        v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(54, 56, 60);
-        v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26));
-        v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(68, 70, 75);
-        v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, INK);
-        v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_white_alpha(16));
+        v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(34, 42, 55);
+        v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(65, 77, 95));
+        v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(49, 65, 88);
+        v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, INK);
         s.visuals = v;
     });
     if sim.show_pops {
@@ -4811,18 +4760,64 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
     let mono = |s: String| egui::RichText::new(s).monospace();
     let mut pressed: Option<String> = None;
 
-    let w = ctx.content_rect().width();
-    let bg = ctx.layer_painter(egui::LayerId::background());
-    let font = egui::FontId::monospace(16.0);
-    let alone = true;
-    if alone {
-        bg.text(egui::pos2(w * 0.5, 8.0), egui::Align2::CENTER_TOP, "OURS  (Delirium Physics)", font,
-                if sim.skin.sky.iter().sum::<f32>() < 1.0 { egui::Color32::from_rgb(150, 190, 255) } else { egui::Color32::from_rgb(20, 40, 90) });
-    }
-
-    egui::Window::new("Messages").anchor(egui::Align2::LEFT_BOTTOM, [430.0, -8.0]).default_size([640.0, 150.0]).resizable(true).collapsible(true).show(ctx, |ui| {
-        ui.label(egui::RichText::new("MSG: a command sent to Delirium    FB: Delirium's feedback").small().color(DIM));
-        egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).max_height(120.0).show(ui, |ui| {
+    sim.tab = active_tab(sim.tab);
+    egui::TopBottomPanel::top("playback").exact_height(58.0).show(ctx, |ui| {
+        ui.horizontal_centered(|ui| {
+            ui.label(egui::RichText::new("DELIRIUM").family(egui::FontFamily::Name("big".into())).size(20.0).color(HI));
+            ui.label(egui::RichText::new("/ Playroom").color(DIM));
+            ui.separator();
+            if ui.button(if sim.paused { "Resume" } else { "Pause" }).on_hover_text("Pause or resume (Space)").clicked() {
+                sim.paused = !sim.paused;
+            }
+            if ui.add_enabled(sim.paused, egui::Button::new("Step")).on_hover_text("Advance one simulation step (.)").clicked() {
+                (sim.paused, sim.acc) = (true, 1.0 / 60.0);
+            }
+            if ui.button("Reset pose").on_hover_text(RESET_TIP).clicked() { pressed = Some("RESET pose".into()); }
+            if ui.button("Stop reactions").on_hover_text("Stop every active behaviour (X)").clicked() { pressed = Some("STOP all".into()); }
+            ui.separator();
+            if ui.add_enabled(sim.speed > SPEEDS.0, egui::Button::new("Slower")).on_hover_text("Halve simulation speed ([)").clicked() { pressed = Some("#slower".into()); }
+            ui.label(egui::RichText::new(format!("{}× · {}", sim.speed, if sim.speed == 1.0 { "Real time" } else if sim.speed < 1.0 { "Slow motion" } else { "Fast forward" })).strong().color(HI));
+            if ui.add_enabled(sim.speed != 1.0, egui::Button::new("1×")).on_hover_text("Return to real-time speed").clicked() { pressed = Some("#realtime".into()); }
+            if ui.add_enabled(sim.speed < SPEEDS.1, egui::Button::new("Faster")).on_hover_text("Double simulation speed (])").clicked() { pressed = Some("#faster".into()); }
+        });
+    });
+    egui::TopBottomPanel::bottom("status").exact_height(38.0).show(ctx, |ui| {
+        let velocity = sim.agent.doll.com().1;
+        if sim.steps > motion.0 {
+            motion.2 = (velocity - motion.1).length() / ((sim.steps - motion.0) as f32 / 60.0);
+            (motion.0, motion.1) = (sim.steps, velocity);
+        } else if sim.steps < motion.0 {
+            *motion = (sim.steps, velocity, 0.0);
+        }
+        ui.horizontal(|ui| {
+            let compact = ui.available_width() < 1250.0;
+            ui.colored_label(if sim.paused { HI } else { egui::Color32::from_rgb(128, 218, 177) }, if sim.paused { "Paused" } else { "Live simulation" });
+            ui.separator();
+            ui.label(egui::RichText::new(format!("{:.1} s", sim.steps as f32 / 60.0)).monospace().color(DIM));
+            ui.separator();
+            ui.label(egui::RichText::new(format!("Speed: {:.2} m/s   Acceleration: {:.2} m/s²", velocity.length(), motion.2)).monospace().color(HI))
+                .on_hover_text("Homer's centre-of-mass speed and change in velocity per simulation second, sampled between displayed frames. Pause holds the last reading; playback speed does not change the units.");
+            ui.separator();
+            if ui.selectable_label(*log_open || sim.typing, if compact { "Console" } else { "Activity & console" }).clicked() { *log_open = !*log_open; }
+            if ui.selectable_label(sim.replay.is_some(), if compact { "Replay" } else { "Replay last action" }).on_hover_text(TIPS.iter().find(|t| t.0 == "replay").map_or("", |t| t.1)).clicked() { pressed = Some("replay".into()); }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(if compact { "Hide · H" } else { "Hide interface  ·  H" }).clicked() { sim.show_ui = false; }
+                if ui.available_width() > 260.0 {
+                    ui.label(egui::RichText::new("Right-drag: orbit   ·   Wheel: zoom").small().color(DIM));
+                }
+            });
+        });
+    });
+    if *log_open || sim.typing {
+    egui::TopBottomPanel::bottom("activity").resizable(true).default_height(180.0).height_range(100.0..=320.0).show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.strong("Activity & console");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Close").clicked() { *log_open = false; }
+            });
+        });
+        ui.label(egui::RichText::new("MSG = command sent   ·   FB = engine feedback").small().color(DIM));
+        egui::ScrollArea::both().id_salt("activity log").stick_to_bottom(true).auto_shrink([false, false]).max_height((ui.available_height() - 36.0).max(30.0)).show(ui, |ui| {
             for (t, l, n) in &sim.log {
                 let c = if l.starts_with("FB ") { egui::Color32::from_rgb(240, 170, 90) } else if l.starts_with("MSG ") { egui::Color32::from_rgb(150, 190, 240) }
                         else if l.starts_with("room ") { egui::Color32::from_rgb(140, 220, 140) } else { egui::Color32::from_rgb(200, 200, 205) };
@@ -4834,11 +4829,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         if sim.typing {
             ui.label(mono(format!("> {}_   {hint}", sim.console)));
         } else {
-            ui.label(egui::RichText::new("Enter: type a command (? lists them)    H: hide panels    every control: \"Controls\" in the room panel").small().color(DIM));
+            ui.label(egui::RichText::new("Press Enter to type a command. Type ? to list commands; Tab completes a name.").small().color(DIM));
         }
     });
 
-    egui::Window::new("Joints (muscle detail)").anchor(egui::Align2::RIGHT_TOP, [-8.0, 8.0]).default_open(false).resizable(true).collapsible(true).show(ctx, |ui| {
+    }
+
+    egui::Window::new("Joint inspector").open(&mut *joints_open).default_pos([430.0, 80.0]).default_size([740.0, 500.0]).resizable(true).scroll([true, true]).show(ctx, |ui| {
         let names: Vec<String> = delirium::nmrs::ASSET[nm()].get().map(|a| {
             let mut v: Vec<(u32, String)> = a.iter().map(|j| (j.index, j.name.clone())).collect();
             v.sort();
@@ -4847,8 +4844,12 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         let a = &sim.agent;
         let fr: Vec<Transform> = a.doll.frames().collect();
         let ch = a.character();
-        ui.label(mono("joint        actual -> desired (deg)  drive str/damp".into()).color(DIM));
-        egui::Grid::new("jt").striped(true).spacing([6.0, 2.0]).show(ui, |ui| {
+        info(ui, "Select a joint for its muscle settings and limits. Angles are in degrees: actual to target.");
+        ui.spacing_mut().interact_size.y = 24.0;
+        egui::Grid::new("jt").striped(true).spacing([12.0, 4.0]).show(ui, |ui| {
+            ui.strong("Joint");
+            for label in ["Delirium angles", "Drive", "Strength / damping"] { ui.strong(label); }
+            ui.end_row();
             for (j, n) in names.iter().enumerate() {
                 if ui.selectable_label(sim.sel == j, mono(format!("{n:<17}"))).clicked() {
                     pressed = Some(format!("#sel {j}"));
@@ -4901,7 +4902,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         }
     });
 
-    egui::Window::new(egui::RichText::new("DELIRIUM PHYSICS").monospace().size(10.5).extra_letter_spacing(3.0).color(DIM)).id("room".into()).title_bar(false).default_pos([8.0, 8.0]).default_size([412.0, 860.0]).min_width(412.0).min_height(200.0).resizable(true).collapsible(true).show(ctx, |ui| {
+    egui::SidePanel::left("control dock").resizable(true).default_width(400.0).width_range(380.0..=480.0).frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(16.0)).show(ctx, |ui| {
         let a = &sim.agent;
         let state = [(a.balancing(), "balancing"), (a.fallen, "fallen"), (a.settled(), "settled"), (a.relaxing(), "relaxing"), (a.catching(), "catching his fall"),
                      (a.rolled_up(), "rolled up"), (!a.doll.awake(), "asleep")].iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join(", ");
@@ -4916,66 +4917,58 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                            if sim.paused { " paused" } else { "" }, com.x, com.y, com.z, v.length(), a.doll.mass(), a.doll.kinetic());
         let red = egui::Color32::from_rgb(255, 110, 160);
         let wide = |ui: &mut egui::Ui, text: String, fill: egui::Color32| {
-            let (resp, r, ink) = glass(ui, egui::vec2(108.0, 32.0), fill == ON, 16.0);
-            let t = text.to_uppercase();
-            let ink = if fill == red { red } else { ink };
-            let g = ui.painter().layout_job(spaced(&t, 13.0, true, 1.0, ink));
-            let g = if g.size().x > r.width() - 14.0 { ui.painter().layout_job(spaced(&t, 13.0 * (r.width() - 14.0) / g.size().x, true, 0.5, ink)) } else { g };
-            ui.painter().galley(r.center() - g.size() / 2.0, g, ink);
-            resp
+            let text = egui::RichText::new(text).color(if fill == red { red } else { INK });
+            ui.add_sized([170.0, 42.0], egui::Button::new(text).selected(fill == ON).wrap())
         };
-        ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 8.0;
-            for (k, (icon, name)) in NAV.iter().enumerate() {
-                let on = sim.tab & (1 << k) != 0;
-                let (b, r, ink) = glass(ui, egui::vec2(42.0, 42.0), on, 21.0);
-                ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, *icon, egui::FontId::proportional(17.0), ink);
-                if b.on_hover_text(*name).clicked() {
-                    sim.tab ^= 1 << k;
-                }
-            }
-        });
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
-
-        glow_head(ui, &if state.is_empty() { "IDLE".to_string() } else { state.to_uppercase() },
-                  &format!("HOMER \u{b7} {:.2} M \u{b7} {:.1} M/S", com.z, v.length()), sim.skin.glow);
-        leds(ui, 1.0);
-        ui.add_space(4.0);
-        let hp = if sim.god { 1.0 } else { (sim.health / 200.0).clamp(0.0, 1.0) };
-        row(ui, "HEALTH  (OF 200)", &if sim.god { "INFINITE".to_string() } else { format!("{:.0}", sim.health) },
-            egui::Color32::from(egui::ecolor::Hsva::new(hp * 0.33, 0.6, 1.0, 1.0)));
-        ui.add_space(6.0);
-        health_bar(ui, hp);
-        ui.add_space(2.0);
-        row(ui, "WEAPON", &WEAPONS[sim.weapon].0.to_uppercase(), INK);
-        if sim.paused {
-            ui.label(egui::RichText::new("PAUSED (Space to go on)").color(HI));
+        let (stripe, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 4.0), egui::Sense::hover());
+        for (i, color) in [egui::Color32::from_rgb(255, 140, 100), egui::Color32::from_rgb(250, 220, 110), egui::Color32::from_rgb(120, 225, 175), HI, egui::Color32::from_rgb(185, 155, 250)].into_iter().enumerate() {
+            let start = stripe.left() + stripe.width() * i as f32 / 5.0;
+            ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(start, stripe.top()), egui::vec2(stripe.width() / 5.0, 4.0)), 0.0, color);
         }
+        ui.label(section_title(if nm() == delirium::nmrs::MARGE { "Marge" } else { "Homer" }));
+        ui.label(egui::RichText::new(if state.is_empty() { "Ready" } else { &state }).color(DIM));
+        let hp = if sim.god { 1.0 } else { (sim.health / 200.0).clamp(0.0, 1.0) };
+        ui.add(egui::ProgressBar::new(hp).desired_height(8.0).fill(egui::Color32::from_rgb(93, 194, 159)));
+        ui.label(egui::RichText::new(if sim.god { "Health: unlimited".to_string() } else { format!("Health: {:.0} / 200", sim.health) }).small().color(DIM));
         let held = sim.held;
         if held {
-            ui.label(egui::RichText::new("Pose held: pick a behaviour, or STOP").color(HI));
+            ui.label(egui::RichText::new("Pose held. Choose a reaction to begin.").color(HI));
         }
         if sim.dead {
-            ui.label(egui::RichText::new("Dead: Reset pose brings him back").color(HI));
+            ui.label(egui::RichText::new("Dead. Use Reset pose in the toolbar to revive.").color(HI));
         } else if sim.health < 100.0 {
-            ui.label(egui::RichText::new("Dying: shots now relax him").color(HI));
+            ui.label(egui::RichText::new("Low health. Further shots can make him collapse.").color(HI));
         }
+        ui.add_space(4.0);
         ui.separator();
-
-        let n = ((ui.available_width() + 16.0) / 360.0).floor().max(1.0) as usize;
-        ui.columns(n, |cols| {
-        let short = |cols: &[egui::Ui]| (0..cols.len()).min_by(|&a, &b| cols[a].min_rect().height().total_cmp(&cols[b].min_rect().height())).unwrap_or(0);
+        let nav_width = (ui.available_width() - 18.0) / 4.0;
+        egui::Grid::new("section navigation").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
+            ui.spacing_mut().button_padding.x = 6.0;
+            for (i, &(bit, name)) in NAV.iter().enumerate() {
+                if ui.add_sized([nav_width, 34.0], egui::Button::new(egui::RichText::new(name).size(14.0)).wrap().selected(sim.tab == 1 << bit)).on_hover_text(if bit == 4 { "Camera, appearance and audio" } else { name }).clicked() {
+                    sim.tab = 1 << bit;
+                }
+                if i % 4 == 3 { ui.end_row(); }
+            }
+        });
+        ui.separator();
+        ui.add_space(4.0);
+        egui::ScrollArea::vertical().id_salt(("section", sim.tab)).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible).auto_shrink([false, false]).show(ui, |ui| {
         if sim.tab & (1 << 0) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(1, "Behaviours")));
+            ui.label(section_title("Reactions"));
+            info(ui, "Start a reaction, then poke, shoot or pull Homer to see how he responds.");
             let per = per_row(ui, 108.0);
             egui::Grid::new("beh").spacing([10.0, 8.0]).show(ui, |ui| {
                 for (i, b) in BEHAVIOURS.iter().filter(|b| !b.starts_with("STOP")).enumerate() {
-                    if wide(ui, b.to_string(), egui::Color32::WHITE).clicked() {
+                    let label = match *b {
+                        "balance" => "Balance", "drunk" => "Drunk", "windmill" => "Windmill arms", "pedal" => "Pedal legs",
+                        "writhe" => "Writhe", "rollup" => "Roll up", "catchfall" => "Catch a fall", "highfall" => "High fall",
+                        "stairs" => "Tumble on stairs", "shot" => "Shot reaction", "flinch" => "Flinch", "brace" => "Brace for impact",
+                        "look" => "Look around", "point" => "Point", "lean" => "Lean", "relax" => "Relax",
+                        "stayup" => "Stay upright", "foetal" => "Foetal curl", "grab" => "Grab", "overwall" => "Climb over wall", _ => b,
+                    };
+                    if ui.add_sized([108.0, 44.0], egui::Button::new(label).wrap()).on_hover_text(TIPS.iter().find(|t| t.0 == *b).map_or(*b, |t| t.1)).clicked() {
                         pressed = Some(b.to_string());
                     }
                     if i % per == per - 1 {
@@ -4983,21 +4976,30 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     }
                 }
             });
-            centred(ui, 216.0, |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                if wide(ui, "STOP all".into(), red).on_hover_text("Stop every behaviour (X)").clicked() {
-                    pressed = Some("STOP all".into());
-                }
-                if wide(ui, "Reset pose".into(), red).on_hover_text(RESET_TIP).clicked() {
-                    pressed = Some("RESET pose".into());
-                }
+            ui.collapsing("Additional reactions", |ui| {
+                info(ui, "Delirium's experimental reactions.");
+                let per = per_row(ui, 145.0);
+                egui::Grid::new("additional reactions").spacing([10.0, 8.0]).show(ui, |ui| {
+                    for (i, m) in delirium::extras::messages().enumerate() {
+                        let mut label = String::new();
+                        for (k, c) in m.name.chars().enumerate() {
+                            if k == 0 { label.extend(c.to_uppercase()); }
+                            else {
+                                if c.is_uppercase() { label.push(' '); }
+                                label.push(c.to_ascii_lowercase());
+                            }
+                        }
+                        if ui.add_sized([145.0, 52.0], egui::Button::new(label).wrap()).on_hover_text(m.name).clicked() { pressed = Some(m.name.into()); }
+                        if i % per == per - 1 { ui.end_row(); }
+                    }
+                });
             });
         }
 
         let tiles = |ui: &mut egui::Ui, id: &str, items: &[(&str, bool, String)]| -> Option<String> {
             let (teal, lit) = (egui::Color32::WHITE, ON);
             let mut hit = None;
-            let per = per_row(ui, 108.0);
+            let per = per_row(ui, 170.0);
             egui::Grid::new(id).spacing([10.0, 8.0]).show(ui, |ui| {
                 for (i, (b, on, label)) in items.iter().enumerate() {
                     let button = wide(ui, label.clone(), if *on { lit } else { teal });
@@ -5015,21 +5017,20 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             });
             hit
         };
-        let onoff = |b: &str, _on: bool| b.to_string();
+        let onoff = |b: &str, on: bool| format!("{b}: {}", if on { "On" } else { "Off" });
         let sub = |ui: &mut egui::Ui, t: &str| {
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(egui::RichText::new(t.to_uppercase()).monospace().size(11.0).extra_letter_spacing(1.5).color(DIM)));
+            ui.label(egui::RichText::new(t).strong().size(15.0));
         };
 
         if sim.tab & (1 << 1) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(2, "Weapons & throwing")));
-            sub(ui, "Weapon: floating or from the camera");
-            centred(ui, 216.0, |ui| {
+            ui.label(section_title("Interact"));
+            info(ui, "Choose an interaction. Blue marks the current selection.");
+            sub(ui, "Aim from");
+            ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                for (on, name, key) in [(true, "floating", "#aim gun"), (false, "camera", "#aim camera")] {
+                for (on, name, key) in [(true, "Floating weapon", "#aim gun"), (false, "Camera", "#aim camera")] {
                     if wide(ui, name.into(), if sim.aim_gun == on { ON } else { egui::Color32::WHITE }).clicked() {
                         pressed = Some(key.into());
                     }
@@ -5037,17 +5038,12 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             });
             info(ui, if sim.aim_gun { "Floating: the weapon floats by the pointer; click to fire or swing." } else { "Camera: you shoot from the camera at what you click." });
             ui.add_space(4.0);
-            let per = per_row(ui, 171.0);
+            let per = per_row(ui, 108.0);
             egui::Grid::new("guns").spacing([10.0, 8.0]).show(ui, |ui| {
                 for (i, w) in WEAPONS.iter().enumerate() {
                     let on = sim.weapon == i;
-                    let (b, r, ink) = glass(ui, egui::vec2(171.0, 54.0), on, 16.0);
-                    let p = ui.painter();
-                    p.text(r.min + egui::vec2(14.0, 9.0), egui::Align2::LEFT_TOP, format!("{:02}", i + 1), egui::FontId::monospace(10.0), if on { egui::Color32::from_gray(90) } else { DIM });
-                    p.text(r.min + egui::vec2(14.0, 21.0), egui::Align2::LEFT_TOP, w.0.to_uppercase(), egui::FontId::new(18.0, egui::FontFamily::Name("big".into())), ink);
-                    if b.clicked() {
-                        pressed = Some(format!("#weapon {i}"));
-                    }
+                    let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", _ => w.0 }).selected(on));
+                    if b.clicked() { pressed = Some(format!("#weapon {i}")); }
                     if i % per == per - 1 {
                         ui.end_row();
                     }
@@ -5057,67 +5053,93 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             if sim.portal.on() {
                 pressed = pressed.take().or(tiles(ui, "portal gun", &[("#portalgun", sim.portal.gun, "PORTAL GUN".into())]));
             }
-            for (title, now, items) in [("Left click", sim.click_shoots, [(false, "poke", "#click poke"), (true, "shoot", "#click shoot")])] {
-                sub(ui, title);
-                centred(ui, 216.0, |ui| {
+            egui::CollapsingHeader::new(if sim.aim_gun || sim.click_shoots { "Left click: Shoot" } else { "Left click: Poke" }).id_salt("pointer action").default_open(true).show(ui, |ui| {
+            info(ui, "Poke selects camera aim; Shoot uses the aiming mode above.");
+            for (title, now, items) in [("Left click", sim.click_shoots || sim.aim_gun, [(false, "poke", "#click poke"), (true, "shoot", "#click shoot")])] {
+                let _ = title;
+                ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     for (on, name, key) in items {
-                        if wide(ui, name.into(), if now == on { ON } else { egui::Color32::WHITE }).clicked() {
+                        if ui.add_sized([145.0, 40.0], egui::Button::new(name).selected(now == on)).clicked() {
                             pressed = Some(key.into());
                         }
                     }
                 });
             }
-            slide(ui, "Poke strength", &mut sim.poke, 1.0, 100.0, "")
+            slide(ui, "Poke strength", &mut sim.poke, 1.0, 100.0, " N·s")
                 .on_hover_text("How hard a left click (poke) pushes the body part (N s).");
+            });
             info(ui, if sim.aim_gun { "Click: fire.  Hold Ctrl: the gun stays put and aims at the pointer.  Shift + right click: a fatal shot." }
                     else if sim.click_shoots { "Click a body part to shoot it.  Shift + right click: a fatal shot." }
                     else { "Shift + click a body part to shoot it.  Shift + right click: a fatal shot." });
-            sub(ui, "Throw");
+            ui.collapsing("Throw objects", |ui| {
             info(ui, "At Homer; hold Ctrl and point to aim it.");
-            pressed = pressed.take().or(tiles(ui, "throw", &[("throw ball", false, "ball".into()), ("throw box", false, "box".into()), ("drop crate", false, "crate".into()), ("clear", false, "clear".into())]));
-            slide(ui, "Object weight", &mut sim.room.weight, 0.25, 4.0, "x");
+            pressed = pressed.take().or(tiles(ui, "throw", &[("throw ball", false, "ball".into()), ("throw box", false, "box".into()), ("drop crate", false, "crate".into()), ("clear", false, "Clear objects".into())]));
+            slide(ui, "Object weight", &mut sim.room.weight, 0.25, 4.0, "×");
+            });
+            ui.collapsing("Impact tests", |ui| {
+            pressed = pressed.take().or(tiles(ui, "impact tests", &[("push front", false, "Push from front".into()), ("push back", false, "Push from behind".into()),
+                ("car", false, "Car impact".into()), ("fall", false, "Drop Homer".into()),
+                ("explosion pile", false, "Explosion pile".into()), ("wrecking ball", false, "Wrecking ball".into())]));
+            });
+            #[cfg(feature = "portal")]
+            {
+                ui.separator();
+                sub(ui, "Portal 2 · bonus");
+                let on = sim.portal.on();
+                pressed = pressed.take().or(tiles(ui, "portal2", &[("#portal2", on, onoff("Portal 2", on))]));
+                portal::settings(ui, &mut sim, &mut pressed);
+            }
+
         }
 
         if sim.tab & (1 << 2) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(3, "Scene")));
-            sub(ui, "Stage");
-            let stages: Vec<(&str, bool, String)> = STAGES.iter().map(|&(k, l)| (k, sim.room.stage == k, l.to_string())).collect();
+            ui.label(section_title("Scene"));
+            info(ui, "Choose a location, then add people or vehicles.");
+            sub(ui, "Location");
+            let stages: Vec<(&str, bool, String)> = STAGES.iter().chain(EXTRAS.iter()).map(|&(k, l)| (k, sim.room.stage == k, match l { "room" => "Room", "big stairs" => "Big stairs", "rooftop" => "Rooftop", "low wall" => "Low wall", "rail" => "Railing", "street" => "Street", "rope bridge" => "Rope bridge", "trampoline" => "Trampoline", "cab door" => "Taxi door test", _ => l }.to_string())).collect();
             if let Some(k) = tiles(ui, "stage", &stages) {
                 pressed = Some(format!("#stage {k}"));
             }
-            sub(ui, "Add to the room");
-            pressed = pressed.take().or(tiles(ui, "add", &[("crowd", sim.crowd.len() == 4, "crowd (4)".into()), ("grid", sim.crowd.len() == 24, "crowd (24)".into()),
-                ("car", false, "car hits him".into()), ("ice", sim.ice.is_some(), onoff("ice floor", sim.ice.is_some())),
-                ("fall", false, "drop Homer".into())]));
-            centred(ui, 226.0, |ui| {
+            sub(ui, "Surface");
+            pressed = pressed.take().or(tiles(ui, "surface", &[("ice", sim.ice.is_some(), onoff("Ice floor", sim.ice.is_some()))]));
+            sub(ui, "People & vehicles");
+            pressed = pressed.take().or(tiles(ui, "add", &[("crowd", sim.crowd.len() == 4, "Add 4 people".into()), ("grid", sim.crowd.len() == 24, "Add 24 people".into())]));
+            ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                let lit = if sim.taxis.is_empty() { egui::Color32::WHITE } else { ON };
-                if wide(ui, "4 taxis".into(), lit).on_hover_text(TIPS.iter().find(|t| t.0 == "taxi").map_or("", |t| t.1)).clicked() {
-                    pressed = Some("taxi".into());
+                if ui.add_enabled(sim.taxis.len() < TAXIS, egui::Button::new("Add one taxi").min_size(egui::vec2(170.0, 42.0))).on_hover_text("Spawn one drivable taxi. Play as Hero and press F beside it to get in.").clicked() {
+                    pressed = Some("add taxi".into());
                 }
-                if wide(ui, "clear taxis".into(), red).on_hover_text("Takes the parked taxis away.").clicked() {
+                if wide(ui, "Remove taxis".into(), red).on_hover_text("Takes the parked taxis away.").clicked() {
                     pressed = Some("clear taxis".into());
                 }
             });
-            sub(ui, "Play");
-            pressed = pressed.take().or(tiles(ui, "play", &[("Hero", sim.hero.is_some(), "Hero".into()),
-                ("walk", sim.walk, onoff("walk Homer", sim.walk)), ("passive", sim.passive, onoff("Homer passive", sim.passive)),
-                ("homer weapon", sim.homer_weapon.is_some(), format!("Homer: {}", sim.homer_weapon.map_or("fists", |w| WEAPONS[w].0))),
-                ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics)), ("super punch", sim.super_punch, onoff("Super punch", sim.super_punch))]));
+            info(ui, &format!("Taxis: {} / {TAXIS} · One vehicle per click.", sim.taxis.len()));
+
         }
 
         if sim.tab & (1 << 3) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(4, "Homer")));
-            pressed = pressed.take().or(tiles(ui, "homer", &[("look", sim.look, "looks".into()), ("avoid", sim.avoid, "avoids".into()),
-                ("game tasks", sim.tasks, onoff("NM -> anim", sim.tasks)), ("get-up", sim.getup_mode != 0, format!("get-up: {}", GETUP_MODES[sim.getup_mode as usize])),
-                ("infinite health", sim.god, "god mode".into()), ("weak", sim.weak, onoff("weak", sim.weak))]));
+            ui.label(section_title("Character"));
+            info(ui, "Control Homer, change his reactions, or play as the Hero.");
+            sub(ui, "Character control");
+            pressed = pressed.take().or(tiles(ui, "play", &[("Hero", sim.hero.is_some(), onoff("Play as Hero", sim.hero.is_some())),
+                ("walk", sim.walk, onoff("Walk Homer", sim.walk)), ("passive", sim.passive, onoff("Passive Homer", sim.passive)),
+                ("homer weapon", sim.homer_weapon.is_some(), format!("Homer weapon: {}", sim.homer_weapon.map_or("fists", |w| WEAPONS[w].0))),
+                ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics)), ("super punch", sim.super_punch, onoff("Super punch", sim.super_punch))]));
+            sub(ui, "Automatic reactions");
+            pressed = pressed.take().or(tiles(ui, "homer", &[("look", sim.look, onoff("Look at objects", sim.look)), ("avoid", sim.avoid, onoff("Avoid objects", sim.avoid)),
+                ("game tasks", sim.tasks, onoff("Animation mode", sim.tasks)), ("get-up", sim.getup_mode != 0, format!("get-up: {}", GETUP_MODES[sim.getup_mode as usize])),
+                ("infinite health", sim.god, onoff("Unlimited health", sim.god)), ("weak", sim.weak, onoff("Weaken muscles", sim.weak))]));
+            ui.collapsing("Character appearance", |ui| {
+            let cols: Vec<(&str, bool, String)> = PED_COLORS.iter().enumerate().map(|(i, (k, l))| (*k, sim.ped_color == i, l.to_string())).collect();
+            if let Some(n) = tiles(ui, "pedcol", &cols) {
+                pressed = Some(format!("#pedcol {n}"));
+            }
+            pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("Eyes", sim.eyes)), ("#brows", sim.brows, onoff("Eyebrows", sim.brows)),
+                ("#skel", sim.skel, onoff("Skeleton", sim.skel))]));
+            });
             if sim.watch.is_some() || std::path::Path::new(&learn::live_path(&learn::path())).exists() {
             sub(ui, "Get-up training");
             pressed = pressed.take().or(tiles(ui, "train", &[("watch training", sim.watch.is_some(), "watch training".into())]));
@@ -5131,37 +5153,27 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         }
 
         if sim.tab & (1 << 4) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(5, "View & settings")));
-            pressed = pressed.take().or(tiles(ui, "view", &[("camera", sim.cam_locked, "follow cam".into()),
-                ("#pops", sim.show_pops, "hit numbers".into()), ("#help", sim.help, "tips".into()),
-                ("#sound", sim.sound, onoff("sound", sim.sound)), ("#blood", sim.pixel_blood, onoff("pixel blood", sim.pixel_blood))]));
+            ui.label(section_title("View & audio"));
+            info(ui, "Adjust the camera, lighting and sound.");
+            pressed = pressed.take().or(tiles(ui, "view", &[("camera", sim.cam_locked, onoff("Follow camera", sim.cam_locked)),
+                ("#pops", sim.show_pops, onoff("Damage numbers", sim.show_pops)),
+                ("#sound", sim.sound, onoff("Sound", sim.sound)), ("#blood", sim.pixel_blood, onoff("Pixel blood", sim.pixel_blood))]));
+            if ui.add_enabled(sim.sound, egui::Button::new("Test sound")).on_hover_text("Play an impact sound through the current Windows output device.").clicked() { sim.sounds.push(sfx::Snd::Hit); }
+            info(ui, "8-bit effects for pokes, shots, hits and crashes. No background music. If Test sound is silent, check Delirium in the Windows volume mixer.");
             slide(ui, "Mouse sensitivity", &mut sim.sens, 0.05, 2.0, "");
-            #[cfg(feature = "portal")]
-            {
-                sub(ui, "Bonus: Portal 2");
-                let on = sim.portal.on();
-                pressed = pressed.take().or(tiles(ui, "portal2", &[("#portal2", on, onoff("Portal 2", on))]));
-                portal::settings(ui, &mut sim, &mut pressed);
+            if ui.button("Enter photo mode  ·  P").on_hover_text("Hide the interface and move the camera freely; P returns to the room.").clicked() {
+                sim.photo_pending = true;
             }
-            sub(ui, "Look");
+            sub(ui, "Room appearance");
             let looks: Vec<(&str, bool, String)> = LOOKS.iter().map(|(n, l)| (*n, sim.skin == *l, n.to_string())).collect();
             if let Some(n) = tiles(ui, "looks", &looks) {
                 pressed = Some(format!("#look {n}"));
             }
-            pressed = pressed.take().or(tiles(ui, "look on", &[("#grid", sim.skin.grid, "grid".into()), ("#fog", sim.skin.fog, "fog".into()), ("#infinite", sim.infinite, "infinite grid".into()),
-                ("#glow", sim.skin.glow, "panel glow".into())]));
-            sub(ui, "Homer");
-            let cols: Vec<(&str, bool, String)> = PED_COLORS.iter().enumerate().map(|(i, (k, l))| (*k, sim.ped_color == i, l.to_string())).collect();
-            if let Some(n) = tiles(ui, "pedcol", &cols) {
-                pressed = Some(format!("#pedcol {n}"));
-            }
-            pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("eyes", sim.eyes)), ("#brows", sim.brows, onoff("eyebrows", sim.brows)),
-                ("#skel", sim.skel, onoff("skeleton", sim.skel))]));
-            sub(ui, "Your own");
-            centred(ui, 216.0, |ui| {
+            pressed = pressed.take().or(tiles(ui, "look on", &[("#grid", sim.skin.grid, onoff("Grid lines", sim.skin.grid)), ("#fog", sim.skin.fog, onoff("Fog", sim.skin.fog)), ("#infinite", sim.infinite, onoff("Extend floor", sim.infinite)),
+                ("#ripples", sim.show_ripples, onoff("Floor ripples", sim.show_ripples))]));
+            sub(ui, "Custom colours & lighting");
+            ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let skin = &mut sim.skin;
                 for (name, c) in [("SKY", &mut skin.sky), ("FLOOR", &mut skin.floor)] {
@@ -5173,20 +5185,27 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     ui.add_space(14.0);
                 }
             });
-            slide(ui, "Sun", &mut sim.skin.sun, 0.1, 4.0, "x");
+            slide(ui, "Light intensity", &mut sim.skin.sun, 0.1, 4.0, "×");
         }
 
         if sim.tab & (1 << 5) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(6, "Controls")));
-            egui::Grid::new("keys").spacing([12.0, 2.0]).show(ui, |ui| {
-                for (k, what) in [("click", "poke a body part"), ("drag", "pull a body part"), ("Shift + click", "shoot (a plain click too: Shoot's \"shoots\")"), ("Shift + right click", "fatal shot"),
-                                  ("right drag", "orbit the camera"), ("wheel", "zoom"), ("middle drag, WASD, Q E", "move the camera"), ("C", "camera mode"),
+            ui.label(section_title("Help & shortcuts"));
+            info(ui, "Choose a scene, start a reaction, then interact with Homer. Pause or reset at any time using the toolbar.");
+            if sim.help && ui.button("Got it — start exploring").clicked() {
+                sim.help = false;
+                if let Some(p) = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(HELP_SEEN))) {
+                    let _ = std::fs::write(p, "");
+                }
+                sim.tab = 1;
+            }
+            sub(ui, "Mouse & keyboard");
+            egui::Grid::new("keys").max_col_width(170.0).spacing([12.0, 8.0]).striped(true).show(ui, |ui| {
+                for (k, what) in [("click", if sim.aim_gun { "fire or swing the floating weapon" } else if sim.click_shoots { "shoot a body part" } else { "poke a body part" }), ("drag", "pull a body part (camera aim)"), ("Shift + click", "shoot a body part (camera aim)"), ("Shift + right click", "fatal shot"),
+                                  ("right drag", "orbit the camera"), ("wheel", "zoom"), ("WASD", "walk Homer when Walk Homer is on; otherwise move only in free camera"), ("middle drag", "pan and enter free camera"), ("Q E", "move vertically in free camera"), ("C", "follow / free camera"),
                                   ("Space", "pause"), (".", "one step"), ("[  ]", "slower / faster (1/16 to 4x)"), ("1  2  3", "throw a ball / a box / drop a crate at the pointer"), ("R", "reset pose"), ("X", "stop all"),
                                   ("Ctrl + point", "aim throws there (and the floating gun)"), ("F", "get in / out of a taxi"), ("Enter", "type a command"), ("H", "hide panels"),
-                                  ("Hero (World)", "WASD walk, Shift run, Ctrl sprint, click punch")] {
+                                  ("P", "photo mode"), ("Hero (Character)", "WASD walk, Shift run, Ctrl sprint, click punch")] {
                     ui.label(egui::RichText::new(k).strong());
                     ui.label(what);
                     ui.end_row();
@@ -5195,91 +5214,19 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         }
 
         if sim.tab & (1 << 6) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
             ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(7, "Details")));
+            ui.label(section_title("Inspect"));
+            info(ui, "Technical information for comparing and diagnosing the simulation.");
+            if ui.button("Open joint inspector").clicked() { *joints_open = true; }
+            ui.separator();
             ui.label(mono(checks).color(DIM));
             ui.label(mono(ours));
             ui.label(mono(format!("world: {} triangles, {} objects{}", sim.world.len(), sim.room.objs.len(),
                                   if sim.look && !sim.room.objs.is_empty() { format!(", looking at {}", sim.room.objs.len() - 1) } else { String::new() })).color(DIM));
         }
 
-        if sim.tab & (1 << 7) != 0 {
-            let c = short(cols);
-            let ui = &mut cols[c];
-            ui.add_space(6.0);
-            ui.vertical_centered(|ui| ui.label(caps(8, "Extras")));
-            sub(ui, "Stage");
-            let extras: Vec<(&str, bool, String)> = EXTRAS.iter().map(|&(k, l)| (k, sim.room.stage == k, l.to_string())).collect();
-            if let Some(k) = tiles(ui, "extras_stage", &extras) {
-                pressed = Some(format!("#stage {k}"));
-            }
-            sub(ui, "Hit him");
-            pressed = pressed.take().or(tiles(ui, "extras", &[("push front", false, "push front".into()), ("push back", false, "push back".into()),
-                ("explosion pile", false, "explosion pile".into()), ("wrecking ball", false, "wrecking ball".into())]));
-            sub(ui, "Behaviours");
-            let beh: Vec<(&str, bool, String)> = delirium::extras::messages().map(|m| (m.name, false, m.name.to_string())).collect();
-            pressed = pressed.take().or(tiles(ui, "extras_beh", &beh));
-            sub(ui, "Watch");
-            pressed = pressed.take().or(tiles(ui, "extras2", &[("replay", sim.replay.is_some(), "replay".into()),
-                ("#ripples", sim.show_ripples, onoff("floor ripples", sim.show_ripples))]));
-        }
-        });
-        }));
         });
     });
-    egui::Area::new("time".into()).anchor(egui::Align2::RIGHT_BOTTOM, [-12.0, -12.0]).show(ctx, |ui| {
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            let sp = sim.speed;
-            let name = if sim.paused { "paused".to_string() } else if sp < 1.0 { format!("1/{:.0}x  slow motion", 1.0 / sp) } else if sp > 1.0 { format!("{sp:.0}x  fast") } else { "1x  real time".into() };
-            ui.horizontal(|ui| {
-                if ui.small_button("[ slower").clicked() {
-                    pressed = Some("#slower".into());
-                }
-                ui.label(egui::RichText::new(name).strong().color(if sp == 1.0 && !sim.paused { DIM } else { HI }));
-                if ui.small_button("faster ]").clicked() {
-                    pressed = Some("#faster".into());
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                let mut v = SPEEDS.0;
-                while v <= SPEEDS.1 * 1.01 {
-                    let on = (v - sp).abs() < v * 0.01;
-                    let c = if on { HI } else if (v - 1.0).abs() < 0.01 { egui::Color32::from_gray(150) } else { egui::Color32::from_gray(80) };
-                    let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, if on { 10.0 } else { 6.0 }), egui::Sense::hover());
-                    ui.painter().rect_filled(r, 2.0, c);
-                    v *= 2.0;
-                }
-            });
-        });
-    });
-    if sim.help && sim.show_ui {
-        egui::Window::new("Welcome to the playroom").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).collapsible(false).resizable(false).show(ctx, |ui| {
-            for (k, what) in [("Click", "poke a body part"), ("Drag", "pull a body part around"), ("Shift + click", "shoot him"),
-                              ("Ctrl + point, or 1 2 3", "throw a ball, a box or a crate there"), ("[  ]", "slow motion (down to 1/16) / faster"),
-                              ("Right drag, wheel", "turn and zoom the camera"), ("Behaviours", "the buttons top left start each one"),
-                              ("H", "hide the panels")] {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(k).strong().color(HI));
-                    ui.label(what);
-                });
-            }
-            ui.label(egui::RichText::new("Every key is under Controls in the panel.").small().color(DIM));
-            ui.horizontal(|ui| {
-                if ui.button("Got it").clicked() {
-                    sim.help = false;
-                }
-                if ui.button("Don't show again").clicked() {
-                    sim.help = false;
-                    if let Some(p) = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(HELP_SEEN))) {
-                        let _ = std::fs::write(p, "");
-                    }
-                }
-            });
-        });
-    }
     sim.over_ui = ctx.is_pointer_over_area() || ctx.wants_pointer_input();
     if let Some((c, s)) = sim.hover.clone() {
         egui::Area::new("hover".into()).fixed_pos([c.x + 14.0, c.y + 4.0]).interactable(false).show(ctx, |ui| {
@@ -5307,7 +5254,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             #[cfg(feature = "portal")]
             (Some("#portalgun"), _) => portal::pick_gun(&mut sim),
             #[cfg(feature = "portal")]
-            (Some("#portal2"), t) => portal::toggle(&mut sim, t.is_some()),
+            (Some("#portal2"), action) => portal::toggle(&mut sim, action),
             (Some("#look"), Some(n)) => sim.skin = LOOKS.iter().find(|l| l.0 == n).map_or(sim.skin, |l| l.1),
             (Some("#grid"), _) => sim.skin.grid = !sim.skin.grid,
             (Some("#infinite"), _) => sim.infinite = !sim.infinite,
@@ -5318,7 +5265,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             (Some("#fog"), _) => sim.skin.fog = !sim.skin.fog,
             (Some("#glow"), _) => sim.skin.glow = !sim.skin.glow,
             (Some("#stage"), Some(n)) => sim.switch_to = Some((n.to_string(), nm() == delirium::nmrs::MARGE)),
-            (Some("#click"), Some(m)) => sim.click_shoots = m == "shoot",
+            (Some("#click"), Some(m)) => {
+                sim.click_shoots = m == "shoot";
+                if !sim.click_shoots { sim.aim_gun = false; }
+            }
             (Some("#aim"), Some(m)) => {
                 sim.aim_gun = m == "gun";
                 sim.gun.placed = false;
@@ -5327,8 +5277,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             (Some("Hero"), _) => sim.toggle_hero(),
             (Some("weak"), _) => sim.weak = !sim.weak,
             (Some("#pops"), _) => sim.show_pops = !sim.show_pops,
-            (Some("#help"), _) => sim.help = !sim.help,
+            (Some("#help"), _) => { sim.help = true; sim.tab = 1 << 5; },
             (Some("#sound"), _) => sim.sound = !sim.sound,
+            (Some("#realtime"), _) => sim.speed = 1.0,
 
             (Some("#ripples"), _) => {
                 sim.show_ripples = !sim.show_ripples;
