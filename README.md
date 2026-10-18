@@ -1,4 +1,11 @@
-<p align="center"><img src="docs/homer-wave.gif" alt="Homer waving" width="320"></p>
+<p align="center">
+  <img src="docs/homer-wave.gif" alt="Homer waving" width="320">
+  <img src="docs/world.gif" alt="The world: box, barrel, taxi, wrecking ball, low wall, ledge, rope bridge" width="320">
+</p>
+<p align="center">
+  <img src="docs/moves.gif" alt="Moves: ice, drunk, flinch, electrocute, stagger, windmill" width="320">
+  <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="320">
+</p>
 
 # Delirium Physics
 
