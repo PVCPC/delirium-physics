@@ -1,3 +1,5 @@
+> **You need your own GTA IV for Xbox 360 (not included).** Delirium reads the character, animations and settings from your disc image (.iso). No game files come with it, and it won't run without them.
+
 <p align="center">
   <img src="docs/homer-wave.gif" alt="Homer waving" width="320">
   <img src="docs/world.gif" alt="The world: box, barrel, taxi, wrecking ball, low wall, ledge, rope bridge" width="320">

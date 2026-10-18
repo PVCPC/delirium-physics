@@ -2692,8 +2692,8 @@ fn pick_game(args: &[String]) -> ! {
                     ui.vertical_centered(|ui| {
                         let big = if pick.hover { "Let go to use it" } else { "Drag your game .iso file here" };
                         ui.label(egui::RichText::new(big).size(28.0).strong().color(line));
-                        ui.label("Your own copy of the game: its disc image (.iso),");
-                        ui.label("or the game folder (the one with default.xex in it).");
+                        ui.label(egui::RichText::new("You need your own GTA IV for Xbox 360 (not included)").strong());
+                        ui.label("Its disc image (.iso), or the game folder (the one with default.xex in it).");
                     });
                 });
                 ui.add_space(10.0);
