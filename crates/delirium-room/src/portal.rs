@@ -44,6 +44,7 @@ pub struct Portals {
     homer_last: [f32; 2],
     obj_last: Vec<[f32; 2]>,
     hero_last: [f32; 2],
+    pub ots: Option<(Vec3, Vec3)>,
 }
 
 impl Portals {
@@ -89,23 +90,12 @@ impl Sim {
 
     fn portal_transit(&mut self) {
         let [Some(a), Some(b)] = self.portal.ends else { return };
-        let c = centre(self.agent.doll.frames().map(|f| f.translation));
-        let last = std::mem::replace(&mut self.portal.homer_last, [a.local(c).z, b.local(c).z]);
-        for (i, (from, to)) in [(a, b), (b, a)].into_iter().enumerate() {
-            if !crossed(&from, last[i], c) {
-                continue;
-            }
-            let (turn, map) = through(&from, &to);
-            let doll = &self.agent.doll;
-            let parts: Vec<(Vec3, Quat, Vec3, Vec3)> = doll.frames().enumerate()
-                .map(|(k, f)| (map(f.translation), turn * f.rotation, turn * doll.vel(k).0, turn * doll.vel(k).1)).collect();
-            let speed = doll.vel(0).0.length();
-            for (k, (x, q, v, w)) in parts.into_iter().enumerate() {
-                self.agent.doll.set_body(k, x, q.normalize(), v, w);
-            }
-            let c = centre(self.agent.doll.frames().map(|f| f.translation));
-            self.portal.homer_last = [a.local(c).z, b.local(c).z];
-            return self.say(format!("portal  homer through {} -> {} at {speed:.1} m/s", ["blue", "orange"][i], ["orange", "blue"][i]));
+        if let Some((i, speed)) = transit(&mut self.agent, a, b, &mut self.portal.homer_last) {
+            self.say(format!("portal  homer through {} -> {} at {speed:.1} m/s", ["blue", "orange"][i], ["orange", "blue"][i]));
+        }
+        if let Some(h) = self.hero_doll.as_mut().filter(|h| h.rise.is_none())
+            && let Some((i, speed)) = transit(&mut h.agent, a, b, &mut self.portal.hero_last) {
+            self.say(format!("portal  hero (ragdoll) through {} -> {} at {speed:.1} m/s", ["blue", "orange"][i], ["orange", "blue"][i]));
         }
     }
 
@@ -113,7 +103,18 @@ impl Sim {
         let [Some(a), Some(b)] = self.portal.ends else { return };
         let Some(n) = self.hero.as_ref().filter(|_| self.hero_doll.is_none() && !self.driving) else { return };
         let (c, yaw, fall) = (n.feet + Vec3::Z * 0.9, n.yaw, n.fall);
+        let over = |f: &Frame| { let l = f.local(n.feet); f.normal().z > 0.7 && l.z.abs() < 0.5 && (l.x / HALF.x).powi(2) + (l.y / HALF.y).powi(2) < 1.0 };
+        let trip = fall < 0.0 && (over(&a) || over(&b));
         let last = std::mem::replace(&mut self.portal.hero_last, [a.local(c).z, b.local(c).z]);
+        let into = crossed(&a, last[0], c) || crossed(&b, last[1], c);
+        if self.hero_physics && (trip || into) {
+            let n = self.hero.as_mut().unwrap();
+            (n.vel, n.fall) = (n.vel + Vec3::Z * fall, 0.0);
+            self.portal.hero_last = last;
+            if self.hero_fall() {
+                return self.say(format!("portal  hero {} it: on his ragdoll", if trip { "trips into" } else { "falls into" }));
+            }
+        }
         for (i, (from, to)) in [(a, b), (b, a)].into_iter().enumerate() {
             if !crossed(&from, last[i], c) {
                 continue;
@@ -170,14 +171,22 @@ impl Sim {
     }
 }
 
-pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, windows: Query<&Window>, time: Res<Time>,
+pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, keys: Res<ButtonInput<KeyCode>>, windows: Query<&Window>, time: Res<Time>,
              cam: Query<(&Camera, &GlobalTransform), With<OursCam>>, mut g: Gizmos<OursGizmos>) {
-    if sim.portal.gun && !sim.over_ui {
+    let hero = sim.hero.is_some();
+    if hero && sim.portal.gun && !sim.hero_gun {
+        sim.hero_take(crate::WEAPONS.iter().position(|w| w.0 == "ak47"));
+        sim.portal.gun = true;
+    }
+    if sim.portal.gun && (hero || sim.click_shoots || sim.aim_gun) && (!sim.over_ui || sim.portal.ots.is_some()) {
+        let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
         for (i, b) in [MouseButton::Left, MouseButton::Right].into_iter().enumerate() {
             if !buttons.just_pressed(b) {
                 continue;
             }
-            let ray = if sim.aim_gun && sim.gun.placed || sim.hero_gun && sim.hero.is_some() {
+            let ray = if hero {
+                sim.portal.ots
+            } else if sim.aim_gun && sim.gun.placed && !ctrl {
                 Some((sim.gun.at, sim.gun.dir))
             } else {
                 let c = windows.single().ok().and_then(|w| w.cursor_position());
@@ -186,6 +195,12 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, w
             if let Some((from, dir)) = ray {
                 sim.portal_shot(i, from, dir);
             }
+        }
+    }
+    if let Some((from, dir)) = sim.portal.ots {
+        if let Some((t, n, _)) = sim.world.contact(from, dir, 200.0) {
+            let at = from + dir * t + n * 0.01;
+            g.circle(Isometry3d::new(at, Quat::from_rotation_arc(Vec3::Z, n)), 0.012 * t.max(1.0), Color::WHITE);
         }
     }
     let chell = sim.portal.gun && sim.hero_gun;
@@ -465,10 +480,11 @@ pub fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: Re
 }
 
 pub fn pick_gun(sim: &mut Sim) {
-    sim.portal.gun = !sim.portal.gun;
-    if sim.portal.gun && sim.hero.is_some() {
+    if sim.hero.is_some() {
         sim.hero_take(crate::WEAPONS.iter().position(|w| w.0 == "ak47"));
+        sim.say("portal  over his shoulder: click the view to aim with the mouse, Esc frees it; left blue, right orange".into());
     }
+    sim.portal.gun = true;
 }
 
 const CHELL_ARMS: [(&str, &str, Vec3); 8] = [
@@ -579,6 +595,23 @@ fn looks(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Me
             _ => *v = Visibility::Hidden,
         }
     }
+}
+
+fn transit(agent: &mut delirium::nm::Agent, a: Frame, b: Frame, last: &mut [f32; 2]) -> Option<(usize, f32)> {
+    let c = centre(agent.doll.frames().map(|f| f.translation));
+    let was = std::mem::replace(last, [a.local(c).z, b.local(c).z]);
+    let (i, (from, to)) = [(a, b), (b, a)].into_iter().enumerate().find(|(i, (from, _))| crossed(from, was[*i], c))?;
+    let (turn, map) = through(&from, &to);
+    let doll = &agent.doll;
+    let parts: Vec<(Vec3, Quat, Vec3, Vec3)> = doll.frames().enumerate()
+        .map(|(k, f)| (map(f.translation), turn * f.rotation, turn * doll.vel(k).0, turn * doll.vel(k).1)).collect();
+    let speed = doll.vel(0).0.length();
+    for (k, (x, q, v, w)) in parts.into_iter().enumerate() {
+        agent.doll.set_body(k, x, q.normalize(), v, w);
+    }
+    let c = centre(agent.doll.frames().map(|f| f.translation));
+    *last = [a.local(c).z, b.local(c).z];
+    Some((i, speed))
 }
 
 fn centre(p: impl Iterator<Item = Vec3>) -> Vec3 {

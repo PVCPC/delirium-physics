@@ -424,6 +424,7 @@ struct Sim {
     getup_mode: u8,
     musc: Option<getup::Rise>,
     learned: Option<(learn::Net, Vec<Quat>, usize, learn::Pick)>,
+    walk_learned: Option<(learn::Net, Vec<Quat>, f32, f32, bool)>,
     ped_color: usize,
     eyes: bool,
     skel: bool,
@@ -436,6 +437,7 @@ struct Sim {
 }
 
 struct Watch {
+    path: String,
     stamp: Option<std::time::SystemTime>,
     generation: usize,
     scores: Vec<f32>,
@@ -453,7 +455,7 @@ impl Watch {
     }
 
     fn reload(&mut self) -> bool {
-        let path = learn::live_path(&learn::path());
+        let path = learn::live_path(&self.path);
         let stamp = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if stamp.is_none() || stamp == self.stamp {
             return false;
@@ -532,7 +534,7 @@ impl Sim {
                 continue;
             }
             let pelvis = now[0].translation;
-            if i == 0 && self.learned.is_some() {
+            if i == 0 && (self.learned.is_some() || self.walk_learned.is_some()) {
                 self.last[i] = pelvis;
                 continue;
             }
@@ -1006,7 +1008,7 @@ impl Sim {
         self.homer_rest -= dt;
         let pelvis = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
         let near = self.hero.as_ref().is_some_and(|n| n.feet.with_z(0.0).distance(pelvis.with_z(0.0)) < delirium_data::melee_task::SEEK_BEYOND);
-        if self.passive || self.driving || self.dead || !near || dt <= 0.0 {
+        if self.passive || self.driving || self.dead || self.walk_learned.is_some() || !near || dt <= 0.0 {
             return self.homer_out(true);
         }
         let standing = self.rises[0].as_ref().is_none_or(getup::Clips::standing);
@@ -1693,15 +1695,18 @@ impl Sim {
                 self.relock = true;
                 return;
             }
-            "watch training" => {
-                if self.watch.take().is_some() {
+            "watch training" | "watch walk training" | "watch run training" => {
+                let path = if b == "watch training" { learn::path() } else { learn::walk_path(b == "watch run training") };
+                if self.watch.as_ref().is_some_and(|w| w.path == path) {
+                    self.watch = None;
                     return self.say("training  watch: off".into());
                 }
-                let mut w = Watch { stamp: None, generation: 0, scores: vec![], tries: vec![], t: 0.0, check: 0.0 };
+                let mut w = Watch { path, stamp: None, generation: 0, scores: vec![], tries: vec![], t: 0.0, check: 0.0 };
                 let got = w.reload();
                 self.watch = Some(w);
-                return self.say(if got { "training  watch: on (each generation's 8 tries, side by side)".into() } else { "training  watch: on, waiting for the trainer (--learn)".into() });
+                return self.say(format!("training  {b}: {}", if got { "on (each generation's 8 tries, side by side)" } else { "on, waiting for the trainer" }));
             }
+            "walk learned" | "run learned" => return self.start_walk_learned(b == "run learned"),
             "infinite health" => {
                 (self.god, self.health) = (!self.god, 200.0);
                 return self.say(format!("room  infinite health: {}", if self.god { "on (hits never hurt Homer, both sides)" } else { "off" }));
@@ -1740,6 +1745,7 @@ impl Sim {
             return self.say(format!("room  {b}: he's dead (health 0); Reset pose brings him back"));
         }
         (self.rises, self.still, self.nm_t, self.musc, self.learned) = ([None, None], [0.0; 2], [None, None], None, None);
+        self.walk_learned = None;
         if b == "RESET pose" {
             (self.health, self.lean_stop, self.shot_task, self.dead) = (200.0, None, None, false);
             self.auto_balance = self.script.is_empty();
@@ -2160,7 +2166,7 @@ impl Sim {
         let want = (aim - hand).normalize_or(self.gun.dir);
         self.gun.dir = if self.gun.placed { self.gun.dir.lerp(want, 1.0 - (-20.0 * dt).exp()).normalize_or(want) } else { want };
         (self.gun.at, self.gun.aim, self.gun.placed) = (hand - self.gun.dir * 0.05, aim, true);
-        if (pull || fatal) && self.reloading.is_none() && self.ammo > 0 {
+        if (pull || fatal) && self.reloading.is_none() && self.ammo > 0 && !portal_gun(self) {
             self.gun_fire(fatal);
             self.ammo -= 1;
             if self.ammo == 0 {
@@ -2170,6 +2176,10 @@ impl Sim {
     }
 
     fn hero_take(&mut self, w: Option<usize>) {
+        #[cfg(feature = "portal")]
+        {
+            self.portal.gun = false;
+        }
         self.hero_gun = w.is_some();
         if let Some(w) = w {
             self.weapon = w;
@@ -2204,6 +2214,8 @@ impl Sim {
             if !hold {
                 self.gun.at = from + dir * ((chest - from).dot(dir) - 0.5).max(0.5);
                 self.gun.aim = nearest(&self.agent.doll, self.gun.at).0;
+            } else if portal_gun(self) {
+                self.gun.aim = from + dir * self.world.contact(from, dir, 200.0).map_or(50.0, |c| c.0);
             } else {
                 self.gun.aim = self.aim_at(from, dir);
             }
@@ -2553,7 +2565,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
                         weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -2635,6 +2647,15 @@ fn main() {
     let mut sim = load(&a, &args, game_dir.as_deref(), script, rec);
     let scene_var = "DELIRIUM_SCENE";
     sim.scene = std::env::var(scene_var).ok();
+    if let Some(i) = a.iter().position(|x| x == "--learn-walk" || x == "--learn-run") {
+        let run = a[i] == "--learn-run";
+        let gens = a.get(i + 1).and_then(|n| n.parse().ok()).unwrap_or(100);
+        let path = a.get(i + 2).cloned().unwrap_or_else(|| learn::walk_path(run));
+        let result = sim.getup.as_ref().ok_or_else(|| "movement clips unavailable: use or PC game files".into())
+            .and_then(|clips| learn::train_walk(&sim.build, &sim.world, &sim.frames, clips, gens, &path, run));
+        if let Err(e) = result { eprintln!("learn: {e}"); std::process::exit(1); }
+        return;
+    }
     if let Some(i) = a.iter().position(|x| x == "--learn") {
         let gens = a.get(i + 1).and_then(|n| n.parse().ok()).unwrap_or(100);
         return learn::train(&sim.build, &sim.world, &sim.frames, gens, &a.get(i + 2).cloned().unwrap_or_else(learn::path));
@@ -3726,11 +3747,22 @@ fn viewports(sim: NonSend<Sim>, mut contexts: EguiContexts, windows: Query<&Wind
 
 fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<ButtonInput<MouseButton>>, mut last: Local<Option<Vec2>>, scroll: Res<AccumulatedMouseScroll>,
          keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, windows: Query<&Window>,
+         motion: Res<bevy::input::mouse::AccumulatedMouseMotion>, mut grab: Query<&mut bevy::window::CursorOptions, With<bevy::window::PrimaryWindow>>,
          mut cam: Query<(&mut Transform, &mut Orbit, &Camera, &GlobalTransform), With<OursCam>>,
          ) {
     let editing = sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input());
     let Ok((mut t, mut o, camera, gt)) = cam.single_mut() else { return };
     let filming = sim.film > 0.0 && !sim.photo;
+    let ots = portal_gun(&sim) && sim.hero.is_some() && !sim.driving && sim.hero_doll.is_none() && !filming && !sim.photo;
+    let locked = grab.single().is_ok_and(|c| c.grab_mode != bevy::window::CursorGrabMode::None);
+    if let Ok(mut c) = grab.single_mut() {
+        let lock = ots && !keys.just_pressed(KeyCode::Escape) && (locked || buttons.just_pressed(MouseButton::Left) && !sim.over_ui);
+        if lock != locked {
+            c.grab_mode = if lock { bevy::window::CursorGrabMode::Locked } else { bevy::window::CursorGrabMode::None };
+            c.visible = !lock;
+        }
+    }
+    let ots_look = ots && locked;
     let cur = windows.single().ok().and_then(|w| w.cursor_position()).filter(|_| !filming);
     let delta = match (cur, *last) {
         (Some(c), Some(l)) => (c - l) * sim.sens,
@@ -3789,7 +3821,11 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     let flat = Vec3::new(o.yaw.cos(), o.yaw.sin(), 0.0);
     let side = Vec3::Z.cross(flat);
     if !sim.over_ui {
-        if buttons.pressed(MouseButton::Right) {
+        if ots_look {
+            let k = (0.022 * 3.0f32).to_radians();
+            o.yaw -= motion.delta.x * k;
+            o.pitch = (o.pitch + motion.delta.y * k).clamp(-0.6, 1.2);
+        } else if buttons.pressed(MouseButton::Right) {
             o.yaw -= delta.x * 0.005;
             o.pitch = (o.pitch + delta.y * 0.005).clamp(if sim.photo { -1.5 } else { -0.2 }, 1.5);
         }
@@ -3881,6 +3917,17 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     let off = Vec3::new(o.yaw.cos() * o.pitch.cos(), o.yaw.sin() * o.pitch.cos(), o.pitch.sin()) * dist;
     let slide = (-off).cross(Vec3::Z).normalize_or_zero() * (dist * 0.12 * sim.show_ui as u8 as f32);
     *t = Transform::from_translation(o.target + off - slide).looking_at(o.target - slide, Vec3::Z);
+    #[cfg(feature = "portal")]
+    {
+        sim.portal.ots = None;
+        if let Some(n) = sim.hero.as_ref().filter(|_| ots) {
+            let back = off.normalize_or(Vec3::X);
+            let right = Vec3::Z.cross(back).normalize_or_zero();
+            o.target = n.feet + Vec3::Z * 1.6;
+            *t = Transform::from_translation(o.target + back * 2.0 + right * 0.55).looking_to(-back, Vec3::Z);
+            sim.portal.ots = ots_look.then_some((t.translation, -back));
+        }
+    }
     let shake = (sim.gun.kick - 1.0).max(0.0) * 0.012;
     let e = time.elapsed_secs() * 55.0;
     t.rotate_local_x(shake * e.sin());
@@ -3972,7 +4019,10 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     }
     if sim.hero.is_some() && sim.hero_gun && !sim.driving {
         let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok()).map(|r| (r.origin, *r.direction));
-        let aim = ray.map_or(sim.gun.aim, |(f, d)| sim.aim_at(f, d));
+        let aim = match ots_ray(&sim) {
+            Some((f, d)) => f + d * sim.world.contact(f, d, 200.0).map_or(50.0, |c| c.0),
+            None => ray.map_or(sim.gun.aim, |(f, d)| sim.aim_at(f, d)),
+        };
         let (between, ..) = sim.gun_stats();
         let ok = !sim.over_ui && ray.is_some();
         let down = buttons.pressed(MouseButton::Left) && ok;
@@ -4013,6 +4063,20 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             }
         }
     }
+}
+
+fn portal_gun(sim: &Sim) -> bool {
+    #[cfg(feature = "portal")]
+    return sim.portal.gun;
+    #[cfg(not(feature = "portal"))]
+    false
+}
+
+fn ots_ray(sim: &Sim) -> Option<(Vec3, Vec3)> {
+    #[cfg(feature = "portal")]
+    return sim.portal.ots;
+    #[cfg(not(feature = "portal"))]
+    None
 }
 
 fn shift_held(keys: &ButtonInput<KeyCode>) -> bool {
@@ -4192,15 +4256,41 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
 }
 
 impl Sim {
+    fn start_walk_learned(&mut self, run: bool) {
+        if self.walk_learned.as_ref().is_some_and(|w| w.4 == run) {
+            self.walk_learned = None;
+            self.send("bodyBalance start=true");
+            return self.say("ours  learned locomotion: off".into());
+        }
+        let path = learn::walk_path(run);
+        let Some(net) = learn::Net::load(&path).filter(|n| n.sizes == learn::walk_sizes(&self.build, &self.agent.doll)) else {
+            return self.say(format!("training  no compatible {path}; train with --learn-{}", if run { "run" } else { "walk" }));
+        };
+        let Some(clips) = self.getup.as_ref() else { return self.say("training  the game's movement clips are unavailable".into()) };
+        let walk = match learn::Walk::new(clips, run) {
+            Ok(w) => w,
+            Err(e) => return self.say(format!("training  {e}")),
+        };
+        let a = match learn::walk_agent(&self.build, &self.world, &self.frames) {
+            Ok(a) => a,
+            Err(e) => return self.say(format!("training  {e}")),
+        };
+        self.agent = a;
+        self.msgs = Default::default();
+        (self.rises, self.still, self.nm_t, self.musc, self.learned) = ([None, None], [0.0; 2], [None, None], None, None);
+        (self.held, self.auto_balance, self.dead, self.health, self.homer, self.tasks, self.watch) = (false, false, false, 200.0, None, false, None);
+        self.walk_learned = Some((net, learn::zero(&self.build, &self.frames), 0.0, walk.duration, run));
+        self.walk = true;
+        self.say(format!("ours  learned WASD {}: {path}; use WASD to move, reset or another reaction stops it", if run { "run" } else { "walk" }));
+    }
+
     fn walk_frame(&mut self) {
         let d = self.walk_dir;
         if !self.walk || d == Vec3::ZERO || self.musc.is_some() {
             return;
         }
-        let ped = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
-        let m = delirium::playerctl::control(&mut self.agent, (0, -127), (-d.x).atan2(d.y), ped, &mut self.wander, &mut self.rand);
         let mut st = std::mem::take(&mut self.msgs);
-        shottask::apply(&mut self.agent, &self.build, &self.world, &mut st, &m);
+        learn::walk_input(&mut self.agent, &self.build, &self.world, &mut st, d, &mut self.wander, &mut self.rand);
         self.msgs = st;
     }
 
@@ -4301,6 +4391,14 @@ impl Sim {
             learn::step(net, &net.w, &mut self.agent, &self.build, &self.world, zero, pick);
             *n += 1;
         }
+        if let Some((net, zero, phase, duration, _)) = self.walk_learned.as_mut() {
+            if self.walk && self.walk_dir != Vec3::ZERO {
+                learn::drive_walk(net, &net.w, &mut self.agent, &self.build, zero, phase, *duration);
+            } else {
+                *phase = 0.0;
+                learn::drive(&mut self.agent, &vec![0.0; 3 * (self.build.parts.len() - 1) + 2], zero, &self.build);
+            }
+        }
         let doll = self.hero_doll.as_mut().filter(|h| h.rise.is_none()).map(|h| &mut h.agent);
         let mut all: Vec<(&mut Agent, usize, &Build, &[_], &[Capsule])> = std::iter::once(&mut self.agent).skip(learning as usize).chain(self.crowd.iter_mut().map(|c| &mut c.0)).chain(doll).enumerate()
             .map(|(i, a)| (a, i, &self.build, &car[..], &hero[..])).collect();
@@ -4334,6 +4432,10 @@ impl Sim {
         }
         self.steps += 1;
         self.learned_done();
+        if self.walk_learned.is_some() && self.agent.doll.frames().nth(HEAD).is_none_or(|f| !f.translation.is_finite() || f.translation.z < 0.8) {
+            self.walk_learned = None;
+            self.say("ours  learned locomotion: fell; select it again to retry".into());
+        }
         self.objects();
         if self.tape.len() == TAPE {
             self.tape.pop_front();
@@ -4614,7 +4716,7 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
 }
 
 const RESET_TIP: &str = "Stand Homer back up (R)";
-const TIPS: [(&str, &str); 33] = [
+const TIPS: [(&str, &str); 37] = [
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
     ("car", "A taxi comes at Homer from his left at 8 m/s and hits him."),
@@ -4638,6 +4740,10 @@ const TIPS: [(&str, &str); 33] = [
     ("#pops", "Numbers for the damage each hit does, rising from where it landed."), ("#help", "The first-start tips again."),
     ("#sound", "8-bit sounds for shots, hits, explosions, punches and crashes."), ("#blood", "Little square blood pixels from each hit; they land and fade."),
     ("watch training", "Shows the get-up training live: each generation's 8 tries side by side. Again: back to Homer."),
+    ("watch walk training", "Shows eight live walk training attempts. The trainer holds WASD forward and learns muscle control over the existing balancer."),
+    ("watch run training", "Shows eight live run training attempts, continuing from the walk network."),
+    ("walk learned", "Use walk.net to improve Homer's WASD movement. Follow Homer with the camera and use WASD. Again: ordinary movement."),
+    ("run learned", "Use run.net to improve Homer's WASD running. Again: ordinary movement."),
 ];
 const DIM: egui::Color32 = egui::Color32::from_rgb(170, 190, 215);
 const HI: egui::Color32 = egui::Color32::from_rgb(130, 210, 255);
@@ -5036,39 +5142,45 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     }
                 }
             });
+            sub(ui, "Left click");
+            let shoots = sim.click_shoots || sim.aim_gun;
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                for (on, name, key) in [(false, "Poke", "#click poke"), (true, "Shoot", "#click shoot")] {
+                    if wide(ui, name.into(), if shoots == on { ON } else { egui::Color32::WHITE }).clicked() {
+                        pressed = Some(key.into());
+                    }
+                }
+            });
+            if !shoots {
+                slide(ui, "Poke strength", &mut sim.poke, 1.0, 100.0, " N·s")
+                    .on_hover_text("How hard a left click (poke) pushes the body part (N s).");
+            }
             info(ui, if sim.aim_gun { "Floating: the weapon floats by the pointer; click to fire or swing." } else { "Camera: you shoot from the camera at what you click." });
             ui.add_space(4.0);
+            #[cfg(feature = "portal")]
+            let (portal, picked) = (sim.portal.on(), sim.portal.gun);
+            #[cfg(not(feature = "portal"))]
+            let (portal, picked) = (false, false);
             let per = per_row(ui, 108.0);
             egui::Grid::new("guns").spacing([10.0, 8.0]).show(ui, |ui| {
                 for (i, w) in WEAPONS.iter().enumerate() {
-                    let on = sim.weapon == i;
+                    let on = sim.weapon == i && !picked;
                     let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", _ => w.0 }).selected(on));
                     if b.clicked() { pressed = Some(format!("#weapon {i}")); }
                     if i % per == per - 1 {
                         ui.end_row();
                     }
                 }
+                if portal && ui.add_sized([108.0, 40.0], egui::Button::new("Portal gun").selected(picked)).clicked() {
+                    pressed = Some("#portalgun".into());
+                }
             });
-            #[cfg(feature = "portal")]
-            if sim.portal.on() {
-                pressed = pressed.take().or(tiles(ui, "portal gun", &[("#portalgun", sim.portal.gun, "PORTAL GUN".into())]));
+            if picked {
+                info(ui, if sim.hero.is_some() { "Hero: click the view to aim with the mouse over his shoulder (Esc frees it). Left click blue, right click orange." }
+                         else if shoots { "Left click: blue portal, right click: orange.  Hold Ctrl: at the pointer." }
+                         else { "The portal gun fires with Left click on Shoot." });
             }
-            egui::CollapsingHeader::new(if sim.aim_gun || sim.click_shoots { "Left click: Shoot" } else { "Left click: Poke" }).id_salt("pointer action").default_open(true).show(ui, |ui| {
-            info(ui, "Poke selects camera aim; Shoot uses the aiming mode above.");
-            for (title, now, items) in [("Left click", sim.click_shoots || sim.aim_gun, [(false, "poke", "#click poke"), (true, "shoot", "#click shoot")])] {
-                let _ = title;
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    for (on, name, key) in items {
-                        if ui.add_sized([145.0, 40.0], egui::Button::new(name).selected(now == on)).clicked() {
-                            pressed = Some(key.into());
-                        }
-                    }
-                });
-            }
-            slide(ui, "Poke strength", &mut sim.poke, 1.0, 100.0, " N·s")
-                .on_hover_text("How hard a left click (poke) pushes the body part (N s).");
-            });
             info(ui, if sim.aim_gun { "Click: fire.  Hold Ctrl: the gun stays put and aims at the pointer.  Shift + right click: a fatal shot." }
                     else if sim.click_shoots { "Click a body part to shoot it.  Shift + right click: a fatal shot." }
                     else { "Shift + click a body part to shoot it.  Shift + right click: a fatal shot." });
@@ -5140,11 +5252,18 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("Eyes", sim.eyes)), ("#brows", sim.brows, onoff("Eyebrows", sim.brows)),
                 ("#skel", sim.skel, onoff("Skeleton", sim.skel))]));
             });
-            if sim.watch.is_some() || std::path::Path::new(&learn::live_path(&learn::path())).exists() {
-            sub(ui, "Get-up training");
-            pressed = pressed.take().or(tiles(ui, "train", &[("watch training", sim.watch.is_some(), "watch training".into())]));
+            if sim.watch.is_some() || [learn::path(), learn::walk_path(false), learn::walk_path(true)].iter().any(|p|
+                std::path::Path::new(p).exists() || std::path::Path::new(&learn::live_path(p)).exists()) {
+            sub(ui, "Learned movement · local training");
+            pressed = pressed.take().or(tiles(ui, "learned_move", &[
+                ("walk learned", sim.walk_learned.as_ref().is_some_and(|w| !w.4), "Learned WASD walk".into()),
+                ("run learned", sim.walk_learned.as_ref().is_some_and(|w| w.4), "Learned WASD run".into())]));
+            let watches: Vec<_> = [("watch training", "Watch get-up", learn::path()),
+                ("watch walk training", "Watch walk", learn::walk_path(false)), ("watch run training", "Watch run", learn::walk_path(true))]
+                .into_iter().map(|(key, label, path)| (key, sim.watch.as_ref().is_some_and(|w| w.path == path), label.into())).collect();
+            pressed = pressed.take().or(tiles(ui, "train", &watches));
             info(ui, &match sim.watch.as_ref() {
-                Some(w) if w.stamp.is_some() => format!("Generation {}: best try {:.2}. The 8 tries of the latest generation, side by side.", w.generation,
+                Some(w) if w.stamp.is_some() => format!("{} · generation {}: best try {:.2}. The 8 tries of the latest generation, side by side.", std::path::Path::new(&w.path).file_stem().unwrap_or_default().to_string_lossy(), w.generation,
                                                         w.scores.iter().copied().fold(f32::MIN, f32::max)),
                 Some(_) => "Waiting for the trainer...".into(),
                 None => "Watch the trainer's latest generation live.".into(),
