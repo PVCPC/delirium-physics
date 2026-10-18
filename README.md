@@ -22,6 +22,7 @@ Delirium is a character physics engine written in Rust. It comes with an SDK (C,
 - **Hero mode**: walk around as Hero with fists (punches, combos, heavy attack, kick, block, lock-on) and guns
 - **Stages**: stairs, wall, ledge, rope bridge (the plank snaps!) and trampoline
 - **Toys**: throw balls, boxes and crates, drive a taxi into him, slow motion down to 1/16
+- **Portal mode**: Portal 2's portal gun. Shoot a blue and an orange portal and Homer flies through them, speed and all. Needs your own Portal 2 (see below)
 - **Homer's face**: his eyes look at what hit him, blink, and squint when he's hurt
 
 ## Setup
@@ -34,6 +35,8 @@ You need your own copy of the game: Delirium reads the character, animations and
 3. The first run downloads the ready-built room (no install, no build) into a folder beside it. After that it starts in seconds, and it remembers your game.
 
 Building it yourself: download this repo and run its `delirium-room.bat`. That offers to install Rust and Microsoft's C++ build tools (free, a few GB) and builds the room in a few minutes.
+
+**Portal mode**: install Portal 2 (Steam), then press **Portal 2** in the room's settings. It finds Portal 2 by itself, or asks for its folder. The portal gun is then in the weapons: left click shoots blue, right click shoots orange. No Portal 2 files are included; they're read from your install.
 
 **macOS / Linux**: run `delirium-room.command`. Install Rust first from [rustup.rs](https://rustup.rs).
 

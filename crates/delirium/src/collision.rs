@@ -20,6 +20,24 @@ pub struct Collision {
     cells: HashMap<(i32, i32), Vec<(u32, u32)>>,
     count: usize,
     neighbours: std::sync::RwLock<HashMap<(u32, u32), [Option<(u32, u32)>; 3]>>,
+    #[cfg(feature = "portal")]
+    pub holes: Vec<Hole>,
+}
+
+#[cfg(feature = "portal")]
+#[derive(Clone, Copy, Debug)]
+pub struct Hole {
+    pub at: Vec3,
+    pub rot: Quat,
+    pub half: Vec2,
+}
+
+#[cfg(feature = "portal")]
+impl Hole {
+    pub fn has(&self, p: Vec3) -> bool {
+        let l = self.rot.inverse() * (p - self.at);
+        l.z < 0.05 && l.z > -1.0 && (l.x / self.half.x).powi(2) + (l.y / self.half.y).powi(2) < 1.0
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -409,6 +427,10 @@ impl Collision {
                         if ground && n.z.abs() < 0.7 {
                             continue;
                         }
+                        #[cfg(feature = "portal")]
+                        if self.in_hole(from + dir * t) {
+                            continue;
+                        }
                         best = Some((t, n, (slot, id)));
                     }
                 }
@@ -447,6 +469,11 @@ impl Collision {
         let (t, _, (slot, id)) = self.hit(from, Vec3::NEG_Z, len, true)?;
         let key = self.keys.iter().find(|(_, s)| **s == slot).map(|(&k, _)| k)?;
         Some((from.z - t, self.chunks[slot as usize].as_ref().map_or(0, |c| c.materials[id as usize]), key))
+    }
+
+    #[cfg(feature = "portal")]
+    pub fn in_hole(&self, p: Vec3) -> bool {
+        self.holes.iter().any(|h| h.has(p))
     }
 
     pub fn chunks_near(&self, at: Vec3, r: f32) -> Vec<u64> {

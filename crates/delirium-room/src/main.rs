@@ -25,6 +25,8 @@ mod melee;
 mod hero;
 mod sfx;
 mod world;
+#[cfg(feature = "portal")]
+mod portal;
 
 const WHO: [&str; 1] = ["ours"];
 const SIDES: usize = WHO.len();
@@ -160,6 +162,7 @@ const TAXI_AXLE: Vec2 = Vec2::new(0.73, 1.326);
 const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916, 2.466, 1.05)];
 const TAXI_BELT: f32 = 0.62;
 const TAXI_ID: i32 = 100;
+const PLANK_ID: i32 = 200;
 const INJURY_MAX: f32 = 0.8;
 const CRUSH_SPEED: f32 = 2.5;
 const DODGE_GAP: f32 = 3.0;
@@ -406,6 +409,8 @@ struct Sim {
     homer_shot: f32,
     hero_physics: bool,
     hero_doll: Option<HeroDoll>,
+    #[cfg(feature = "portal")]
+    portal: portal::Portals,
     homer_wait: Option<f32>,
     homer_rest: f32,
     agility: u8,
@@ -1267,11 +1272,38 @@ impl Sim {
     }
 
     fn bridge(&mut self) {
-        if self.room.stage != "bridge" {
-            return;
+        let Some(n) = self.room.bridge.as_ref().map(|b| b.planks.len()) else { return };
+        if self.steps == 0 {
+            let rotten: Vec<usize> = self.room.bridge.iter().flat_map(|b| b.planks.iter().enumerate()).filter(|p| p.1.rotten).map(|p| p.0 + 1).collect();
+            self.say(format!("bridge  rotten planks {rotten:?}"));
         }
+        for i in 0..n {
+            let (p, t, m) = self.room.plank_triangles(i);
+            self.world.remove_chunk(BRIDGE_CHUNK + i as u64);
+            self.world.add_chunk(BRIDGE_CHUNK + i as u64, &p, &t, &m);
+        }
+        let row = self.room.surfaces.iter().position(|s| s.0 == "CONCRETE").unwrap_or(0) as u8;
+        for side in 0..2 {
+            let (p, t, m) = self.room.bridge.as_ref().unwrap().net_wall(&self.room.w[0], side, row);
+            self.world.remove_chunk(BRIDGE_CHUNK + 0x40 + side as u64);
+            self.world.add_chunk(BRIDGE_CHUNK + 0x40 + side as u64, &p, &t, &m);
+        }
+        let v = self.agent.doll.com().1;
+        let a = (v - self.room.com_v) * 60.0;
+        self.room.com_v = v;
+        self.room.push = (Vec3::NEG_Z * 9.81 - a).clamp_length_max(30.0) * world::HOMER_KG;
+        let broke = std::mem::take(&mut self.room.broke);
         if let Some(t) = self.room.snapped.as_mut() {
             *t += 1.0 / 60.0;
+            if (*t * 60.0).round() as u32 % 60 == 0 {
+                let s = self.ours();
+                let gap = |h: Vec3| (0..n).map(|i| {
+                    let p = self.room.bridge.as_ref().unwrap().plank(&self.room.w[0], i);
+                    let l = p.rotation.inverse() * (h - p.translation);
+                    (l - l.clamp(-world::PLANK_HALF, world::PLANK_HALF)).length()
+                }).fold(f32::MAX, f32::min);
+                self.say(format!("bridge  hands from a plank: left {:.2} m, right {:.2} m", gap(s.p(16)), gap(s.p(20))));
+            }
             if !self.room.fell && self.ours().p(0).z < world::BRIDGE_TOP - 2.0 {
                 self.room.fell = true;
                 self.send_ours(vec!["smartFall start=true".into()]);
@@ -1279,23 +1311,26 @@ impl Sim {
             }
             return;
         }
-        let Some(i) = self.room.snap else { return };
-        let (c, h, _) = self.room.blocks[i];
+        let Some(&i) = broke.first() else { return };
         let s = self.ours();
-        let on = |p: Vec3| (p.x - c.x).abs() <= h.x && (p.y - c.y).abs() <= h.y + 0.1 && (world::BRIDGE_TOP - 0.2..world::BRIDGE_TOP + 0.5).contains(&p.z);
-        if !on(s.p(3)) && !on(s.p(6)) {
-            return;
+        let ahead = s.fwd.y < 0.0;
+        let step = |k: usize| if ahead { k + 1 } else { k.wrapping_sub(1) };
+        if step(i) < n {
+            self.room.bridge.as_mut().unwrap().fall(&mut self.room.w[0], step(i));
         }
-        let y = if s.fwd.y < 0.0 { world::plank_y(world::SNAP_PLANK + 1) + world::PLANK_HALF.y } else { world::plank_y(world::SNAP_PLANK - 1) - world::PLANK_HALF.y };
-        self.world.remove_chunk(SNAP_CHUNK);
+        let j = step(step(i));
+        let (edge, inst) = match j < n {
+            true => (Vec3::new(0.0, if ahead { 1.0 } else { -1.0 } * world::PLANK_HALF.y, world::PLANK_HALF.z), PLANK_ID + j as i32),
+            false => (Vec3::new(0.0, if ahead { world::BRIDGE_FAR } else { 0.0 }, world::BRIDGE_TOP), -1),
+        };
+        let x = Vec3::X;
         self.room.snapped = Some(0.0);
         self.cue();
         (self.walk, self.script_walk) = (false, Vec3::ZERO);
-        let edge = Vec3::new(0.0, y, world::BRIDGE_TOP);
-        let x = Vec3::X * (world::PLANK_HALF.x - 0.1);
-        self.send_ours(vec![format!("grab start=true linegrab=true useLeft=true useRight=true dontLetGo=true grabStrength=600 bodyStiffness=10                                      grabDist=4.4 reachAngle=2.8 oneSideReachAngle=1.4 pullUpStrengthLeft=0 pullUpStrengthRight=0 pullUpTime=1 pos1={} pos2={}",
+        let x = x * (world::PLANK_HALF.x - 0.1);
+        self.send_ours(vec![format!("grab start=true linegrab=true useLeft=true useRight=true dontLetGo=true grabStrength=600 bodyStiffness=10                                      grabDist=4.4 reachAngle=2.8 oneSideReachAngle=1.4 pullUpStrengthLeft=0 pullUpStrengthRight=0 pullUpTime=1 pos1={} pos2={} instanceIndex={inst}",
                                     v3(edge + x), v3(edge - x)), "dangle start=true hold=false doGrab=true".into()]);
-        self.say("bridge  a plank snapped: grab".into());
+        self.say(format!("bridge  plank {} broke (and {}): grab {}", i + 1, step(i).wrapping_add(1), j.wrapping_add(1)));
     }
 
     fn ledge(&mut self) {
@@ -1767,6 +1802,10 @@ impl Sim {
     }
 
     fn fire_from(&mut self, from: Vec3, dir: Vec3, fatal: bool) {
+        #[cfg(feature = "portal")]
+        if self.portal.gun {
+            return;
+        }
         if WEAPONS[self.weapon].0 == "rpg" {
             self.sounds.push(sfx::Snd::Shot(self.weapon));
             return self.gun.rockets.push((from, dir * ROCKET_SPEED, 0.0));
@@ -1807,6 +1846,10 @@ impl Sim {
     }
 
     fn gun_fire(&mut self, fatal: bool) {
+        #[cfg(feature = "portal")]
+        if self.portal.gun {
+            return;
+        }
         let (_, acc, pellets, case) = self.gun_stats();
         let from = self.gun.at + self.gun.dir * GUN_MODELS[self.weapon].1;
         match kind(self.weapon) {
@@ -2496,7 +2539,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None,
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
@@ -2603,9 +2646,11 @@ fn main() {
         .insert_non_send_resource(sim)
         .add_systems(Startup, setup)
         .add_systems(Update, systems)
-        .add_systems(Update, (sounds, blood_view, plank_fall))
+        .add_systems(Update, (sounds, blood_view, planks))
         .add_systems(EguiPrimaryContextPass, ui);
     sfx::plugin(&mut app);
+    #[cfg(feature = "portal")]
+    portal::plugin(&mut app);
     app.world().resource::<bevy::asset::io::embedded::EmbeddedAssetRegistry>()
         .insert_asset(std::path::PathBuf::new(), std::path::Path::new("taxi.glb"), include_bytes!("taxi.glb").as_slice());
     app.run();
@@ -2903,14 +2948,22 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
     let floor = if sim.room.stage == "street" || sim.room.stage == "cab" { Color::srgb(0.2, 0.2, 0.22) } else { Color::srgb(0.58, 0.59, 0.61) };
     commands.spawn((Mesh3d(meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(30.0)))),
                     MeshMaterial3d(mats.add(StandardMaterial { base_color: floor, perceptual_roughness: 1.0, ..default() })), RoomScenery, Floor));
-    for (i, &(c, h, row)) in sim.room.blocks.iter().enumerate() {
+    for &(c, h, row) in &sim.room.blocks {
         let brick = sim.room.surfaces.get(row as usize).is_some_and(|s| s.0 == "BRICK_WALL");
-        let plank = sim.room.stage == "bridge" && h == world::PLANK_HALF;
-        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if plank { Color::srgb(0.55, 0.38, 0.22) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
-        let e = commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(h * 2.0))), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
-                                Transform::from_translation(c), RenderLayers::layer(1), RoomScenery)).id();
-        if Some(i) == sim.room.snap && plank {
-            commands.entity(e).insert(SnapPlank(c));
+        let post = sim.room.stage == "bridge" && h == world::POST_HALF;
+        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.4, 0.28, 0.16) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
+        commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(h * 2.0))), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
+                        Transform::from_translation(c), RenderLayers::layer(1), RoomScenery));
+    }
+    for (i, p) in sim.room.bridge.iter().flat_map(|b| b.planks.iter().enumerate()) {
+        let color = if p.rotten { Color::srgb(0.36, 0.3, 0.2) } else { Color::srgb(0.55, 0.38, 0.22) };
+        commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(world::PLANK_HALF * 2.0))), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
+                        Transform::default(), RenderLayers::layer(1), RoomScenery, Plank(i)));
+    }
+    if sim.room.bridge.is_some() {
+        let (mesh, mat) = (meshes.add(Cylinder::new(0.025, 1.0)), mats.add(StandardMaterial { base_color: Color::srgb(0.62, 0.52, 0.36), perceptual_roughness: 1.0, ..default() }));
+        for k in 0..world::ROPES {
+            commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), RenderLayers::layer(1), RoomScenery, Rope(k)));
         }
     }
     let sides = [(false, 1)];
@@ -3123,12 +3176,21 @@ fn save_view(key: &str, (r, a, t): (Quat, Vec3, Vec3)) {
 #[derive(Component)]
 struct RoomScenery;
 #[derive(Component)]
-struct SnapPlank(Vec3);
+struct Plank(usize);
 
-fn plank_fall(sim: NonSend<Sim>, mut q: Query<(&SnapPlank, &mut Transform)>) {
-    let t = sim.room.snapped.unwrap_or(0.0);
-    for (p, mut tr) in &mut q {
-        *tr = Transform::from_translation(p.0 - Vec3::Z * 4.9 * t * t).with_rotation(Quat::from_rotation_x(2.0 * t));
+#[derive(Component)]
+struct Rope(usize);
+
+fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope>>, mut r: Query<(&Rope, &mut Transform), Without<Plank>>) {
+    let Some(b) = sim.room.bridge.as_ref() else { return };
+    for (p, mut t) in &mut q {
+        *t = b.plank(&sim.room.w[0], p.0);
+    }
+    let ropes = b.ropes(&sim.room.w[0]);
+    for (k, mut t) in &mut r {
+        let (a, e) = ropes[k.0];
+        *t = Transform::from_translation((a + e) / 2.0).with_rotation(Quat::from_rotation_arc(Vec3::Y, (e - a).normalize_or(Vec3::Y)))
+            .with_scale(Vec3::new(1.0, a.distance(e), 1.0));
     }
 }
 #[derive(Component)]
@@ -3187,6 +3249,7 @@ const STAND: f32 = 0.95;
 const SCENES: [&str; 4] = ["room", "stairs", "wall", "ledge"];
 const EXTRAS: [(&str, &str); 3] = [("bridge", "rope bridge"), ("trampoline", "trampoline"), ("cab", "cab door")];
 const SNAP_CHUNK: u64 = 0xB41D6E;
+const BRIDGE_CHUNK: u64 = 0xB41D00;
 const STAGES: [(&str, &str); 6] = [("room", "room"), ("bigstairs", "big stairs"), ("rooftop", "rooftop"), ("lowwall", "low wall"), ("rail", "rail"), ("street", "street")];
 
 #[derive(Component)]
@@ -3421,6 +3484,10 @@ fn smooth(sim: NonSend<Sim>, mut commands: Commands,
     for (mut t, mut s) in &mut q {
         if s.step != sim.steps {
             (s.prev, s.cur, s.step) = (s.cur, *t, sim.steps);
+            #[cfg(feature = "portal")]
+            if s.prev.translation.distance(s.cur.translation) > 0.5 {
+                s.prev = s.cur;
+            }
         } else if *t != s.cur {
             (s.prev, s.cur) = (*t, *t);
         }
@@ -3943,6 +4010,8 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             }
             ("!nododge", _) => sim.no_dodge = !sim.no_dodge,
             ("!superpunch", _) => sim.button("super punch"),
+            #[cfg(feature = "portal")]
+            ("!portal", Some(a)) => sim.portal_script(a),
             ("!gunat", Some(d)) => {
                 let v: Vec<f32> = d.split(',').filter_map(|x| x.parse().ok()).collect();
                 if let [x, y, z] = v[..] {
@@ -4125,7 +4194,9 @@ impl Sim {
         let car: Vec<_> = self.cars.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
             half: Vec3::new(0.92, 2.54, 0.6), vel: v, com: c, ..Default::default() })
             .chain(self.pusher.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
-                half: Vec3::new(0.7, 0.25, 0.9), vel: v, com: c, ..Default::default() })).chain(self.taxis.iter().enumerate().flat_map(|(k, t)| [t.obstacle(TAXI_ID + k as i32, TAXI_BELT), t.cabin(TAXI_ID + k as i32, TAXI_BELT)])).collect();
+                half: Vec3::new(0.7, 0.25, 0.9), vel: v, com: c, ..Default::default() })).chain(self.taxis.iter().enumerate().flat_map(|(k, t)| [t.obstacle(TAXI_ID + k as i32, TAXI_BELT), t.cabin(TAXI_ID + k as i32, TAXI_BELT)]))
+            .chain(self.room.bridge.iter().flat_map(|b| (0..b.planks.len()).map(|i| b.plank(&self.room.w[0], i)).enumerate().map(|(i, t)| delirium::ragdoll::Obstacle {
+                id: PLANK_ID + i as i32, at: t.translation, rot: t.rotation, centre: t.translation - Vec3::Z * 1000.0, ..Default::default() }))).collect();
         self.pull();
         self.fire_frame(1.0 / 60.0);
         if self.steps % 2 == 0 {
@@ -4332,6 +4403,9 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
             let at = sim.shown().and_then(|f| f.props.get(j)).map_or_else(|| sim.room.obj(0, j).0.translation, |t| t.translation);
             ours.line(a, at, Color::srgb(0.2, 0.2, 0.22));
         }
+    }
+    for (a, b) in sim.room.bridge.iter().flat_map(|b| b.net(&sim.room.w[0])) {
+        ours.line(a, b, Color::srgb(0.6, 0.5, 0.33));
     }
     let void = dark && sim.skin.fog;
     let me = sim.ours().p(0).with_z(0.0);
@@ -4979,6 +5053,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     }
                 }
             });
+            #[cfg(feature = "portal")]
+            if sim.portal.on() {
+                pressed = pressed.take().or(tiles(ui, "portal gun", &[("#portalgun", sim.portal.gun, "PORTAL GUN".into())]));
+            }
             for (title, now, items) in [("Left click", sim.click_shoots, [(false, "poke", "#click poke"), (true, "shoot", "#click shoot")])] {
                 sub(ui, title);
                 centred(ui, 216.0, |ui| {
@@ -5061,6 +5139,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 ("#pops", sim.show_pops, "hit numbers".into()), ("#help", sim.help, "tips".into()),
                 ("#sound", sim.sound, onoff("sound", sim.sound)), ("#blood", sim.pixel_blood, onoff("pixel blood", sim.pixel_blood))]));
             slide(ui, "Mouse sensitivity", &mut sim.sens, 0.05, 2.0, "");
+            #[cfg(feature = "portal")]
+            {
+                sub(ui, "Bonus: Portal 2");
+                let on = sim.portal.on();
+                pressed = pressed.take().or(tiles(ui, "portal2", &[("#portal2", on, onoff("Portal 2", on))]));
+                portal::settings(ui, &mut sim, &mut pressed);
+            }
             sub(ui, "Look");
             let looks: Vec<(&str, bool, String)> = LOOKS.iter().map(|(n, l)| (*n, sim.skin == *l, n.to_string())).collect();
             if let Some(n) = tiles(ui, "looks", &looks) {
@@ -5208,6 +5293,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             (Some("#sel"), Some(j)) => sim.sel = j.parse().unwrap_or(0),
             (Some("#weapon"), Some(i)) => {
                 let w = i.parse().unwrap_or(0);
+                #[cfg(feature = "portal")]
+                {
+                    sim.portal.gun = false;
+                }
                 if sim.hero.is_some() {
                     sim.hero_take(Some(w));
                 } else {
@@ -5215,6 +5304,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 }
             }
             (Some("#weak"), _) => sim.weak = !sim.weak,
+            #[cfg(feature = "portal")]
+            (Some("#portalgun"), _) => portal::pick_gun(&mut sim),
+            #[cfg(feature = "portal")]
+            (Some("#portal2"), t) => portal::toggle(&mut sim, t.is_some()),
             (Some("#look"), Some(n)) => sim.skin = LOOKS.iter().find(|l| l.0 == n).map_or(sim.skin, |l| l.1),
             (Some("#grid"), _) => sim.skin.grid = !sim.skin.grid,
             (Some("#infinite"), _) => sim.infinite = !sim.infinite,

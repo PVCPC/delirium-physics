@@ -1525,6 +1525,10 @@ impl Ragdoll {
                 }
                 found.into_iter().map(|f| f.0).collect::<Vec<Held>>()
             };
+            #[cfg(feature = "portal")]
+            let found: Vec<Held> = found.into_iter().filter(|h| !world.in_hole(h.ground)).collect();
+            #[cfg(feature = "portal")]
+            held.retain(|h| !world.in_hole(h.ground));
             let mut groups: Vec<(u32, Vec<Held>)> = vec![];
             for r in held.drain(..) {
                 match groups.iter_mut().find(|g| g.0 == r.inst) {

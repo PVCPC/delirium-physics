@@ -10,7 +10,7 @@ delirium = { path = "../delirium", features = ["bevy"] }
 delirium-data = { path = "../delirium-data" }
 # Only the engine parts the room uses (no animation, sprites, UI, picking or text): a smaller, quicker build.
 bevy = { version = "=0.18.1", default-features = false, features = [
-    "default_app", "std", "multi_threaded", "bevy_winit", "x11", "wayland", "bevy_gilrs",
+    "default_app", "std", "bevy_sprite", "bevy_sprite_render", "multi_threaded", "bevy_winit", "x11", "wayland", "bevy_gilrs",
     "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_anti_alias", "bevy_pbr", "bevy_light", "bevy_gizmos_render",
     "bevy_camera", "bevy_color", "bevy_gizmos", "bevy_image", "bevy_mesh", "bevy_shader", "bevy_mikktspace",
     "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio",
@@ -18,3 +18,7 @@ bevy = { version = "=0.18.1", default-features = false, features = [
 bevy_egui = { version = "=0.39.1", default-features = false, features = ["manage_clipboard", "default_fonts", "render"] }
 rapier3d = "0.36.1"
 
+[features]
+# Portal mode: Portal 2's portal gun, with your own Portal 2 install (none of its files are included). On by default.
+default = ["portal"]
+portal = ["delirium/portal"]

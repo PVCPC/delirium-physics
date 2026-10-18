@@ -331,6 +331,22 @@ impl Clips {
         }
     }
 
+    #[cfg(feature = "portal")]
+    pub fn point_bone(&self, pose: &mut [(Vec3, Quat)], body: Transform, name: &str, next: &str, dir: Vec3) -> bool {
+        let at = |n: &str| self.names.iter().position(|b| b == n);
+        let (Some(i), Some(j)) = (at(name), at(next)) else { return false };
+        let world = delirium::ragdoll::pose_frames(&self.parents, pose, body);
+        let r = Quat::from_rotation_arc((world[j].0 - world[i].0).normalize_or(dir), dir.normalize());
+        let parent = self.parents[i].map_or(body.rotation, |p| world[p].1);
+        pose[i].1 = (parent.inverse() * r * world[i].1).normalize();
+        true
+    }
+
+    #[cfg(feature = "portal")]
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
     pub fn points<'n>(&self, parts: impl Iterator<Item = &'n str> + Clone, frames: &[Transform]) -> [Option<Vec3>; 5] {
         crate::melee::POINT_BONES.map(|tag| {
             let name = &self.names[self.ids.iter().position(|&i| i == tag)?];

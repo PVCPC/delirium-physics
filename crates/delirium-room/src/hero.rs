@@ -36,6 +36,10 @@ pub struct Hero {
     pub hand: Vec3,
     pub grip: Quat,
     pub homer: Vec<Transform>,
+    #[cfg(feature = "portal")]
+    pub chell: Option<Quat>,
+    #[cfg(feature = "portal")]
+    pub fall: f32,
     pub foe: melee::Foe,
 }
 
@@ -53,7 +57,7 @@ impl Hero {
                            speeds: [speed(getup::WALK), speed(getup::WALK + 1), speed(getup::WALK + 2)],
                            caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
                            hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![], foe: Default::default(),
-                            };
+                           #[cfg(feature = "portal")] chell: None, #[cfg(feature = "portal")] fall: 0.0 };
         n.pose(clips);
         n
     }
@@ -169,6 +173,8 @@ impl Hero {
         }
         self.feet += self.vel * dt;
         let ground = world.ground(self.feet + Vec3::Z * 1.0, 3.0);
+        #[cfg(feature = "portal")]
+        let ground = crate::portal::hero_fall(self, ground, dt);
         if let Some(z) = ground {
             self.feet.z = z;
         }
@@ -209,6 +215,10 @@ impl Hero {
             let pitch = (at.z - chest.z).atan2((at - chest).with_z(0.0).length().max(0.1));
             let _ = c;
             clips.bend(&mut p, body, self.facing().cross(Vec3::Z).normalize_or(Vec3::X), pitch.clamp(-1.0, 1.0));
+            #[cfg(feature = "portal")]
+            if self.chell.is_some() {
+                self.chell = Some(crate::portal::chell_arms(clips, &mut p, body, pitch.clamp(-1.0, 1.0)));
+            }
         }
         if let Some((at, q)) = clips.bone(&p, body, "Char_R_Hand") {
             (self.hand, self.grip) = (at, q);
