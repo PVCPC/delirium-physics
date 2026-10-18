@@ -8,7 +8,13 @@ publish.workspace = true
 [dependencies]
 delirium = { path = "../delirium", features = ["bevy"] }
 delirium-data = { path = "../delirium-data" }
-bevy = { version = "=0.18.1", features = ["jpeg"] }
-bevy_egui = "=0.39.1"
+# Only the engine parts the room uses (no animation, sprites, UI, picking or text): a smaller, quicker build.
+bevy = { version = "=0.18.1", default-features = false, features = [
+    "default_app", "std", "multi_threaded", "bevy_winit", "x11", "wayland", "bevy_gilrs",
+    "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_anti_alias", "bevy_pbr", "bevy_light", "bevy_gizmos_render",
+    "bevy_camera", "bevy_color", "bevy_gizmos", "bevy_image", "bevy_mesh", "bevy_shader", "bevy_mikktspace",
+    "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio",
+] }
+bevy_egui = { version = "=0.39.1", default-features = false, features = ["manage_clipboard", "default_fonts", "render"] }
 rapier3d = "0.36.1"
 

@@ -106,7 +106,7 @@ impl Room {
             "trampoline" => Some(0),
             _ => None,
         };
-        Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), start, snap, snapped: None, fell: false, bounced: 9.0 }
+        Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), start, snap, snapped: None, fell: false, bounced: 9.0, }
     }
 
     fn blocks(row: &dyn Fn(&str) -> u8) -> Vec<(Vec3, Vec3, u8)> {

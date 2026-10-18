@@ -52,7 +52,8 @@ impl Hero {
                            press: 0, keys: 0, scripted: 0, clock: 0.0, rand: Default::default(), bones: vec![],
                            speeds: [speed(getup::WALK), speed(getup::WALK + 1), speed(getup::WALK + 2)],
                            caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
-                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![], foe: Default::default() };
+                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![], foe: Default::default(),
+                            };
         n.pose(clips);
         n
     }
@@ -167,7 +168,8 @@ impl Hero {
             self.vel = Vec3::ZERO;
         }
         self.feet += self.vel * dt;
-        if let Some(z) = world.ground(self.feet + Vec3::Z * 1.0, 3.0) {
+        let ground = world.ground(self.feet + Vec3::Z * 1.0, 3.0);
+        if let Some(z) = ground {
             self.feet.z = z;
         }
         for &(a, b, r, ..) in body {

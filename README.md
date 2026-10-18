@@ -29,9 +29,11 @@ Delirium is a character physics engine written in Rust. It comes with an SDK (C,
 You need your own copy of the game: Delirium reads the character, animations and settings from it. None of it is included here.
 
 **Windows**
-1. Download this repo (green **Code** button → **Download ZIP**, or the latest [release](../../releases)) and unzip it.
-2. Drag your disc image (`.iso`) onto `delirium-room.bat`. Or just double-click it, then drop the `.iso` or your game folder on the window when the room asks.
-3. The first run offers to install Rust and Microsoft's C++ build tools (free, a few GB) and builds the room. That takes a few minutes. After that it starts in seconds, and it remembers your game.
+1. Download `delirium-room.bat` from the latest [release](../../releases).
+2. Drag your disc image (`.iso`) onto it. Or just double-click it, then drop the `.iso` or your game folder on the window when the room asks.
+3. The first run downloads the ready-built room (no install, no build) into a folder beside it. After that it starts in seconds, and it remembers your game.
+
+Building it yourself: download this repo and run its `delirium-room.bat`. That offers to install Rust and Microsoft's C++ build tools (free, a few GB) and builds the room in a few minutes.
 
 **macOS / Linux**: run `delirium-room.command`. Install Rust first from [rustup.rs](https://rustup.rs).
 
