@@ -2860,8 +2860,8 @@ fn pick_game(args: &[String]) -> ! {
         .add_systems(EguiPrimaryContextPass, ui)
         .run();
     let Some(g) = PICKED.get() else { std::process::exit(1) };
-    let status = std::process::Command::new(&args[0]).args(&args[1..]).arg("--game").arg(g).status();
-    std::process::exit(status.ok().and_then(|s| s.code()).unwrap_or(1));
+    let ok = std::process::Command::new(&args[0]).args(&args[1..]).arg("--game").arg(g).spawn().is_ok();
+    std::process::exit(if ok { 0 } else { 1 });
 }
 
 impl Sim {
