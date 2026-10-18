@@ -10,6 +10,18 @@
   <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="260">
 </p>
 
+> [!NOTE]
+> **You don't own a copy of the game?**
+>
+> Everything it takes from GTA IV is data, read at startup from your copy. To run without the game you'd swap in your own versions of:
+>
+> 1. **The character:** a skeleton plus ragdoll body parts (sizes, masses, joint limits). GTA IV's come from its ped model files.
+> 2. **Animations:** idle, walk, run, get-ups and the Hero's moves. Any rigged animation set retargeted to the skeleton would do.
+> 3. **Behaviour tuning:** the NM settings for each behaviour (balance, shot reactions and so on).
+> 4. **Small stuff:** surface friction, weapon impulses, the archive key used to open the game's files.
+>
+> The physics and behaviour engine itself is in the repo and needs none of that. It needs a body to drive and some tuning. Unity and any other engine using the SDK have the same requirement.
+
 # Delirium Physics
 
 A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
@@ -45,18 +57,6 @@ Building it yourself: download this repo and run its `delirium-room.bat`. That o
 **Portal mode (optional bonus)**: install Portal 2, then open **Interact → Portal 2 · bonus** inside the running room. Paste your Portal 2 installation folder and click **Link folder**, or click **Find Steam install**. The section shows the linked folder and lets you turn the bonus on or off. The portal gun is then in the weapons: left click shoots blue, right click shoots orange. Portal 2 isn't part of startup setup and isn't needed for the base room. No Portal 2 files are included; they're read from your install. The portal maths comes from **Stink-O**'s [Portal 2 Rust Engine](https://github.com/Stink-O/Portal2-rust-engine) (MIT; see [CREDITS](CREDITS.md)).
 
 **macOS / Linux**: download `delirium-room-<version>-macos-arm64.zip` (Apple Silicon) or `delirium-room-<version>-linux-x86_64.tar.gz` from [Releases](https://github.com/PVCPC/delirium-physics/releases/latest), unpack it and run `delirium-room` with your game's .iso or folder. On a Mac it isn't signed: run `xattr -dr com.apple.quarantine .` in its folder first. Or build it yourself: run `delirium-room.command` (install Rust first from [rustup.rs](https://rustup.rs)).
-
-> [!NOTE]
-> **You don't own a copy of the game?**
->
-> Everything it takes from GTA IV is data, read at startup from your copy. To run without the game you'd swap in your own versions of:
->
-> 1. **The character:** a skeleton plus ragdoll body parts (sizes, masses, joint limits). GTA IV's come from its ped model files.
-> 2. **Animations:** idle, walk, run, get-ups and the Hero's moves. Any rigged animation set retargeted to the skeleton would do.
-> 3. **Behaviour tuning:** the NM settings for each behaviour (balance, shot reactions and so on).
-> 4. **Small stuff:** surface friction, weapon impulses, the archive key used to open the game's files.
->
-> The physics and behaviour engine itself is in the repo and needs none of that. It needs a body to drive and some tuning. Unity and any other engine using the SDK have the same requirement.
 
 ## Controls
 
