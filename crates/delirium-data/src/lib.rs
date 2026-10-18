@@ -1,3 +1,12 @@
+pub static LE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn u32_of(b: [u8; 4]) -> u32 {
+    if LE.load(std::sync::atomic::Ordering::Relaxed) { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
+}
+
+pub(crate) fn u16_of(b: [u8; 2]) -> u16 {
+    if LE.load(std::sync::atomic::Ordering::Relaxed) { u16::from_le_bytes(b) } else { u16::from_be_bytes(b) }
+}
 pub mod actiontable;
 pub mod anim;
 pub mod animblend;
@@ -36,6 +45,7 @@ pub mod rng;
 pub mod route;
 pub mod rpf;
 pub mod runanim;
+pub mod sce;
 pub mod skeleton;
 pub mod staticcount;
 pub mod stfs;

@@ -28,6 +28,10 @@ pub fn parse(raw: &[u8]) -> Result<Resource, String> {
         (_, MAGIC) => (le(4)?, le(8)?),
         (m, _) => return Err(format!("Not an RSC resource (magic {m:08X})")),
     };
+    if raw.get(12) == Some(&0x78) {
+        let data = miniz_oxide::inflate::decompress_to_vec_zlib(&raw[12..]).map_err(|e| format!("Bad zlib resource: {e:?}"))?;
+        return Ok(Resource { kind, flags, data });
+    }
     if be32(raw, 12)? != XCOMPRESS {
         return Err(format!("Unknown resource compression {:08X}", be32(raw, 12)?));
     }

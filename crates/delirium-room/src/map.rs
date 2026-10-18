@@ -68,7 +68,7 @@ fn index(game: &str) -> Result<Vec<Entry>, String> {
     }
     let dir = Path::new(game);
     let key = crate::getup::key(dir)?;
-    let (mut imgs, mut dirs) = (vec![], vec![dir.join("xbox360")]);
+    let (mut imgs, mut dirs) = (vec![], vec![dir.join(crate::getup::plat("xbox360"))]);
     while let Some(d) = dirs.pop() {
         for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
             let p = e.path();

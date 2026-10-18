@@ -34,6 +34,33 @@ pub struct Rise {
     lay: Vec<Transform>,
 }
 
+const PS3_KEYS_SRC: &str = "https://raw.githubusercontent.com/RPCS3/rpcs3/b8ca6d953f734900c23f2cfbe79a36e598171553/rpcs3/Crypto/key_vault.cpp";
+
+fn ps3_keys() -> Result<Vec<delirium_data::sce::AppKey>, String> {
+    let f = config_dir().join("ps3keys.txt");
+    let fail = "couldn't get the keys that open EBOOT.BIN (they're fetched from the internet the first time: check the connection)";
+    let src = match std::fs::read_to_string(&f) {
+        Ok(s) => s,
+        Err(_) => {
+            let out = std::process::Command::new("curl").args(["-sSfL", PS3_KEYS_SRC]).output().map_err(|_| fail)?;
+            let s = String::from_utf8_lossy(&out.stdout).into_owned();
+            let _ = std::fs::create_dir_all(config_dir()).and_then(|_| std::fs::write(&f, &s));
+            s
+        }
+    };
+    Some(delirium_data::sce::app_keys(&src)).filter(|k| !k.is_empty()).ok_or(fail.into())
+}
+
+fn ps3_program(dir: &Path) -> Result<Vec<u8>, String> {
+    if let Ok(d) = std::fs::read(dir.join("eboot.elf")) {
+        return Ok(d);
+    }
+    let raw = std::fs::read(dir.join("EBOOT.BIN")).map_err(|e| format!("EBOOT.BIN: {e}"))?;
+    let elf = delirium_data::sce::decrypt(&raw, &ps3_keys()?).map_err(|e| format!("EBOOT.BIN: {e}"))?;
+    let _ = std::fs::write(dir.join("eboot.elf"), &elf);
+    Ok(elf)
+}
+
 const XEX_KEY_SRC: &str = "https://raw.githubusercontent.com/xenia-project/xenia/95a5c3ee250f80c3b9d139658649d9ffb6db3eec/src/xenia/cpu/xex_module.cc";
 
 pub fn config_dir() -> std::path::PathBuf {
@@ -56,9 +83,43 @@ fn xex_key() -> Result<[u8; 16], String> {
     Ok(k)
 }
 
+static PS3: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn pc() -> bool {
+    PC.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn plat(s: &str) -> String {
+    let to = if pc() {
+        [("xbox360", "pc"), (".xrt", ".art"), (".xft", ".wft"), (".xad", ".wad"), (".xtd", ".wtd"), (".xdr", ".wdr")]
+    } else if PS3.load(std::sync::atomic::Ordering::Relaxed) {
+        [("xbox360", "ps3"), (".xrt", ".prt"), (".xft", ".cft"), (".xad", ".cad"), (".xtd", ".ctd"), (".xdr", ".cdr")]
+    } else {
+        return s.into();
+    };
+    to.iter().fold(s.into(), |s, (a, b)| s.replace(a, b))
+}
+
 pub fn key(dir: &Path) -> Result<ArchiveKey, String> {
     static KEY: std::sync::OnceLock<Result<[u8; 32], String>> = std::sync::OnceLock::new();
+    PS3.store(dir.join("ps3.rpf").is_file(), std::sync::atomic::Ordering::Relaxed);
+    PC.store(dir.join("GTAIV.exe").is_file(), std::sync::atomic::Ordering::Relaxed);
+    delirium_data::LE.store(pc(), std::sync::atomic::Ordering::Relaxed);
     let k = KEY.get_or_init(|| {
+        if pc() {
+            let exe = std::fs::read(dir.join("GTAIV.exe")).map_err(|e| format!("GTAIV.exe: {e}"))?;
+            let mut head = vec![0; 0x810];
+            let rpf = dir.join("pc/models/cdimages/playerped.rpf");
+            std::fs::File::open(rpf).and_then(|mut f| f.read_exact(&mut head)).map_err(|e| format!("playerped.rpf: {e}"))?;
+            return ArchiveKey::find_by_trial(&exe, &head).map(|(_, k)| k).ok_or_else(|| "no archive key in GTAIV.exe".into());
+        }
+        if dir.join("ps3.rpf").is_file() {
+            let elf = ps3_program(dir)?;
+            let mut head = vec![0; 0x810];
+            std::fs::File::open(dir.join("ps3.rpf")).and_then(|mut f| f.read_exact(&mut head)).map_err(|e| format!("ps3.rpf: {e}"))?;
+            return ArchiveKey::find_by_trial(&elf, &head).map(|(_, k)| k).ok_or_else(|| "no archive key in eboot.elf".into());
+        }
         let xex = std::fs::read(dir.join("default.xex")).map_err(|e| format!("default.xex: {e}"))?;
         let xex = delirium_data::xex::XexImage::parse_with_key(&xex, &xex_key()?).map_err(|e| format!("default.xex: {e}"))?;
         let mut head = vec![0; 0x810];
@@ -69,6 +130,7 @@ pub fn key(dir: &Path) -> Result<ArchiveKey, String> {
 }
 
 fn img_open(path: &Path, key: &ArchiveKey) -> Result<(Vec<img::Entry>, std::fs::File), String> {
+    let path = &std::path::PathBuf::from(plat(&path.to_string_lossy()));
     let name = path.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
     let mut f = std::fs::File::open(path).map_err(|e| format!("{name}: {e}"))?;
     let mut head = vec![];
@@ -77,6 +139,7 @@ fn img_open(path: &Path, key: &ArchiveKey) -> Result<(Vec<img::Entry>, std::fs::
 }
 
 fn img_read(table: &[img::Entry], f: &mut std::fs::File, name: &str) -> Result<resource::Resource, String> {
+    let name = &plat(name);
     let e = table.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or(format!("{name} not found"))?;
     let mut raw = vec![];
     f.seek(SeekFrom::Start(e.offset)).map_err(|e| e.to_string())?;
@@ -116,12 +179,16 @@ impl Clips {
         let dir = Path::new(game);
         let rd = |p: &str| std::fs::read(dir.join(p)).map_err(|e| format!("{p}: {e}"));
         let key = key(dir)?;
-        let platform = rd("xbox360.rpf")?;
-        let toc = rpf::read_toc(&platform, &key)?;
-        let nested = toc.iter().find(|e| e.path.eq_ignore_ascii_case("models/cdimages/playerped.rpf")).ok_or("playerped.rpf not found")?;
-        let peds = rpf::read(&platform, nested)?;
+        let peds = if pc() {
+            rd("pc/models/cdimages/playerped.rpf")?
+        } else {
+            let platform = rd(&plat("xbox360.rpf"))?;
+            let toc = rpf::read_toc(&platform, &key)?;
+            let nested = toc.iter().find(|e| e.path.eq_ignore_ascii_case("models/cdimages/playerped.rpf")).ok_or("playerped.rpf not found")?;
+            rpf::read(&platform, nested)?
+        };
         let inner = rpf::read_toc(&peds, &key)?;
-        let e = inner.iter().find(|e| e.path.eq_ignore_ascii_case("player.xft")).ok_or("player.xft not in playerped.rpf")?;
+        let e = inner.iter().find(|e| e.path.eq_ignore_ascii_case(&plat("player.xft"))).ok_or("player.xft not in playerped.rpf")?;
         let frag = resource::parse(&rpf::read(&peds, e)?)?;
         let bones = skeleton::read(&frag, model::fragment_root(&frag)?)?;
         let (table, mut f) = img_open(&dir.join("xbox360/anim/anim.img"), &key)?;
@@ -145,9 +212,10 @@ impl Clips {
         }
         let mut fight_from = clips.len();
         let fight = (|| -> Result<crate::melee::Data, String> {
-            let c = rd("common.rpf")?;
-            let toc = rpf::read_toc(&c, &key)?;
-            let f = |p: &str| toc.iter().find(|e| e.path.eq_ignore_ascii_case(p)).and_then(|e| rpf::read(&c, e).ok()).ok_or(format!("no {p} in common.rpf"));
+            let (c, toc) = if pc() { (vec![], vec![]) } else { let c = rd("common.rpf")?; let t = rpf::read_toc(&c, &key)?; (c, t) };
+            let f = |p: &str| if pc() { rd(&format!("common/{p}")) } else {
+                toc.iter().find(|e| e.path.eq_ignore_ascii_case(p)).and_then(|e| rpf::read(&c, e).ok()).ok_or(format!("no {p} in common.rpf"))
+            };
             Ok(crate::melee::load(&f("data/meleeanims.dat")?, &f("data/action_table.csv")?, &f("data/pedpersonality.dat")?))
         })().map_err(|e| eprintln!("fights: {e}")).ok().map(|d| {
             let (mut at, mut dicts) = (std::collections::HashMap::new(), std::collections::HashMap::<String, Vec<anim::Animation>>::new());

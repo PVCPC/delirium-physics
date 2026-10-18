@@ -32,13 +32,13 @@ const CAPSULE: u8 = 1;
 const BOX: u8 = 3;
 
 fn be32(d: &[u8], at: usize) -> Result<u32, String> {
-    d.get(at..at + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap())).ok_or("Read out of range".into())
+    d.get(at..at + 4).map(|b| crate::u32_of(b.try_into().unwrap())).ok_or("Read out of range".into())
 }
 fn bef(d: &[u8], at: usize) -> Result<f32, String> {
     be32(d, at).map(f32::from_bits)
 }
 fn be16(d: &[u8], at: usize) -> Result<u16, String> {
-    d.get(at..at + 2).map(|b| u16::from_be_bytes([b[0], b[1]])).ok_or("Read out of range".into())
+    d.get(at..at + 2).map(|b| crate::u16_of([b[0], b[1]])).ok_or("Read out of range".into())
 }
 fn vec3(d: &[u8], at: usize) -> Result<[f32; 3], String> {
     Ok([bef(d, at)?, bef(d, at + 4)?, bef(d, at + 8)?])

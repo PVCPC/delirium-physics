@@ -1,4 +1,5 @@
-> **You need your own GTA IV for Xbox 360 (not included).** Delirium reads the character, animations and settings from your disc image (.iso). No game files come with it, and it won't run without them.
+> [!IMPORTANT]
+> **You need your own GTA IV for Xbox 360, PS3 or PC (not included).** Delirium reads the character, animations and settings from your own copy. Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it). A PS3 disc image straight off the disc is fine: its key is looked up online (or put its .dkey file beside it). On PS3 everything works except the animations for now: get-ups and the Hero's moves don't play yet, so Xbox 360 or PC is best. No game files come with it, and it won't run without them.
 
 <p align="center">
   <img src="docs/homer-wave.gif" alt="Homer waving" width="320">

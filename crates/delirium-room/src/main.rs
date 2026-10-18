@@ -1669,6 +1669,10 @@ impl Sim {
                 self.homer_weapon = next.and_then(|i| WEAPONS.iter().position(|w| w.0 == HOMER_ARMS[i]));
                 return self.say(format!("room  Homer fights with: {}", self.homer_weapon.map_or("his fists", |w| WEAPONS[w].0)));
             }
+            "super punch" => {
+                self.super_punch = !self.super_punch;
+                return self.say(format!("room  super punch: {}", if self.super_punch { "on (the Hero's punches go off like a grenade)" } else { "off" }));
+            }
             "hero physics" => {
                 self.hero_physics = !self.hero_physics;
                 return self.say(format!("room  Hero physics: {}", if self.hero_physics { "on (hits put him on his ragdoll)" } else { "off (hit animations)" }));
@@ -2415,9 +2419,14 @@ fn archive(game: &str, rpf: &str, paths: &[&str]) -> Vec<Option<Vec<u8>>> {
 
 fn archive_read(game: &str, rpf: &str, paths: &[&str]) -> Vec<Option<Vec<u8>>> {
     let dir = std::path::Path::new(game);
-    let (Ok(key), Ok(data)) = (getup::key(dir), std::fs::read(dir.join(rpf))) else { return vec![None; paths.len()] };
+    let Ok(key) = getup::key(dir) else { return vec![None; paths.len()] };
+    if getup::pc() {
+        let sub = if rpf == "common.rpf" { "common" } else { "pc" };
+        return paths.iter().map(|p| std::fs::read(dir.join(sub).join(getup::plat(p))).ok()).collect();
+    }
+    let Ok(data) = std::fs::read(dir.join(getup::plat(rpf))) else { return vec![None; paths.len()] };
     let toc = delirium_data::rpf::read_toc(&data, &key).unwrap_or_default();
-    paths.iter().map(|p| toc.iter().find(|e| e.path.eq_ignore_ascii_case(p)).and_then(|e| delirium_data::rpf::read(&data, e).ok())).collect()
+    paths.iter().map(|p| toc.iter().find(|e| e.path.eq_ignore_ascii_case(&getup::plat(p))).and_then(|e| delirium_data::rpf::read(&data, e).ok())).collect()
 }
 
 fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<(f32, String)>, rec: Option<std::io::LineWriter<std::fs::File>>) -> Sim {
@@ -2487,7 +2496,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: true, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None,
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
@@ -2605,28 +2614,66 @@ fn main() {
 const GAME_PATH: &str = "game_path.txt";
 
 fn is_game(dir: &str) -> bool {
-    std::path::Path::new(dir).join("default.xex").is_file()
+    let d = std::path::Path::new(dir);
+    d.join("default.xex").is_file() || d.join("ps3.rpf").is_file() && (d.join("eboot.elf").is_file() || d.join("EBOOT.BIN").is_file())
+        || d.join("GTAIV.exe").is_file() && d.join("pc").is_dir()
 }
 
 fn is_iso(path: &str) -> bool {
     path.to_lowercase().ends_with(".iso") && std::path::Path::new(path).is_file()
 }
 
-fn from_iso(iso: &str, say: &dyn Fn(u64, u64)) -> Result<String, String> {
-    let disc = delirium_data::disc::Disc::open(std::path::Path::new(iso))?;
-    let out = std::path::absolute("game").map_err(|e| e.to_string())?;
-    let mut want: Vec<&str> = disc.paths().into_iter()
-        .filter(|p| *p == "default.xex" || (!p.contains('/') && p.ends_with(".rpf")) || (p.starts_with("xbox360/") && p.ends_with(".img")))
-        .collect();
-    want.sort();
-    if !want.contains(&"default.xex") {
-        return Err(format!("{iso}: no default.xex on it (not the game's disc?)"));
+fn ps3_disc_key(disc: &mut delirium_data::disc::Disc, iso: &str) -> bool {
+    let hex = |s: &str| -> Vec<[u8; 16]> {
+        let b = s.as_bytes();
+        (0..b.len().saturating_sub(31)).filter(|&i| b[i..i + 32].iter().all(u8::is_ascii_hexdigit)
+            && (i == 0 || !b[i - 1].is_ascii_hexdigit()) && b.get(i + 32).is_none_or(|c| !c.is_ascii_hexdigit()))
+            .map(|i| std::array::from_fn(|j| u8::from_str_radix(&s[i + j * 2..i + j * 2 + 2], 16).unwrap())).collect()
+    };
+    if let Ok(k) = std::fs::read_to_string(std::path::Path::new(iso).with_extension("dkey")) {
+        if hex(&k).into_iter().any(|k| disc.set_disc_key(k)) {
+            return true;
+        }
     }
+    let Some(serial) = disc.ps3_serial().map(str::to_string) else { return false };
+    let get = |url: &str| std::process::Command::new("curl").args(["-sSfL", url]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    let found = get(&format!("http://redump.org/discs/quicksearch/{serial}/"));
+    let mut pages: Vec<String> = found.split("/disc/").skip(1).filter_map(|t| t.split('/').next())
+        .filter(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit())).map(String::from).collect();
+    pages.dedup();
+    for page in std::iter::once(found).chain(pages.iter().map(|n| get(&format!("http://redump.org/disc/{n}/")))) {
+        if let Some(at) = page.find("Disc Key") {
+            if hex(&page[at..(at + 400).min(page.len())]).into_iter().any(|k| disc.set_disc_key(k)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn from_iso(iso: &str, say: &dyn Fn(u64, u64)) -> Result<String, String> {
+    let mut disc = delirium_data::disc::Disc::open(std::path::Path::new(iso))?;
+    if disc.needs_disc_key() && !ps3_disc_key(&mut disc, iso) {
+        return Err(format!("{iso}: this PS3 disc image is encrypted and its key wasn't found (put its .dkey file beside it, \
+            same name, or check the connection)"));
+    }
+    let out = std::path::absolute("game").map_err(|e| e.to_string())?;
+    let (root, prog) = if disc.ps3_serial().is_some() { ("ps3_game/usrdir/", "eboot.bin") } else { ("", "default.xex") };
+    let mut want: Vec<&str> = disc.paths().into_iter().filter_map(|p| Some((p, p.strip_prefix(root)?)))
+        .filter(|(_, p)| *p == prog || (!p.contains('/') && p.ends_with(".rpf"))
+            || ((p.starts_with("xbox360/") || p.starts_with("ps3/")) && p.ends_with(".img")))
+        .map(|(p, _)| p).collect();
+    want.sort();
+    if !want.iter().any(|p| p.strip_prefix(root) == Some(prog)) {
+        return Err(format!("{iso}: no {prog} on it (not the game's disc?)"));
+    }
+    let name = |p: &str| { let p = &p[root.len()..]; if p == "eboot.bin" { "EBOOT.BIN".to_string() } else { p.to_string() } };
     let todo: Vec<(&str, u64)> = want.iter().map(|p| (*p, disc.len(p).unwrap_or(0)))
-        .filter(|(p, len)| !out.join(p).metadata().is_ok_and(|m| m.len() == *len)).collect();
+        .filter(|(p, len)| !out.join(name(p)).metadata().is_ok_and(|m| m.len() == *len)).collect();
     let (all, mut done) = (todo.iter().map(|t| t.1).sum::<u64>(), 0);
     for (p, len) in todo {
-        let to = out.join(p);
+        let to = out.join(name(p));
         std::fs::create_dir_all(to.parent().unwrap()).map_err(|e| e.to_string())?;
         let part = to.with_extension("part");
         let mut f = std::fs::File::create(&part).map_err(|e| format!("{}: {e}", part.display()))?;
@@ -2690,10 +2737,12 @@ fn pick_game(args: &[String]) -> ! {
                 egui::Frame::new().fill(fill).stroke(egui::Stroke::new(2.0, line)).corner_radius(10.0).inner_margin(28.0).show(ui, |ui| {
                     ui.set_width(640.0);
                     ui.vertical_centered(|ui| {
-                        let big = if pick.hover { "Let go to use it" } else { "Drag your game .iso file here" };
+                        let big = if pick.hover { "Let go to use it" } else { "Drag your game here" };
                         ui.label(egui::RichText::new(big).size(28.0).strong().color(line));
-                        ui.label(egui::RichText::new("You need your own GTA IV for Xbox 360 (not included)").strong());
-                        ui.label("Its disc image (.iso), or the game folder (the one with default.xex in it).");
+                        ui.label(egui::RichText::new("You need your own GTA IV for Xbox 360, PS3 or PC (not included)").strong());
+                        ui.label("Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it).");
+                        ui.label(egui::RichText::new("A PS3 disc image straight off the disc is fine: its key is looked up online.").small());
+                        ui.label(egui::RichText::new("On PS3 everything works except the animations for now (get-ups and the Hero's moves don't play yet): or PC is best.").small());
                     });
                 });
                 ui.add_space(10.0);
@@ -2721,7 +2770,7 @@ fn pick_game(args: &[String]) -> ! {
                     c2.lock().unwrap().1 = Some(r);
                 });
                 pick.copy = Some(c);
-            } else if is_game(&g) {
+            } else if let Some(g) = [format!("{g}/GTAIV"), g.clone()].into_iter().find(|d| is_game(d)) {
                 let _ = std::fs::write(GAME_PATH, &g);
                 let _ = PICKED.set(g);
                 exit.write(AppExit::Success);
@@ -3892,8 +3941,8 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let part = w.next().and_then(|k| k.parse().ok()).unwrap_or(0);
                 sim.fire(part, None, w.next() == Some("fatal"));
             }
-            ("!superpunch", _) => sim.super_punch = !sim.super_punch,
             ("!nododge", _) => sim.no_dodge = !sim.no_dodge,
+            ("!superpunch", _) => sim.button("super punch"),
             ("!gunat", Some(d)) => {
                 let v: Vec<f32> = d.split(',').filter_map(|x| x.parse().ok()).collect();
                 if let [x, y, z] = v[..] {
@@ -4411,7 +4460,7 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
 }
 
 const RESET_TIP: &str = "Stand Homer back up (R)";
-const TIPS: [(&str, &str); 32] = [
+const TIPS: [(&str, &str); 33] = [
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
     ("car", "A taxi comes at Homer from his left at 8 m/s and hits him."),
@@ -4426,6 +4475,7 @@ const TIPS: [(&str, &str); 32] = [
     ("replay", "Plays the last 10 s again (the speed buttons slow it down). Press again to stop."),
     ("Hero", "Play as Hero beside Homer: WASD walk, Shift run, Ctrl sprint, click punch; walk into Homer to push him. Again: take Hero out."),
     ("homer weapon", "What Homer fights back with: fists, a bat, a knife or a gun (click to change). With a gun he stands off and shoots the Hero."),
+    ("super punch", "Bonus: the Hero's punches that land go off like a grenade and throw Homer."),
     ("hero physics", "On: blows, shots and blasts put the Hero on his own ragdoll, and he gets up after. Off: he plays the hit animations."),
     ("passive", "On: Homer only takes hits. Off: near the Hero he fights back (walks up, punches, kicks); a hit puts him on his ragdoll a while."),
     ("walk", "WASD steers Homer through his balance: he leans that way and steps to follow, and can trip."),
@@ -4979,7 +5029,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             pressed = pressed.take().or(tiles(ui, "play", &[("Hero", sim.hero.is_some(), "Hero".into()),
                 ("walk", sim.walk, onoff("walk Homer", sim.walk)), ("passive", sim.passive, onoff("Homer passive", sim.passive)),
                 ("homer weapon", sim.homer_weapon.is_some(), format!("Homer: {}", sim.homer_weapon.map_or("fists", |w| WEAPONS[w].0))),
-                ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics))]));
+                ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics)), ("super punch", sim.super_punch, onoff("Super punch", sim.super_punch))]));
         }
 
         if sim.tab & (1 << 3) != 0 {

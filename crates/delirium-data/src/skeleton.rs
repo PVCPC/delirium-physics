@@ -16,10 +16,10 @@ pub struct Bone {
 const BONE_SIZE: usize = 0xE0;
 
 fn be32(d: &[u8], at: usize) -> Result<u32, String> {
-    d.get(at..at + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap())).ok_or("Read out of range".into())
+    d.get(at..at + 4).map(|b| crate::u32_of(b.try_into().unwrap())).ok_or("Read out of range".into())
 }
 fn be16(d: &[u8], at: usize) -> Result<u16, String> {
-    d.get(at..at + 2).map(|b| u16::from_be_bytes([b[0], b[1]])).ok_or("Read out of range".into())
+    d.get(at..at + 2).map(|b| crate::u16_of([b[0], b[1]])).ok_or("Read out of range".into())
 }
 fn floats<const N: usize>(d: &[u8], at: usize) -> Result<[f32; N], String> {
     let mut out = [0.0; N];

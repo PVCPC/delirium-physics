@@ -8,7 +8,13 @@ const BASES: [u64; 4] = [0, 0x0FD9_0000, 0x0208_0000, 0x1830_0000];
 
 enum Source {
     Folder { files: HashMap<String, PathBuf> },
-    Image { file: File, files: HashMap<String, (u64, u64)> },
+    Image { file: File, files: HashMap<String, (u64, u64)>, ps3: Option<Ps3> },
+}
+
+struct Ps3 {
+    serial: String,
+    regions: Vec<(u64, u64)>,
+    key: Option<aes::Aes128>,
 }
 
 pub struct Disc {
@@ -33,6 +39,31 @@ fn read_exact_at(f: &File, buf: &mut [u8], mut offset: u64) -> std::io::Result<(
         done += n;
         offset += n as u64;
     }
+    Ok(())
+}
+
+fn read_ps3(f: &File, key: &aes::Aes128, regions: &[(u64, u64)], buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use aes::cipher::{BlockDecrypt, generic_array::GenericArray};
+    let (first, last) = (offset / SECTOR, (offset + buf.len() as u64).div_ceil(SECTOR));
+    let mut d = vec![0u8; ((last - first) * SECTOR) as usize];
+    read_exact_at(f, &mut d, first * SECTOR)?;
+    for (i, s) in d.chunks_mut(SECTOR as usize).enumerate() {
+        let n = first + i as u64;
+        if !regions.iter().any(|&(a, b)| a <= n && n <= b) {
+            continue;
+        }
+        let mut prev = [0u8; 16];
+        prev[12..].copy_from_slice(&(n as u32).to_be_bytes());
+        for b in s.chunks_mut(16) {
+            let c: [u8; 16] = b.try_into().unwrap();
+            let mut x = GenericArray::from(c);
+            key.decrypt_block(&mut x);
+            b.iter_mut().zip(x.iter().zip(prev)).for_each(|(o, (x, p))| *o = x ^ p);
+            prev = c;
+        }
+    }
+    let at = (offset - first * SECTOR) as usize;
+    buf.copy_from_slice(&d[at..at + buf.len()]);
     Ok(())
 }
 
@@ -93,9 +124,78 @@ impl Disc {
                     stack.extend([left, right].into_iter().filter(|&c| c != 0 && c != 0xFFFF).map(usize::from));
                 }
             }
-            return Ok(Disc { source: Source::Image { file, files }, update: None });
+            return Ok(Disc { source: Source::Image { file, files, ps3: None }, update: None });
         }
-        Err(format!("{}: neither a folder nor a game disc image", path.display()))
+        Self::open_iso9660(file, len).ok_or_else(|| format!("{}: neither a folder nor a disc image of the game", path.display()))
+    }
+
+    fn open_iso9660(file: File, len: u64) -> Option<Disc> {
+        let mut head = vec![0u8; 17 * SECTOR as usize];
+        if len < head.len() as u64 || read_exact_at(&file, &mut head, 0).is_err() {
+            return None;
+        }
+        let vd = &head[16 * SECTOR as usize..];
+        if &vd[1..6] != b"CD001" || &head[0x800..0x80C] != b"PlayStation3" {
+            return None;
+        }
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().unwrap()) as u64;
+        let le32 = |d: &[u8], at: usize| u32::from_le_bytes(d[at..at + 4].try_into().unwrap()) as u64;
+        let n = (be32(&head, 0) as usize).min(250);
+        let starts: Vec<u64> = (0..n * 2).map(|i| be32(&head, 8 + i * 4)).collect();
+        let regions = (1..(n * 2).saturating_sub(1)).step_by(2).map(|i| (starts[i], starts[i + 1])).collect();
+        let serial = String::from_utf8_lossy(&head[0x810..0x820]).trim_matches(|c: char| c == '\0' || c == ' ').to_string();
+        let mut files = HashMap::new();
+        let mut dirs = vec![(le32(vd, 156 + 2), le32(vd, 156 + 10), String::new())];
+        while let Some((sector, size, prefix)) = dirs.pop() {
+            let mut d = vec![0u8; size as usize];
+            read_exact_at(&file, &mut d, sector * SECTOR).ok()?;
+            let mut p = 0;
+            while p < d.len() {
+                let n = d[p] as usize;
+                if n == 0 {
+                    p = (p / SECTOR as usize + 1) * SECTOR as usize;
+                    continue;
+                }
+                let r = d.get(p..p + n)?;
+                if !(r[32] == 1 && r[33] <= 1) {
+                    let name = String::from_utf8_lossy(&r[33..33 + r[32] as usize]).to_lowercase();
+                    let name = name.split(';').next().unwrap_or_default();
+                    let (at, bytes) = (le32(r, 2), le32(r, 10));
+                    if r[25] & 2 != 0 {
+                        dirs.push((at, bytes, format!("{prefix}{name}/")));
+                    } else {
+                        files.insert(format!("{prefix}{name}"), (at * SECTOR, bytes));
+                    }
+                }
+                p += n;
+            }
+        }
+        Some(Disc { source: Source::Image { file, files, ps3: Some(Ps3 { serial, regions, key: None }) }, update: None })
+    }
+
+    pub fn ps3_serial(&self) -> Option<&str> {
+        match &self.source {
+            Source::Image { ps3: Some(p), .. } => Some(&p.serial),
+            _ => None,
+        }
+    }
+
+    pub fn needs_disc_key(&self) -> bool {
+        self.ps3_serial().is_some() && self.read_at("ps3_game/usrdir/eboot.bin", 0, 4).ok().as_deref() != Some(b"SCE\0")
+    }
+
+    pub fn set_disc_key(&mut self, key: [u8; 16]) -> bool {
+        use aes::cipher::KeyInit;
+        if let Source::Image { ps3: Some(p), .. } = &mut self.source {
+            p.key = Some(aes::Aes128::new(&key.into()));
+        }
+        if self.needs_disc_key() {
+            if let Source::Image { ps3: Some(p), .. } = &mut self.source {
+                p.key = None;
+            }
+            return false;
+        }
+        true
     }
 
     pub fn set_update(&mut self, update: Update) {
@@ -152,7 +252,13 @@ impl Disc {
                 let f = File::open(&files[&key]).map_err(|e| format!("{path}: {e}"))?;
                 read_exact_at(&f, &mut buf, offset)
             }
-            Source::Image { file, files } => read_exact_at(file, &mut buf, files[&key].0 + offset),
+            Source::Image { file, files, ps3 } => {
+                let at = files[&key].0 + offset;
+                match ps3 {
+                    Some(Ps3 { key: Some(k), regions, .. }) => read_ps3(file, k, regions, &mut buf, at),
+                    _ => read_exact_at(file, &mut buf, at),
+                }
+            }
         }
         .map_err(|e| format!("{path}: {e}"))?;
         Ok(buf)

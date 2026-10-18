@@ -14,7 +14,7 @@ pub struct Part {
 }
 
 fn be32(d: &[u8], at: usize) -> Result<u32, String> {
-    d.get(at..at + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap())).ok_or("Read out of range".into())
+    d.get(at..at + 4).map(|b| crate::u32_of(b.try_into().unwrap())).ok_or("Read out of range".into())
 }
 fn bef(d: &[u8], at: usize) -> Result<f32, String> {
     be32(d, at).map(f32::from_bits)
@@ -36,7 +36,7 @@ pub fn read(r: &Resource) -> Result<Vec<Part>, String> {
     for i in 0..count {
         let c = p(children + i * 4)?;
         let group = byte(d, c + 0x0C)?;
-        let bone = u16::from_be_bytes([byte(d, c + 0x0E)?, byte(d, c + 0x0F)?]) as usize;
+        let bone = crate::u16_of([byte(d, c + 0x0E)?, byte(d, c + 0x0F)?]) as usize;
         let parent_group = byte(d, p(groups + group as usize * 4)? + 0x10D)?;
         let k = p(kids + i * 4)?;
         let ext = |a: usize| -> Result<f32, String> { Ok((bef(d, k + 0x10 + a)? - bef(d, k + 0x20 + a)?) / 2.0) };

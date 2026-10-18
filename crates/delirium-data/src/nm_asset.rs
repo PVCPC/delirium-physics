@@ -74,7 +74,7 @@ impl<'a> Stream<'a> {
     }
 
     fn w(&self, i: usize) -> u32 {
-        u32::from_be_bytes([self.b(i), self.b(i + 1), self.b(i + 2), self.b(i + 3)])
+        crate::u32_of([self.b(i), self.b(i + 1), self.b(i + 2), self.b(i + 3)])
     }
 
     pub fn tag(&self) -> u8 {
@@ -207,7 +207,7 @@ pub struct AssetSlot {
 pub fn manager_load(d: &[u8], max: u32, held: &mut [bool]) -> (Vec<AssetSlot>, i32) {
     let mut out = vec![];
     let mut verdict = 1;
-    let size = d.get(..4).map_or(0, |w| u32::from_be_bytes([w[0], w[1], w[2], w[3]]) as usize);
+    let size = d.get(..4).map_or(0, |w| crate::u32_of([w[0], w[1], w[2], w[3]]) as usize);
     let mut s = Stream { d, at: 0, size, typed: true, attached: true, pos: 8, last: 0, peek: 0 };
     let ok = (|| -> Res<()> {
         let h = s.string(Some(11))?;
@@ -338,7 +338,7 @@ fn joints(d: &[u8]) -> (Vec<Joint>, usize) {
         while s.tag() == 2 && s.flag().is_ok() {}
         if s.tag() != 7 || vecs.len() < 2 { o += 1; continue; }
         let Ok(blob) = s.string(None) else { o += 1; continue };
-        let f = |k: usize| f32::from_bits(u32::from_be_bytes(std::array::from_fn(|i| blob.get(k + i).copied().unwrap_or(0))));
+        let f = |k: usize| f32::from_bits(crate::u32_of(std::array::from_fn(|i| blob.get(k + i).copied().unwrap_or(0))));
         let j = if three {
             Joint { name, index, three, pos: vecs[0], twist_axis: vecs[1], lean_axis: vecs.get(2).copied().unwrap_or_default(),
                     limits: [(f(12), f(16)), (f(20), f(24)), (f(28), f(32))],
@@ -381,7 +381,10 @@ pub fn masses(d: &[u8]) -> Vec<f32> {
 fn records(d: &[u8]) -> Vec<([[f32; 3]; 4], f32)> {
     let find = |pat: &[u8]| d.windows(pat.len()).position(|w| w == pat);
     PARTS.iter().map(|name| {
-        let mut pat = vec![0x87, 0, 0, 0, name.len() as u8 + 1];
+        let n = name.len() as u32 + 1;
+        let le = crate::LE.load(std::sync::atomic::Ordering::Relaxed);
+        let mut pat = vec![if le { 0x07 } else { 0x87 }];
+        pat.extend(if le { n.to_le_bytes() } else { n.to_be_bytes() });
         pat.extend(name.as_bytes());
         pat.push(0);
         let mut s = Stream::open(d);
