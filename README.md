@@ -35,6 +35,17 @@ Delirium is a character physics engine written in Rust. It comes with an SDK (C,
 
 You need your own copy of the game: Delirium reads the character, animations and settings from it. None of it is included here.
 
+
+You don't own a copy of the game?
+Everything it takes from GTA IV is data, read at startup from your copy. To run without the game you’d swap in your own versions of:
+
+The character: a skeleton plus ragdoll body parts (sizes, masses, joint limits). GTA IV’s come from its ped model files.
+Animations: idle, walk, run, get-ups and the Hero’s moves. Any rigged animation set retargeted to the skeleton would do.
+Behaviour tuning: the NM settings for each behaviour (balance, shot reactions and so on).
+Small stuff: surface friction, weapon impulses, the archive key used to open the game’s files.
+
+The physics and behaviour engine itself is in the repo and needs none of that. It needs a body to drive and some tuning. Unity and any other engine using the SDK have the same requirement.
+
 **Windows**
 1. Download `delirium-room.bat` from the latest [release](../../releases).
 2. Drag your disc image (`.iso`) onto it. Or just double-click it, then drop the `.iso` or your game folder on the window when the room asks.
