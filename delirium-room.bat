@@ -5,6 +5,9 @@ cd /d "%~dp0"
 rem On its own (downloaded from the release page): fetch this version's ready-built room beside it, no build needed.
 set "VERSION=0.1.7"
 if exist "%~dp0Cargo.toml" goto build
+rem Beside the ready-built room (unzipped together): run it.
+set "VIEWER=%~dp0delirium-room.exe"
+if exist "%VIEWER%" goto run
 set "DIR=%~dp0delirium-room-%VERSION%"
 set "VIEWER=%DIR%\delirium-room.exe"
 if exist "%VIEWER%" goto run
