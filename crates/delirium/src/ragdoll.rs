@@ -535,8 +535,7 @@ enum RowKind {
 
 impl Row {
     fn new(artic: &Artic, j: Vec<f64>, target: f64, kind: RowKind) -> Row {
-        let imp: Vec<V6> = j.chunks(6).map(|c| std::array::from_fn(|i| c[i])).collect();
-        let mj: Vec<f64> = artic.solve(&imp).into_iter().flatten().collect();
+        let mj = artic.solve_row(&j);
         let eff = j.iter().zip(&mj).map(|(a, b)| a * b).sum::<f64>().max(1e-12);
         Row { j, mj, eff, target, lambda: 0.0, kind }
     }
@@ -563,10 +562,7 @@ struct Block {
 
 impl Block {
     fn new(artic: &Artic, j: [Vec<f64>; 3], target: DVec3, mu: f64, held: Option<(usize, usize)>, warm: Vec3, self_contact: bool) -> Block {
-        let mj = j.clone().map(|j| {
-            let imp: Vec<V6> = j.chunks(6).map(|c| std::array::from_fn(|i| c[i])).collect();
-            artic.solve(&imp).into_iter().flatten().collect::<Vec<f64>>()
-        });
+        let mj = std::array::from_fn(|a| artic.solve_row(&j[a]));
         let own = |a: usize, b: usize| -> f64 {
             j[a].chunks(6).zip(j[b].chunks(6)).enumerate().filter(|(_, (x, y))| x.iter().chain(*y).any(|&v| v != 0.0)).map(|(c, (x, y))| {
                 let y = artic.own(c, std::array::from_fn(|i| y[i]));
@@ -589,8 +585,8 @@ impl Block {
         }
     }
 
-    fn solve(&mut self, qd: &mut [f64]) -> f64 {
-        let v = DVec3::from_array(std::array::from_fn(|a| self.j[a].iter().zip(qd.iter()).map(|(x, y)| x * y).sum()));
+    fn solve(&mut self, qd: &mut [f64], nz: &[usize]) -> f64 {
+        let v = DVec3::from_array(std::array::from_fn(|a| nz.iter().map(|&i| self.j[a][i] * qd[i]).sum()));
         let mut l = self.lambda - self.kinv * (v - self.target);
         let an = self.axis.dot(l);
         let tt = l.y * l.y + l.z * l.z;
@@ -643,12 +639,15 @@ fn impulses(rows: &mut [Row], blocks: &mut [Block], qd: &mut [f64]) {
     for b in blocks.iter() {
         b.apply(b.lambda, qd);
     }
+    // Where each row is non-zero (a contact's one or two links): the sweeps' dot products skip the rest.
+    let nz = |j: &[&Vec<f64>]| (0..j[0].len()).filter(|&i| j.iter().any(|j| j[i] != 0.0)).collect::<Vec<usize>>();
+    let (bnz, rnz): (Vec<_>, Vec<_>) = (blocks.iter().map(|b| nz(&[&b.j[0], &b.j[1], &b.j[2]])).collect(), rows.iter().map(|r| nz(&[&r.j])).collect());
     for _ in 0..SWEEPS {
-        let mut moved: f64 = blocks.iter_mut().map(|b| b.solve(qd)).sum();
+        let mut moved: f64 = blocks.iter_mut().zip(&bnz).map(|(b, nz)| b.solve(qd, nz)).sum();
         for r in 0..rows.len() {
             let lo = if matches!(rows[r].kind, RowKind::Push) { 0.0 } else { f64::MIN };
             let row = &mut rows[r];
-            let v: f64 = row.j.iter().zip(qd.iter()).map(|(a, b)| a * b).sum();
+            let v: f64 = rnz[r].iter().map(|&i| row.j[i] * qd[i]).sum();
             let was = row.lambda;
             row.lambda = (was + (row.target - v) / row.eff).max(lo);
             let d = row.lambda - was;

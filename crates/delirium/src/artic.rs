@@ -437,6 +437,12 @@ impl Artic {
         d
     }
 
+    /// `solve` on a flat row (force, torque per link), answered flat (velocity, spin), without the `V6`s between.
+    pub fn solve_row(&self, j: &[f64]) -> Vec<f64> {
+        let imp: Vec<P2> = j.chunks(6).map(|c| (Vec3::new(c[0] as f32, c[1] as f32, c[2] as f32), Vec3::new(c[3] as f32, c[4] as f32, c[5] as f32))).collect();
+        self.solve_f(&imp).into_iter().flat_map(|(w, v)| [v.x, v.y, v.z, w.x, w.y, w.z].map(|x| x as f64)).collect()
+    }
+
     pub fn solve(&self, imp: &[V6]) -> Vec<V6> {
         let imp: Vec<P2> = imp.iter().map(|&x| { let (f, t) = parts(x); (f.as_vec3(), t.as_vec3()) }).collect();
         self.solve_f(&imp).into_iter().map(|(w, v)| v6(v.as_dvec3(), w.as_dvec3())).collect()
