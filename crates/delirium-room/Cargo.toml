@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+mimalloc = { version = "0.1", default-features = false }
 delirium = { path = "../delirium", features = ["bevy"] }
 delirium-data = { path = "../delirium-data" }
 # Only the engine parts the room uses (no animation, sprites, UI, picking or text): a smaller, quicker build.
