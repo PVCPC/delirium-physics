@@ -24,6 +24,7 @@ pub struct Clips {
     fight_from: usize,
     parts: Vec<(usize, Transform)>,
     chest: usize,
+    scale: (Vec<f32>, Vec<f32>),
 }
 
 pub struct Rise {
@@ -238,7 +239,7 @@ impl Clips {
         let parts = build.parts.iter().map(|p| bones.iter().position(|b| b.name == p.name).map(|b| (b, p.offset)).ok_or(format!("no bone {}", p.name)))
             .collect::<Result<_, _>>()?;
         let chest = build.parts.iter().position(|d| d.parent == Some(0) && !d.lower).unwrap_or(0);
-        Ok(Clips {
+        Ok(Clips { scale: Default::default(),
             parents: bones.iter().map(|b| b.parent).collect(),
             bind: bones.iter().map(|b| (Vec3::from(b.translation), Quat::from_array(b.rotation).normalize())).collect(),
             hero: delirium_data::ragdoll::read(&frag).ok().and_then(|p| {
@@ -379,15 +380,30 @@ impl Clips {
         self.clips[c].0.duration
     }
 
+    pub fn grow(&mut self, len: &[f32], root: f32) {
+        let owner = |b: usize| self.parts.iter().position(|p| p.0 == b);
+        let bones = (0..self.parents.len()).map(|i| {
+            let mut at = self.parents[i];
+            while let Some(b) = at {
+                if let Some(k) = owner(b) {
+                    return len[k];
+                }
+                at = self.parents[b];
+            }
+            root
+        }).collect();
+        self.scale = (bones, len.to_vec());
+    }
+
     pub fn place(&self, pose: &[(Vec3, Quat)], body: Transform) -> Vec<Transform> {
         let mut bones: Vec<(Vec3, Quat)> = Vec::with_capacity(pose.len());
         for (i, &(t, r)) in pose.iter().enumerate() {
             let (pt, pr) = self.parents[i].map_or((body.translation, body.rotation), |p| bones[p]);
-            bones.push((pt + pr * t, pr * r));
+            bones.push((pt + pr * t * self.scale.0.get(i).copied().unwrap_or(1.0), pr * r));
         }
-        self.parts.iter().map(|&(b, o)| {
+        self.parts.iter().enumerate().map(|(k, &(b, o))| {
             let (bt, br) = bones[b];
-            Transform::from_translation(bt + br * o.translation).with_rotation(br * o.rotation)
+            Transform::from_translation(bt + br * o.translation * self.scale.1.get(k).copied().unwrap_or(1.0)).with_rotation(br * o.rotation)
         }).collect()
     }
 

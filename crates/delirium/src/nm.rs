@@ -344,6 +344,8 @@ pub struct Agent {
     pub lean_bias: f32,
     pub hip_yaw: (f32, f32),
     pub legs: (f32, f32),
+    pub strength: f32,
+    pub most: f32,
 }
 
 pub(crate) const LEG_PAIRS: [(usize, usize); 7] = [(1, 4), (1, 5), (2, 4), (2, 5), (2, 6), (3, 5), (3, 6)];
@@ -363,6 +365,12 @@ pub(crate) fn game_pairs(pairs: impl Iterator<Item = (usize, usize)>, hands_back
 }
 
 impl Agent {
+    pub fn limp_rage(&self) -> Vec<crate::ragdoll::Rigid> {
+        let mut rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / 60.0, self.strength, self.most));
+        rigid.iter_mut().for_each(|r| (r.max, r.gain) = ([0.0; 2], [0.0; 2]));
+        rigid
+    }
+
     pub fn set_rng(&mut self, rng: (u32, u32)) {
         if let Some(ch) = self.ch.as_mut() {
             ch.rng = rng;
@@ -383,7 +391,7 @@ impl Agent {
         let mut a = Agent { doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * 1000.0) as u32 + 1), time: 0.0,
                 stiffness: (10.0, 1.0), relax: None, config: ConfigureBalance::default(), feedback: vec![], balance: None, lean: None,
                 shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), hands_back: false, nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, extras: Default::default(), nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
-                brace: None, head_look: vec![], shot_look: false, eff_override: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -0.22, hip_yaw: crate::nmdbm::CHAR_YAW, legs: crate::nmdbm::CHAR_LEGS,
+                brace: None, head_look: vec![], shot_look: false, eff_override: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -0.22, hip_yaw: crate::nmdbm::CHAR_YAW, legs: (crate::nmdbm::CHAR_LEGS.0 * build.parts[0].grown, crate::nmdbm::CHAR_LEGS.1 * build.parts[0].grown), strength: 1.0, most: build.parts.first().filter(|p| p.heft != 1.0 || p.grown != 1.0).map_or(1.0, |p| p.heft * p.size.powi(3) * p.grown),
                 ch: crate::nmrs::ASSET[build.nm].get().and_then(|a| crate::nmrs::joints(build, a)).map(|j| {
                     let mut c = crate::nmrs::Character::new(j, &frames);
                     c.mode = if build.nm == crate::nmrs::MARGE { 2 } else { 1 };
@@ -991,7 +999,7 @@ impl Agent {
     }
 
     pub fn joints(&self, build: &Build) -> Vec<Option<crate::ragdoll::JointInfo>> {
-        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / 60.0));
+        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / 60.0, self.strength, self.most));
         (0..build.parts.len()).map(|k| crate::ragdoll::joint_info(build, k, rigid.get(k))).collect()
     }
 
@@ -1226,7 +1234,7 @@ impl Agent {
         if let Some(ch) = self.ch.as_mut().filter(|ch| eff_words(ch) != self.held_eff) {
             held.muscles = ch.muscles(Muscle { target: self.zero[pelvis], stiffness: 0.0, damping: 0.0 });
             held.muscles[pelvis].stiffness = 0.0;
-            held.rigid = ch.rigid(dt);
+            held.rigid = ch.rigid(dt, self.strength, self.most);
         }
         Some(held)
     }
@@ -1699,7 +1707,7 @@ impl Agent {
                 _ => self.zero[i],
             }
         };
-        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(dt));
+        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(dt, self.strength, self.most));
         let (mut torque, mut force, mut push) = (vec![], vec![], vec![]);
         if let Some(ch) = self.ch.as_mut() {
             let mut yaw = ch.foot_yaw;

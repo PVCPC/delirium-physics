@@ -41,6 +41,7 @@ pub struct Room {
     pub snapped: Option<f32>,
     pub fell: bool,
     pub bounced: f32,
+    pub shook: f32,
     pub bridge: Option<Bridge>,
     pub broke: Vec<usize>,
     pub push: Vec3,
@@ -63,6 +64,26 @@ impl rapier3d::prelude::PhysicsHooks for Holes<'_> {
 }
 
 pub const PAD_HALF: Vec3 = Vec3::new(1.5, 1.5, 0.25);
+
+pub const PLAT_HALF: Vec3 = Vec3::new(2.0, 2.0, 0.25);
+
+pub fn plat(stage: &str, t: f32) -> Option<(Vec3, Quat)> {
+    let s = |f: f32, p: f32| (std::f32::consts::TAU * f * t + p).sin();
+    let go = |over: f32| ((t - 2.0) / over).clamp(0.0, 1.0);
+    Some(match stage {
+        "quake" => {
+            let g = go(10.0);
+            (Vec3::new(0.09 * s(3.1, 0.0) + 0.05 * s(5.3, 1.0), 0.08 * s(2.7, 2.0) + 0.05 * s(4.6, 0.5), 0.03 * s(6.2, 0.3)) * g + Vec3::Z * 0.5,
+             Quat::from_euler(EulerRot::XYZ, g * 0.03 * s(2.3, 0.7), g * 0.03 * s(1.9, 1.4), 0.0))
+        }
+        "bull" => {
+            let g = go(4.0);
+            (Vec3::Z * (1.3 + g * 0.18 * s(1.3, 0.5).abs()),
+             Quat::from_euler(EulerRot::ZXY, g * 0.8 * s(0.25, 0.0), g * 0.25 * s(0.6, 2.0), g * 0.25 * (s(0.85, 0.0) + 0.4 * s(2.1, 1.0))))
+        }
+        _ => return None,
+    })
+}
 
 pub const PLANKS: usize = 12;
 pub const BRIDGE_TOP: f32 = 8.0;
@@ -320,6 +341,7 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
         }
         "cab" => (vec![], Vec3::ZERO),
         "trampoline" => (vec![b([0.0, 0.0, PAD_HALF.z], PAD_HALF.to_array(), concrete)], Vec3::new(0.0, 0.0, 2.0 * PAD_HALF.z)),
+        "quake" | "bull" => (vec![], Vec3::Z * (plat(name, 0.0)?.0.z + PLAT_HALF.z)),
         _ => return None,
     })
 }
@@ -341,7 +363,7 @@ impl Room {
         let seed = std::env::var("BRIDGE_SEED").ok().and_then(|s| s.parse().ok())
             .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.subsec_nanos()));
         let bridge = (name == "bridge").then(|| Bridge::new(&mut w[0], seed));
-        Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), start, snap, snapped: None, fell: false, bounced: 9.0,
+        Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), start, snap, snapped: None, fell: false, bounced: 9.0, shook: 0.0,
                bridge, broke: vec![], push: Vec3::NEG_Z * HOMER_N, com_v: Vec3::ZERO, com_a: Vec3::ZERO, #[cfg(feature = "portal")] holes: vec![] }
     }
 
@@ -382,6 +404,12 @@ impl Room {
         let b = self.bridge.as_ref().expect("the bridge");
         let row = self.surfaces.iter().position(|s| s.0.starts_with("WOOD")).or_else(|| self.surfaces.iter().position(|s| s.0 == "CONCRETE")).unwrap_or(0) as u8;
         Self::boxes([0, 1].into_iter().map(|s| (b.piece(&self.w[0], i, s), PIECE_HALF, row)))
+    }
+
+    pub fn plat_triangles(&self) -> Option<(Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>)> {
+        let (at, rot) = plat(&self.stage, self.shook)?;
+        let row = self.surfaces.iter().position(|s| s.0 == "CONCRETE").unwrap_or(0) as u8;
+        Some(Self::boxes(std::iter::once((Transform::from_translation(at).with_rotation(rot), PLAT_HALF, row))))
     }
 
     fn tris(&self, which: impl Iterator<Item = usize>) -> (Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>) {

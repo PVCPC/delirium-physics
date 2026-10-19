@@ -82,6 +82,8 @@ pub struct PartDef {
     pub boxed: Option<Vec3>,
     pub inertia: Vec3,
     pub size: f32,
+    pub heft: f32,
+    pub grown: f32,
 }
 
 impl PartDef {
@@ -118,7 +120,7 @@ impl Build {
                 None if w[22] == "c" => Limit::Cone { swing: f(23), twist: f(24) },
                 None => Limit::Hinge { axis: v(23), lo: f(26), hi: f(27), twist: f(28) },
             };
-            parts.push(PartDef { size: 1.0, bone: parts.len(), parent: w[1].parse::<i32>().ok().filter(|&j| j >= 0).map(|j| j as usize), mass: f(2), radius: f(3), half: f(4),
+            parts.push(PartDef { size: 1.0, heft: 1.0, grown: 1.0, bone: parts.len(), parent: w[1].parse::<i32>().ok().filter(|&j| j >= 0).map(|j| j as usize), mass: f(2), radius: f(3), half: f(4),
                                  offset: Transform::from_translation(v(5)).with_rotation(q(8)), rest: q(12), anchor_parent: v(16), anchor: v(19),
                                  limit, lower: w[29] == "1", reach: w[30] == "1", name: w[0].to_string(),
                                  bind: w.iter().position(|&t| t == "B").map_or(q(34), |k| q(k + 1)), boxed: (w.get(38) == Some(&"b")).then(|| v(39)),
@@ -209,6 +211,25 @@ impl Build {
         (build, out)
     }
 
+    pub fn scaled(&self, frames: &[Transform], len: &[f32], m: f32) -> (Build, Vec<Transform>) {
+        let pivot = |k: usize| self.parts[k].parent.map_or(frames[k].translation, |_| frames[k].translation + frames[k].rotation * self.parts[k].anchor);
+        let mut joints = vec![frames[0].translation; self.parts.len()];
+        for (c, p) in self.parts.iter().enumerate() {
+            if let Some(q) = p.parent {
+                joints[c] = joints[q] + (pivot(c) - pivot(q)) * len[q];
+            }
+        }
+        let (mut b, f) = self.fit(frames, &joints);
+        let w: f32 = self.parts.iter().map(|p| p.mass).sum();
+        let v = self.parts.iter().zip(&b.parts).map(|(a, p)| a.mass * p.size.powi(3)).sum::<f32>() / w;
+        let g = (m / v).sqrt();
+        let legs = b.parts.iter().find(|p| p.lower && p.parent == Some(0)).map_or(1.0, |p| p.size);
+        for p in &mut b.parts {
+            (p.heft, p.grown, p.radius) = (p.heft * g * g, p.grown * legs, p.radius * g);
+        }
+        (b, f)
+    }
+
     pub fn new(parts: &[delirium_data::ragdoll::Part], bind: &[Transform], bones: &[delirium_data::skeleton::Bone], nm: usize) -> Build {
         let linked = parts.len() == 21 && crate::nmrs::PARTS[nm].get().is_some_and(|p| p.len() == parts.len());
         let frames: Vec<Transform> = parts.iter().enumerate().map(|(i, p)| {
@@ -231,7 +252,7 @@ impl Build {
             let limit = parent.map_or(Limit::Locked, |q| Limit::from_bone(bone.flags, bone.rot_min, bone.rot_max,
                 frames[q].rotation.inverse() * bind[p.bone].rotation, f.rotation.inverse() * bind[p.bone].rotation));
             let (radius, half) = if p.kind == 3 { (p.extent.iter().copied().fold(f32::MAX, f32::min), 0.0) } else { (p.radius, p.half) };
-            PartDef { size: 1.0, bone: p.bone, parent, mass: p.mass, radius, half,
+            PartDef { size: 1.0, heft: 1.0, grown: 1.0, bone: p.bone, parent, mass: p.mass, radius, half,
                       offset: Transform::from_matrix(bind[p.bone].to_matrix().inverse() * f.to_matrix()),
                       rest, anchor_parent, anchor: f.rotation.inverse() * (joint - f.translation), limit,
                       lower: i == pelvis || ["Thigh", "Calf", "Foot"].iter().any(|l| name.ends_with(l)),
@@ -813,6 +834,7 @@ fn twist_limit(st: &crate::rigid::Swing, twist: f32) -> Option<f32> {
     if !(st.twist - l < 0.0) { Some(l) } else if !(l + st.twist > 0.0) { Some(-l) } else { None }
 }
 pub const SUBSTEPS: usize = 2;
+const GHOST: f32 = 0.2;
 
 pub struct Ragdoll {
     pub nm: usize,
@@ -838,6 +860,7 @@ pub struct Ragdoll {
     cons: Vec<(Option<Vec3>, Option<Quat>)>,
     pub grips: Vec<(usize, Vec3, Vec3, f32, f32)>,
     pub snapped: Vec<usize>,
+    pub gone: u32,
     grip_rows: Vec<(usize, usize, f32)>,
     pub pairs: Vec<(usize, usize)>,
     seen: Vec<(Vec3, Mat3)>,
@@ -914,7 +937,7 @@ impl Ragdoll {
             let att = [att.x_axis, att.y_axis, att.z_axis];
             let i = p.moments();
             let i = if nm.is_some() && k == 0 { Vec3::new(i.y, i.x, i.z) } else { i };
-            let mut b = Body { x: f.translation - o, r: [Vec3::ZERO; 3], q: f.rotation, v, w: Vec3::ZERO, m: m * s * z.powi(3), i: i * s * z.powi(3), l, att };
+            let mut b = Body { x: f.translation - o, r: [Vec3::ZERO; 3], q: f.rotation, v, w: Vec3::ZERO, m: m * s * z.powi(3) * p.heft, i: i * s * z.powi(3) * p.heft, l, att };
             b.set_q(f.rotation);
             b
         }).collect::<Vec<Body>>();
@@ -926,7 +949,7 @@ impl Ragdoll {
             at += 1;
             order.extend((0..n).filter(|&c| build.parts[c].parent == Some(k)));
         }
-        Ragdoll { nm: build.nm, pins: vec![None; n], cons: vec![(None, None); n], grips: vec![], snapped: vec![], grip_rows: vec![], touch: vec![0; n], contact_off: 0, hit: vec![None; n], contact: crate::bump::ContactRecord::new(), ob_hits: vec![], held: vec![vec![]; n], stage_vel: vec![], stage_lt: vec![], stage_lim: vec![], stiff: vec![], bodies, order, mode: 1, still: [SLEEP_STOP - 2, SLEEP_SLEEP - 2],
+        Ragdoll { nm: build.nm, pins: vec![None; n], cons: vec![(None, None); n], grips: vec![], snapped: vec![], gone: 0, grip_rows: vec![], touch: vec![0; n], contact_off: 0, hit: vec![None; n], contact: crate::bump::ContactRecord::new(), ob_hits: vec![], held: vec![vec![]; n], stage_vel: vec![], stage_lt: vec![], stage_lim: vec![], stiff: vec![], bodies, order, mode: 1, still: [SLEEP_STOP - 2, SLEEP_SLEEP - 2],
                   sleep_tol: [SLEEP_V2, SLEEP_W2, SLEEP_MEAN2], asleep: false, age: 0.0, fresh: false, pending: vec![], pairs: vec![], seen: vec![], coll: vec![], held_pairs: vec![], held_car: vec![], prep_twist: vec![], rigid: None, inertia: None, inst: None, out: vec![(Vec3::ZERO, Vec3::ZERO); n], joint_torque: vec![Vec3::ZERO; n], armature: vec![0.0; n], o, bound_off: Vec3::ZERO,
                   rejuv: 0, mwc: (1, 0) }
     }
@@ -1070,6 +1093,43 @@ impl Ragdoll {
         self.bodies.iter().map(|b| Transform::from_translation(b.x + self.o).with_rotation(b.cap()))
     }
 
+    pub fn sever(&mut self, build: &Build, k: usize) -> Option<(Build, Ragdoll, Vec<usize>)> {
+        if build.parts.get(k)?.parent.is_none() || self.gone >> k & 1 != 0 {
+            return None;
+        }
+        let under = |mut at: Option<usize>| { while let Some(a) = at { if a == k { return true; } at = build.parts[a].parent; } false };
+        let below: Vec<usize> = self.order.iter().copied().filter(|&c| under(Some(c))).collect();
+        let parts = below.iter().map(|&c| PartDef { parent: build.parts[c].parent.and_then(|q| below.iter().position(|&b| b == q)), ..build.parts[c].clone() }).collect();
+        let sub = Build { parts, nm: build.nm };
+        let frames: Vec<Transform> = self.frames().collect();
+        let mut doll = Ragdoll::new(&sub, &below.iter().map(|&c| frames[c]).collect::<Vec<_>>(), Vec3::ZERO);
+        for (i, &c) in below.iter().enumerate() {
+            let b = &self.bodies[c];
+            doll.bodies[i] = Body { x: b.x + self.o - doll.o, ..b.clone() };
+        }
+        self.ghost(&below);
+        doll.wake();
+        Some((sub, doll, below))
+    }
+
+    pub fn ghost(&mut self, parts: &[usize]) {
+        let was = self.gone;
+        for &c in parts {
+            if self.gone >> c & 1 != 0 {
+                continue;
+            }
+            let b = &mut self.bodies[c];
+            (b.m, b.i) = (b.m * GHOST, b.i * GHOST);
+            self.held[c].clear();
+            self.gone |= 1 << c;
+        }
+        if self.gone != was {
+            let gone = self.gone;
+            self.grips.retain(|g| gone >> g.0 & 1 == 0);
+            self.wake();
+        }
+    }
+
     pub fn nearest(&self, build: &Build, at: Vec3) -> usize {
         let at = at - self.o;
         self.bodies.iter().zip(&build.parts).enumerate().map(|(k, (b, p))| {
@@ -1172,7 +1232,7 @@ impl Ragdoll {
 
     fn muscles(&self, artic: &Artic, joints: &[Option<Joint>], drive: &Drive, h: f32, lt: &mut [V6], out: &mut [Vec3]) {
         let b = &self.bodies;
-        for (i, m) in drive.muscles.iter().enumerate().filter(|(_, m)| m.stiffness > 0.0) {
+        for (i, m) in drive.muscles.iter().enumerate().filter(|&(i, m)| m.stiffness > 0.0 && self.gone >> i & 1 == 0) {
             let parent = joints[i].map(|j| j.parent);
             let (pq, pw) = parent.map_or((Quat::IDENTITY, Vec3::ZERO), |j| (b[j].q, b[j].w));
             let err = short((pq * m.target * b[i].q.inverse()).normalize()).to_scaled_axis();
@@ -1866,6 +1926,15 @@ impl Ragdoll {
     fn begin(&mut self, build: &Build, world: &Collision, dt: f32, drive: &Drive, obstacles: &[Obstacle], others: &[Capsule]) -> Option<Stage> {
         self.snapped.clear();
         self.rigid = None;
+        self.contact_off |= self.gone;
+        if self.gone != 0 {
+            let g = self.gone;
+            self.grips.retain(|x| g >> x.0 & 1 == 0);
+            for (k, (p, c)) in self.pins.iter_mut().zip(&mut self.cons).enumerate().filter(|(k, _)| g >> k & 1 != 0) {
+                let _ = k;
+                (*p, *c) = (None, (None, None));
+            }
+        }
         let moving = obstacles.iter().any(|o| o.vel.length() > 0.5 || o.spin.length() > 0.5);
         if self.asleep && !moving && self.pending.is_empty() {
             self.out.fill((Vec3::ZERO, Vec3::ZERO));
@@ -1903,14 +1972,14 @@ impl Ragdoll {
         let artic = self.artic(if was.len() == joints.len() { &was } else { &joints });
         self.stiff = joints.iter().map(|j| j.map_or(0.0, |j| j.stiff)).collect();
         let mut lt: Vec<V6> = self.bodies.iter().enumerate().map(|(k, b)| {
-            v6((fall * b.m + drive.force.get(k).copied().unwrap_or(Vec3::ZERO)).as_dvec3(), drive.torque.get(k).copied().unwrap_or(Vec3::ZERO).as_dvec3())
+            v6((fall * b.m + drive.force.get(k).filter(|_| self.gone >> k & 1 == 0).copied().unwrap_or(Vec3::ZERO)).as_dvec3(), drive.torque.get(k).filter(|_| self.gone >> k & 1 == 0).copied().unwrap_or(Vec3::ZERO).as_dvec3())
         }).collect();
         let mut jt = vec![Vec3::ZERO; self.bodies.len()];
         self.muscles(&artic, &joints, &drive, h, &mut lt, &mut jt);
         self.soft_limits(&artic, &joints, &drive, &mut lt, &mut jt);
         for (k, b) in self.bodies.iter().enumerate() {
-            let f = (fall + Vec3::Z * GRAVITY) * b.m + drive.force.get(k).copied().unwrap_or(Vec3::ZERO);
-            self.out[k] = (f, drive.torque.get(k).copied().unwrap_or(Vec3::ZERO) + jt[k]);
+            let f = (fall + Vec3::Z * GRAVITY) * b.m + drive.force.get(k).filter(|_| self.gone >> k & 1 == 0).copied().unwrap_or(Vec3::ZERO);
+            self.out[k] = (f, drive.torque.get(k).filter(|_| self.gone >> k & 1 == 0).copied().unwrap_or(Vec3::ZERO) + jt[k]);
         }
         self.joint_torque = jt.clone();
         for (k, j) in joints.iter().enumerate() {

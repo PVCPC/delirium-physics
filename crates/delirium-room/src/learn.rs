@@ -319,8 +319,8 @@ fn walk_obs(d: &Ragdoll, phase: f32) -> Vec<f32> {
     x
 }
 
-pub fn walk_sizes(build: &Build, d: &Ragdoll) -> [usize; 4] {
-    [walk_obs(d, 0.0).len(), HIDDEN, HIDDEN, 3 * (build.parts.len() - 1) + 2 + MENU.len() + 3]
+pub fn walk_sizes(d: &Ragdoll) -> [usize; 4] {
+    [walk_obs(d, 0.0).len(), HIDDEN, HIDDEN, 4]
 }
 
 pub fn walk_agent(build: &Build, world: &Collision, frames: &[Transform]) -> Result<Agent, String> {
@@ -338,9 +338,15 @@ pub fn walk_input(a: &mut Agent, build: &Build, world: &Collision, st: &mut msg:
     delirium::shottask::apply(a, build, world, st, &m);
 }
 
-pub fn drive_walk(net: &Net, w: &[f32], a: &mut Agent, build: &Build, zero: &[Quat], phase: &mut f32, duration: f32) {
+fn walk_config(act: &[f32]) -> delirium::nm::ConfigureBalance {
+    delirium::nm::ConfigureBalance { leg_stiffness: 12.0 + 4.0 * act[0], step_height: 0.1 * 4f32.powf(act[1]),
+        step_clamp_scale: 2f32.powf(act[2]), ..Default::default() }
+}
+
+pub fn drive_walk(net: &Net, w: &[f32], a: &mut Agent, phase: &mut f32, duration: f32) {
     let act = net.forward(w, &walk_obs(&a.doll, *phase));
-    drive(a, &act, zero, build);
+    a.configure_balance(walk_config(&act));
+    a.muscle_stiffness_x(2f32.powf(act[3]));
     a.doll.kick(Vec3::ZERO);
     *phase = (*phase + 1.0 / (60.0 * duration)).rem_euclid(1.0);
 }
@@ -355,7 +361,7 @@ fn walk_reward(fr: &[Transform], velocity: Vec3, reference: &[Vec3; 11], forward
     r.is_finite().then_some(r)
 }
 
-fn episode_walk(net: &Net, w: Option<&[f32]>, start: &[Transform], build: &Build, world: &Collision, zero: &[Quat], walk: &Walk,
+fn episode_walk(net: &Net, w: Option<&[f32]>, start: &[Transform], build: &Build, world: &Collision, walk: &Walk,
                 mut rec: Option<&mut Vec<Vec<Transform>>>) -> (f32, f32, usize) {
     let mut a = walk_agent(build, world, start).expect("bodyBalance checked before training");
     let origin = start[0].translation;
@@ -369,7 +375,7 @@ fn episode_walk(net: &Net, w: Option<&[f32]>, start: &[Transform], build: &Build
             a.msgs = st;
         }
         if let Some(w) = w {
-            drive_walk(net, w, &mut a, build, zero, &mut phase, walk.duration);
+            drive_walk(net, w, &mut a, &mut phase, walk.duration);
         } else {
             phase = (phase + 1.0 / (60.0 * walk.duration)).rem_euclid(1.0);
             a.doll.kick(Vec3::ZERO);
@@ -476,7 +482,7 @@ pub fn train(build: &Build, world: &Collision, frames: &[Transform], gens: usize
 pub fn train_walk(build: &Build, world: &Collision, frames: &[Transform], clips: &crate::getup::Clips, gens: usize, path: &str, run: bool) -> Result<(), String> {
     let walk = Walk::new(clips, run)?;
     let a = walk_agent(build, world, frames)?;
-    let sizes = walk_sizes(build, &a.doll);
+    let sizes = walk_sizes(&a.doll);
     if std::path::Path::new(path).exists() && Net::load(path).is_none_or(|n| n.sizes != sizes) {
         return Err(format!("{path}: invalid or incompatible walk network; use a new file (existing file preserved)"));
     }
@@ -509,15 +515,22 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
     let refm = if walk.is_none() { mimic(frames) } else { None };
     let refm = refm.as_deref();
     let d = Ragdoll::new(build, frames, Vec3::ZERO);
-    let sizes = [obs(&d, 0).len() + if walk.is_some() { 2 } else { 0 }, HIDDEN, HIDDEN, 3 * (build.parts.len() - 1) + 2 + MENU.len() + 3];
+    let sizes = if walk.is_some() { walk_sizes(&d) } else { [obs(&d, 0).len(), HIDDEN, HIDDEN, 3 * (build.parts.len() - 1) + 2 + MENU.len() + 3] };
     let mut net = Net::load(path).or(initial).map(|n| n.grown(sizes[3])).filter(|n| n.sizes == sizes).unwrap_or_else(|| {
-        let w = (0..Net::len(sizes)).map(|_| rng.n() * 0.05).collect();
+        let mut w: Vec<f32> = (0..Net::len(sizes)).map(|_| rng.n() * 0.05).collect();
+        if walk.is_some() {
+            let last = w.len() - (sizes[2] + 1) * sizes[3];
+            w[last..].fill(0.0);
+        }
         Net { sizes, w }
     });
     let np = net.w.len();
+    let tries_per_pair = if walk.is_some() { 1 } else { TRIES };
     if let Some(walk) = walk {
-        let (score, distance, steps) = episode_walk(&net, None, frames, build, world, &z, walk, None);
+        let (score, distance, steps) = episode_walk(&net, None, frames, build, world, walk, None);
         println!("        original WASD baseline: score {score:.3}, distance {distance:.3} m, survived {:.2} / 8 s", steps as f32 / 60.0);
+        let (score, distance, steps) = episode_walk(&net, Some(&net.w), frames, build, world, walk, None);
+        println!("        starting network: score {score:.3}, distance {distance:.3} m, survived {:.2} / 8 s", steps as f32 / 60.0);
     }
     let (mut m1, mut m2) = (vec![0.0f32; np], vec![0.0f32; np]);
     let threads = std::thread::available_parallelism().map_or(8, |n| n.get()).saturating_sub(4).max(1);
@@ -525,11 +538,11 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
     if let Some(m) = refm {
         println!("learn: copying MIMIC's {} steps", m.len());
     }
-    println!("learn: {np} weights, {threads} threads, {} {} starts ({fallen} flat), {PAIRS} pairs x {TRIES} tries a generation", pool.len(), if walk.is_some() { "standing" } else { "lying" });
+    println!("learn: {np} weights, {threads} threads, {} {} starts ({fallen} flat), {PAIRS} pairs x {tries_per_pair} tries a generation", pool.len(), if walk.is_some() { "standing" } else { "lying" });
     for g in 0..gens {
         let t0 = std::time::Instant::now();
         let seeds: Vec<u64> = (0..PAIRS).map(|_| rng.u() | 1).collect();
-        let tries: Vec<Vec<usize>> = (0..PAIRS).map(|_| (0..TRIES).map(|_| (rng.u() % pool.len() as u64) as usize).collect()).collect();
+        let tries: Vec<Vec<usize>> = (0..PAIRS).map(|_| (0..tries_per_pair).map(|_| (rng.u() % pool.len() as u64) as usize).collect()).collect();
         let noise = |s: u64| { let mut r = Rng(s); (0..np).map(|_| r.n()).collect::<Vec<f32>>() };
         let mut ret = vec![[0.0f32; 2]; PAIRS];
         let live = std::sync::Mutex::new(vec![Vec::new(); LIVE]);
@@ -546,13 +559,13 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
                         o[s] = tries[k].iter().enumerate().map(|(n, &t)| {
                             let rec = if n == 0 { rec.as_mut() } else { None };
                             if let Some(walk) = walk {
-                                let (score, distance, _) = episode_walk(net, Some(&w), &pool[t], build, world, z, walk, rec);
-                                distances.lock().unwrap()[k][s] += distance / TRIES as f32;
+                                let (score, distance, _) = episode_walk(net, Some(&w), &pool[t], build, world, walk, rec);
+                                distances.lock().unwrap()[k][s] += distance / tries_per_pair as f32;
                                 score
                             } else {
                                 episode(net, &w, &pool[t], hurt(seeds[k], n), build, world, z, rec, refm)
                             }
-                        }).sum::<f32>() / TRIES as f32;
+                        }).sum::<f32>() / tries_per_pair as f32;
                         if let Some(r) = rec {
                             live.lock().unwrap()[2 * k + s] = r;
                         }
@@ -592,7 +605,7 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
         save_live(&live_path(path), g, &scores, &live.into_inner().unwrap());
         if g % 10 == 9 || g + 1 == gens {
             if let Some(walk) = walk {
-                let (score, distance, steps) = episode_walk(&net, Some(&net.w), frames, build, world, &z, walk, None);
+                let (score, distance, steps) = episode_walk(&net, Some(&net.w), frames, build, world, walk, None);
                 println!("        network: score {score:.3}, distance {distance:.3} m, survived {:.2} / 8 s; saved {path}", steps as f32 / 60.0);
                 net.save(path).expect("saving walk network");
                 continue;

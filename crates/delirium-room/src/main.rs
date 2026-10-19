@@ -24,6 +24,9 @@ mod map;
 mod melee;
 mod hero;
 mod sfx;
+mod jump;
+mod sever;
+mod tackle;
 mod world;
 #[cfg(feature = "portal")]
 mod portal;
@@ -163,6 +166,9 @@ const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916
 const TAXI_BELT: f32 = 0.62;
 const TAXI_ID: i32 = 100;
 const PLANK_ID: i32 = 200;
+const BODIES: [(&str, &str, f32, f32, f32); 6] = [("S", "Small", 1.60, 55.0, 1.0), ("A", "Average", 1.75, 77.0, 1.0), ("L", "Large", 1.90, 110.0, 1.0),
+                                                 ("K", "Lanky", 1.90, 64.0, 1.12), ("F", "Fat", 1.72, 125.0, 0.95), ("T", "Stocky", 1.63, 88.0, 0.9)];
+const PLAT_ID: i32 = 300;
 const INJURY_MAX: f32 = 0.8;
 const CRUSH_SPEED: f32 = 2.5;
 const DODGE_GAP: f32 = 3.0;
@@ -411,6 +417,11 @@ struct Sim {
     homer_shot: f32,
     hero_physics: bool,
     hero_doll: Option<HeroDoll>,
+    tackle: Option<tackle::Tackle>,
+    cuts: Vec<sever::Cut>,
+    hat: Option<sever::Hat>,
+    dismember: bool,
+    jump: Option<jump::Jump>,
     #[cfg(feature = "portal")]
     portal: portal::Portals,
     homer_wait: Option<f32>,
@@ -424,10 +435,11 @@ struct Sim {
     getup_mode: u8,
     musc: Option<getup::Rise>,
     learned: Option<(learn::Net, Vec<Quat>, usize, learn::Pick)>,
-    walk_learned: Option<(learn::Net, Vec<Quat>, f32, f32, bool)>,
+    walk_learned: Option<(learn::Net, f32, f32, bool)>,
     ped_color: usize,
     eyes: bool,
     skel: bool,
+    body: usize,
     brows: bool,
     scene: Option<String>,
     switch_to: Option<(String, bool)>,
@@ -516,6 +528,11 @@ fn v3(x: Vec3) -> String {
 
 impl Sim {
     fn reset(&mut self) {
+        self.cuts.clear();
+        self.jump = None;
+        if self.hat.is_some() {
+            self.hat = Some(sever::Hat::On);
+        }
         let frames = self.frames.clone();
         let a = Agent::new(&self.build, Ragdoll::new(&self.build, &frames, Vec3::ZERO), Quat::IDENTITY, 0.3);
         (self.agent, self.msgs, self.steps, self.held) = (a, msg::State::default(), 0, true);
@@ -1011,7 +1028,8 @@ impl Sim {
         if self.passive || self.driving || self.dead || self.walk_learned.is_some() || !near || dt <= 0.0 {
             return self.homer_out(true);
         }
-        let standing = self.rises[0].as_ref().is_none_or(getup::Clips::standing);
+        let upright = self.agent.doll.frames().nth(HEAD).is_some_and(|h| h.translation.z - pelvis.z > 0.4);
+        let standing = self.rises[0].as_ref().is_none_or(getup::Clips::standing) && upright;
         if self.homer.is_none() && (self.homer_rest > 0.0 || self.agent.fallen || !standing || self.nm_t[0].is_some() || self.musc.is_some() || self.learned.is_some()) {
             return;
         }
@@ -1468,6 +1486,8 @@ impl Sim {
     }
 
     fn fire(&mut self, part: usize, aim: Option<(Vec3, Vec3, Vec3)>, fatal: bool) {
+        let (at, dir) = aim.map_or((self.agent.doll.centre(part), Vec3::NEG_Y), |a| (a.0, a.1));
+        let part = self.sever_shot(part, at, dir);
         (self.rises, self.still) = ([None, None], [0.0; 2]);
         let before = self.health;
         let was_dead = self.dead || before <= 0.0;
@@ -1695,6 +1715,23 @@ impl Sim {
                 self.relock = true;
                 return;
             }
+            "tackle high" | "tackle low" | "tackle high keep" | "tackle low keep" => return self.tackle_start(b.contains("low"), b.ends_with("keep")),
+            "hat" => return self.hat_button(),
+            "jump" | "jump dive" => return self.jump_start(b == "jump dive"),
+            "dismember" => {
+                self.dismember = !self.dismember;
+                return self.say(format!("sever  dismember: {}", if self.dismember { "on (shots and blasts cut limbs off)" } else { "off" }));
+            }
+            _ if b.starts_with("sever ") => {
+                if let Some(k) = sever::CUTS.iter().find(|c| c.0 == b).map(|c| c.1).or_else(|| b[6..].parse().ok()).filter(|&k| k < self.build.parts.len()) {
+                    let at = self.agent.doll.centre(k);
+                    let out = (at - self.agent.doll.centre(0)).with_z(0.0).normalize_or(Vec3::X);
+                    if !self.sever(k, at, out * sever::KICK * 0.5) {
+                        self.say("sever  already off".into());
+                    }
+                }
+                return;
+            }
             "watch training" | "watch walk training" | "watch run training" => {
                 let path = if b == "watch training" { learn::path() } else { learn::walk_path(b == "watch run training") };
                 if self.watch.as_ref().is_some_and(|w| w.path == path) {
@@ -1745,7 +1782,7 @@ impl Sim {
             return self.say(format!("room  {b}: he's dead (health 0); Reset pose brings him back"));
         }
         (self.rises, self.still, self.nm_t, self.musc, self.learned) = ([None, None], [0.0; 2], [None, None], None, None);
-        self.walk_learned = None;
+        self.stop_walk_learned();
         if b == "RESET pose" {
             (self.health, self.lean_stop, self.shot_task, self.dead) = (200.0, None, None, false);
             self.auto_balance = self.script.is_empty();
@@ -2063,6 +2100,7 @@ impl Sim {
         if hero {
             self.hero_blast(at);
         }
+        self.sever_blast(at);
         let ours = self.ours();
         let near = (0..ours.parts.len()).map(|k| ours.p(k).distance(at)).fold(f32::MAX, f32::min);
         if near >= BLAST_R {
@@ -2072,7 +2110,7 @@ impl Sim {
         for k in 0..ours.parts.len() {
             let p = ours.p(k);
             let f = 1.0 - p.distance(at) / BLAST_R;
-            if f <= 0.0 {
+            if f <= 0.0 || self.agent.doll.gone >> k & 1 != 0 {
                 continue;
             }
             let imp = ((p - at).normalize_or(Vec3::Z) + Vec3::Z * 0.5).normalize() * self.agent.doll.part_mass(k) * BLAST_DV * f;
@@ -2544,6 +2582,17 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     if let Ok(p) = std::env::var("NM_DUMP") {
         let _ = std::fs::write(p, build.dump(&frames));
     }
+    let body = a.iter().position(|x| x == "--body").and_then(|i| a.get(i + 1)).and_then(|n| BODIES.iter().position(|b| b.0 == n)).unwrap_or(1);
+    let (build, frames, getup) = match BODIES[body] {
+        (_, _, h, m, l) if body != 1 => {
+            let s = h / BODIES[1].2 / (0.53 * l + 0.47);
+            let len: Vec<f32> = build.parts.iter().map(|p| if p.name.contains("_L_") || p.name.contains("_R_") { s * l } else { s }).collect();
+            let (b, f) = build.scaled(&frames, &len, m / BODIES[1].3);
+            eprintln!("body  {}: trunk x{s:.3}, limbs x{:.3}, girth x{:.3}", BODIES[body].1, s * l, b.parts[0].radius / build.parts[0].radius / s);
+            (b, f, getup.map(|mut c| { c.grow(&len, s * l); c }))
+        }
+        _ => (build, frames, getup),
+    };
     let floor = build.parts.iter().zip(&frames).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
     let shift = room.start - frames[0].translation.with_z(floor);
     let frames: Vec<Transform> = frames.iter().map(|f| Transform { translation: f.translation + shift, ..*f }).collect();
@@ -2562,10 +2611,10 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, body, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -2991,6 +3040,10 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         commands.spawn((Mesh3d(mesh), MeshMaterial3d(mats.add(StandardMaterial { base_color: color, perceptual_roughness: 0.9, ..default() })),
                         Transform::from_translation(c).with_rotation(rot), RenderLayers::layer(1), RoomScenery));
     }
+    if world::plat(&sim.room.stage, 0.0).is_some() {
+        commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(world::PLAT_HALF * 2.0))), MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgb(0.5, 0.33, 0.2), perceptual_roughness: 0.9, ..default() })),
+                        Transform::default(), RenderLayers::layer(1), RoomScenery, Plat));
+    }
     let wood = mats.add(StandardMaterial { base_color: Color::srgb(0.36, 0.35, 0.33), perceptual_roughness: 0.85, double_sided: true, cull_mode: None, ..default() });
     for (i, p) in sim.room.bridge.iter().flat_map(|b| b.planks.iter().enumerate()) {
         for s in 0..2 {
@@ -3034,6 +3087,8 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         let (mesh, mat) = if i < 2 { (ball.clone(), white.clone()) } else if i < 4 { (ball.clone(), black.clone()) } else { (bar.clone(), black.clone()) };
         commands.spawn((Mesh3d(mesh), MeshMaterial3d(mat), Transform::default(), Visibility::Hidden, RenderLayers::layer(1), FacePart(i)));
     }
+    commands.spawn((Mesh3d(meshes.add(Cylinder::new(sever::HAT.0, sever::HAT.1))), MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgb(0.25, 0.17, 0.1), perceptual_roughness: 0.8, ..default() })),
+                    Transform::default(), Visibility::Hidden, RenderLayers::layer(1), HatMesh));
     for (k, p) in sim.getup.as_ref().and_then(|c| c.hero.as_ref()).map_or(&[][..], |r| &r.build.parts[..]).iter().enumerate() {
         commands.spawn((Mesh3d(part_mesh(meshes, p)),
                         MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgba(0.3, 0.75, 0.4, 0.6), alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.6, ..default() })),
@@ -3052,16 +3107,17 @@ fn part_mesh(meshes: &mut Assets<Mesh>, p: &delirium::ragdoll::PartDef) -> Handl
 struct MapScenery;
 
 fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
-          old: Query<Entity, Or<(With<RoomScenery>, With<MapScenery>, With<PartMesh>, With<HeroMesh>)>>) {
+          old: Query<Entity, Or<(With<RoomScenery>, With<MapScenery>, With<PartMesh>, With<HeroMesh>, With<HatMesh>)>>) {
     let Some((scene, marge)) = sim.switch_to.take() else { return };
     let t0 = std::time::Instant::now();
     let mut a: Vec<String> = std::env::args().collect();
-    for flag in ["--map", "--ground", "--stage"] {
+    for flag in ["--map", "--ground", "--stage", "--body"] {
         if let Some(i) = a.iter().position(|x| x == flag) {
             a.drain(i..(i + 2).min(a.len()));
         }
     }
     a.retain(|x| x != "--marge");
+    a.extend(["--body".to_string(), BODIES[sim.body].0.to_string()]);
     let (map, ground) = match scene.as_str() {
         "stairs" => ("818.94,-348.88", None),
         "wall" => ("738.83,-467", None),
@@ -3083,6 +3139,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
     (new.log, new.script, new.show_ui, new.sens, new.walk, new.getup_mode, new.poke, new.god, new.aim_gun) = (std::mem::take(&mut sim.log), std::mem::take(&mut sim.script), sim.show_ui, sim.sens, sim.walk, sim.getup_mode, sim.poke, sim.god, sim.aim_gun);
     (new.show_pops, new.help, new.tab, new.skin) = (sim.show_pops, sim.help, sim.tab, sim.skin);
     new.scene = Some(scene.clone());
+    new.agent.strength = sim.agent.strength;
     *sim = new;
     let said = format!("scene: {scene}, {} ({} ms)", if marge { "Marge" } else { "Homer" }, t0.elapsed().as_millis());
     eprintln!("{said}");
@@ -3096,8 +3153,12 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
 #[derive(Component)]
 struct HeroMesh(usize);
 
+#[derive(Component)]
+struct HatMesh;
+
 fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<HeroMesh>>,
-          mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+          mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
+          mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>) {
     let doll: Option<Vec<Transform>> = sim.hero_doll.as_ref().map(|h| match h.rise.as_ref().zip(sim.getup.as_ref()).and_then(|(r, c)| c.frames(r)) {
         Some(f) => f.into_iter().enumerate().map(|(k, f)| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k))).collect(),
         None => h.agent.doll.capsules().collect(),
@@ -3115,7 +3176,18 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
     }
     let up = |i: usize| sim.getup.as_ref().zip(sim.rises[i].as_ref()).and_then(|(c, r)| c.frames(r))
         .map(|f| f.into_iter().enumerate().map(|(k, f)| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k))).collect::<Vec<_>>());
-    let fr = sim.shown().map(|f| f.caps.clone()).or_else(|| up(0)).unwrap_or_else(|| sim.agent.doll.capsules().collect());
+    let mut fr = sim.shown().map(|f| f.caps.clone()).or_else(|| up(0)).unwrap_or_else(|| sim.agent.doll.capsules().collect());
+    for (k, t) in sim.cut_capsules() {
+        if let Some(x) = fr.get_mut(k) {
+            *x = t;
+        }
+    }
+    for (mut t, mut v) in &mut hat {
+        match sim.hat_frame(&fr) {
+            Some(h) => (*t, *v) = (h, Visibility::Visible),
+            None => *v = Visibility::Hidden,
+        }
+    }
     let crowd: Vec<Vec<Transform>> = sim.crowd.iter().map(|(a, _)| a.doll.capsules().collect()).collect();
     let link = |k: usize, f: Transform| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k));
     for (p, mut t, mut v, m) in &mut q {
@@ -3227,6 +3299,9 @@ struct RoomScenery;
 struct Plank(usize, usize);
 
 #[derive(Component)]
+struct Plat;
+
+#[derive(Component)]
 struct Rope(usize);
 
 fn plank_half(teeth: &[f32], s: usize) -> Mesh {
@@ -3252,7 +3327,13 @@ fn plank_half(teeth: &[f32], s: usize) -> Mesh {
     Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, v).with_computed_flat_normals()
 }
 
-fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope>>, mut r: Query<(&Rope, &mut Transform), Without<Plank>>) {
+fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope>>, mut r: Query<(&Rope, &mut Transform), Without<Plank>>,
+          mut plat: Query<&mut Transform, (With<Plat>, Without<Plank>, Without<Rope>)>) {
+    if let Some((at, rot)) = world::plat(&sim.room.stage, sim.room.shook) {
+        for mut t in &mut plat {
+            *t = Transform::from_translation(at).with_rotation(rot);
+        }
+    }
     let Some(b) = sim.room.bridge.as_ref() else { return };
     for (p, mut t) in &mut q {
         *t = b.half(&sim.room.w[0], p.0, p.1);
@@ -3319,8 +3400,9 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
 const SCENE_R: f32 = 40.0;
 const STAND: f32 = 0.95;
 const SCENES: [&str; 4] = ["room", "stairs", "wall", "ledge"];
-const EXTRAS: [(&str, &str); 3] = [("bridge", "rope bridge"), ("trampoline", "trampoline"), ("cab", "cab door")];
+const EXTRAS: [(&str, &str); 5] = [("bridge", "rope bridge"), ("trampoline", "trampoline"), ("quake", "earthquake"), ("bull", "mechanical bull"), ("cab", "cab door")];
 const SNAP_CHUNK: u64 = 0xB41D6E;
+const PLAT_CHUNK: u64 = 0xB41D70;
 const BRIDGE_CHUNK: u64 = 0xB41D00;
 const STAGES: [(&str, &str); 6] = [("room", "room"), ("bigstairs", "big stairs"), ("rooftop", "rooftop"), ("lowwall", "low wall"), ("rail", "rail"), ("street", "street")];
 
@@ -4127,6 +4209,10 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let v: Vec<f32> = a.next().unwrap_or("").split(',').filter_map(|x| x.parse().ok()).collect();
                 n.go = (Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), 0.0), a.next().and_then(|g| g.parse().ok()).unwrap_or(0));
             },
+            ("!blast", Some(a)) => {
+                let v: Vec<f32> = a.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                sim.explode(Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)));
+            }
             ("!poke", Some(k)) => {
                 let (k, s) = (k.parse().unwrap_or(CHEST), sim.ours());
                 let eye = sim.eye;
@@ -4227,6 +4313,11 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 commands.spawn(bevy::render::view::screenshot::Screenshot::primary_window())
                     .observe(bevy::render::view::screenshot::save_to_disk(f.to_string()));
             }
+            ("!body", Some(n)) => if let Some(i) = BODIES.iter().position(|b| b.0 == n) {
+                sim.body = i;
+                sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
+            },
+            ("!strength", Some(n)) => sim.agent.strength = n.parse().unwrap_or(1.0),
             ("!scene", Some(n)) => {
                 if SCENES.contains(&n) || STAGES.iter().chain(&EXTRAS).any(|t| t.0 == n) {
                     sim.switch_to = Some((n.to_string(), nm() == delirium::nmrs::MARGE));
@@ -4256,14 +4347,21 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
 }
 
 impl Sim {
+    fn stop_walk_learned(&mut self) {
+        if self.walk_learned.take().is_some() {
+            self.agent.configure_balance(Default::default());
+            self.agent.muscle_stiffness_x(1.0);
+        }
+    }
+
     fn start_walk_learned(&mut self, run: bool) {
-        if self.walk_learned.as_ref().is_some_and(|w| w.4 == run) {
-            self.walk_learned = None;
+        if self.walk_learned.as_ref().is_some_and(|w| w.3 == run) {
+            self.stop_walk_learned();
             self.send("bodyBalance start=true");
             return self.say("ours  learned locomotion: off".into());
         }
         let path = learn::walk_path(run);
-        let Some(net) = learn::Net::load(&path).filter(|n| n.sizes == learn::walk_sizes(&self.build, &self.agent.doll)) else {
+        let Some(net) = learn::Net::load(&path).filter(|n| n.sizes == learn::walk_sizes(&self.agent.doll)) else {
             return self.say(format!("training  no compatible {path}; train with --learn-{}", if run { "run" } else { "walk" }));
         };
         let Some(clips) = self.getup.as_ref() else { return self.say("training  the game's movement clips are unavailable".into()) };
@@ -4279,7 +4377,7 @@ impl Sim {
         self.msgs = Default::default();
         (self.rises, self.still, self.nm_t, self.musc, self.learned) = ([None, None], [0.0; 2], [None, None], None, None);
         (self.held, self.auto_balance, self.dead, self.health, self.homer, self.tasks, self.watch) = (false, false, false, 200.0, None, false, None);
-        self.walk_learned = Some((net, learn::zero(&self.build, &self.frames), 0.0, walk.duration, run));
+        self.walk_learned = Some((net, 0.0, walk.duration, run));
         self.walk = true;
         self.say(format!("ours  learned WASD {}: {path}; use WASD to move, reset or another reaction stops it", if run { "run" } else { "walk" }));
     }
@@ -4318,6 +4416,11 @@ impl Sim {
         }
         self.bridge();
         self.trampoline();
+        self.room.shook += 1.0 / 60.0;
+        if let Some((p, t, m)) = self.room.plat_triangles() {
+            self.world.remove_chunk(PLAT_CHUNK);
+            self.world.add_chunk(PLAT_CHUNK, &p, &t, &m);
+        }
         self.ledge();
         self.cab();
         if self.sounds.len() > 64 {
@@ -4369,7 +4472,12 @@ impl Sim {
             .chain(self.pusher.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
                 half: Vec3::new(0.7, 0.25, 0.9), vel: v, com: c, ..Default::default() })).chain(self.taxis.iter().enumerate().flat_map(|(k, t)| [t.obstacle(TAXI_ID + k as i32, TAXI_BELT), t.cabin(TAXI_ID + k as i32, TAXI_BELT)]))
             .chain(self.room.bridge.iter().flat_map(|b| (0..b.planks.len()).map(|i| b.plank(&self.room.w[0], i)).enumerate().map(|(i, t)| delirium::ragdoll::Obstacle {
-                id: PLANK_ID + i as i32, at: t.translation, rot: t.rotation, centre: t.translation - Vec3::Z * 1000.0, ..Default::default() }))).collect();
+                id: PLANK_ID + i as i32, at: t.translation, rot: t.rotation, centre: t.translation - Vec3::Z * 1000.0, ..Default::default() })))
+            .chain(world::plat(&self.room.stage, self.room.shook).zip(world::plat(&self.room.stage, self.room.shook + 1.0 / 60.0)).map(|((at, rot), (next, turn))| {
+                let q = turn * rot.inverse();
+                let (axis, angle) = if q.w < 0.0 { -q } else { q }.to_axis_angle();
+                delirium::ragdoll::Obstacle { id: PLAT_ID, at, rot, centre: at, half: world::PLAT_HALF, vel: (next - at) * 60.0, spin: axis * angle * 60.0, com: at, ..Default::default() }
+            })).collect();
         self.pull();
         self.fire_frame(1.0 / 60.0);
         if self.steps % 2 == 0 {
@@ -4391,19 +4499,23 @@ impl Sim {
             learn::step(net, &net.w, &mut self.agent, &self.build, &self.world, zero, pick);
             *n += 1;
         }
-        if let Some((net, zero, phase, duration, _)) = self.walk_learned.as_mut() {
+        if let Some((net, phase, duration, _)) = self.walk_learned.as_mut() {
             if self.walk && self.walk_dir != Vec3::ZERO {
-                learn::drive_walk(net, &net.w, &mut self.agent, &self.build, zero, phase, *duration);
+                learn::drive_walk(net, &net.w, &mut self.agent, phase, *duration);
             } else {
                 *phase = 0.0;
-                learn::drive(&mut self.agent, &vec![0.0; 3 * (self.build.parts.len() - 1) + 2], zero, &self.build);
+                self.agent.configure_balance(Default::default());
+                self.agent.muscle_stiffness_x(1.0);
             }
         }
+        self.tackle_frame(1.0 / 60.0);
+        self.jump_frame(1.0 / 60.0);
         let doll = self.hero_doll.as_mut().filter(|h| h.rise.is_none()).map(|h| &mut h.agent);
         let mut all: Vec<(&mut Agent, usize, &Build, &[_], &[Capsule])> = std::iter::once(&mut self.agent).skip(learning as usize).chain(self.crowd.iter_mut().map(|c| &mut c.0)).chain(doll).enumerate()
             .map(|(i, a)| (a, i, &self.build, &car[..], &hero[..])).collect();
         Agent::step_group(&mut all, &self.world, 1.0 / 60.0, &mut self.group);
         self.car_hits();
+        self.sever_frame(1.0 / 60.0, &car);
         if self.crowd.len() > 4 && self.steps % 300 == 299 {
             let ms = t0.elapsed().as_secs_f32() * 1000.0;
             self.say(format!("ours  grid: {} Homers, {ms:.2} ms a step", self.crowd.len() + 1));
@@ -4433,7 +4545,7 @@ impl Sim {
         self.steps += 1;
         self.learned_done();
         if self.walk_learned.is_some() && self.agent.doll.frames().nth(HEAD).is_none_or(|f| !f.translation.is_finite() || f.translation.z < 0.8) {
-            self.walk_learned = None;
+            self.stop_walk_learned();
             self.say("ours  learned locomotion: fell; select it again to retry".into());
         }
         self.objects();
@@ -5210,7 +5322,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.label(section_title("Scene"));
             info(ui, "Choose a location, then add people or vehicles.");
             sub(ui, "Location");
-            let stages: Vec<(&str, bool, String)> = STAGES.iter().chain(EXTRAS.iter()).map(|&(k, l)| (k, sim.room.stage == k, match l { "room" => "Room", "big stairs" => "Big stairs", "rooftop" => "Rooftop", "low wall" => "Low wall", "rail" => "Railing", "street" => "Street", "rope bridge" => "Rope bridge", "trampoline" => "Trampoline", "cab door" => "Taxi door test", _ => l }.to_string())).collect();
+            let stages: Vec<(&str, bool, String)> = STAGES.iter().chain(EXTRAS.iter()).map(|&(k, l)| (k, sim.room.stage == k, match l { "room" => "Room", "big stairs" => "Big stairs", "rooftop" => "Rooftop", "low wall" => "Low wall", "rail" => "Railing", "street" => "Street", "rope bridge" => "Rope bridge", "trampoline" => "Trampoline", "earthquake" => "Earthquake", "mechanical bull" => "Mechanical bull", "cab door" => "Taxi door test", _ => l }.to_string())).collect();
             if let Some(k) = tiles(ui, "stage", &stages) {
                 pressed = Some(format!("#stage {k}"));
             }
@@ -5235,11 +5347,29 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.add_space(6.0);
             ui.label(section_title("Character"));
             info(ui, "Control Homer, change his reactions, or play as the Hero.");
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Body");
+                for (i, (_, n, h, m, _)) in BODIES.iter().enumerate() {
+                    if ui.selectable_label(sim.body == i, *n).on_hover_text(format!("{h:.2} m, {m:.0} kg")).clicked() && sim.body != i {
+                        sim.body = i;
+                        sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
+                    }
+                }
+            });
+            slide(ui, "Strength", &mut sim.agent.strength, 0.25, 3.0, "×");
             sub(ui, "Character control");
             pressed = pressed.take().or(tiles(ui, "play", &[("Hero", sim.hero.is_some(), onoff("Play as Hero", sim.hero.is_some())),
                 ("walk", sim.walk, onoff("Walk Homer", sim.walk)), ("passive", sim.passive, onoff("Passive Homer", sim.passive)),
                 ("homer weapon", sim.homer_weapon.is_some(), format!("Homer weapon: {}", sim.homer_weapon.map_or("fists", |w| WEAPONS[w].0))),
-                ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics)), ("super punch", sim.super_punch, onoff("Super punch", sim.super_punch))]));
+                ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics)), ("super punch", sim.super_punch, onoff("Super punch", sim.super_punch)),
+                ("tackle high", sim.tackle.is_some(), "Hero: tackle high".into()), ("tackle low", sim.tackle.is_some(), "Hero: tackle low".into())]));
+            sub(ui, "Jump");
+            pressed = pressed.take().or(tiles(ui, "jump", &[("jump", false, "Jump".into()), ("jump dive", false, "Dive".into())]));
+            sub(ui, "Sever");
+            let hat = matches!(sim.hat, Some(sever::Hat::On));
+            let mut cut: Vec<(&str, bool, String)> = vec![("dismember", sim.dismember, onoff("Dismember", sim.dismember)), ("hat", hat, if hat { "Knock hat off".into() } else { "Hat on".into() })];
+            cut.extend(sever::CUTS.iter().map(|&(n, k)| (n, sim.agent.doll.gone >> k & 1 != 0, format!("Cut {}", &n[6..]))));
+            pressed = pressed.take().or(tiles(ui, "sever", &cut));
             sub(ui, "Automatic reactions");
             pressed = pressed.take().or(tiles(ui, "homer", &[("look", sim.look, onoff("Look at objects", sim.look)), ("avoid", sim.avoid, onoff("Avoid objects", sim.avoid)),
                 ("game tasks", sim.tasks, onoff("Animation mode", sim.tasks)), ("get-up", sim.getup_mode != 0, format!("get-up: {}", GETUP_MODES[sim.getup_mode as usize])),
@@ -5256,8 +5386,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 std::path::Path::new(p).exists() || std::path::Path::new(&learn::live_path(p)).exists()) {
             sub(ui, "Learned movement · local training");
             pressed = pressed.take().or(tiles(ui, "learned_move", &[
-                ("walk learned", sim.walk_learned.as_ref().is_some_and(|w| !w.4), "Learned WASD walk".into()),
-                ("run learned", sim.walk_learned.as_ref().is_some_and(|w| w.4), "Learned WASD run".into())]));
+                ("walk learned", sim.walk_learned.as_ref().is_some_and(|w| !w.3), "Learned WASD walk".into()),
+                ("run learned", sim.walk_learned.as_ref().is_some_and(|w| w.3), "Learned WASD run".into())]));
             let watches: Vec<_> = [("watch training", "Watch get-up", learn::path()),
                 ("watch walk training", "Watch walk", learn::walk_path(false)), ("watch run training", "Watch run", learn::walk_path(true))]
                 .into_iter().map(|(key, label, path)| (key, sim.watch.as_ref().is_some_and(|w| w.path == path), label.into())).collect();

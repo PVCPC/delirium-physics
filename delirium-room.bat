@@ -3,7 +3,7 @@ rem Delirium room. Drag your game's disc image (.iso) onto this file, or pick th
 setlocal
 cd /d "%~dp0"
 rem On its own (downloaded from the release page): fetch this version's ready-built room beside it, no build needed.
-set "VERSION=0.1.8"
+set "VERSION=0.1.9"
 if exist "%~dp0Cargo.toml" goto build
 rem Beside the ready-built room (unzipped together): run it.
 set "VIEWER=%~dp0delirium-room.exe"

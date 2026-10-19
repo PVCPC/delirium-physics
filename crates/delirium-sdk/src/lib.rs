@@ -277,7 +277,7 @@ pub unsafe extern "C" fn nm_build_part_count(b: *const NmBuild) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_build_part_info(b: *const NmBuild, i: i32, mass: *mut f32, radius: *mut f32, half: *mut f32, parent: *mut i32) -> i32 {
     let Some(p) = (unsafe { b.as_ref() }).and_then(|b| b.build.parts.get(i as usize)) else { return fail(NM_E_ARG, "no such part") };
-    let m = delirium::nmrs::MASSES[unsafe { &*b }.build.nm].get().and_then(|m| m.get(i as usize)).copied().unwrap_or(p.mass) * p.size.powi(3);
+    let m = delirium::nmrs::MASSES[unsafe { &*b }.build.nm].get().and_then(|m| m.get(i as usize)).copied().unwrap_or(p.mass) * p.size.powi(3) * p.heft;
     unsafe {
         for (o, v) in [(mass, m), (radius, p.radius), (half, p.half)] {
             if !o.is_null() {

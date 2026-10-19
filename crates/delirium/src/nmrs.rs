@@ -664,11 +664,11 @@ impl Character {
         m
     }
 
-    pub fn rigid(&self, dt: f32) -> Vec<Rigid> {
+    pub fn rigid(&self, dt: f32, k: f32, most: f32) -> Vec<Rigid> {
         let mut out = vec![Rigid::default(); self.joints.len() + 1];
         for (i, (j, e)) in self.joints.iter().zip(&self.eff).enumerate() {
             let well = 1.0 - e.injury;
-            let (strength, damping) = (e.strength * well, (e.damping * well).max(MIN_DAMPING));
+            let (strength, damping) = (e.strength * well * k, (e.damping * well * k).max(MIN_DAMPING));
             let x = damping.fma(8.0, strength) * e.muscle_stiffness * dt * 0.5;
             let blend = (6.0 * dt).max(x / (x + 1.0)).clamp(0.0, 1.0);
             let target = if j.three { targets(j, e) } else { [e.desired[0], 0.0, 0.0] };
@@ -677,7 +677,7 @@ impl Character {
                 let mid = if j.three { (j.limits[k].0 + j.limits[k].1) * 0.5 } else { 0.0 };
                 SoftLimit { angle: if f { -l.angle } else { l.angle } - mid, dir: if f { -l.dir } else { l.dir }, ..l }
             });
-            out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: j.limits, max: j.max_torque, blend, hinge: !j.three, desired: e.desired[0], jc: j.rigid,
+            out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: j.limits, max: j.max_torque.map(|m| m * k * most), blend, hinge: !j.three, desired: e.desired[0], jc: j.rigid,
                                 target, gain: [strength, damping], soft };
         }
         out
