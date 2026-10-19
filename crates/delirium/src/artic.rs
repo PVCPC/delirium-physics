@@ -420,10 +420,12 @@ impl Artic {
     }
 
     pub fn solve_f(&self, imp: &[P2]) -> Vec<P2> {
-        let mut d: Vec<P2> = imp.iter().enumerate().map(|(k, &x)| self.own_f(k, x)).collect();
+        // A link with nothing on it, nor below it, passes nothing up (a contact's rows push one link).
+        let mut d: Vec<P2> = imp.iter().enumerate().map(|(k, &x)| if x == ZERO2 { ZERO2 } else { self.own_f(k, x) }).collect();
         let mut up = vec![ZERO2; d.len()];
         for &k in self.order.iter().rev() {
             let (Some(p), Some(c)) = (self.parent[k], &self.joint[k]) else { continue };
+            if d[k] == ZERO2 { continue }
             up[k] = c.rest(d[k]);
             d[p] = padd(d[p], up[k]);
         }

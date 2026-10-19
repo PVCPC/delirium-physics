@@ -313,6 +313,13 @@ impl Collision {
     pub fn tris_in_part(&self, lo: Vec3, hi: Vec3, a: &crate::bvh::Frame, a_last: &crate::bvh::Frame, bmin: Vec3, bmax: Vec3)
         -> Vec<([Vec3; 3], u8, [Vec3; 4], u8, u32, Poly)> {
         let mut ids = self.grid_near(lo, hi, |c, i| !c.listed[i as usize]);
+        // Only those meeting lo..hi itself, not its NEAR_SLACK: the part's caller (ragdoll `contacts`) has lo..hi 0.1 m
+        // past its swept box, so one outside is too far for any contact (its tuple, the costly part, unbuilt; the same
+        // result: 1 m floor squares in a 5 m slack were ~50 of 60 a part).
+        ids.retain(|&(s, i)| {
+            let t = self.chunks[s as usize].as_ref().unwrap().triangles[i as usize];
+            t[0].min(t[1]).min(t[2]).cmple(hi).all() && t[0].max(t[1]).max(t[2]).cmpge(lo).all()
+        });
         let mut listed = vec![];
         for (s, c) in self.chunks.iter().enumerate() {
             let Some(c) = c else { continue };

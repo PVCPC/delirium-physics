@@ -568,7 +568,7 @@ impl Block {
             artic.solve(&imp).into_iter().flatten().collect::<Vec<f64>>()
         });
         let own = |a: usize, b: usize| -> f64 {
-            j[a].chunks(6).zip(j[b].chunks(6)).enumerate().map(|(c, (x, y))| {
+            j[a].chunks(6).zip(j[b].chunks(6)).enumerate().filter(|(_, (x, y))| x.iter().chain(*y).any(|&v| v != 0.0)).map(|(c, (x, y))| {
                 let y = artic.own(c, std::array::from_fn(|i| y[i]));
                 x.iter().zip(y).map(|(x, y)| x * y).sum::<f64>()
             }).sum()
@@ -675,8 +675,12 @@ fn impulses(rows: &mut [Row], blocks: &mut [Block], qd: &mut [f64]) {
 }
 
 const ALLOW: f32 = 0.007;
+/// An env flag, read once (std::env::var each contact was ~1 us).
+macro_rules! env_on {
+    ($n:literal) => {{ static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new(); *ON.get_or_init(|| std::env::var($n).is_ok()) }};
+}
 fn elastic(e: f64) -> DVec3 {
-    if std::env::var("NM_NOSCALE").is_ok() { return DVec3::ONE; }
+    if env_on!("NM_NOSCALE") { return DVec3::ONE; }
     DVec3::splat(1.0 + e)
 }
 const BOX_MARGIN: f32 = 0.01;
@@ -2012,7 +2016,7 @@ impl Ragdoll {
             self.stage_lt = lt.iter().zip(&self.bodies).map(|(x, b)| { let (f, t) = artic::parts(*x); v6(f, t + (b.x - xr).as_dvec3().cross(f)) }).collect();
         }
         let dvw: Vec<(Vec3, Vec3)> = self.velocities(&artic, &lt, h, true).iter().zip(&self.bodies).map(|(&(v, w), b)| (v - b.v, w - b.w)).collect();
-        if std::env::var("NM_DVW").is_ok() { eprintln!("dvw {}", dvw.iter().zip(&self.bodies).enumerate().map(|(k, ((v, w), b))| format!("{k}:{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.4},{:.4},{:.4}", v.x, v.y, v.z, w.x, w.y, w.z, b.x.x, b.x.y, b.x.z)).collect::<Vec<_>>().join(" ")); }
+        if env_on!("NM_DVW") { eprintln!("dvw {}", dvw.iter().zip(&self.bodies).enumerate().map(|(k, ((v, w), b))| format!("{k}:{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.4},{:.4},{:.4}", v.x, v.y, v.z, w.x, w.y, w.z, b.x.x, b.x.y, b.x.z)).collect::<Vec<_>>().join(" ")); }
         let free_vel: Vec<(Vec3, Vec3)> = self.bodies.iter().zip(&dvw).map(|(b, d)| (b.v + d.0, b.w + d.1)).collect();
         self.armature = artic.arm.clone();
         let x0 = self.bodies[self.order[0]].x.as_dvec3();
@@ -2069,8 +2073,8 @@ impl Ragdoll {
             (b.v, b.w) = (v, w);
         }
         self.stage_vel = self.bodies.iter().map(|b| (b.v, b.w)).collect();
-        if std::env::var("NM_SVFREE").is_ok() { self.stage_vel = st.free_vel.clone(); }
-        if std::env::var("NM_VELONLY").is_ok() { return false; }
+        if env_on!("NM_SVFREE") { self.stage_vel = st.free_vel.clone(); }
+        if env_on!("NM_VELONLY") { return false; }
         let damp = (-DAMPING).fma(st.h, 1.0);
         for b in &mut self.bodies {
             b.v = b.v.clamp_length_max(MAX_SPEED) * damp;
