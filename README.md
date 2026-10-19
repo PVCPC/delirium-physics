@@ -28,6 +28,10 @@ A physics playground for an active ragdoll. Homer isn't animated. His muscles ke
 
 Delirium is a character physics engine written in Rust. It comes with an SDK (C, C++, C#, Unity, Python) and the room you see here.
 
+<p align="center">
+  <img src="docs/playroom.png" alt="The Playroom: Homer on the left panel's Character tab, his skeleton and joints shown" width="800">
+</p>
+
 
 ## Releases and source code
 
