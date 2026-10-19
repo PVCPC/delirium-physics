@@ -104,7 +104,7 @@ Build by hand: `cargo build --release -p delirium-room`.
 
 ## Provenance (clean-room)
 
-Delirium is an independent, clean-room reimplementation of active-ragdoll character physics. It is not a port, decompilation, or copy of NaturalMotion or Rockstar code.
+Delirium is an independent, clean-room reimplementation of active-ragdoll character physics.
 
 - **No third-party code or data is included.** This repository contains no source, binaries, assets, or tuning tables from NaturalMotion, Rockstar, or any Grand Theft Auto title. Nothing from them is copied or redistributed here.
 - **The behaviours were written from scratch.** Each one (balance, catch-fall, brace, grab, and the rest) was documented by hand from observed motion and first-principles physics, then implemented fresh in Rust. The work was deliberately split across separate people and sessions so that no part of it was transcribed from a single original.
