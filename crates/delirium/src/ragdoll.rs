@@ -536,6 +536,10 @@ enum RowKind {
 impl Row {
     fn new(artic: &Artic, j: Vec<f64>, target: f64, kind: RowKind) -> Row {
         let mj = artic.solve_row(&j);
+        Row::with(j, mj, target, kind)
+    }
+
+    fn with(j: Vec<f64>, mj: Vec<f64>, target: f64, kind: RowKind) -> Row {
         let eff = j.iter().zip(&mj).map(|(a, b)| a * b).sum::<f64>().max(1e-12);
         Row { j, mj, eff, target, lambda: 0.0, kind }
     }
@@ -562,12 +566,13 @@ struct Block {
 
 impl Block {
     fn new(artic: &Artic, j: [Vec<f64>; 3], target: DVec3, mu: f64, held: Option<(usize, usize)>, warm: Vec3, self_contact: bool) -> Block {
-        let mj = std::array::from_fn(|a| artic.solve_row(&j[a]));
+        let mj = artic.solve_rows([&j[0][..], &j[1], &j[2]]);
+        let on: [Vec<bool>; 3] = std::array::from_fn(|a| if self_contact { vec![] } else { j[a].chunks(6).map(|x| x.iter().any(|&v| v != 0.0)).collect() });
+        let ans: [Vec<V6>; 3] = std::array::from_fn(|b| on[0].iter().enumerate().map(|(c, _)| if on[0][c] || on[1][c] || on[2][c] {
+            artic.own(c, std::array::from_fn(|i| j[b][6 * c + i]))
+        } else { [0.0; 6] }).collect());
         let own = |a: usize, b: usize| -> f64 {
-            j[a].chunks(6).zip(j[b].chunks(6)).enumerate().filter(|(_, (x, y))| x.iter().chain(*y).any(|&v| v != 0.0)).map(|(c, (x, y))| {
-                let y = artic.own(c, std::array::from_fn(|i| y[i]));
-                x.iter().zip(y).map(|(x, y)| x * y).sum::<f64>()
-            }).sum()
+            (0..on[a].len()).filter(|&c| on[a][c] || on[b][c]).map(|c| j[a][6 * c..6 * c + 6].iter().zip(ans[b][c]).map(|(x, y)| x * y).sum::<f64>()).sum()
         };
         let k = DMat3::from_cols_array_2d(&std::array::from_fn(|a| std::array::from_fn(|b| {
             if self_contact { j[b].iter().zip(&mj[a]).map(|(j, m)| j * m).sum() } else { own(a, b) }
@@ -639,15 +644,21 @@ fn impulses(rows: &mut [Row], blocks: &mut [Block], qd: &mut [f64]) {
     for b in blocks.iter() {
         b.apply(b.lambda, qd);
     }
-    // Where each row is non-zero (a contact's one or two links): the sweeps' dot products skip the rest.
-    let nz = |j: &[&Vec<f64>]| (0..j[0].len()).filter(|&i| j.iter().any(|j| j[i] != 0.0)).collect::<Vec<usize>>();
+    let mut flat = Vec::with_capacity(8 * (blocks.len() + rows.len()));
+    let mut nz = |j: &[&Vec<f64>]| {
+        let from = flat.len();
+        for c in (0..j[0].len() / 6).filter(|&c| j.iter().fold(0, |a, j| j[6 * c..6 * c + 6].iter().fold(a, |a, x| a | x.to_bits() << 1)) != 0) {
+            flat.extend((6 * c..6 * c + 6).filter(|&i| j.iter().any(|j| j[i] != 0.0)));
+        }
+        from..flat.len()
+    };
     let (bnz, rnz): (Vec<_>, Vec<_>) = (blocks.iter().map(|b| nz(&[&b.j[0], &b.j[1], &b.j[2]])).collect(), rows.iter().map(|r| nz(&[&r.j])).collect());
     for _ in 0..SWEEPS {
-        let mut moved: f64 = blocks.iter_mut().zip(&bnz).map(|(b, nz)| b.solve(qd, nz)).sum();
+        let mut moved: f64 = blocks.iter_mut().zip(&bnz).map(|(b, nz)| b.solve(qd, &flat[nz.clone()])).sum();
         for r in 0..rows.len() {
             let lo = if matches!(rows[r].kind, RowKind::Push) { 0.0 } else { f64::MIN };
             let row = &mut rows[r];
-            let v: f64 = rnz[r].iter().map(|&i| row.j[i] * qd[i]).sum();
+            let v: f64 = flat[rnz[r].clone()].iter().map(|&i| row.j[i] * qd[i]).sum();
             let was = row.lambda;
             row.lambda = (was + (row.target - v) / row.eff).max(lo);
             let d = row.lambda - was;
@@ -674,7 +685,6 @@ fn impulses(rows: &mut [Row], blocks: &mut [Block], qd: &mut [f64]) {
 }
 
 const ALLOW: f32 = 0.007;
-/// An env flag, read once (std::env::var each contact was ~1 us).
 macro_rules! env_on {
     ($n:literal) => {{ static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new(); *ON.get_or_init(|| std::env::var($n).is_ok()) }};
 }
@@ -761,21 +771,18 @@ fn swept(now: (Vec3, Mat3), last: (Vec3, Mat3), half: Vec3) -> (Vec3, Vec3) {
     ((lo + hi) * 0.5, (hi - lo) * 0.5)
 }
 
+fn swept_box(p: &PartDef, f: (Vec3, Mat3), s: (Vec3, Mat3)) -> (Vec3, Vec3) {
+    let (o, half) = swept(f, s, bound_half(p));
+    (f.0 + f.1 * o, half)
+}
+
 fn boxes_meet(ca: Vec3, a: Mat3, ha: Vec3, cb: Vec3, b: Mat3, hb: Vec3) -> bool {
     let ax = [a.x_axis, a.y_axis, a.z_axis];
     let bx = [b.x_axis, b.y_axis, b.z_axis];
     let d = cb - ca;
     let reach = |u: Vec3, ax: &[Vec3; 3], h: Vec3| (0..3).map(|i| ax[i].dot(u).abs() * h[i]).sum::<f32>();
-    let mut axes: Vec<Vec3> = ax.iter().chain(&bx).copied().collect();
-    for u in ax {
-        for v in bx {
-            let c = u.cross(v);
-            if c.length_squared() > 1e-10 {
-                axes.push(c);
-            }
-        }
-    }
-    axes.iter().all(|&u| d.dot(u).abs() <= reach(u, &ax, ha) + reach(u, &bx, hb))
+    let crosses = ax.into_iter().flat_map(|u| bx.map(|v| u.cross(v))).filter(|c| c.length_squared() > 1e-10);
+    ax.into_iter().chain(bx).chain(crosses).all(|u| d.dot(u).abs() <= reach(u, &ax, ha) + reach(u, &bx, hb))
 }
 
 fn box_meets_tri(c: Vec3, m: Mat3, e: Vec3, t: [Vec3; 3]) -> bool {
@@ -1407,6 +1414,7 @@ impl Ragdoll {
         }
         let b = &self.bodies;
         let (mut rows, mut push) = (vec![], vec![]);
+        let mut found = vec![];
         let n = 6 * b.len();
         for (k, j) in joints.iter().enumerate() {
             let Some(j) = *j else { continue };
@@ -1444,12 +1452,16 @@ impl Ragdoll {
                 }
                 let b0 = -jr.iter().zip(qd0).map(|(x, y)| x * y).sum::<f64>();
                 let to = (c as f64 - 1.0) * b0 - ((LIMIT_MARGIN - o).max(0.0) / h) as f64;
-                let mut r = Row::new(artic, jr.clone(), to, RowKind::Push);
+                found.push((jr, to, o, c));
+            }
+        }
+        for g in found.chunks(4) {
+            let mj = artic.solve_rows(std::array::from_fn::<_, 4, _>(|i| &g[i.min(g.len() - 1)].0[..]));
+            for ((jr, to, o, c), mj) in g.iter().cloned().zip(mj) {
+                let mut r = Row::with(jr, mj, to, RowKind::Push);
                 r.eff *= c as f64;
+                push.push(Row { j: r.j.clone(), mj: r.mj.clone(), target: ((o - LIMIT_MARGIN) / h) as f64, ..r });
                 rows.push(r);
-                let mut r = Row::new(artic, jr, ((o - LIMIT_MARGIN) / h) as f64, RowKind::Push);
-                r.eff *= c as f64;
-                push.push(r);
             }
         }
         (rows, push)
@@ -1694,12 +1706,13 @@ impl Ragdoll {
                 }
             }
         }
+        let boxes: Vec<(Vec3, Vec3)> = (0..n_links).map(|k| { let f = (self.bodies[k].x, turns[k]); swept_box(&build.parts[k], f, self.seen.get(k).copied().unwrap_or(f)) }).collect();
         for (pi, &(a, c)) in self.pairs.clone().iter().enumerate() {
             let (fa, fc) = ((self.bodies[a].x, turns[a]), (self.bodies[c].x, turns[c]));
             let ((xa, qa), (xc, qc)) = (fa, fc);
             let seen = |k: usize, f: (Vec3, Mat3)| self.seen.get(k).copied().unwrap_or(f);
             let (sa, sc) = (seen(a, fa), seen(c, fc));
-            Self::pair_manifold(&mut self.held_pairs[pi], (&build.parts[a], fa, sa), (&build.parts[c], fc, sc));
+            Self::pair_manifold(&mut self.held_pairs[pi], (&build.parts[a], fa, sa), (&build.parts[c], fc, sc), [boxes[a], boxes[c]]);
             let held = &mut self.held_pairs[pi];
             let ends = |r: &Held| (xa + qa * r.local, xc + qc * r.ground);
             let off = (self.contact_off >> a | self.contact_off >> c) & 1 != 0;
@@ -1753,10 +1766,9 @@ impl Ragdoll {
         if k < g { &mut self.held[k][x] } else if k < g + pp { &mut self.held_pairs[k - g][x] } else { &mut self.held_car[k - g - pp].3[x] }
     }
 
-    fn pair_manifold(held: &mut Vec<Held>, (a, fa, sa): (&PartDef, (Vec3, Mat3), (Vec3, Mat3)), (c, fc, sc): (&PartDef, (Vec3, Mat3), (Vec3, Mat3))) {
+    fn pair_manifold(held: &mut Vec<Held>, (a, fa, sa): (&PartDef, (Vec3, Mat3), (Vec3, Mat3)), (c, fc, sc): (&PartDef, (Vec3, Mat3), (Vec3, Mat3)),
+                     [(ca, ha), (cc, hc)]: [(Vec3, Vec3); 2]) {
         let ((_, qa), (_, qc)) = (fa, fc);
-        let sweep = |k: &PartDef, f: (Vec3, Mat3), s: (Vec3, Mat3)| { let (o, half) = swept(f, s, bound_half(k)); (f.0 + f.1 * o, half) };
-        let ((ca, ha), (cc, hc)) = (sweep(a, fa, sa), sweep(c, fc, sc));
         let meet = boxes_meet(ca, qa, ha, cc, qc, hc);
         if !meet {
             held.clear();
@@ -2229,7 +2241,7 @@ impl Ragdoll {
                         let mut h = group.held.remove(&key).unwrap_or_default();
                         let ((fa, sa), (fc, sc)) = (frame_of(di, &ti, a), frame_of(dk, &tk, c));
                         let (pa, pc) = (&ms[i].build.parts[a], &ms[k].build.parts[c]);
-                        Self::pair_manifold(&mut h, (pa, fa, sa), (pc, fc, sc));
+                        Self::pair_manifold(&mut h, (pa, fa, sa), (pc, fc, sc), [swept_box(pa, fa, sa), swept_box(pc, fc, sc)]);
                         if h.is_empty() {
                             continue;
                         }

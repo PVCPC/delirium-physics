@@ -420,27 +420,52 @@ impl Artic {
     }
 
     pub fn solve_f(&self, imp: &[P2]) -> Vec<P2> {
-        // A link with nothing on it, nor below it, passes nothing up (a contact's rows push one link).
-        let mut d: Vec<P2> = imp.iter().enumerate().map(|(k, &x)| if x == ZERO2 { ZERO2 } else { self.own_f(k, x) }).collect();
-        let mut up = vec![ZERO2; d.len()];
+        let mut d: Vec<[P2; 1]> = imp.iter().map(|&x| [x]).collect();
+        self.solve_in(&mut d, &mut vec![[ZERO2]; imp.len()]);
+        d.into_iter().map(|[x]| x).collect()
+    }
+
+    fn solve_in<const M: usize>(&self, d: &mut [[P2; M]], up: &mut [[P2; M]]) {
+        for (k, x) in d.iter_mut().enumerate() {
+            for x in x {
+                *x = if *x == ZERO2 { ZERO2 } else { self.own_f(k, *x) };
+            }
+        }
         for &k in self.order.iter().rev() {
             let (Some(p), Some(c)) = (self.parent[k], &self.joint[k]) else { continue };
-            if d[k] == ZERO2 { continue }
-            up[k] = c.rest(d[k]);
-            d[p] = padd(d[p], up[k]);
+            for r in 0..M {
+                if d[k][r] == ZERO2 { continue }
+                up[k][r] = c.rest(d[k][r]);
+                d[p][r] = padd(d[p][r], up[k][r]);
+            }
         }
         for &k in &self.order {
             let (Some(p), Some(c)) = (self.parent[k], &self.joint[k]) else { continue };
-            let o = c.child((d[p].0 - up[k].0, d[p].1 - up[k].1));
-            d[k] = padd(d[k], o);
+            for r in 0..M {
+                let o = c.child((d[p][r].0 - up[k][r].0, d[p][r].1 - up[k][r].1));
+                d[k][r] = padd(d[k][r], o);
+            }
         }
-        d
     }
 
-    /// `solve` on a flat row (force, torque per link), answered flat (velocity, spin), without the `V6`s between.
     pub fn solve_row(&self, j: &[f64]) -> Vec<f64> {
-        let imp: Vec<P2> = j.chunks(6).map(|c| (Vec3::new(c[0] as f32, c[1] as f32, c[2] as f32), Vec3::new(c[3] as f32, c[4] as f32, c[5] as f32))).collect();
-        self.solve_f(&imp).into_iter().flat_map(|(w, v)| [v.x, v.y, v.z, w.x, w.y, w.z].map(|x| x as f64)).collect()
+        let [r] = self.solve_rows([j]);
+        r
+    }
+
+    pub fn solve_rows<const M: usize>(&self, j: [&[f64]; M]) -> [Vec<f64>; M] {
+        let (mut d, mut up) = ([[ZERO2; M]; 32], [[ZERO2; M]; 32]);
+        let mut heap;
+        let n = j[0].len() / 6;
+        let (d, up) = if n <= 32 { (&mut d[..n], &mut up[..n]) } else { heap = (vec![[ZERO2; M]; n], vec![[ZERO2; M]; n]); (&mut heap.0[..], &mut heap.1[..]) };
+        for (k, x) in d.iter_mut().enumerate() {
+            for (x, j) in x.iter_mut().zip(j) {
+                let c = &j[6 * k..6 * k + 6];
+                *x = (Vec3::new(c[0] as f32, c[1] as f32, c[2] as f32), Vec3::new(c[3] as f32, c[4] as f32, c[5] as f32));
+            }
+        }
+        self.solve_in(d, up);
+        std::array::from_fn(|r| d.iter().flat_map(|x| { let (w, v) = x[r]; [v.x, v.y, v.z, w.x, w.y, w.z].map(|x| x as f64) }).collect())
     }
 
     pub fn solve(&self, imp: &[V6]) -> Vec<V6> {

@@ -292,34 +292,27 @@ impl Collision {
     }
 
     pub fn tris_near(&self, lo: Vec3, hi: Vec3) -> Vec<([Vec3; 3], u8, [Vec3; 4], u8, u32, Poly)> {
-        self.tuples(self.grid_near(lo, hi, |_, _| true))
+        self.tuples(self.grid_near(lo, hi, NEAR_SLACK, |_, _| true))
     }
 
-    fn grid_near(&self, lo: Vec3, hi: Vec3, keep: impl Fn(&Chunk, u32) -> bool) -> Vec<(u32, u32)> {
+    fn grid_near(&self, lo: Vec3, hi: Vec3, slack: f32, keep: impl Fn(&Chunk, u32) -> bool) -> Vec<(u32, u32)> {
         let chunk = |(s, _): (u32, u32)| self.chunks[s as usize].as_ref().unwrap();
         let mut ids: Vec<(u32, u32)> = (cell(lo.x)..=cell(hi.x)).flat_map(|x| (cell(lo.y)..=cell(hi.y)).map(move |y| (x, y)))
             .flat_map(|c| self.cells.get(&c).into_iter().flatten().copied()).filter(|&e| keep(chunk(e), e.1)).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        let (blo, bhi) = (lo - Vec3::splat(NEAR_SLACK), hi + Vec3::splat(NEAR_SLACK));
+        let (blo, bhi) = (lo - Vec3::splat(slack), hi + Vec3::splat(slack));
         ids.retain(|&e| {
             let t = chunk(e).triangles[e.1 as usize];
             t[0].min(t[1]).min(t[2]).cmple(bhi).all() && t[0].max(t[1]).max(t[2]).cmpge(blo).all()
         });
+        ids.sort_unstable();
+        ids.dedup();
         ids.sort_by_key(|&(s, i)| (s, chunk((s, i)).order[i as usize]));
         ids
     }
 
     pub fn tris_in_part(&self, lo: Vec3, hi: Vec3, a: &crate::bvh::Frame, a_last: &crate::bvh::Frame, bmin: Vec3, bmax: Vec3)
         -> Vec<([Vec3; 3], u8, [Vec3; 4], u8, u32, Poly)> {
-        let mut ids = self.grid_near(lo, hi, |c, i| !c.listed[i as usize]);
-        // Only those meeting lo..hi itself, not its NEAR_SLACK: the part's caller (ragdoll `contacts`) has lo..hi 0.1 m
-        // past its swept box, so one outside is too far for any contact (its tuple, the costly part, unbuilt; the same
-        // result: 1 m floor squares in a 5 m slack were ~50 of 60 a part).
-        ids.retain(|&(s, i)| {
-            let t = self.chunks[s as usize].as_ref().unwrap().triangles[i as usize];
-            t[0].min(t[1]).min(t[2]).cmple(hi).all() && t[0].max(t[1]).max(t[2]).cmpge(lo).all()
-        });
+        let mut ids = self.grid_near(lo, hi, 0.0, |c, i| !c.listed[i as usize]);
         let mut listed = vec![];
         for (s, c) in self.chunks.iter().enumerate() {
             let Some(c) = c else { continue };
