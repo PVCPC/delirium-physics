@@ -17,6 +17,8 @@ bevy = { version = "=0.18.1", default-features = false, features = [
     "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio", "experimental_pbr_pcss",
 ] }
 bevy_egui = { version = "=0.39.1", default-features = false, features = ["manage_clipboard", "default_fonts", "render"] }
+# bevy_egui reads the clipboard through arboard, which only talks to X11 unless this is on: without it, pasting on a Wayland session (most Linux desktops) finds nothing.
+arboard = { version = "3.2", features = ["wayland-data-control"] }
 rapier3d = "0.36.1"
 
 [features]
