@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 
 mod clip;
+mod place;
 mod render;
 
 use crate::{OursCam, OursGizmos, Sim};
@@ -34,6 +35,15 @@ fn through(a: &Frame, b: &Frame) -> (Quat, impl Fn(Vec3) -> Vec3) {
     const FLIP: Quat = Quat::from_xyzw(0.0, 1.0, 0.0, 0.0);
     let (a, b) = (*a, *b);
     ((b.rot * FLIP * a.rot.inverse()).normalize(), move |p| b.at + b.rot * (FLIP * a.local(p)))
+}
+
+/// The room's solid surfaces as the placement rules see them.
+struct SolidWorld<'a>(&'a delirium::collision::Collision);
+
+impl place::World for SolidWorld<'_> {
+    fn ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<place::Hit> {
+        self.0.contact(origin, dir, max).map(|(t, normal, _)| place::Hit { point: origin + dir * t, normal, distance: t })
+    }
 }
 
 #[derive(Default)]
@@ -93,10 +103,32 @@ fn find_portal2() -> Option<String> {
 
 impl Sim {
     pub fn portal_shot(&mut self, i: usize, from: Vec3, dir: Vec3) {
-        let Some((t, n, _)) = self.world.contact(from, dir, 200.0) else { return self.say("portal  shot: nothing to stick to".into()) };
-        let up = if n.z.abs() < 0.7 { Vec3::Z } else { dir };
-        let at = from + dir * t + n * 0.01;
-        let Some(f) = Frame::new(at, n, up).or_else(|| Frame::new(at, n, Vec3::Y)) else { return };
+        // Shots and probes see the room's solid surfaces, not the holes existing portals cut in them.
+        let holes = std::mem::take(&mut self.world.holes);
+        let ends = self.portal.ends;
+        let windows: Vec<place::Window> = match ends {
+            [Some(a), Some(b)] => vec![place::Window { frame: a, exit: b }, place::Window { frame: b, exit: a }],
+            _ => vec![],
+        };
+        let others: Vec<Frame> = ends[1 - i].into_iter().collect();
+        let w = SolidWorld(&self.world);
+        let trace = place::trace_shot(&w, from, dir, 200.0, HALF, &windows);
+        let result = match trace.hit {
+            Some(h) => place::place(&w, h, trace.dir, HALF, &others),
+            None => Err(place::Fail::NoHit),
+        };
+        self.world.holes = holes;
+        let f = match result {
+            Ok(f) => Frame { at: f.at + f.normal() * 0.01, ..f },
+            Err(why) => {
+                return self.say(format!("portal  {} shot: {}", ["blue", "orange"][i], match why {
+                place::Fail::NoHit => "nothing to stick to",
+                place::Fail::DoesNotFit => "it doesn't fit there",
+                place::Fail::Overlap => "it would overlap the other portal",
+                }));
+            }
+        };
+        let n = f.normal();
         self.portal.ends[i] = Some(f);
         (self.portal.placed[i], self.portal.stat) = (f32::NAN, 1.0);
         self.say(format!("portal  {} at {:.2},{:.2},{:.2} facing {:.2},{:.2},{:.2}", ["blue", "orange"][i], f.at.x, f.at.y, f.at.z, n.x, n.y, n.z));
