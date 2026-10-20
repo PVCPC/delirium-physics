@@ -471,7 +471,7 @@ fn update_views(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Command
         }
     };
     let Ok((me, cam, at, Projection::Perspective(lens), fog, layers)) = main_cam.single() else { return park(&mut cam_q) };
-    let want = RenderLayers::from_layers(&[0, 1, node_layer(1)]);
+    let want = RenderLayers::from_layers(&[0, 1, super::fx::MAIN_ONLY, node_layer(1)]);
     if layers != Some(&want) {
         commands.entity(me).insert(want);
     }

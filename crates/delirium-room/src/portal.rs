@@ -3,6 +3,7 @@ use bevy_egui::egui;
 
 mod clip;
 mod funnel;
+mod fx;
 mod place;
 mod render;
 
@@ -66,6 +67,9 @@ pub struct Portals {
     /// Portal 2's noise texture and the blue and orange colour ramps.
     tex: Option<[Handle<Image>; 3]>,
     tex_tried: bool,
+    /// Particle effects waiting to be started (see `fx::Event`), and whether Portal 2's particle systems loaded.
+    fx: Vec<fx::Event>,
+    fx_ready: bool,
     pub ots: Option<(Vec3, Vec3)>,
 }
 
@@ -122,6 +126,10 @@ impl Sim {
         let f = match result {
             Ok(f) => Frame { at: f.at + f.normal() * 0.01, ..f },
             Err(why) => {
+                // Show where it wouldn't go, as Portal 2 does: sparks at the hit point.
+                if let Some(h) = trace.hit {
+                    self.portal.fx.push(fx::Event::Burst { name: "portal_badsurface", pos: h.point, basis: fx::facing(h.normal), kind: i });
+                }
                 return self.say(format!("portal  {} shot: {}", ["blue", "orange"][i], match why {
                 place::Fail::NoHit => "nothing to stick to",
                 place::Fail::DoesNotFit => "it doesn't fit there",
@@ -130,7 +138,12 @@ impl Sim {
             }
         };
         let n = f.normal();
+        if let Some(old) = self.portal.ends[i] {
+            self.portal.fx.push(fx::Event::Burst { name: "portal_close", pos: old.at, basis: Mat3::from_quat(old.rot), kind: i });
+        }
+        self.portal.fx.push(fx::Event::Burst { name: "portal_success", pos: f.at, basis: Mat3::from_quat(f.rot), kind: i });
         self.portal.ends[i] = Some(f);
+        self.portal.fx.push(fx::Event::Rim { kind: i });
         (self.portal.placed[i], self.portal.stat) = (f32::NAN, 1.0);
         self.say(format!("portal  {} at {:.2},{:.2},{:.2} facing {:.2},{:.2},{:.2}", ["blue", "orange"][i], f.at.x, f.at.y, f.at.z, n.x, n.y, n.z));
     }
@@ -566,6 +579,7 @@ pub fn chell_arms(clips: &crate::getup::Clips, pose: &mut [(Vec3, Quat)], body: 
 pub fn plugin(app: &mut App) {
     render::plugin(app);
     clip::plugin(app);
+    fx::plugin(app);
     app.add_systems(Update, (frame.after(crate::step), gun_view.after(crate::gun_view)))
         .add_systems(PostUpdate, ghosts.before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
 }
