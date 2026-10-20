@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
+mod clip;
+mod render;
+
 use crate::{OursCam, OursGizmos, Sim};
 
 const HALF: Vec2 = Vec2::new(32.0 * 0.0254, 56.0 * 0.0254);
@@ -44,6 +47,14 @@ pub struct Portals {
     homer_last: [f32; 2],
     obj_last: Vec<[f32; 2]>,
     hero_last: [f32; 2],
+    /// Elapsed time each portal was placed (NaN until the renderer sees it): drives the opening animation.
+    placed: [f32; 2],
+    /// Portal 2's `PortalStatic` for the pair: 1 while unlinked, falls to 0 over a second after linking.
+    stat: f32,
+    was_linked: bool,
+    /// Portal 2's noise texture and the blue and orange colour ramps.
+    tex: Option<[Handle<Image>; 3]>,
+    tex_tried: bool,
     pub ots: Option<(Vec3, Vec3)>,
 }
 
@@ -63,6 +74,8 @@ impl Portals {
         self.game = Some(path);
         self.asked = false;
         self.model_tried = false;
+        self.tex = None;
+        self.tex_tried = false;
         true
     }
 }
@@ -85,6 +98,7 @@ impl Sim {
         let at = from + dir * t + n * 0.01;
         let Some(f) = Frame::new(at, n, up).or_else(|| Frame::new(at, n, Vec3::Y)) else { return };
         self.portal.ends[i] = Some(f);
+        (self.portal.placed[i], self.portal.stat) = (f32::NAN, 1.0);
         self.say(format!("portal  {} at {:.2},{:.2},{:.2} facing {:.2},{:.2},{:.2}", ["blue", "orange"][i], f.at.x, f.at.y, f.at.z, n.x, n.y, n.z));
     }
 
@@ -216,15 +230,6 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, k
     sim.portal_transit();
     sim.portal_objects();
     sim.portal_hero();
-    for (f, c) in sim.portal.ends.iter().zip(COLORS) {
-        if let Some(f) = f {
-            for s in 0..6 {
-                let k = 1.0 - s as f32 * 0.012;
-                g.ellipse(Isometry3d::new(f.at, f.rot), HALF * k, c);
-            }
-            g.ellipse(Isometry3d::new(f.at, f.rot), HALF * 0.8, c.with_alpha(0.4));
-        }
-    }
 }
 
 pub fn settings(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
@@ -511,90 +516,11 @@ pub fn chell_arms(clips: &crate::getup::Clips, pose: &mut [(Vec3, Quat)], body: 
     turn
 }
 
-#[derive(Asset, TypePath, bevy::render::render_resource::AsBindGroup, Clone)]
-pub struct PortalLook {
-    #[texture(0)]
-    #[sampler(1)]
-    view: Handle<Image>,
-}
-
-const LOOK_SHADER: Handle<Shader> = bevy::asset::uuid_handle!("6f1d2c3e-8a47-4b59-9e21-0c5d7a3b9f14");
-
-impl Material for PortalLook {
-    fn fragment_shader() -> bevy::shader::ShaderRef {
-        LOOK_SHADER.into()
-    }
-}
-
-#[derive(Component)]
-pub struct LookCam(usize);
-#[derive(Component)]
-pub struct LookOval(usize);
-
-const OVALS: usize = 3;
-
 pub fn plugin(app: &mut App) {
-    let _ = app.world_mut().resource_mut::<Assets<Shader>>().insert(&LOOK_SHADER, Shader::from_wgsl(r#"
-#import bevy_pbr::{forward_io::VertexOutput, mesh_view_bindings::view}
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var look: texture_2d<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var look_sampler: sampler;
-@fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(look, look_sampler, (in.position.xy - view.viewport.xy) / view.viewport.zw);
-}
-"#, "portal_look.wgsl"));
-    app.add_plugins(MaterialPlugin::<PortalLook>::default())
-        .add_systems(Update, (frame.after(crate::step), gun_view.after(crate::gun_view)))
-        .add_systems(PostUpdate, (looks, ghosts).before(bevy::transform::TransformSystems::Propagate));
-}
-
-fn looks(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<PortalLook>>,
-         mut images: ResMut<Assets<Image>>,
-         main: Query<(Entity, &Camera, &Transform, &Projection), (With<OursCam>, Without<LookCam>)>,
-         mut cams: Query<(&LookCam, &mut Camera, &mut Transform, &mut Projection, &bevy::camera::RenderTarget), Without<OursCam>>,
-         mut ovals: Query<(&LookOval, &mut Transform, &mut Visibility), (Without<LookCam>, Without<OursCam>)>) {
-    let Ok((me, cam, at, Projection::Perspective(lens))) = main.single() else { return };
-    let size = cam.physical_viewport_size().unwrap_or(UVec2::new(1280, 720)).max(UVec2::ONE);
-    if cams.is_empty() {
-        commands.entity(me).insert(bevy::camera::visibility::RenderLayers::from_layers(&[0, 1, OVALS]));
-        let mesh = meshes.add(Ellipse::new(HALF.x, HALF.y));
-        for i in 0..2 {
-            let img = images.add(Image::new_target_texture(size.x, size.y, bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb, None));
-            commands.spawn((Camera3d::default(), Camera { order: -1 - i as isize, ..default() }, bevy::camera::RenderTarget::from(img.clone()),
-                            bevy::core_pipeline::tonemapping::Tonemapping::None, Transform::default(), Projection::Perspective(lens.clone()),
-                            bevy::camera::visibility::RenderLayers::from_layers(&[0, 1]), LookCam(i)));
-            commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mats.add(PortalLook { view: img })), Transform::default(), Visibility::Hidden,
-                            bevy::light::NotShadowCaster, bevy::camera::visibility::RenderLayers::layer(OVALS), LookOval(i)));
-        }
-        return;
-    }
-    let ends = sim.portal.ends;
-    for (l, mut c, mut t, mut p, target) in &mut cams {
-        let (Some(from), Some(to)) = (ends[l.0], ends[1 - l.0]) else {
-            c.is_active = false;
-            continue;
-        };
-        c.is_active = true;
-        if let bevy::camera::RenderTarget::Image(r) = target && images.get(&r.handle).is_some_and(|i| i.size() != size)
-            && let Some(img) = images.get_mut(&r.handle) {
-            img.resize(bevy::render::render_resource::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1 });
-        }
-        let (turn, map) = through(&from, &to);
-        *t = Transform::from_translation(map(at.translation)).with_rotation((turn * at.rotation).normalize());
-        let (n, q) = (t.rotation.inverse() * to.normal(), t.rotation.inverse() * (to.at - t.translation));
-        let mut lens = lens.clone();
-        lens.near_clip_plane = n.extend(-n.dot(q) - 0.01);
-        *p = Projection::Perspective(lens);
-    }
-    for (o, mut t, mut v) in &mut ovals {
-        match (ends[o.0], ends[1 - o.0]) {
-            (Some(f), Some(_)) => {
-                *t = Transform::from_translation(f.at + f.normal() * 0.004).with_rotation(f.rot);
-                *v = Visibility::Visible;
-            }
-            _ => *v = Visibility::Hidden,
-        }
-    }
+    render::plugin(app);
+    clip::plugin(app);
+    app.add_systems(Update, (frame.after(crate::step), gun_view.after(crate::gun_view)))
+        .add_systems(PostUpdate, ghosts.before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
 }
 
 fn transit(agent: &mut delirium::nm::Agent, a: Frame, b: Frame, last: &mut [f32; 2]) -> Option<(usize, f32)> {
@@ -642,10 +568,10 @@ pub fn hero_fall(n: &mut crate::hero::Hero, ground: Option<f32>, dt: f32) -> Opt
 pub struct Ghost(Entity, usize);
 
 #[allow(clippy::type_complexity)]
-fn ghosts(sim: NonSend<Sim>, mut commands: Commands,
+fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<StandardMaterial>>, mut clipped: ResMut<Assets<clip::GhostMaterial>>,
           src: Query<(Entity, &Transform, &Visibility, &Mesh3d, &MeshMaterial3d<StandardMaterial>, Option<&bevy::camera::visibility::RenderLayers>),
                      (Or<(With<crate::PartMesh>, With<crate::HeroMesh>, With<crate::PropMesh>, With<crate::FacePart>)>, Without<Ghost>)>,
-          mut ghosts: Query<(Entity, &Ghost, &mut Transform, &mut Visibility)>) {
+          mut ghosts: Query<(Entity, &Ghost, &mut Transform, &mut Visibility, &MeshMaterial3d<clip::GhostMaterial>)>) {
     let mut have: std::collections::HashMap<(Entity, usize), Entity> = ghosts.iter().map(|(g, o, ..)| ((o.0, o.1), g)).collect();
     let mut shown = std::collections::HashSet::new();
     if let [Some(a), Some(b)] = sim.portal.ends {
@@ -660,15 +586,30 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands,
                 }
                 let (turn, map) = through(&from, &to);
                 let at = Transform { translation: map(t.translation), rotation: (turn * t.rotation).normalize(), scale: t.scale };
+                let planes = clip::exit_planes(&to);
                 match have.remove(&(e, i)) {
                     Some(g) => {
-                        if let Ok((_, _, mut gt, mut gv)) = ghosts.get_mut(g) {
+                        if let Ok((_, _, mut gt, mut gv, gm)) = ghosts.get_mut(g) {
                             (*gt, *gv) = (at, Visibility::Visible);
+                            // The copy follows its part's look (colour, glow) and its exit plane.
+                            let want = standard.get(&mat.0);
+                            let stale = clipped.get(&gm.0).is_some_and(|c| c.extension.clip != planes
+                                || want.is_some_and(|w| c.base.base_color != w.base_color || c.base.emissive != w.emissive || c.base.alpha_mode != w.alpha_mode));
+                            if stale {
+                                if let Some(mut c) = clipped.get_mut(&gm.0) {
+                                    c.extension.clip = planes;
+                                    if let Some(w) = want {
+                                        c.base = w.clone();
+                                    }
+                                }
+                            }
                         }
                         shown.insert(g);
                     }
                     None => {
-                        let g = commands.spawn((mesh.clone(), mat.clone(), at, Visibility::Visible, Ghost(e, i))).id();
+                        let Some(base) = standard.get(&mat.0).cloned() else { continue };
+                        let material = clipped.add(clip::GhostMaterial { base, extension: clip::ClipExt { clip: planes } });
+                        let g = commands.spawn((mesh.clone(), MeshMaterial3d(material), at, Visibility::Visible, Ghost(e, i))).id();
                         if let Some(l) = layers {
                             commands.entity(g).insert(l.clone());
                         }
@@ -677,7 +618,7 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands,
             }
         }
     }
-    for (g, o, _, mut v) in &mut ghosts {
+    for (g, o, _, mut v, _) in &mut ghosts {
         if shown.contains(&g) {
             continue;
         }

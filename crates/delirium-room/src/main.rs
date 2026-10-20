@@ -30,6 +30,8 @@ mod tackle;
 mod world;
 #[cfg(feature = "portal")]
 mod portal;
+#[cfg(feature = "portal")]
+mod p2vtf;
 
 const WHO: [&str; 1] = ["ours"];
 const SIDES: usize = WHO.len();
