@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 
 mod clip;
+mod funnel;
 mod place;
 mod render;
 
@@ -134,6 +135,19 @@ impl Sim {
         self.say(format!("portal  {} at {:.2},{:.2},{:.2} facing {:.2},{:.2},{:.2}", ["blue", "orange"][i], f.at.x, f.at.y, f.at.z, n.x, n.y, n.z));
     }
 
+    /// Steer falling ragdolls into floor and ceiling portals (Portal 2's air funnel).
+    fn portal_funnel(&mut self, dt: f32) {
+        let [Some(a), Some(b)] = self.portal.ends else { return };
+        if self.paused || self.held || dt <= 0.0 {
+            return;
+        }
+        let dt = (dt * self.speed).min(0.05);
+        funnel_agent(&mut self.agent, [a, b], dt);
+        if let Some(h) = self.hero_doll.as_mut().filter(|h| h.rise.is_none()) {
+            funnel_agent(&mut h.agent, [a, b], dt);
+        }
+    }
+
     fn portal_transit(&mut self) {
         let [Some(a), Some(b)] = self.portal.ends else { return };
         if let Some((i, speed)) = transit(&mut self.agent, a, b, &mut self.portal.homer_last) {
@@ -259,6 +273,7 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, k
     };
     sim.world.holes = holes.clone();
     sim.room.holes = holes;
+    sim.portal_funnel(time.delta_secs());
     sim.portal_transit();
     sim.portal_objects();
     sim.portal_hero();
@@ -555,6 +570,20 @@ pub fn plugin(app: &mut App) {
         .add_systems(PostUpdate, ghosts.before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
 }
 
+/// One funnel step for a ragdoll: the change in its steered centre-of-mass velocity goes to every body.
+fn funnel_agent(agent: &mut delirium::nm::Agent, portals: [Frame; 2], dt: f32) {
+    let (centre, v) = agent.doll.com();
+    let steered = funnel::steer(&portals, 9.81, centre, v, dt);
+    let delta = steered - v;
+    if delta.length_squared() < 1e-10 {
+        return;
+    }
+    let bodies: Vec<(usize, Transform, Vec3, Vec3)> = agent.doll.frames().enumerate().map(|(k, f)| (k, f, agent.doll.vel(k).0, agent.doll.vel(k).1)).collect();
+    for (k, f, lin, ang) in bodies {
+        agent.doll.set_body(k, f.translation, f.rotation, lin + delta, ang);
+    }
+}
+
 fn transit(agent: &mut delirium::nm::Agent, a: Frame, b: Frame, last: &mut [f32; 2]) -> Option<(usize, f32)> {
     let c = centre(agent.doll.frames().map(|f| f.translation));
     let was = std::mem::replace(last, [a.local(c).z, b.local(c).z]);
@@ -566,6 +595,14 @@ fn transit(agent: &mut delirium::nm::Agent, a: Frame, b: Frame, last: &mut [f32;
     let speed = doll.vel(0).0.length();
     for (k, (x, q, v, w)) in parts.into_iter().enumerate() {
         agent.doll.set_body(k, x, q.normalize(), v, w);
+    }
+    // Out of a floor or ceiling portal, near enough straight up or down: no sideways drift (the exit gimme).
+    let drop = funnel::exit_gimme(&to, agent.doll.com().1);
+    if drop != Vec3::ZERO {
+        let bodies: Vec<(usize, Transform, Vec3, Vec3)> = agent.doll.frames().enumerate().map(|(k, f)| (k, f, agent.doll.vel(k).0, agent.doll.vel(k).1)).collect();
+        for (k, f, lin, ang) in bodies {
+            agent.doll.set_body(k, f.translation, f.rotation, lin - drop, ang);
+        }
     }
     let c = centre(agent.doll.frames().map(|f| f.translation));
     *last = [a.local(c).z, b.local(c).z];
