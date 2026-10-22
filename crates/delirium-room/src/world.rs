@@ -376,7 +376,7 @@ impl Room {
         blocks.push((Vec3::new(-3.75, 2.0, 0.9), Vec3::new(0.75, 0.5, 0.9), row("CONCRETE")));
         #[cfg(feature = "portal")]
         blocks.extend([(Vec3::new(10.0, 0.0, 3.0), Vec3::new(0.15, 4.0, 3.0), row("CONCRETE")),
-                       (Vec3::new(6.0, 3.0, 5.0), Vec3::new(1.5, 1.5, 0.1), row("CONCRETE"))]);
+                       (Vec3::new(6.0, 3.0, 5.0), Vec3::new(3.0, 3.0, 0.1), row("CONCRETE"))]);
         blocks
     }
 

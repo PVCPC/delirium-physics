@@ -9,6 +9,12 @@
 - **Portal maths** (`crates/delirium-room/src/portal.rs`): by **Stink-O**, from their
   [Portal 2 Rust Engine](https://github.com/Stink-O/Portal2-rust-engine), the original Portal 2 rewrite in Rust. The
   portal-pair maths (`p2_core/src/math.rs`) is cut down from it. Licensed under the MIT License (full text below).
+- **Portal mode rendering, placement, effects and funnel** (`crates/delirium-room/src/portal/`,
+  `ghost_clip.wgsl`, `p2vtf.rs`): ported from **Stink-O**'s [Portal 2 Rust Engine](https://github.com/Stink-O/Portal2-rust-engine)
+  and adapted to this room's Z-up world and Bevy 0.18: the portal opening animation and the recursive view tree (`p2_render`), the placement rules and shot trace (`p2_gun/rules.rs`), the ghost
+  clip shader (`p2_body/clip.wgsl`), the air funnel (`p2_movement/funnel.rs`), the VTF reader and the VMT/KeyValues
+  loaders (`source_assets`), and the particle system reader and simulator (`p2_fx`). The portal surface shader (`portal_surface.wgsl`) and the
+  particle card shader (`portal/fx/spritecard.wgsl`) are this project's own.
 - **Portal 2** is Valve's. None of its files are included: portal mode reads them from your own install. Not affiliated
   with or endorsed by Valve.
 

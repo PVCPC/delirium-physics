@@ -30,6 +30,8 @@ mod tackle;
 mod world;
 #[cfg(feature = "portal")]
 mod portal;
+#[cfg(feature = "portal")]
+mod p2vtf;
 
 const WHO: [&str; 1] = ["ours"];
 const SIDES: usize = WHO.len();
@@ -96,10 +98,18 @@ fn look_path() -> Option<std::path::PathBuf> {
 }
 fn saved_look() -> Look {
     let n: Vec<f32> = look_path().and_then(|p| std::fs::read_to_string(p).ok()).map_or(vec![], |t| t.split_whitespace().filter_map(|x| x.parse().ok()).collect());
-    if n.len() != 11 {
+    if n.len() != 11 && n.len() != 13 {
         return LOOKS[0].1;
     }
     Look { sky: [n[0], n[1], n[2]], floor: [n[3], n[4], n[5]], grid: n[6] != 0.0, fog: n[7] != 0.0, sun: n[8], glow: n[10] != 0.0 }
+}
+
+/// The sun's default direction (degrees): azimuth and elevation of the light as seen from the scene.
+const SUN_DIR: [f32; 2] = [-33.7, 59.0];
+
+fn saved_sun() -> [f32; 2] {
+    let n: Vec<f32> = look_path().and_then(|p| std::fs::read_to_string(p).ok()).map_or(vec![], |t| t.split_whitespace().filter_map(|x| x.parse().ok()).collect());
+    if n.len() == 13 { [n[11], n[12]] } else { SUN_DIR }
 }
 
 fn help_seen() -> bool {
@@ -321,6 +331,7 @@ struct Sim {
     film_vel: Vec3,
     photo_pending: bool,
     photo_follow: bool,
+    detached: bool,
     cam_at: Option<Vec3>,
     shot_scene: String,
     photo_note: String,
@@ -439,6 +450,9 @@ struct Sim {
     ped_color: usize,
     eyes: bool,
     skel: bool,
+    clean: bool,
+    /// Direction of the sun: azimuth and elevation, degrees.
+    sun_dir: [f32; 2],
     body: usize,
     brows: bool,
     scene: Option<String>,
@@ -1768,6 +1782,10 @@ impl Sim {
                 self.passive = !self.passive;
                 return self.say(format!("room  Homer passive: {}", if self.passive { "on (he only takes hits)" } else { "off (near the Hero he fights back)" }));
             }
+            "detached cam" => {
+                self.relock = true;
+                return;
+            }
             "walk" => {
                 self.walk = !self.walk;
                 return self.say(format!("ours  walk: {}", if self.walk { "on (WASD leans his balance; he steps to follow)" } else { "off (C selects free camera)" }));
@@ -2611,10 +2629,10 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, body, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true };
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, body, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -3157,14 +3175,19 @@ struct HeroMesh(usize);
 struct HatMesh;
 
 fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<HeroMesh>>,
-          mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
+          mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
           mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>) {
     let doll: Option<Vec<Transform>> = sim.hero_doll.as_ref().map(|h| match h.rise.as_ref().zip(sim.getup.as_ref()).and_then(|(r, c)| c.frames(r)) {
         Some(f) => f.into_iter().enumerate().map(|(k, f)| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k))).collect(),
         None => h.agent.doll.capsules().collect(),
     });
     let rig = sim.getup.as_ref().and_then(|c| c.hero.as_ref());
-    for (m, mut t, mut v) in &mut hero {
+    for (m, mut t, mut v, mat) in &mut hero {
+        let want = if sim.clean { 1.0 } else { 0.6 };
+        if mats.get(&mat.0).is_some_and(|x| x.base_color.alpha() != want) && let Some(x) = mats.get_mut(&mat.0) {
+            x.base_color = x.base_color.with_alpha(want);
+            x.alpha_mode = if sim.clean { AlphaMode::Opaque } else { AlphaMode::Blend };
+        }
         let at = match &doll {
             Some(f) => rig.and_then(|r| r.build.parts.get(m.0)).and_then(|p| sim.build.parts.iter().position(|q| q.name == p.name)).and_then(|j| f.get(j).copied()),
             None => sim.hero.as_ref().filter(|_| !sim.driving).and_then(|n| n.caps.get(m.0)).copied(),
@@ -3194,6 +3217,7 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
         let ped = p.crowd.map_or(0, |c| c + 1);
         let lit = sim.glow.get(ped).and_then(|g| g.get(p.k)).filter(|_| p.watch.is_none()).map_or(LinearRgba::BLACK, |&(g, (c, _))| c * g);
         let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""));
+        let col = if sim.clean { col.with_alpha(1.0) } else { col };
         if mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col) {
             if let Some(x) = mats.get_mut(&m.0) {
                 x.emissive = lit;
@@ -3357,26 +3381,33 @@ fn follow_floor(sim: NonSend<Sim>, mut q: Query<&mut Transform, With<Floor>>) {
     }
 }
 
-fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, Has<Fill>)>,
+fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32, [f32; 2])>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, &mut Transform, Has<Fill>)>,
               mut fill: ResMut<GlobalAmbientLight>,
               floor: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<Floor>>, mut mats: ResMut<Assets<StandardMaterial>>,
               cam: Query<Entity, With<OursCam>>, mut commands: Commands) {
     let (l, Ok((f, m))) = (sim.skin, floor.single()) else { return };
-    if *last == Some((l, f, sim.soft, sim.shadow)) {
+    if *last == Some((l, f, sim.soft, sim.shadow, sim.sun_dir)) {
         return;
     }
-    if last.is_some_and(|o| o.0 != l) {
+    if last.is_some_and(|o| o.0 != l || o.4 != sim.sun_dir) {
         if let Some(p) = look_path() {
             let b = |x: bool| x as u8 as f32;
-            let n = [l.sky[0], l.sky[1], l.sky[2], l.floor[0], l.floor[1], l.floor[2], b(l.grid), b(l.fog), l.sun, 0.0, b(l.glow)];
+            let n = [l.sky[0], l.sky[1], l.sky[2], l.floor[0], l.floor[1], l.floor[2], b(l.grid), b(l.fog), l.sun, 0.0, b(l.glow), sim.sun_dir[0], sim.sun_dir[1]];
             let _ = std::fs::write(p, n.map(|x| x.to_string()).join(" "));
         }
     }
-    *last = Some((l, f, sim.soft, sim.shadow));
+    *last = Some((l, f, sim.soft, sim.shadow, sim.sun_dir));
     fill.brightness = if sim.soft { 400.0 } else { GlobalAmbientLight::default().brightness };
     let [r, g, b] = l.sky;
     sky.0 = Color::srgb(r, g, b);
-    for (mut s, fill) in &mut sun {
+    // The sun sits 7 m out along its azimuth and elevation, looking at the middle of the scene; the dim
+    // fill light stays roughly opposite it, low.
+    let from = |az: f32, el: f32, r: f32| {
+        let (az, el) = (az.to_radians(), el.clamp(3.0, 89.0).to_radians());
+        Vec3::new(az.cos() * el.cos(), az.sin() * el.cos(), el.sin()) * r
+    };
+    for (mut s, mut t, fill) in &mut sun {
+        *t = Transform::from_translation(if fill { from(sim.sun_dir[0] + 160.6, 22.0, 5.4) } else { from(sim.sun_dir[0], sim.sun_dir[1], 7.0) }).looking_at(Vec3::ZERO, Vec3::Z);
         let k = match (fill, sim.soft) { (false, true) => 0.75, (false, false) => 1.0, (true, true) => 0.3, (true, false) => 0.0 };
         s.illuminance = bevy::light::light_consts::lux::AMBIENT_DAYLIGHT * l.sun * k;
         s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some(sim.shadow);
@@ -3835,10 +3866,11 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     let editing = sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input());
     let Ok((mut t, mut o, camera, gt)) = cam.single_mut() else { return };
     let filming = sim.film > 0.0 && !sim.photo;
-    let ots = portal_gun(&sim) && sim.hero.is_some() && !sim.driving && sim.hero_doll.is_none() && !filming && !sim.photo;
+    let ots = portal_gun(&sim) && sim.hero.is_some() && !sim.detached && !sim.driving && sim.hero_doll.is_none() && !filming && !sim.photo;
     let locked = grab.single().is_ok_and(|c| c.grab_mode != bevy::window::CursorGrabMode::None);
+    let flying = sim.detached && buttons.pressed(MouseButton::Right) && (locked || !sim.over_ui);
     if let Ok(mut c) = grab.single_mut() {
-        let lock = ots && !keys.just_pressed(KeyCode::Escape) && (locked || buttons.just_pressed(MouseButton::Left) && !sim.over_ui);
+        let lock = flying || ots && !keys.just_pressed(KeyCode::Escape) && (locked || buttons.just_pressed(MouseButton::Left) && !sim.over_ui);
         if lock != locked {
             c.grab_mode = if lock { bevy::window::CursorGrabMode::Locked } else { bevy::window::CursorGrabMode::None };
             c.visible = !lock;
@@ -3900,6 +3932,14 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         sim.photo_note = format!("{name}: cam {n} kept");
         sim.say(format!("room  {name}: {line}"));
     }
+    let view = |o: &Orbit| Vec3::new(o.yaw.cos() * o.pitch.cos(), o.yaw.sin() * o.pitch.cos(), o.pitch.sin());
+    if flying {
+        let eye = o.target + view(&o) * o.dist;
+        let k = 0.0028;
+        o.yaw -= motion.delta.x * k;
+        o.pitch = (o.pitch + motion.delta.y * k).clamp(-1.5, 1.5);
+        o.target = eye - view(&o) * o.dist;
+    }
     let flat = Vec3::new(o.yaw.cos(), o.yaw.sin(), 0.0);
     let side = Vec3::Z.cross(flat);
     if !sim.over_ui {
@@ -3907,7 +3947,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             let k = (0.022 * 3.0f32).to_radians();
             o.yaw -= motion.delta.x * k;
             o.pitch = (o.pitch + motion.delta.y * k).clamp(-0.6, 1.2);
-        } else if buttons.pressed(MouseButton::Right) {
+        } else if buttons.pressed(MouseButton::Right) && !sim.detached {
             o.yaw -= delta.x * 0.005;
             o.pitch = (o.pitch + delta.y * 0.005).clamp(if sim.photo { -1.5 } else { -0.2 }, 1.5);
         }
@@ -3915,17 +3955,32 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             let k = o.dist * 0.0015;
             o.target += side * delta.x * k + Vec3::Z * delta.y * k;
             o.follow = 3;
+            sim.detached = true;
         }
-        o.dist = (o.dist * (1.0 - wheel * 0.1)).clamp(0.3, 40.0);
+        if !sim.detached {
+            o.dist = (o.dist * (1.0 - wheel * 0.1)).clamp(0.3, 40.0);
+        }
     }
     sim.walk_dir = sim.script_walk;
     if !editing {
         let mut mv = Vec3::ZERO;
+        if keys.just_pressed(KeyCode::Tab) {
+            sim.button("detached cam");
+        }
         for (k, d) in [(KeyCode::KeyW, -flat), (KeyCode::KeyS, flat), (KeyCode::KeyA, -side), (KeyCode::KeyD, side), (KeyCode::KeyE, Vec3::Z), (KeyCode::KeyQ, -Vec3::Z)] {
             if keys.pressed(k) {
                 mv += d;
             }
         }
+        let cam_mv = if sim.detached {
+            mv = Vec3::ZERO;
+            let fwd = -view(&o);
+            let go: Vec3 = [(KeyCode::KeyW, fwd), (KeyCode::KeyS, -fwd), (KeyCode::KeyD, side), (KeyCode::KeyA, -side), (KeyCode::KeyE, Vec3::Z), (KeyCode::KeyQ, -Vec3::Z)]
+                .into_iter().filter(|k| flying && keys.pressed(k.0)).map(|k| k.1).sum();
+            go.normalize_or_zero()
+        } else {
+            Vec3::ZERO
+        };
         if sim.hero.is_some() {
             for (k, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8,
                              KeyCode::Digit9, KeyCode::Digit0, KeyCode::Minus, KeyCode::Equal]
@@ -3947,14 +4002,18 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             }
             let dt = if sim.paused || sim.held { 0.0 } else { time.delta_secs() * sim.speed };
             if sim.driving {
-                let k = |c| keys.pressed(c) as i32 as f32;
-                let (pedal, wheel, hb) = (k(KeyCode::KeyW) - k(KeyCode::KeyS), k(KeyCode::KeyD) - k(KeyCode::KeyA), keys.pressed(KeyCode::Space));
+                let k = |c| (keys.pressed(c) && !sim.detached) as i32 as f32;
+                let (pedal, wheel, hb) = (k(KeyCode::KeyW) - k(KeyCode::KeyS), k(KeyCode::KeyD) - k(KeyCode::KeyA), keys.pressed(KeyCode::Space) && !sim.detached);
                 sim.pedals = (pedal, wheel, hb);
             } else {
                 sim.play_hero(dt, mv.with_z(0.0).normalize_or_zero(), gait);
                 sim.homer_fight(dt);
             }
             mv = Vec3::ZERO;
+        }
+        if cam_mv != Vec3::ZERO {
+            o.target += cam_mv * time.delta_secs() * if shift_held(&keys) { 24.0 } else { 8.0 };
+            o.follow = 3;
         }
         if sim.photo {
             if sim.photo_follow {
@@ -3973,8 +4032,14 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             o.follow = 3;
         }
         if keys.just_pressed(KeyCode::KeyC) || std::mem::take(&mut sim.relock) {
-            o.follow = if o.follow == 0 { 3 } else { 0 };
-            sim.say(format!("room  camera: {}", if o.follow == 0 { "each half follows its Homer" } else { "free (ours' half)" }));
+            // One free camera: the detached one. Following and detached are the two states.
+            let follow = o.follow == 0 && !sim.detached;
+            sim.detached = follow;
+            o.follow = if follow { 3 } else { 0 };
+            sim.say(format!("room  camera: {}", if follow { "detached (hold right mouse: look, WASD fly where you look, Q/E down/up, Shift boost; the Hero stands still. Tab or C to follow again)" } else { "follows Homer" }));
+        }
+        if sim.detached {
+            o.follow = 3;
         }
     }
     sim.cam_locked = o.follow == 0;
@@ -3997,7 +4062,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         o.target = o.target.lerp(at, k).with_z(z);
     }
     let off = Vec3::new(o.yaw.cos() * o.pitch.cos(), o.yaw.sin() * o.pitch.cos(), o.pitch.sin()) * dist;
-    let slide = (-off).cross(Vec3::Z).normalize_or_zero() * (dist * 0.12 * sim.show_ui as u8 as f32);
+    let slide = (-off).cross(Vec3::Z).normalize_or_zero() * (dist * 0.12 * (sim.show_ui && !sim.detached) as u8 as f32);
     *t = Transform::from_translation(o.target + off - slide).looking_at(o.target - slide, Vec3::Z);
     #[cfg(feature = "portal")]
     {
@@ -4175,10 +4240,17 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
         let mut w = line.splitn(2, ' ');
         match (w.next().unwrap_or(""), w.next()) {
             ("!button", Some(b)) => sim.button(b),
+            ("!sun", Some(a)) => {
+                let v: Vec<f32> = a.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                if let [az, el] = v[..] {
+                    sim.sun_dir = [az, el];
+                }
+            }
             ("!look", Some(n)) => sim.skin = LOOKS.iter().find(|l| l.0 == n).map_or(sim.skin, |l| l.1),
             ("!pedcol", Some(n)) => sim.ped_color = PED_COLORS.iter().position(|c| c.0 == n).unwrap_or(sim.ped_color),
             ("!eyes", _) => sim.eyes = !sim.eyes,
             ("!skel", _) => sim.skel = !sim.skel,
+            ("!clean", _) => sim.clean = !sim.clean,
             ("!hero", _) => sim.toggle_hero(),
             ("!punch", _) => if let Some(n) = sim.hero.as_mut() { n.punch() },
             ("!pad", Some(a)) => if let (Some(n), Ok(b)) = (sim.hero.as_mut(), u32::from_str_radix(a.trim_start_matches("0x"), 16)) { n.scripted = b },
@@ -4723,6 +4795,7 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
         }
     }
     let doll = &sim.agent.doll;
+    let dbg = sim.skel && !sim.clean;
     let up = |i: usize| sim.getup.as_ref().zip(sim.rises[i].as_ref()).and_then(|(c, r)| c.frames(r));
     let ours_up = up(0);
     let rising = ours_up.is_some();
@@ -4731,10 +4804,10 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
         for i in 0..w.tries.len() {
             skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| w.at(i, k), |_| false);
         }
-    } else if sim.skel {
+    } else if dbg {
         skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| fr.get(k).copied(), |k| doll.touch[k] & 0x48 != 0);
     }
-    if let Some(p) = sim.throw_at {
+    if let Some(p) = sim.throw_at.filter(|_| !sim.clean) {
         ours.sphere(Isometry3d::from_translation(p), 0.08, Color::srgb(1.0, 0.85, 0.2)).resolution(16);
     }
     for &(at, r, age) in &sim.ripples {
@@ -4762,31 +4835,33 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
         ours.line(at, g.target, Color::srgb(0.3, 0.9, 1.0));
         ours.sphere(Isometry3d::from_translation(g.target), 0.03, Color::srgb(0.3, 0.9, 1.0));
     }
-    if sim.arrows {
+    if sim.arrows && !sim.clean {
         for (k, f) in fr.iter().enumerate() {
             let (force, torque) = doll.out[k];
             ours.arrow(f.translation, f.translation + torque * 0.002, Color::srgb(0.9, 0.3, 0.9));
             ours.arrow(f.translation, f.translation + force * 0.0005, Color::srgb(0.3, 0.6, 1.0));
         }
     }
-    for (a, _) in sim.crowd.iter().filter(|_| sim.skel) {
+    for (a, _) in sim.crowd.iter().filter(|_| dbg) {
         let f: Vec<Transform> = a.doll.frames().collect();
         skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| f.get(k).copied(), |k| a.doll.touch[k] & 0x48 != 0);
     }
     let (com, v) = doll.com();
     let (com, v) = if rising { (fr[0].translation, Vec3::ZERO) } else { (com, v) };
-    if sim.skel {
+    if dbg {
         ours.sphere(Isometry3d::from_translation(com), 0.04, Color::srgb(1.0, 0.3, 0.2));
         ours.arrow(com.with_z(0.01), (com + v * 0.3).with_z(0.01), Color::srgb(1.0, 0.5, 0.2));
     }
-    for (k, p) in sim.build.parts.iter().enumerate().filter(|_| sim.skel) {
+    for (k, p) in sim.build.parts.iter().enumerate().filter(|_| dbg) {
         let Some(e) = p.boxed else { continue };
         let c = Color::srgb(0.2, 0.9, 0.95);
         if let Some(f) = fr.get(k) {
             ours.primitive_3d(&Cuboid { half_size: e }, Isometry3d::new(f.translation, f.rotation * delirium::nmdbm::rage_link(nm(), k)), c);
         }
     }
-    looks(&sim, &mut ours, fr.get(HEAD).map(|f| f.translation), 0);
+    if !sim.clean {
+        looks(&sim, &mut ours, fr.get(HEAD).map(|f| f.translation), 0);
+    }
 }
 
 fn looks<T: GizmoConfigGroup>(sim: &Sim, g: &mut Gizmos<T>, head: Option<Vec3>, side: usize) {
@@ -4828,12 +4903,13 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
 }
 
 const RESET_TIP: &str = "Stand Homer back up (R)";
-const TIPS: [(&str, &str); 37] = [
+const TIPS: [(&str, &str); 38] = [
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
     ("car", "A taxi comes at Homer from his left at 8 m/s and hits him."),
     ("#ripples", "Cyan rings on the floor where a body part lands hard."),
     ("#skel", "The skeleton's lines and joints drawn over Homer's body."),
+    ("#clean", "Hides every debug drawing on the characters (skeleton, boxes, centre of mass, arrows, look and avoid markers) and makes their bodies solid instead of see-through."),
     ("#eyes", "Homer's eyes: they look where he's reacting to, blink, squint when he's hurt and shut when he's out."),
     ("#brows", "Homer's eyebrows: they show when he's scared, hurt or stumbling."),
     ("explosion pile", "Barrels and crates in front of Homer that blow up 2 s later."), ("wrecking ball", "A 250 kg ball on a rope swings through Homer."),
@@ -5380,7 +5456,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 pressed = Some(format!("#pedcol {n}"));
             }
             pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("Eyes", sim.eyes)), ("#brows", sim.brows, onoff("Eyebrows", sim.brows)),
-                ("#skel", sim.skel, onoff("Skeleton", sim.skel))]));
+                ("#skel", sim.skel, onoff("Skeleton", sim.skel)), ("#clean", sim.clean, onoff("Clean view (no debug, solid body)", sim.clean))]));
             });
             if sim.watch.is_some() || [learn::path(), learn::walk_path(false), learn::walk_path(true)].iter().any(|p|
                 std::path::Path::new(p).exists() || std::path::Path::new(&learn::live_path(p)).exists()) {
@@ -5435,6 +5511,11 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 }
             });
             slide(ui, "Light intensity", &mut sim.skin.sun, 0.1, 4.0, "×");
+            ui.add(egui::Slider::new(&mut sim.sun_dir[0], -180.0..=180.0).text("Sun direction").suffix("°"));
+            ui.add(egui::Slider::new(&mut sim.sun_dir[1], 3.0..=89.0).text("Sun height").suffix("°"));
+            if ui.button("Reset sun angle").clicked() {
+                sim.sun_dir = SUN_DIR;
+            }
         }
 
         if sim.tab & (1 << 5) != 0 {
@@ -5451,7 +5532,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             sub(ui, "Mouse & keyboard");
             egui::Grid::new("keys").max_col_width(170.0).spacing([12.0, 8.0]).striped(true).show(ui, |ui| {
                 for (k, what) in [("click", if sim.aim_gun { "fire or swing the floating weapon" } else if sim.click_shoots { "shoot a body part" } else { "poke a body part" }), ("drag", "pull a body part (camera aim)"), ("Shift + click", "shoot a body part (camera aim)"), ("Shift + right click", "fatal shot"),
-                                  ("right drag", "orbit the camera"), ("wheel", "zoom"), ("WASD", "walk Homer when Walk Homer is on; otherwise move only in free camera"), ("middle drag", "pan and enter free camera"), ("Q E", "move vertically in free camera"), ("C", "follow / free camera"),
+                                  ("right drag", "orbit the camera"), ("wheel", "zoom"), ("WASD", "walk Homer when Walk Homer is on; otherwise move only in free camera"), ("middle drag", "pan (enters the detached camera)"), ("C  or  Tab", "follow Homer / detached camera: hold right mouse to look and fly (WASD, Q/E, Shift boost) while the Hero stays put"),
                                   ("Space", "pause"), (".", "one step"), ("[  ]", "slower / faster (1/16 to 4x)"), ("1  2  3", "throw a ball / a box / drop a crate at the pointer"), ("R", "reset pose"), ("X", "stop all"),
                                   ("Ctrl + point", "aim throws there (and the floating gun)"), ("F", "get in / out of a taxi"), ("Enter", "type a command"), ("H", "hide panels"),
                                   ("P", "photo mode"), ("Hero (Character)", "WASD walk, Shift run, Ctrl sprint, click punch")] {
@@ -5510,6 +5591,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             (Some("#pedcol"), Some(n)) => sim.ped_color = PED_COLORS.iter().position(|c| c.0 == n).unwrap_or(sim.ped_color),
             (Some("#eyes"), _) => sim.eyes = !sim.eyes,
             (Some("#skel"), _) => sim.skel = !sim.skel,
+            (Some("#clean"), _) => sim.clean = !sim.clean,
             (Some("#brows"), _) => sim.brows = !sim.brows,
             (Some("#fog"), _) => sim.skin.fog = !sim.skin.fog,
             (Some("#glow"), _) => sim.skin.glow = !sim.skin.glow,
