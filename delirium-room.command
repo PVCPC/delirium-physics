@@ -2,7 +2,7 @@
 # Delirium room for macOS and Linux. Double-click on a Mac; `sh delirium-room.command` on Linux.
 cd "$(dirname "$0")" || exit 1
 # On its own (downloaded from the release page): fetch this version's source beside it, then run the copy in there.
-VERSION=0.1.9
+VERSION=0.2.0
 if [ ! -f Cargo.toml ]; then
   if [ ! -f "delirium-physics-$VERSION/Cargo.toml" ]; then
     echo "Downloading Delirium Physics $VERSION source..."

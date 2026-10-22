@@ -1,7 +1,10 @@
 use super::*;
 use std::path::Path;
 
-const RAMP: f32 = 3.0;
+fn ramp() -> f32 {
+    static R: OnceLock<f32> = OnceLock::new();
+    *R.get_or_init(|| std::env::var("DELIRIUM_PREVIEW_RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(2.0))
+}
 
 pub(super) const TRAINED: Quat = Quat::from_xyzw(0.0, 0.0, -0.74354, 0.6686915);
 
@@ -11,7 +14,7 @@ pub(super) struct Steer { from: [f32; 2], to: [f32; 2], s: f32, pub(super) now: 
 impl Steer {
     pub(super) fn area(&self, i: usize, t: f32) -> f32 { self.sum[i] + self.now[i] * (t - self.t) }
     fn advance(&mut self, t: f32) {
-        self.s = (self.s + DT / RAMP).min(1.0);
+        self.s = (self.s + DT / ramp()).min(1.0);
         for i in 0..2 {
             self.sum[i] += self.now[i] * (t - self.t);
             self.now[i] = self.from[i] + (self.to[i] - self.from[i]) * gait_ramp(self.s);
