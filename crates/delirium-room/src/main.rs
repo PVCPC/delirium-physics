@@ -6493,10 +6493,14 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go. With the window in the background it never goes over 60.");
             sub(ui, "Anti-aliasing & upscaling");
             let methods: Vec<u8> = (0..=AA_TAA).chain(sim.fsr_ok.then_some(AA_FSR3)).chain(sim.xess_ok.then_some(AA_XESS)).chain(if sim.dlss_ok { vec![AA_DLAA, AA_DLSS] } else { vec![] }).collect();
-            let mut m = methods.iter().position(|&k| k == sim.aa_now()).unwrap_or(0) as f32;
-            if ui.add(egui::Slider::new(&mut m, 0.0..=(methods.len() - 1) as f32).step_by(1.0).text("Anti-aliasing").custom_formatter(|x, _| AA_NAMES[methods[x as usize] as usize].into()))
-                .on_hover_text("Smooths jagged edges; one method at a time. FXAA: cheapest, a little blurry. SMAA: sharper, still cheap. MSAA: clean edges, costs more on a slow graphics card. TAA: smoothest, can smear when things move fast. FSR 3: AMD's, on any graphics card; draws the room smaller and rebuilds it sharp, much faster. XeSS: Intel's, like FSR 3, best on Intel Arc cards. DLAA: NVIDIA's, the best looking. DLSS: NVIDIA's, like FSR 3, sharper.").changed() {
-                sim.aa = methods[m as usize];
+            let mut aa = sim.aa_now();
+            egui::ComboBox::from_label("Anti-aliasing").selected_text(AA_NAMES[aa as usize]).show_ui(ui, |ui| {
+                for &k in &methods {
+                    ui.selectable_value(&mut aa, k, AA_NAMES[k as usize]);
+                }
+            }).response.on_hover_text("Smooths jagged edges; one method at a time. FXAA: cheapest, a little blurry. SMAA: sharper, still cheap. MSAA: clean edges, costs more on a slow graphics card. TAA: smoothest, can smear when things move fast. FSR 3: AMD's, on any graphics card; draws the room smaller and rebuilds it sharp, much faster. XeSS: Intel's, like FSR 3, best on Intel Arc cards. DLAA: NVIDIA's, the best looking. DLSS: NVIDIA's, like FSR 3, sharper.");
+            if aa != sim.aa_now() {
+                sim.aa = aa;
             }
             if !sim.fsr_ok {
                 info(ui, if cfg!(windows) { "FSR 3 needs amd_fidelityfx_vk.dll beside the room." } else { "FSR 3 is Windows only for now." });
