@@ -52,9 +52,12 @@ pub(super) fn walk_prior()->Option<&'static super::Net> {
     })).as_ref()
 }
 
+pub(super) fn walking_weight(brisk:f32)->f32 {0.5*(1.-brisk.clamp(0.,1.))}
+pub(super) fn transition_weight(brisk:f32,jog:f32)->f32 {0.25*brisk.clamp(0.,1.)*(1.-jog.clamp(0.,1.))}
+
 pub(super) fn walking_action(index:usize,base:f32,action:f32,anchor:f32,brisk:f32)->f32 {
     if !(28..46).contains(&index) {return base;}
-    let delta=0.5*(1.-brisk.clamp(0.,1.))*(action-anchor).clamp(-1.,1.);
+    let delta=walking_weight(brisk)*(action-anchor).clamp(-1.,1.);
     if delta==0. {base} else {base+delta}
 }
 
@@ -67,7 +70,7 @@ pub(super) fn transition_prior()->Option<&'static super::Net> {
 
 pub(super) fn transition_action(index:usize,base:f32,action:f32,anchor:f32,brisk:f32,jog:f32)->f32 {
     if !(28..46).contains(&index) {return base;}
-    let delta=0.25*brisk.clamp(0.,1.)*(1.-jog.clamp(0.,1.))*(action-anchor).clamp(-1.,1.);
+    let delta=transition_weight(brisk,jog)*(action-anchor).clamp(-1.,1.);
     if delta==0. {base} else {base+delta}
 }
 

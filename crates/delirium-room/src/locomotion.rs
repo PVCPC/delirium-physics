@@ -37,12 +37,31 @@ static JOG_STIFFNESS: OnceLock<f32> = OnceLock::new();
 static FLIGHT_HEIGHT: OnceLock<Vec<Vec<f32>>> = OnceLock::new();
 const FLIGHT_SAMPLES: usize=240;
 
-#[derive(Clone)]
+fn parented(anchors: &[(Option<usize>, Vec3, Vec3)], k: usize) -> bool { anchors.get(k).is_some_and(|a| a.0.is_some()) }
+
 pub struct Motion {
     frames: Vec<Vec<Transform>>,
     pub duration: f32,
     stride: Vec3,
     anchors: Vec<(Option<usize>, Vec3, Vec3)>,
+    id: u64,
+}
+
+fn motion_id() -> u64 { static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0); NEXT.fetch_add(1, Ordering::Relaxed) }
+
+impl Clone for Motion {
+    fn clone(&self) -> Self { Self { frames: self.frames.clone(), duration: self.duration, stride: self.stride, anchors: self.anchors.clone(), id: motion_id() } }
+}
+
+fn memo(id: u64, kind: u8, time: f32, f: impl FnOnce() -> Vec<Transform>) -> Vec<Transform> {
+    thread_local! { static SEEN: std::cell::RefCell<(usize, Vec<(u64, u8, u32, Vec<Transform>)>)> = const { std::cell::RefCell::new((0, Vec::new())) }; }
+    SEEN.with_borrow_mut(|(next, seen)| {
+        if let Some(e) = seen.iter().find(|e| e.0 == id && e.1 == kind && e.2 == time.to_bits()) { return e.3.clone() }
+        let v = f();
+        let e = (id, kind, time.to_bits(), v.clone());
+        if seen.len() < 32 { seen.push(e) } else { seen[*next] = e; *next = (*next + 1) % 32; }
+        v
+    })
 }
 
 impl Motion {
@@ -88,7 +107,7 @@ impl Motion {
             frames.push(fr);
         }
         let stride = (frames[n - 1][0].translation - frames[0][0].translation).with_z(0.0);
-        Ok(Self { duration: (n - 1) as f32 * DT, frames, stride, anchors: Vec::new() })
+        Ok(Self { duration: (n - 1) as f32 * DT, frames, stride, anchors: Vec::new(), id: motion_id() })
     }
 
     fn aligned_to(&self, direction: Vec3) -> Self {
@@ -104,14 +123,17 @@ impl Motion {
         aligned
     }
 
-    pub fn sample(&self, time: f32) -> Vec<Transform> {
+    pub fn sample(&self, time: f32) -> Vec<Transform> { memo(self.id, 0, time, || self.sample_(time)) }
+
+    fn sample_(&self, time: f32) -> Vec<Transform> {
         static HOLD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let time = if *HOLD.get_or_init(|| std::env::var("DLM_MOTION_HOLD").as_deref() == Ok("1")) { time.min(self.duration) } else { time };
         let cycles = (time / self.duration).floor();
         let t = time.rem_euclid(self.duration) / DT;
         let i = (t.floor() as usize).min(self.frames.len() - 2);
         let blend = (t - i as f32).clamp(0.0, 1.0);
-        let mut result: Vec<_> = self.frames[i].iter().zip(&self.frames[i + 1]).map(|(a, b)| {
+        let mut result: Vec<_> = self.frames[i].iter().zip(&self.frames[i + 1]).enumerate().map(|(k, (a, b))| {
+            if parented(&self.anchors, k) { return Transform::IDENTITY }
             Transform::from_translation(a.translation.lerp(b.translation, blend) + self.stride * cycles)
                 .with_rotation(a.rotation.slerp(b.rotation, blend))
         }).collect();
@@ -188,7 +210,7 @@ impl Human {
     }
 }
 
-pub(crate) fn yaw(fr: &[Transform]) -> Quat {
+fn yaw(fr: &[Transform]) -> Quat {
     let f = Vec3::Z.cross(fr[4].translation - fr[1].translation).with_z(0.0).normalize_or(Vec3::X);
     Quat::from_rotation_z(f.y.atan2(f.x))
 }
@@ -239,14 +261,14 @@ pub struct Controller {
     heading: Quat,
     filtered: Vec<f32>,
     gait_anchor: Vec<f32>,
-    transition_anchor:Vec<f32>,
-    walk_anchor:Vec<f32>,
+    transition_anchor:Held,
+    walk_anchor:Held,
     balance_anchor:Vec<f32>,
     ankle_anchor:Vec<f32>,
     ankle_feedback:[Vec3;2],
     leg_muscle_base: Option<([f32;6],[f32;6])>,
-    walking_expert_action: Vec<f32>,
-    walking_ankle_action: Vec<f32>,
+    walking_expert_action: Held,
+    walking_ankle_action: Held,
     previous: Vec<f32>,
     last_velocity: Vec3,
     turn_origin:Option<Vec3>,
@@ -256,6 +278,15 @@ pub struct Controller {
     tracking: u8,
     observed: Option<Vec<f32>>,
     poses: std::cell::RefCell<Option<Vec<(u32, Vec<Transform>)>>>,
+}
+
+#[derive(Default)]
+struct Held { net: Option<&'static Net>, input: Vec<f32>, out: std::cell::OnceCell<Vec<f32>> }
+
+impl Held {
+    fn new(net: &'static Net, input: &[f32]) -> Self { Self { net: Some(net), input: input.to_vec(), out: Default::default() } }
+    fn is_empty(&self) -> bool { self.net.is_none() }
+    fn get(&self) -> &[f32] { self.out.get_or_init(|| self.net.unwrap().frozen(&self.input)) }
 }
 
 #[derive(Clone)]
@@ -352,8 +383,8 @@ impl Jogging {
         let b = self.motion.sample(phase / walk.duration * self.motion.duration);
         let Some((brisk, _)) = &self.brisk else { return b; };
         let a = brisk.sample(phase / walk.duration * brisk.duration);
-        let mut out: Vec<_> = a.iter().zip(&b).map(|(a,b)| Transform::from_translation(a.translation.lerp(b.translation,beta))
-            .with_rotation(a.rotation.slerp(b.rotation,beta))).collect();
+        let mut out: Vec<_> = a.iter().zip(&b).enumerate().map(|(k,(a,b))| if parented(&walk.anchors,k) {Transform::IDENTITY} else {Transform::from_translation(a.translation.lerp(b.translation,beta))
+            .with_rotation(a.rotation.slerp(b.rotation,beta))}).collect();
         for (k, &(parent, ap, ac)) in walk.anchors.iter().enumerate() {
             if let Some(p) = parent {
                 out[k].rotation = out[p].rotation * (a[p].rotation.inverse()*a[k].rotation).slerp(b[p].rotation.inverse()*b[k].rotation,beta);
@@ -400,7 +431,7 @@ fn cycle_difference(target: f32, current: f32, period: f32) -> f32 {
 impl Controller {
     pub fn new(motion: &Motion, phase: f32) -> Self {
         let origin = motion.sample(phase)[0].translation.with_z(0.0);
-        Self { time: phase, elapsed: 0, origin, heading: Quat::IDENTITY, filtered: vec![0.0; ACTIONS], gait_anchor:Vec::new(), transition_anchor:Vec::new(),walk_anchor:Vec::new(),balance_anchor:Vec::new(),ankle_anchor:Vec::new(),ankle_feedback:[Vec3::ZERO;2],leg_muscle_base:None,walking_expert_action:Vec::new(),walking_ankle_action:Vec::new(), previous: vec![0.0; ACTIONS], last_velocity: Vec3::ZERO, turn_origin:None, tools: None, walk: None, jog: None, tracking: tracking::mode(), observed: None, poses: Default::default() }
+        Self { time: phase, elapsed: 0, origin, heading: Quat::IDENTITY, filtered: vec![0.0; ACTIONS], gait_anchor:Vec::new(), transition_anchor:Held::default(),walk_anchor:Held::default(),balance_anchor:Vec::new(),ankle_anchor:Vec::new(),ankle_feedback:[Vec3::ZERO;2],leg_muscle_base:None,walking_expert_action:Held::default(),walking_ankle_action:Held::default(), previous: vec![0.0; ACTIONS], last_velocity: Vec3::ZERO, turn_origin:None, tools: None, walk: None, jog: None, tracking: tracking::mode(), observed: None, poses: Default::default() }
     }
 
     fn walking(motion: &Motion, phase: f32, start: &[Transform]) -> Self {
@@ -500,8 +531,9 @@ impl Controller {
             } else { walk_speed*(t-jog.offset)+(jog_speed-walk_speed)*(jogging_integral(t)-jogging_integral(jog.offset)) };
             let progress = motion.stride.normalize() * distance;
             let root = a[0].translation.lerp(b[0].translation, beta).with_z(0.0);
-            let mut result: Vec<Transform> = a.iter().zip(&b).map(|(a, b)| Transform::from_translation(self.heading * (a.translation.lerp(b.translation, beta) - root + progress) + shift)
-                .with_rotation(self.heading * a.rotation.slerp(b.rotation, beta))).collect();
+            let mut result: Vec<Transform> = a.iter().zip(&b).enumerate().map(|(k, (a, b))| if parented(&motion.anchors, k) { Transform::IDENTITY } else {
+                Transform::from_translation(self.heading * (a.translation.lerp(b.translation, beta) - root + progress) + shift)
+                .with_rotation(self.heading * a.rotation.slerp(b.rotation, beta)) }).collect();
             if alignment::straight_route() {
                 let delta=alignment::route_shift(self.walk.as_ref().unwrap().forward,self.heading*motion.stride.normalize(),distance);
                 for frame in &mut result {frame.translation+=delta;}
@@ -510,9 +542,9 @@ impl Controller {
                 for (k, &(parent, ap, ac)) in motion.anchors.iter().enumerate() {
                     if let Some(parent) = parent {
                         assert!(parent < k, "motion rig must be parent-first");
-                        let rel_a = a[parent].rotation.inverse() * a[k].rotation;
-                        let rel_b = b[parent].rotation.inverse() * b[k].rotation;
-                        result[k].rotation = result[parent].rotation * rel_a.slerp(rel_b, beta);
+                        let relative_a = a[parent].rotation.inverse() * a[k].rotation;
+                        let relative_b = b[parent].rotation.inverse() * b[k].rotation;
+                        result[k].rotation = result[parent].rotation * relative_a.slerp(relative_b, beta);
                         result[k].translation = result[parent].translation + result[parent].rotation * ap - result[k].rotation * ac;
                     }
                 }
@@ -656,9 +688,11 @@ impl Controller {
         let mut ankle_mixed;
         let action=if let Some(expert)=walk_expert::ankle_expert(){
             if self.elapsed%2==0||self.walking_ankle_action.is_empty(){
-                let obs=observed.get_or_init(||self.observation(a,build,motion));self.walking_ankle_action=expert.frozen(obs);
+                let obs=observed.get_or_init(||self.observation(a,build,motion));self.walking_ankle_action=Held::new(expert,obs);
             }
-            ankle_mixed=action.to_vec();for i in 0..4 {ankle_mixed[50+i]=walk_expert::ankle_action(action[50+i],self.walking_ankle_action[i],self.gait(0.));}
+            let gait=self.gait(0.);
+            ankle_mixed=action.to_vec();
+            if !walk_expert::learned(gait) {for i in 0..4 {ankle_mixed[50+i]=walk_expert::ankle_action(action[50+i],self.walking_ankle_action.get()[i],gait);}}
             ankle_mixed.as_slice()
         }else{action};
         let mixed;
@@ -666,9 +700,10 @@ impl Controller {
             if let Some(expert)=walk_expert::expert() {
                 if self.elapsed%2==0||self.walking_expert_action.is_empty() {
                     let observation=observed.get_or_init(||self.observation(a,build,motion));
-                    self.walking_expert_action=expert.frozen(&observation[..expert.sizes[0]]);
+                    self.walking_expert_action=Held::new(expert,&observation[..expert.sizes[0]]);
                 }
-                mixed=walk_expert::blend(action,&self.walking_expert_action,self.gait(0.));mixed.as_slice()
+                let gait=self.gait(0.);
+                if walk_expert::learned(gait) {action} else {mixed=walk_expert::blend(action,self.walking_expert_action.get(),gait);mixed.as_slice()}
             } else {action}
         } else {action};
         let raw_action=action;
@@ -685,31 +720,36 @@ impl Controller {
             let prior=alignment::prior();let observation=observed.get_or_init(||self.observation(a,build,motion));
             let base=prior.frozen(&observation[..323]);
             let fraction=self.jog.as_ref().filter(|j|!j.rehearsal).map_or(0.,|j|j.fraction(self.elapsed as f32*DT+j.offset));
+            let release=self.jog.as_ref().filter(|j|!j.rehearsal&&j.finite).map_or(0.,|j|jog_stop::release(self.elapsed as f32*DT+j.offset));
             let mut protected;
             let action=if matches!(self.tracking,16|17) {
                 if self.elapsed%2==0||self.gait_anchor.is_empty() {
                     let gait=alignment::gait_prior();self.gait_anchor=gait.frozen(&observation[..331]);
-                    if let Some(prior)=alignment::transition_prior() {self.transition_anchor=prior.frozen(&observation[..333]);}
-                    if let Some(prior)=alignment::walk_prior() {self.walk_anchor=prior.frozen(&observation[..333]);}
+                    if let Some(prior)=alignment::transition_prior() {self.transition_anchor=Held::new(prior,&observation[..333]);}
+                    if let Some(prior)=alignment::walk_prior() {self.walk_anchor=Held::new(prior,&observation[..333]);}
                     if let Some(prior)=alignment::balance_prior() {self.balance_anchor=prior.frozen(&observation[..prior.sizes[0]]);}
                     if let Some(prior)=alignment::ankle_prior() {self.ankle_anchor=prior.frozen(&observation[..333]);}
                 }
                 protected=self.gait_anchor.iter().zip(action).enumerate().map(|(i,(&p,&x))|alignment::protected_leg_action(i,p,x,fraction)).collect::<Vec<_>>();
+                if release>0. {for i in 28..46 {protected[i]+=release*(action[i]-protected[i]);}}
                 if !self.balance_anchor.is_empty() {
                     for i in 0..4 {protected[i]=alignment::balance_action(i,protected[i],action[i],self.balance_anchor[i],fraction);}
                 }
                 if !self.walk_anchor.is_empty() {
                     let brisk=self.gait(0.0);
-                    for i in 28..46 {protected[i]=alignment::walking_action(i,protected[i],action[i],self.walk_anchor[i],brisk);}
+                    if alignment::walking_weight(brisk)!=0. {let anchor=self.walk_anchor.get();
+                        for i in 28..46 {protected[i]=alignment::walking_action(i,protected[i],action[i],anchor[i],brisk);}}
                 }
                 if !self.transition_anchor.is_empty() {
                     let brisk=self.gait(0.0);
-                    for i in 28..46 {protected[i]=alignment::transition_action(i,protected[i],action[i],self.transition_anchor[i],brisk,fraction);}
+                    if alignment::transition_weight(brisk,fraction)!=0. {let anchor=self.transition_anchor.get();
+                        for i in 28..46 {protected[i]=alignment::transition_action(i,protected[i],action[i],anchor[i],brisk,fraction);}}
                 }
                 if self.tracking==17 {protected.extend_from_slice(&action[48..]);}
                 protected.as_slice()
             } else {action};
             bounded=base.iter().zip(action).map(|(&p,&x)|alignment::bounded_action(p,x,fraction)).collect::<Vec<_>>();
+            if release>0. {for (b,&x) in bounded.iter_mut().zip(action) {*b+=release*(x.clamp(-1.,1.)-*b);}}
             if matches!(self.tracking,15|16|17) {bounded.extend_from_slice(&action[WALK_JOG_ACTIONS..]);}
             bounded.as_slice()
         } else {action};
@@ -1291,8 +1331,6 @@ fn policy_forward(p: &Policy, x: &[f32]) -> Vec<f32> {
     a
 }
 
-enum Job { Obs, Step(Vec<f32>), Roll(std::sync::Arc<(Policy, Vec<f32>)>, Vec<f32>, usize) }
-
 struct Environment { a: Agent, control: Controller, quality: Quality, resets: usize }
 
 impl Environment {
@@ -1378,57 +1416,27 @@ pub fn server(build: &Build, world: &Collision, path: &str, model: &str, count: 
     let protocol = if initial.control.tracking > 0 { "MOTIONTRACK2" } else { "MOTIONENV2" };
     writeln!(output, "{protocol} {count} {obs} {actions} {METRICS} {} {evaluation_limit}", initial.control.limit()).map_err(|e| e.to_string())?;
     output.flush().map_err(|e| e.to_string())?;
-    std::thread::scope(|scope| -> Result<(), String> {
-        let mut workers = Vec::new();
-        let standing = start;
-        for start in (0..count).step_by(count.div_ceil(threads)) {
-            let end = (start + count.div_ceil(threads)).min(count);
-            let (tx, rx) = std::sync::mpsc::sync_channel::<Job>(1);
-            let (out, result) = std::sync::mpsc::sync_channel::<Vec<f32>>(1);
-            let motion = &motion;
-            let jog = jog.as_ref();
-            scope.spawn(move || {
-                let mut envs: Vec<_> = (start..end).map(|i| {
-                    let mut env=Environment::new(motion, build, world, motion.duration * i as f32 / count as f32, behaviors, standing, jog.map(|j| (j, i % 2 == 1)));
-                    if turn::enabled()&&i%8==6 {if let Some(j)=env.control.jog.as_mut(){j.finite=false;j.offset=0.;}
-                        env.a=env.control.agent_in(motion,build,world);}
-                    env
-                }).collect();
-                while let Ok(job) = rx.recv() {
-                    let tw = std::time::Instant::now();
-                    let mut rows = Vec::new();
-                    if let Job::Roll(p, noise, horizon) = &job {
-                        let mut obs: Vec<_> = envs.iter().map(|env| env.control.observation(&env.a, build, motion)).collect();
-                        let (n, obs_len) = (envs.len(), obs[0].len());
-                        for t in 0..horizon.to_owned() {
-                            for (j, env) in envs.iter_mut().enumerate() {
-                                let z = &noise[(t * n + j) * actions..(t * n + j + 1) * actions];
-                                let action: Vec<f32> = policy_forward(&p.0, &obs[j]).iter().zip(&p.1).zip(z).map(|((m, s), z)| m + s * z).collect();
-                                env.control.observed = Some(std::mem::take(&mut obs[j]));
-                                let row = env.step(&action, motion, build, world, start + j);
-                                obs[j] = row[..obs_len].to_vec();
-                                rows.extend(action); rows.extend(row);
-                            }
-                        }
-                        dbg_add(6, tw.elapsed());
-                        if out.send(rows).is_err() { break; }
-                        continue;
-                    }
-                    let action = if let Job::Step(a) = job { Some(a) } else { None };
-                    for (j, env) in envs.iter_mut().enumerate() {
-                        if let Some(action) = &action {
-                            rows.extend(env.step(&action[j * actions..(j + 1) * actions], motion, build, world, start + j));
-                        } else {
-                            rows.extend(env.control.observation(&env.a, build, motion));
-                            rows.extend([0.0; 2 + METRICS]);
-                        }
-                    }
-                    dbg_add(6, tw.elapsed());
-                    if out.send(rows).is_err() { break; }
-                }
-            });
-            workers.push((start, end, tx, result));
-        }
+    let pool = |f: &(dyn Fn(usize) -> Vec<f32> + Sync)| -> Vec<Vec<f32>> {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let slots: Vec<_> = (0..count).map(|_| std::sync::Mutex::new(Vec::new())).collect();
+        std::thread::scope(|s| for _ in 0..threads { s.spawn(|| loop {
+            let i = next.fetch_add(1, Ordering::Relaxed);
+            if i >= count { break }
+            *slots[i].lock().unwrap() = f(i);
+        }); });
+        slots.into_iter().map(|m| m.into_inner().unwrap()).collect()
+    };
+    let standing = start;
+    let envs: Vec<_> = (0..count).map(|_| std::sync::Mutex::new(None)).collect();
+    pool(&|i| {
+        let mut env=Environment::new(&motion, build, world, motion.duration * i as f32 / count as f32, behaviors, standing, jog.as_ref().map(|j| (j, i % 2 == 1)));
+        if turn::enabled()&&i%8==6 {if let Some(j)=env.control.jog.as_mut(){j.finite=false;j.offset=0.;}
+            env.a=env.control.agent_in(&motion,build,world);}
+        *envs[i].lock().unwrap() = Some(env); Vec::new()
+    });
+    let envs: Vec<std::sync::Mutex<Environment>> = envs.into_iter().map(|m| std::sync::Mutex::new(m.into_inner().unwrap().unwrap())).collect();
+    let motion = &motion;
+    {
         loop {
             let mut cmd = [0u8];
             match input.read_exact(&mut cmd) {
@@ -1444,12 +1452,11 @@ pub fn server(build: &Build, world: &Collision, path: &str, model: &str, count: 
                         Some(action)
                     } else { None };
                     let tr = std::time::Instant::now();
-                    for (start, end, tx, _) in &workers {
-                        tx.send(action.as_ref().map_or(Job::Obs, |a| Job::Step(a[start * actions..end * actions].to_vec()))).map_err(|e| e.to_string())?;
-                    }
-                    for (_, _, _, result) in &workers {
-                        output.write_all(&le_bytes(&result.recv().map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
-                    }
+                    for row in pool(&|j| {
+                        let mut env = envs[j].lock().unwrap();
+                        if let Some(action) = &action { return env.step(&action[j * actions..(j + 1) * actions], motion, build, world, j) }
+                        let mut row = env.control.observation(&env.a, build, motion); row.extend([0.0; 2 + METRICS]); row
+                    }) { output.write_all(&le_bytes(&row)).map_err(|e| e.to_string())?; }
                     dbg_add(7, tr.elapsed());
                 }
                 2 => {
@@ -1524,18 +1531,25 @@ pub fn server(build: &Build, world: &Collision, path: &str, model: &str, count: 
                     }
                     let shared = std::sync::Arc::new((p, read(actions)?));
                     let noise = read(horizon * count * actions)?;
-                    for (start, end, tx, _) in &workers {
-                        let mut z = Vec::with_capacity(horizon * (end - start) * actions);
-                        for t in 0..horizon { z.extend_from_slice(&noise[(t * count + start) * actions..(t * count + end) * actions]); }
-                        tx.send(Job::Roll(shared.clone(), z, horizon)).map_err(|e| e.to_string())?;
-                    }
-                    let blocks: Vec<Vec<f32>> = workers.iter().map(|w| w.3.recv().map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
                     let width = actions + obs + 2 + METRICS;
-                    for t in 0..horizon {
-                        for ((start, end, _, _), block) in workers.iter().zip(&blocks) {
-                            let n = end - start;
-                            output.write_all(&le_bytes(&block[t * n * width..(t + 1) * n * width])).map_err(|e| e.to_string())?;
+                    let blocks = pool(&|j| {
+                        let tw = std::time::Instant::now();
+                        let mut env = envs[j].lock().unwrap();
+                        let mut o = env.control.observation(&env.a, build, motion);
+                        let mut rows = Vec::with_capacity(horizon * width);
+                        for t in 0..horizon {
+                            let z = &noise[(t * count + j) * actions..(t * count + j + 1) * actions];
+                            let action: Vec<f32> = policy_forward(&shared.0, &o).iter().zip(&shared.1).zip(z).map(|((m, s), z)| m + s * z).collect();
+                            env.control.observed = Some(std::mem::take(&mut o));
+                            let row = env.step(&action, motion, build, world, j);
+                            o = row[..obs].to_vec();
+                            rows.extend(action); rows.extend(row);
                         }
+                        dbg_add(6, tw.elapsed());
+                        rows
+                    });
+                    for t in 0..horizon {
+                        for block in &blocks { output.write_all(&le_bytes(&block[t * width..(t + 1) * width])).map_err(|e| e.to_string())?; }
                     }
                 }
                 3 => break,
@@ -1561,8 +1575,8 @@ pub fn server(build: &Build, world: &Collision, path: &str, model: &str, count: 
             }
             output.flush().map_err(|e| e.to_string())?;
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }
 
 static DBG: [std::sync::atomic::AtomicU64; 8] = [const { std::sync::atomic::AtomicU64::new(0) }; 8];

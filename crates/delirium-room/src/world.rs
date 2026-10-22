@@ -371,7 +371,7 @@ impl Room {
         let mut fixed = [vec![], vec![]];
         for (i, w) in w.iter_mut().enumerate() {
             w.gravity = Vector::new(0.0, 0.0, -9.81);
-            fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(Vector::new(0.0, 0.0, -0.5)), ColliderBuilder::cuboid(50.0, 50.0, 0.5).friction(1.0)).0);
+            fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(Vector::new(0.0, 0.0, -0.5)), ColliderBuilder::cuboid(FLOOR_HALF, FLOOR_HALF, 0.5).friction(1.0)).0);
             for &(c, h, _) in blocks.iter().filter(|_| i == 0) {
                 fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(rv(c)), ColliderBuilder::cuboid(h.x, h.y, h.z).friction(1.0)).0);
             }
@@ -393,7 +393,7 @@ impl Room {
         blocks.push((Vec3::new(-3.75, 2.0, 0.9), Vec3::new(0.75, 0.5, 0.9), row("CONCRETE")));
         #[cfg(feature = "portal")]
         blocks.extend([(Vec3::new(10.0, 0.0, 3.0), Vec3::new(0.15, 4.0, 3.0), row("CONCRETE")),
-                       (Vec3::new(6.0, 3.0, 5.0), Vec3::new(3.0, 3.0, 0.1), row("CONCRETE"))]);
+                       (Vec3::new(6.0, 3.0, 5.0), Vec3::new(1.5, 1.5, 0.1), row("CONCRETE"))]);
         blocks
     }
 

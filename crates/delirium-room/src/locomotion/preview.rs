@@ -1,10 +1,7 @@
 use super::*;
 use std::path::Path;
 
-fn ramp() -> f32 {
-    static R: OnceLock<f32> = OnceLock::new();
-    *R.get_or_init(|| std::env::var("DELIRIUM_PREVIEW_RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(2.0))
-}
+const RAMP: f32 = 6.0;
 
 pub(super) const TRAINED: Quat = Quat::from_xyzw(0.0, 0.0, -0.74354, 0.6686915);
 
@@ -14,7 +11,7 @@ pub(super) struct Steer { from: [f32; 2], to: [f32; 2], s: f32, pub(super) now: 
 impl Steer {
     pub(super) fn area(&self, i: usize, t: f32) -> f32 { self.sum[i] + self.now[i] * (t - self.t) }
     fn advance(&mut self, t: f32) {
-        self.s = (self.s + DT / ramp()).min(1.0);
+        self.s = (self.s + DT / RAMP).min(1.0);
         for i in 0..2 {
             self.sum[i] += self.now[i] * (t - self.t);
             self.now[i] = self.from[i] + (self.to[i] - self.from[i]) * gait_ramp(self.s);
@@ -35,7 +32,7 @@ impl Preview {
             ("DLM_NATIVE_LEG_OWNERSHIP", "0.075".into()), ("DLM_CONTACT_FIDELITY", "1".into()), ("DLM_LONG_TRANSITIONS", "1".into()),
             ("DLM_JOG_NATIVE_OWNERSHIP", "0".into()), ("DLM_JOG_LEG_AUTHORITY", "0.25".into()), ("DLM_REFERENCE_FOOT_PLACEMENT", "1".into()),
             ("DLM_WALK_REFERENCE_AUTHORITY", "0.35".into()), ("DLM_BRISK_SUPPORT", "0".into()), ("DLM_JOG_ROUTE_GAIN", "1".into())];
-        for (k, v) in settings { unsafe { std::env::set_var(k, v) } }
+        for (k, v) in settings { if std::env::var_os(k).is_none() { unsafe { std::env::set_var(k, v) } } }
         let walk = Motion::load(&f("walk.motion"), build)?;
         let jog = Motion::load(&f("jog.motion"), build)?;
         if BRISK.get().is_none() { configure_bridge(build, &walk, &jog)?; }
@@ -70,9 +67,12 @@ impl Preview {
 
 pub fn check(build: &Build, world: &Collision, start: &[Transform], dir: &Path) -> Result<(), String> {
     let plans: [&[(f32, f32)]; 5] = [&[(0.0, 16.0)], &[(0.5, 16.0)], &[(1.0, 22.0)], &[(1.0, 22.0), (0.0, 22.0)], &[(0.0, 12.0), (0.5, 12.0), (1.0, 12.0), (0.5, 12.0), (0.0, 12.0)]];
+    let turn = Quat::from_rotation_z(std::env::var("DELIRIUM_PREVIEW_YAW").map_or(0.0, |v| v.parse::<f32>().unwrap_or(0.0).to_radians()));
+    let pivot = start[0].translation;
+    let start: Vec<_> = start.iter().map(|f| Transform::from_translation(pivot + turn * (f.translation - pivot)).with_rotation(turn * f.rotation)).collect();
     let mut failed = vec![];
     for plan in plans {
-        let (mut p, mut a) = Preview::new(build, world, start, dir)?;
+        let (mut p, mut a) = Preview::new(build, world, &start, dir)?;
         let pelvis = |a: &Agent| a.doll.frames().next().unwrap().translation;
         let x0 = pelvis(&a); let mut steps = 0;
         'run: for &(beta, seconds) in plan {

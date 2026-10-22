@@ -15,6 +15,7 @@ pub(super) fn expert()->Option<&'static super::Net> {
         assert_eq!((net.sizes[0],net.sizes[3]),(333,50));net
     })).as_ref()
 }
+pub(super) fn learned(gait:f32)->bool {learned_share(gait)==1.}
 fn learned_share(gait:f32)->f32 {let x=(gait*2.).clamp(0.,1.);x*x*(3.-2.*x)}
 pub(super) fn blend(action:&[f32],expert:&[f32],gait:f32)->Vec<f32> {
     assert!(matches!(action.len(),50|54|90|104));assert_eq!(expert.len(),50);

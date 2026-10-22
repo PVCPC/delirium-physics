@@ -60,7 +60,11 @@ pub(super) fn learning_reward(a:&Agent,build:&Build,c:&Controller,motion:&Motion
         (target[12].translation-target[0].translation).normalize_or_zero());
     let cross=(frames[0].translation-target[0].translation).dot(Vec3::Z.cross(forward));
     let value=learning_value(q.tracking,0.5*(1.+actual.dot(forward)),support,cross,q.jitter,progress,posture);
-    q.reward+(value-q.reward)*gait_ramp(t-16.)
+    let stop=if jog_stop::enabled()&&jog_stop::stop_reward()>0. {
+        let feet:f32=[3,6].iter().map(|&k|(a.doll.motion(k).0-(next[k].translation-target[k].translation)/DT).with_z(0.).length_squared()).sum();
+        jog_stop::stop_reward()*jog_stop::brake_gate(t)*(-4.*(velocity-requested).with_z(0.).length_squared()-jog_stop::feet()*feet).exp()
+    } else {0.};
+    q.reward+(value-q.reward)*gait_ramp(t-16.)+stop
 }
 pub(super) const ORIGINAL_DURATION:f32=52./30.;
 pub(super) fn duration()->f32{
@@ -124,11 +128,12 @@ fn fit_floor(frames:&mut [Transform],weight:f32){
     for f in frames{f.translation.z+=weight*lift;}
 }
 pub(super) fn mix(t:f32)->f32 {gait_ramp((t-8.)/6.)}
-pub(super) fn sample(motion:&Motion,time:f32)->Vec<Transform>{
+pub(super) fn sample(motion:&Motion,time:f32)->Vec<Transform>{super::memo(motion.id,1,time,||sample_(motion,time))}
+fn sample_(motion:&Motion,time:f32)->Vec<Transform>{
     let t=(time/DT).clamp(0.,(motion.frames.len()-1) as f32);
     let i=(t.floor() as usize).min(motion.frames.len()-2);let beta=(t-i as f32).clamp(0.,1.);
-    let mut out:Vec<_>=motion.frames[i].iter().zip(&motion.frames[i+1]).map(|(a,b)|
-        Transform::from_translation(a.translation.lerp(b.translation,beta)).with_rotation(a.rotation.slerp(b.rotation,beta))).collect();
+    let mut out:Vec<_>=motion.frames[i].iter().zip(&motion.frames[i+1]).enumerate().map(|(k,(a,b))|if super::parented(&motion.anchors,k){Transform::IDENTITY}else{
+        Transform::from_translation(a.translation.lerp(b.translation,beta)).with_rotation(a.rotation.slerp(b.rotation,beta))}).collect();
     for (k,&(parent,ap,ac)) in motion.anchors.iter().enumerate(){if let Some(p)=parent{
         let a=motion.frames[i][p].rotation.inverse()*motion.frames[i][k].rotation;
         let b=motion.frames[i+1][p].rotation.inverse()*motion.frames[i+1][k].rotation;
@@ -154,7 +159,7 @@ pub(super) fn target(control:&Controller,walk:&Motion,time:f32)->Vec<Transform>{
         yaw*(f.translation-dynamic[0].translation)+root)
         .with_rotation((yaw*f.rotation).normalize())).collect();
     let exit=if duration==ORIGINAL_DURATION {19.383333}else{18.+duration-0.35};
-    let beta=if jog_stop::enabled(){gait_ramp((t-17.65)/0.35)}else{gait_ramp((t-18.)/0.35)*(1.-gait_ramp((t-exit)/0.35))};
+    let beta=if jog_stop::enabled(){let w=jog_stop::blend();if w==0.35 {gait_ramp((t-17.65)/0.35)}else{gait_ramp((t-(18.-w))/w)}}else{gait_ramp((t-18.)/0.35)*(1.-gait_ramp((t-exit)/0.35))};
     if beta==0.{fit_floor(&mut locomotion,route_mix);return locomotion}
     let mut out=locomotion.clone();
     out[0].translation=locomotion[0].translation.lerp(finite[0].translation,beta);
@@ -167,5 +172,7 @@ pub(super) fn target(control:&Controller,walk:&Motion,time:f32)->Vec<Transform>{
     }}fit_floor(&mut out,1.);out
 }
 pub(super) fn offset(index:usize,resets:usize)->f32{
-    if jog_stop::enabled(){[0.,14.,0.,18.,0.,19.,0.,22.][(index+resets)%8]}else{[0.,14.,0.,16.,0.,18.,0.,20.][(index+resets)%8]}
+    if let Some(go)=jog_stop::go().filter(|_|jog_stop::enabled()&&jog_stop::practice()) {[14.,17.,18.,19.,20.5,22.,go-1.,0.][(index+resets)%8]}
+    else if jog_stop::enabled()&&jog_stop::practice(){[14.,17.,18.,18.,19.,19.,22.,0.][(index+resets)%8]}
+    else if jog_stop::enabled(){[0.,14.,0.,18.,0.,19.,0.,22.][(index+resets)%8]}else{[0.,14.,0.,16.,0.,18.,0.,20.][(index+resets)%8]}
 }

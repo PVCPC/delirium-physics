@@ -297,13 +297,13 @@ impl Collision {
 
     fn grid_near(&self, lo: Vec3, hi: Vec3, slack: f32, keep: impl Fn(&Chunk, u32) -> bool) -> Vec<(u32, u32)> {
         let chunk = |(s, _): (u32, u32)| self.chunks[s as usize].as_ref().unwrap();
-        let mut ids: Vec<(u32, u32)> = (cell(lo.x)..=cell(hi.x)).flat_map(|x| (cell(lo.y)..=cell(hi.y)).map(move |y| (x, y)))
-            .flat_map(|c| self.cells.get(&c).into_iter().flatten().copied()).filter(|&e| keep(chunk(e), e.1)).collect();
         let (blo, bhi) = (lo - Vec3::splat(slack), hi + Vec3::splat(slack));
-        ids.retain(|&e| {
+        let near = |e: (u32, u32)| {
             let t = chunk(e).triangles[e.1 as usize];
             t[0].min(t[1]).min(t[2]).cmple(bhi).all() && t[0].max(t[1]).max(t[2]).cmpge(blo).all()
-        });
+        };
+        let mut ids: Vec<(u32, u32)> = (cell(lo.x)..=cell(hi.x)).flat_map(|x| (cell(lo.y)..=cell(hi.y)).map(move |y| (x, y)))
+            .flat_map(|c| self.cells.get(&c).into_iter().flatten().copied()).filter(|&e| keep(chunk(e), e.1) && near(e)).collect();
         ids.sort_unstable();
         ids.dedup();
         ids.sort_by_key(|&(s, i)| (s, chunk((s, i)).order[i as usize]));

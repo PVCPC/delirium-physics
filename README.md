@@ -89,8 +89,6 @@ The Playroom is one application built on Delirium. For a mod or another game, us
 
 Build by hand: `cargo build --release -p delirium-room`.
 
-Full guides: [How it works](docs/how-it-works.md) (the engine, body, step loop and behaviours) and [Modding](docs/modding.md) (each language's quick start, every message and its parameters, Playroom scripting and settings).
-
 ## License
 
 GPL-3.0-only (see LICENSE). Credits for third-party assets: CREDITS.md.

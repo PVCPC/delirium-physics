@@ -1,12 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-mod clip;
-mod funnel;
-mod fx;
-mod place;
-mod render;
-
 use crate::{OursCam, OursGizmos, Sim};
 
 const HALF: Vec2 = Vec2::new(32.0 * 0.0254, 56.0 * 0.0254);
@@ -39,14 +33,6 @@ fn through(a: &Frame, b: &Frame) -> (Quat, impl Fn(Vec3) -> Vec3) {
     ((b.rot * FLIP * a.rot.inverse()).normalize(), move |p| b.at + b.rot * (FLIP * a.local(p)))
 }
 
-struct SolidWorld<'a>(&'a delirium::collision::Collision);
-
-impl place::World for SolidWorld<'_> {
-    fn ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<place::Hit> {
-        self.0.contact(origin, dir, max).map(|(t, normal, _)| place::Hit { point: origin + dir * t, normal, distance: t })
-    }
-}
-
 #[derive(Default)]
 pub struct Portals {
     pub gun: bool,
@@ -55,18 +41,9 @@ pub struct Portals {
     typed: String,
     asked: bool,
     model_tried: bool,
-    cube: Option<Option<(Handle<Mesh>, Handle<StandardMaterial>, Transform)>>,
-    sounds_tried: bool,
     homer_last: [f32; 2],
     obj_last: Vec<[f32; 2]>,
     hero_last: [f32; 2],
-    placed: [f32; 2],
-    stat: f32,
-    was_linked: bool,
-    tex: Option<[Handle<Image>; 3]>,
-    tex_tried: bool,
-    fx: Vec<fx::Event>,
-    fx_ready: bool,
     pub ots: Option<(Vec3, Vec3)>,
     pub float: Option<(Vec3, Vec3)>,
 }
@@ -87,10 +64,6 @@ impl Portals {
         self.game = Some(path);
         self.asked = false;
         self.model_tried = false;
-        self.cube = None;
-        self.sounds_tried = false;
-        self.tex = None;
-        self.tex_tried = false;
         true
     }
 }
@@ -108,56 +81,12 @@ fn find_portal2() -> Option<String> {
 
 impl Sim {
     pub fn portal_shot(&mut self, i: usize, from: Vec3, dir: Vec3) {
-        self.sounds.push(crate::sfx::Snd::PortalShoot(i as u8));
-        let holes = std::mem::take(&mut self.world.holes);
-        let ends = self.portal.ends;
-        let windows: Vec<place::Window> = match ends {
-            [Some(a), Some(b)] => vec![place::Window { frame: a, exit: b }, place::Window { frame: b, exit: a }],
-            _ => vec![],
-        };
-        let others: Vec<Frame> = ends[1 - i].into_iter().collect();
-        let w = SolidWorld(&self.world);
-        let trace = place::trace_shot(&w, from, dir, 200.0, HALF, &windows);
-        let result = match trace.hit {
-            Some(h) => place::place(&w, h, trace.dir, HALF, &others),
-            None => Err(place::Fail::NoHit),
-        };
-        self.world.holes = holes;
-        let f = match result {
-            Ok(f) => Frame { at: f.at + f.normal() * 0.01, ..f },
-            Err(why) => {
-                if let Some(h) = trace.hit {
-                    self.portal.fx.push(fx::Event::Burst { name: "portal_badsurface", pos: h.point, basis: fx::facing(h.normal), kind: i });
-                }
-                return self.say(format!("portal  {} shot: {}", ["blue", "orange"][i], match why {
-                place::Fail::NoHit => "nothing to stick to",
-                place::Fail::DoesNotFit => "it doesn't fit there",
-                place::Fail::Overlap => "it would overlap the other portal",
-                }));
-            }
-        };
-        let n = f.normal();
-        if let Some(old) = self.portal.ends[i] {
-            self.portal.fx.push(fx::Event::Burst { name: "portal_close", pos: old.at, basis: Mat3::from_quat(old.rot), kind: i });
-        }
-        self.portal.fx.push(fx::Event::Burst { name: "portal_success", pos: f.at, basis: Mat3::from_quat(f.rot), kind: i });
+        let Some((t, n, _)) = self.world.contact(from, dir, 200.0) else { return self.say("portal  shot: nothing to stick to".into()) };
+        let up = if n.z.abs() < 0.7 { Vec3::Z } else { dir };
+        let at = from + dir * t + n * 0.01;
+        let Some(f) = Frame::new(at, n, up).or_else(|| Frame::new(at, n, Vec3::Y)) else { return };
         self.portal.ends[i] = Some(f);
-        self.portal.fx.push(fx::Event::Rim { kind: i });
-        (self.portal.placed[i], self.portal.stat) = (f32::NAN, 1.0);
-        self.sounds.push(crate::sfx::Snd::PortalOpen(i as u8));
         self.say(format!("portal  {} at {:.2},{:.2},{:.2} facing {:.2},{:.2},{:.2}", ["blue", "orange"][i], f.at.x, f.at.y, f.at.z, n.x, n.y, n.z));
-    }
-
-    fn portal_funnel(&mut self, dt: f32) {
-        let [Some(a), Some(b)] = self.portal.ends else { return };
-        if self.paused || self.held || dt <= 0.0 {
-            return;
-        }
-        let dt = (dt * self.speed).min(0.05);
-        funnel_agent(&mut self.agent, [a, b], dt);
-        if let Some(h) = self.hero_doll.as_mut().filter(|h| h.rise.is_none()) {
-            funnel_agent(&mut h.agent, [a, b], dt);
-        }
     }
 
     fn portal_transit(&mut self) {
@@ -299,10 +228,18 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, k
     };
     sim.world.holes = holes.clone();
     sim.room.holes = holes;
-    sim.portal_funnel(time.delta_secs());
     sim.portal_transit();
     sim.portal_objects();
     sim.portal_hero();
+    for (f, c) in sim.portal.ends.iter().zip(COLORS) {
+        if let Some(f) = f {
+            for s in 0..6 {
+                let k = 1.0 - s as f32 * 0.012;
+                g.ellipse(Isometry3d::new(f.at, f.rot), HALF * k, c);
+            }
+            g.ellipse(Isometry3d::new(f.at, f.rot), HALF * 0.8, c.with_alpha(0.4));
+        }
+    }
 }
 
 pub fn settings(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
@@ -453,8 +390,10 @@ fn vtf(d: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     Some((w as u32, h as u32, out))
 }
 
-fn model(game: &str, b: &str, t: &str) -> Option<(Mesh, Image)> {
-    let f = vpk(game, &[&format!("{b}.mdl"), &format!("{b}.vvd"), &format!("{b}.dx90.vtx"), t])?;
+fn gun_model(game: &str) -> Option<(Mesh, Image)> {
+    const B: &str = "models/weapons/w_portalgun";
+    const T: &str = "materials/models/weapons/w_models/portalgun/w_portalgun.vtf";
+    let f = vpk(game, &[&format!("{B}.mdl"), &format!("{B}.vvd"), &format!("{B}.dx90.vtx"), T])?;
     let (mdl, vvd, vtx) = (&f[0], &f[1], &f[2]);
     let i = |d: &[u8], o: usize| d.get(o..o + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap())) as usize;
     let fl = |o: usize| f32::from_le_bytes(vvd[o..o + 4].try_into().unwrap());
@@ -503,7 +442,6 @@ fn model(game: &str, b: &str, t: &str) -> Option<(Mesh, Image)> {
             }
         }
     }
-    idx.chunks_exact_mut(3).for_each(|t| t.swap(1, 2));
     let mesh = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default())
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos).with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nrm)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv).with_inserted_indices(bevy::mesh::Indices::U32(idx));
@@ -512,39 +450,6 @@ fn model(game: &str, b: &str, t: &str) -> Option<(Mesh, Image)> {
     let img = Image::new(Extent3d { width: w, height: h, depth_or_array_layers: 1 }, TextureDimension::D2, rgba,
                          TextureFormat::Rgba8UnormSrgb, bevy::asset::RenderAssetUsages::default());
     Some((mesh, img))
-}
-
-pub fn sounds(sim: &mut Sim, assets: &mut Assets<crate::sfx::Sfx>, bank: &mut crate::sfx::Bank) {
-    use crate::sfx::Snd;
-    let Some(game) = sim.portal.game.clone().filter(|_| !sim.portal.sounds_tried) else { return };
-    sim.portal.sounds_tried = true;
-    const W: &str = "sound/weapons/portalgun/";
-    let mut n = 0;
-    for (s, f) in [(Snd::PortalShoot(0), "portalgun_shoot_blue1"), (Snd::PortalShoot(1), "portalgun_shoot_red1"),
-                   (Snd::PortalOpen(0), "portal_open_blue_01"), (Snd::PortalOpen(1), "portal_open_red_01")] {
-        if let Some(w) = vpk(&game, &[&format!("{W}{f}.wav")]).and_then(|f| crate::sfx::wav(&f[0])) {
-            bank.add(s, assets.add(w));
-            n += 1;
-        }
-    }
-    sim.say(format!("portal  {n} of 4 sounds read"));
-}
-
-pub fn cube(sim: &mut Sim, meshes: &mut Assets<Mesh>, mats: &mut Assets<StandardMaterial>, images: &mut Assets<Image>)
-            -> Option<(Handle<Mesh>, Handle<StandardMaterial>, Transform)> {
-    let game = sim.portal.game.clone()?;
-    if sim.portal.cube.is_none() {
-        let got = model(&game, "models/props/metal_box", "materials/models/props/metal_box_skin001.vtf").and_then(|(mesh, img)| {
-            use bevy::camera::primitives::MeshAabb;
-            let b = mesh.compute_aabb()?;
-            let k = 1.0 / b.half_extents.max_element();
-            let mat = mats.add(StandardMaterial { base_color_texture: Some(images.add(img)), perceptual_roughness: 0.5, ..default() });
-            Some((meshes.add(mesh), mat, Transform::from_scale(Vec3::splat(k)).with_translation(-Vec3::from(b.center) * k)))
-        });
-        sim.say(format!("portal  companion cube {}", if got.is_some() { "read" } else { "not read" }));
-        sim.portal.cube = Some(got);
-    }
-    sim.portal.cube.clone().flatten()
 }
 
 #[derive(Component)]
@@ -562,7 +467,7 @@ pub fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: Re
             return;
         }
         sim.portal.model_tried = true;
-        let Some((mesh, img)) = model(&game, "models/weapons/w_portalgun", "materials/models/weapons/w_models/portalgun/w_portalgun.vtf") else { return sim.say("portal  w_portalgun: not read".into()) };
+        let Some((mesh, img)) = gun_model(&game) else { return sim.say("portal  w_portalgun: not read".into()) };
         let mesh = meshes.add(mesh);
         let holo = mats.add(StandardMaterial { base_color: Color::srgba(0.35, 0.9, 1.0, 0.3), emissive: LinearRgba::rgb(0.1, 0.5, 0.6),
                                                alpha_mode: AlphaMode::Blend, unlit: true, double_sided: true, cull_mode: None, ..default() });
@@ -621,24 +526,89 @@ pub fn chell_arms(clips: &crate::getup::Clips, pose: &mut [(Vec3, Quat)], body: 
     turn
 }
 
-pub fn plugin(app: &mut App) {
-    render::plugin(app);
-    clip::plugin(app);
-    fx::plugin(app);
-    app.add_systems(Update, (frame.after(crate::step), gun_view.after(crate::gun_view)))
-        .add_systems(PostUpdate, ghosts.before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
+#[derive(Asset, TypePath, bevy::render::render_resource::AsBindGroup, Clone)]
+pub struct PortalLook {
+    #[texture(0)]
+    #[sampler(1)]
+    view: Handle<Image>,
 }
 
-fn funnel_agent(agent: &mut delirium::nm::Agent, portals: [Frame; 2], dt: f32) {
-    let (centre, v) = agent.doll.com();
-    let steered = funnel::steer(&portals, 9.81, centre, v, dt);
-    let delta = steered - v;
-    if delta.length_squared() < 1e-10 {
+const LOOK_SHADER: Handle<Shader> = bevy::asset::uuid_handle!("6f1d2c3e-8a47-4b59-9e21-0c5d7a3b9f14");
+
+impl Material for PortalLook {
+    fn fragment_shader() -> bevy::shader::ShaderRef {
+        LOOK_SHADER.into()
+    }
+}
+
+#[derive(Component)]
+pub struct LookCam(usize);
+#[derive(Component)]
+pub struct LookOval(usize);
+
+const OVALS: usize = 3;
+
+pub fn plugin(app: &mut App) {
+    let _ = app.world_mut().resource_mut::<Assets<Shader>>().insert(&LOOK_SHADER, Shader::from_wgsl(r#"
+#import bevy_pbr::{forward_io::VertexOutput, mesh_view_bindings::view}
+@group(#{MATERIAL_BIND_GROUP}) @binding(0) var look: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(1) var look_sampler: sampler;
+@fragment
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(look, look_sampler, (in.position.xy - view.viewport.xy) / view.viewport.zw);
+}
+"#, "portal_look.wgsl"));
+    app.add_plugins(MaterialPlugin::<PortalLook>::default())
+        .add_systems(Update, (frame.after(crate::step), gun_view.after(crate::gun_view)))
+        .add_systems(PostUpdate, (looks, ghosts).before(bevy::transform::TransformSystems::Propagate));
+}
+
+fn looks(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<PortalLook>>,
+         mut images: ResMut<Assets<Image>>,
+         main: Query<(Entity, &Camera, &Transform, &Projection), (With<OursCam>, Without<LookCam>)>,
+         mut cams: Query<(&LookCam, &mut Camera, &mut Transform, &mut Projection, &bevy::camera::RenderTarget), Without<OursCam>>,
+         mut ovals: Query<(&LookOval, &mut Transform, &mut Visibility), (Without<LookCam>, Without<OursCam>)>) {
+    let Ok((me, cam, at, Projection::Perspective(lens))) = main.single() else { return };
+    let size = cam.physical_viewport_size().unwrap_or(UVec2::new(1280, 720)).max(UVec2::ONE);
+    if cams.is_empty() {
+        commands.entity(me).insert(bevy::camera::visibility::RenderLayers::from_layers(&[0, 1, OVALS]));
+        let mesh = meshes.add(Ellipse::new(HALF.x, HALF.y));
+        for i in 0..2 {
+            let img = images.add(Image::new_target_texture(size.x, size.y, bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb, None));
+            commands.spawn((Camera3d::default(), Camera { order: -1 - i as isize, ..default() }, bevy::camera::RenderTarget::from(img.clone()),
+                            bevy::core_pipeline::tonemapping::Tonemapping::None, Transform::default(), Projection::Perspective(lens.clone()),
+                            bevy::camera::visibility::RenderLayers::from_layers(&[0, 1]), LookCam(i)));
+            commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mats.add(PortalLook { view: img })), Transform::default(), Visibility::Hidden,
+                            bevy::light::NotShadowCaster, bevy::camera::visibility::RenderLayers::layer(OVALS), LookOval(i)));
+        }
         return;
     }
-    let bodies: Vec<(usize, Transform, Vec3, Vec3)> = agent.doll.frames().enumerate().map(|(k, f)| (k, f, agent.doll.vel(k).0, agent.doll.vel(k).1)).collect();
-    for (k, f, lin, ang) in bodies {
-        agent.doll.set_body(k, f.translation, f.rotation, lin + delta, ang);
+    let ends = sim.portal.ends;
+    for (l, mut c, mut t, mut p, target) in &mut cams {
+        let (Some(from), Some(to)) = (ends[l.0], ends[1 - l.0]) else {
+            c.is_active = false;
+            continue;
+        };
+        c.is_active = true;
+        if let bevy::camera::RenderTarget::Image(r) = target && images.get(&r.handle).is_some_and(|i| i.size() != size)
+            && let Some(img) = images.get_mut(&r.handle) {
+            img.resize(bevy::render::render_resource::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1 });
+        }
+        let (turn, map) = through(&from, &to);
+        *t = Transform::from_translation(map(at.translation)).with_rotation((turn * at.rotation).normalize());
+        let (n, q) = (t.rotation.inverse() * to.normal(), t.rotation.inverse() * (to.at - t.translation));
+        let mut lens = lens.clone();
+        lens.near_clip_plane = n.extend(-n.dot(q) - 0.01);
+        *p = Projection::Perspective(lens);
+    }
+    for (o, mut t, mut v) in &mut ovals {
+        match (ends[o.0], ends[1 - o.0]) {
+            (Some(f), Some(_)) => {
+                *t = Transform::from_translation(f.at + f.normal() * 0.004).with_rotation(f.rot);
+                *v = Visibility::Visible;
+            }
+            _ => *v = Visibility::Hidden,
+        }
     }
 }
 
@@ -653,13 +623,6 @@ fn transit(agent: &mut delirium::nm::Agent, a: Frame, b: Frame, last: &mut [f32;
     let speed = doll.vel(0).0.length();
     for (k, (x, q, v, w)) in parts.into_iter().enumerate() {
         agent.doll.set_body(k, x, q.normalize(), v, w);
-    }
-    let drop = funnel::exit_gimme(&to, agent.doll.com().1);
-    if drop != Vec3::ZERO {
-        let bodies: Vec<(usize, Transform, Vec3, Vec3)> = agent.doll.frames().enumerate().map(|(k, f)| (k, f, agent.doll.vel(k).0, agent.doll.vel(k).1)).collect();
-        for (k, f, lin, ang) in bodies {
-            agent.doll.set_body(k, f.translation, f.rotation, lin - drop, ang);
-        }
     }
     let c = centre(agent.doll.frames().map(|f| f.translation));
     *last = [a.local(c).z, b.local(c).z];
@@ -694,10 +657,10 @@ pub fn hero_fall(n: &mut crate::hero::Hero, ground: Option<f32>, dt: f32) -> Opt
 pub struct Ghost(Entity, usize);
 
 #[allow(clippy::type_complexity)]
-fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<StandardMaterial>>, mut clipped: ResMut<Assets<clip::GhostMaterial>>,
+fn ghosts(sim: NonSend<Sim>, mut commands: Commands,
           src: Query<(Entity, &Transform, &Visibility, &Mesh3d, &MeshMaterial3d<StandardMaterial>, Option<&bevy::camera::visibility::RenderLayers>),
                      (Or<(With<crate::PartMesh>, With<crate::HeroMesh>, With<crate::PropMesh>, With<crate::FacePart>)>, Without<Ghost>)>,
-          mut ghosts: Query<(Entity, &Ghost, &mut Transform, &mut Visibility, &MeshMaterial3d<clip::GhostMaterial>)>) {
+          mut ghosts: Query<(Entity, &Ghost, &mut Transform, &mut Visibility)>) {
     let mut have: std::collections::HashMap<(Entity, usize), Entity> = ghosts.iter().map(|(g, o, ..)| ((o.0, o.1), g)).collect();
     let mut shown = std::collections::HashSet::new();
     if let [Some(a), Some(b)] = sim.portal.ends {
@@ -712,29 +675,15 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<Standa
                 }
                 let (turn, map) = through(&from, &to);
                 let at = Transform { translation: map(t.translation), rotation: (turn * t.rotation).normalize(), scale: t.scale };
-                let planes = clip::exit_planes(&to);
                 match have.remove(&(e, i)) {
                     Some(g) => {
-                        if let Ok((_, _, mut gt, mut gv, gm)) = ghosts.get_mut(g) {
+                        if let Ok((_, _, mut gt, mut gv)) = ghosts.get_mut(g) {
                             (*gt, *gv) = (at, Visibility::Visible);
-                            let want = standard.get(&mat.0);
-                            let stale = clipped.get(&gm.0).is_some_and(|c| c.extension.clip != planes
-                                || want.is_some_and(|w| c.base.base_color != w.base_color || c.base.emissive != w.emissive || c.base.alpha_mode != w.alpha_mode));
-                            if stale {
-                                if let Some(mut c) = clipped.get_mut(&gm.0) {
-                                    c.extension.clip = planes;
-                                    if let Some(w) = want {
-                                        c.base = w.clone();
-                                    }
-                                }
-                            }
                         }
                         shown.insert(g);
                     }
                     None => {
-                        let Some(base) = standard.get(&mat.0).cloned() else { continue };
-                        let material = clipped.add(clip::GhostMaterial { base, extension: clip::ClipExt { clip: planes } });
-                        let g = commands.spawn((mesh.clone(), MeshMaterial3d(material), at, Visibility::Visible, Ghost(e, i))).id();
+                        let g = commands.spawn((mesh.clone(), mat.clone(), at, Visibility::Visible, Ghost(e, i))).id();
                         if let Some(l) = layers {
                             commands.entity(g).insert(l.clone());
                         }
@@ -743,7 +692,7 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<Standa
             }
         }
     }
-    for (g, o, _, mut v, _) in &mut ghosts {
+    for (g, o, _, mut v) in &mut ghosts {
         if shown.contains(&g) {
             continue;
         }
