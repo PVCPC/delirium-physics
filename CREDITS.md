@@ -26,9 +26,12 @@
   MIT licence (in the file). Not affiliated with or endorsed by AMD.
 - **Anti-aliasing and DLSS** (`vendor/`): Bevy's bevy_anti_alias and dlss_wgpu (MIT / Apache-2.0), changed to draw into
   part of the window. DLSS is NVIDIA's; its runtime (nvngx_dlss.dll) comes under NVIDIA's licence.
-- **FSR 3 upscaler** (`crates/delirium-room/src/fsr3.rs`): calls AMD FidelityFX SDK's Vulkan runtime
+- **FSR 3 upscaler** (`crates/delirium-room/src/upscale.rs`): calls AMD FidelityFX SDK's Vulkan runtime
   (amd_fidelityfx_vk.dll, [FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK)), Copyright (c)
   Advanced Micro Devices, Inc., MIT licence. Not affiliated with or endorsed by AMD.
+- **XeSS upscaler** (`crates/delirium-room/src/upscale.rs`): calls Intel's XeSS runtime (libxess.dll,
+  [XeSS](https://github.com/intel/xess)), Copyright (c) Intel Corporation, Intel Simplified Software License. Not
+  affiliated with or endorsed by Intel.
 - **Portal 2** is Valve's. None of its files are included: portal mode reads them from your own install. Not affiliated
   with or endorsed by Valve.
 

@@ -35,7 +35,7 @@ mod portal;
 #[cfg(feature = "portal")]
 mod p2vtf;
 #[cfg(windows)]
-mod fsr3;
+mod upscale;
 
 const WHO: [&str; 1] = ["ours"];
 const SIDES: usize = WHO.len();
@@ -161,11 +161,12 @@ sharpen {}
 fps_limit {}
 upscaler {}
 fsr_mode {}
+xess_mode {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
-            sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q)
+            sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q)
 }
 
 fn coin() -> bool {
@@ -195,8 +196,9 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "render_scale" => sim.render_scale = x.clamp(RENDER_SCALE_MIN, 1.0),
             "msaa" if x < 1.5 => sim.aa = 0,
             "msaa" => sim.msaa = [2, 4, 8].into_iter().find(|&k| k as f32 >= x).unwrap_or(8),
-            "aa" => sim.aa = (x as u8).min(AA_FSR3),
+            "aa" => sim.aa = (x as u8).min(AA_XESS),
             "fsr_mode" => sim.fsr_q = (x as u8).min(4),
+            "xess_mode" => sim.xess_q = (x as u8).min(4),
             "smaa" => sim.smaa_q = (x as u8).min(3),
             "dlss_mode" => sim.dlss_q = (x as u8).min(3),
             "shadow_quality" => sim.shadow_q = (x as u8).clamp(1, 3),
@@ -611,7 +613,9 @@ struct Sim {
     smaa_q: u8,
     dlss_q: u8,
     fsr_q: u8,
+    xess_q: u8,
     fsr_ok: bool,
+    xess_ok: bool,
     msaa: u8,
     msaa_max: u8,
     shadow_q: u8,
@@ -3041,7 +3045,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, sharpen: 0.0, upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3084,9 +3088,9 @@ fn main() {
     let game_dir = opt("--game").map(|g| if !is_iso(&g) { g } else {
         let f = from_iso(&g, &|done, all| println!("Copying the game's files out of the .iso, once: {}%", done * 100 / all.max(1)))
             .unwrap_or_else(|e| { eprintln!("{e}"); std::process::exit(1) });
-        let _ = std::fs::write(GAME_PATH, &f);
+        save_game(&f);
         f
-    }).or_else(|| std::fs::read_to_string(GAME_PATH).ok().map(|t| t.trim().to_string()).filter(|g| is_game(g)));
+    }).or_else(saved_game);
     if let (Some(g), true) = (game_dir.as_deref(), a.iter().any(|x| x == "--find-stairs")) {
         let meshes = map::load(g, Vec2::ZERO, 0.0).unwrap_or_else(|e| panic!("map: {e}"));
         for (c, n, lo, hi) in map::stairs(&meshes).iter().take(60) {
@@ -3160,6 +3164,8 @@ fn main() {
         l.dedup();
         l
     });
+    #[cfg(windows)]
+    upscale::vulkan_init(&mut app);
     let render = bevy::render::RenderPlugin { render_creation: bevy::render::settings::WgpuSettings { adapter_name: gpu, ..default() }.into(), ..default() };
     app.add_plugins(DefaultPlugins.set(render).set(WindowPlugin {
             primary_window: Some(Window { title: "Delirium Physics Playroom".into(), resolution: (1600, 900).into(), resize_constraints: WindowResizeConstraints { min_width: 960.0, min_height: 640.0, ..default() }, ..default() }),
@@ -3179,11 +3185,11 @@ fn main() {
     #[cfg(feature = "portal")]
     portal::plugin(&mut app);
     #[cfg(feature = "dlss")]
-    app.add_systems(Update, dlss.before(video));
+    app.add_systems(Update, dlss.after(apply_look).before(video));
     #[cfg(windows)]
-    app.add_plugins(fsr3::Fsr3Plugin).add_systems(Update, fsr3.before(video));
+    app.add_plugins(upscale::UpscalePlugin).add_systems(Update, upscale.after(apply_look).before(video));
     #[cfg(all(windows, feature = "dlss"))]
-    app.add_systems(Update, fsr3.after(dlss));
+    app.add_systems(Update, upscale.after(dlss));
     app.add_systems(Last, fps_limit);
     app.world().resource::<bevy::asset::io::embedded::EmbeddedAssetRegistry>()
         .insert_asset(std::path::PathBuf::new(), std::path::Path::new("taxi.glb"), include_bytes!("taxi.glb").as_slice());
@@ -3191,6 +3197,22 @@ fn main() {
 }
 
 const GAME_PATH: &str = "game_path.txt";
+
+fn game_paths() -> Vec<std::path::PathBuf> {
+    let user = std::env::var_os("APPDATA").or_else(|| std::env::var_os("HOME")).map(|d| std::path::Path::new(&d).join(".delirium").join(GAME_PATH));
+    std::iter::once(GAME_PATH.into()).chain(user).collect()
+}
+
+fn save_game(g: &str) {
+    for p in game_paths() {
+        let _ = std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new(".")));
+        let _ = std::fs::write(p, g);
+    }
+}
+
+fn saved_game() -> Option<String> {
+    game_paths().iter().filter_map(|p| std::fs::read_to_string(p).ok()).map(|t| t.trim().to_string()).find(|g| is_game(g))
+}
 
 fn is_game(dir: &str) -> bool {
     let d = std::path::Path::new(dir);
@@ -3350,7 +3372,7 @@ fn pick_game(args: &[String]) -> ! {
                 });
                 pick.copy = Some(c);
             } else if let Some(g) = [format!("{g}/GTAIV"), g.clone()].into_iter().find(|d| is_game(d)) {
-                let _ = std::fs::write(GAME_PATH, &g);
+                save_game(&g);
                 let _ = PICKED.set(g);
                 exit.write(AppExit::Success);
             } else {
@@ -3360,7 +3382,7 @@ fn pick_game(args: &[String]) -> ! {
         let done = pick.copy.as_ref().and_then(|c| c.lock().unwrap().1.take());
         match done {
             Some(Ok(f)) => {
-                let _ = std::fs::write(GAME_PATH, &f);
+                save_game(&f);
                 let _ = PICKED.set(f);
                 exit.write(AppExit::Success);
             }
@@ -3895,7 +3917,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
     }
 }
 
-const AA_NAMES: [&str; 8] = ["off", "FXAA", "SMAA", "MSAA", "TAA", "DLAA", "DLSS", "FSR 3"];
+const AA_NAMES: [&str; 9] = ["off", "FXAA", "SMAA", "MSAA", "TAA", "DLAA", "DLSS", "FSR 3", "XeSS"];
 const AA_FXAA: u8 = 1;
 const AA_SMAA: u8 = 2;
 const AA_MSAA: u8 = 3;
@@ -3903,12 +3925,14 @@ const AA_TAA: u8 = 4;
 const AA_DLAA: u8 = 5;
 const AA_DLSS: u8 = 6;
 const AA_FSR3: u8 = 7;
+const AA_XESS: u8 = 8;
 
 impl Sim {
     fn aa_now(&self) -> u8 {
         match self.aa {
             AA_DLAA | AA_DLSS if !self.dlss_ok => AA_MSAA,
             AA_FSR3 if !self.fsr_ok => AA_MSAA,
+            AA_XESS if !self.xess_ok => AA_MSAA,
             aa => aa,
         }
     }
@@ -3941,20 +3965,25 @@ fn dlss(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<bevy::a
 }
 
 #[cfg(windows)]
-fn fsr3(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<fsr3::Fsr3Supported>>,
-        cam: Query<(Entity, &Camera), With<OursCam>>, mut last: Local<Option<(u8, u8)>>) {
-    sim.fsr_ok = ok.is_some();
-    let want = if sim.aa_now() == AA_FSR3 { 1 + sim.fsr_q } else { 0 };
-    let now = (want, (sim.sharpen * 100.0) as u8);
+fn upscale(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<upscale::Supported>>,
+        cam: Query<(Entity, &Camera), With<OursCam>>, mut last: Local<Option<(u8, u8, u8)>>) {
+    (sim.fsr_ok, sim.xess_ok) = ok.map_or((false, false), |o| (o.fsr3, o.xess));
+    let (by, mode) = match sim.aa_now() {
+        AA_FSR3 => (Some(upscale::By::Fsr3), sim.fsr_q),
+        AA_XESS => (Some(upscale::By::Xess), sim.xess_q),
+        _ => (None, 0),
+    };
+    let want = if by.is_some() { 1 + mode } else { 0 };
+    let now = (want, sim.aa_now(), (sim.sharpen * 100.0) as u8);
     if *last == Some(now) || cam.iter().any(|(_, c)| c.viewport.is_none()) || cam.is_empty() {
         return;
     }
     let was = last.replace(now).is_some_and(|l| l.0 > 0);
     for (e, _) in &cam {
-        if want > 0 {
-            commands.entity(e).insert((fsr3::Fsr3 { mode: sim.fsr_q, sharpness: sim.sharpen }, bevy::render::view::Hdr));
+        if let Some(by) = by {
+            commands.entity(e).insert((upscale::Upscale { by, mode, sharpness: sim.sharpen }, bevy::render::view::Hdr));
         } else if was {
-            commands.entity(e).remove::<fsr3::Fsr3>();
+            commands.entity(e).remove::<upscale::Upscale>();
             if !sim.upscaling() {
                 commands.entity(e).remove::<bevy::render::view::Hdr>();
             }
@@ -4972,6 +5001,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!clean", _) => sim.clean = !sim.clean,
             ("!shadows", _) => sim.shadows = !sim.shadows,
             ("!settings", _) => load_settings(&mut sim),
+            ("!set", Some(k)) => apply_settings(&mut sim, &format!("{k} {}", w.next().unwrap_or(""))),
             ("!hero", _) => sim.toggle_hero(),
             ("!punch", _) => if let Some(n) = sim.hero.as_mut() { n.punch() },
             ("!pad", Some(a)) => if let (Some(n), Ok(b)) = (sim.hero.as_mut(), u32::from_str_radix(a.trim_start_matches("0x"), 16)) { n.scripted = b },
@@ -6462,14 +6492,17 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .custom_formatter(|x, _| if x <= FPS_VSYNC as f64 { "monitor (V-Sync)".into() } else if x >= FPS_FREE as f64 { "unlimited".into() } else { format!("{x:.0} FPS") }))
                 .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go. With the window in the background it never goes over 60.");
             sub(ui, "Anti-aliasing & upscaling");
-            let methods: Vec<u8> = (0..=AA_TAA).chain(sim.fsr_ok.then_some(AA_FSR3)).chain(if sim.dlss_ok { vec![AA_DLAA, AA_DLSS] } else { vec![] }).collect();
+            let methods: Vec<u8> = (0..=AA_TAA).chain(sim.fsr_ok.then_some(AA_FSR3)).chain(sim.xess_ok.then_some(AA_XESS)).chain(if sim.dlss_ok { vec![AA_DLAA, AA_DLSS] } else { vec![] }).collect();
             let mut m = methods.iter().position(|&k| k == sim.aa_now()).unwrap_or(0) as f32;
             if ui.add(egui::Slider::new(&mut m, 0.0..=(methods.len() - 1) as f32).step_by(1.0).text("Anti-aliasing").custom_formatter(|x, _| AA_NAMES[methods[x as usize] as usize].into()))
-                .on_hover_text("Smooths jagged edges; one method at a time. FXAA: cheapest, a little blurry. SMAA: sharper, still cheap. MSAA: clean edges, costs more on a slow graphics card. TAA: smoothest, can smear when things move fast. FSR 3: AMD's, on any graphics card; draws the room smaller and rebuilds it sharp, much faster. DLAA: NVIDIA's, the best looking. DLSS: NVIDIA's, like FSR 3, sharper.").changed() {
+                .on_hover_text("Smooths jagged edges; one method at a time. FXAA: cheapest, a little blurry. SMAA: sharper, still cheap. MSAA: clean edges, costs more on a slow graphics card. TAA: smoothest, can smear when things move fast. FSR 3: AMD's, on any graphics card; draws the room smaller and rebuilds it sharp, much faster. XeSS: Intel's, like FSR 3, best on Intel Arc cards. DLAA: NVIDIA's, the best looking. DLSS: NVIDIA's, like FSR 3, sharper.").changed() {
                 sim.aa = methods[m as usize];
             }
             if !sim.fsr_ok {
                 info(ui, if cfg!(windows) { "FSR 3 needs amd_fidelityfx_vk.dll beside the room." } else { "FSR 3 is Windows only for now." });
+            }
+            if !sim.xess_ok {
+                info(ui, if cfg!(windows) { "XeSS needs libxess.dll beside the room." } else { "XeSS is Windows only for now." });
             }
             if !sim.dlss_ok {
                 info(ui, if cfg!(feature = "dlss") { "DLAA and DLSS need an NVIDIA RTX graphics card." } else { "DLAA and DLSS aren't in this build." });
@@ -6491,12 +6524,14 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                         sim.msaa = steps[i as usize];
                     }
                 }
-                AA_FSR3 => {
-                    let mut q = sim.fsr_q as f32;
-                    if ui.add(egui::Slider::new(&mut q, 0.0..=4.0).step_by(1.0).text("FSR 3 mode")
+                AA_FSR3 | AA_XESS => {
+                    let name = AA_NAMES[sim.aa as usize];
+                    let field = if sim.aa == AA_FSR3 { &mut sim.fsr_q } else { &mut sim.xess_q };
+                    let mut q = *field as f32;
+                    if ui.add(egui::Slider::new(&mut q, 0.0..=4.0).step_by(1.0).text(format!("{name} mode"))
                         .custom_formatter(|x, _| ["Native AA", "Quality", "Balanced", "Performance", "Ultra Performance"][x as usize].into()))
-                        .on_hover_text("How small FSR 3 draws the room before rebuilding it. Native AA keeps full size, only smoothing; Quality is sharpest, Ultra Performance fastest.").changed() {
-                        sim.fsr_q = q as u8;
+                        .on_hover_text(format!("How small {name} draws the room before rebuilding it. Native AA keeps full size, only smoothing; Quality is sharpest, Ultra Performance fastest.")).changed() {
+                        *field = q as u8;
                     }
                 }
                 AA_DLSS => {

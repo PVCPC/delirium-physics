@@ -25,8 +25,9 @@ rapier3d = "0.36.1"
 anyhow = "1"
 texpresso = "2.0.2"
 
-# FSR 3 (fsr3.rs): AMD's DLL, on Vulkan.
+# FSR 3 and XeSS (upscale.rs): AMD's and Intel's DLLs, on Vulkan; XeSS's device extension.
 [target.'cfg(windows)'.dependencies]
+bevy = { version = "=0.18.1", default-features = false, features = ["raw_vulkan_init"] }
 ash = "0.38"
 libloading = "0.8"
 
