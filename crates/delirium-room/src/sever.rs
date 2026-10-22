@@ -6,6 +6,7 @@ use crate::Sim;
 pub const KICK: f32 = 8.0;
 const BLAST_KICK: f32 = 9.0;
 const BLAST_CUT: f32 = 1.0;
+const BLOOD_CUT: usize = 40;
 pub const HAT: (f32, f32) = (0.14, 0.12);
 const POP: f32 = 2.5;
 const BOUNCE: f32 = 0.3;
@@ -44,6 +45,11 @@ impl Sim {
             doll.impulse(0, at, push);
         }
         self.say(format!("sever  {} cut off ({} parts)", delirium_data::nm_asset::PARTS.get(k).unwrap_or(&"?"), parts.len()));
+        let out = ((at - self.agent.doll.centre(0)).normalize_or(Vec3::Z) + Vec3::Z).normalize();
+        self.bleed_some(at, out, BLOOD_CUT);
+        if let Some(p) = self.build.parts[k].parent {
+            self.light(0, p, crate::SHOT_GLOW);
+        }
         let leg = parts.iter().any(|p| LEGS.contains(p));
         let all = self.agent.limp_rage();
         let rigid = parts.iter().map(|&p| all.get(p).copied().unwrap_or_default()).collect();
@@ -99,7 +105,7 @@ impl Sim {
         }
     }
 
-    fn hat_off(&mut self, push: Vec3) {
+    pub(crate) fn hat_off(&mut self, push: Vec3) {
         if !matches!(self.hat, Some(Hat::On)) {
             return;
         }

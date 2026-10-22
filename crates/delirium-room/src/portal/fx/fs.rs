@@ -1,9 +1,7 @@
-//! A read-only view of Portal 2's `pak01_dir.vpk`: the directory is indexed once, files are read on demand.
 use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-/// Normalise a Source path: lowercase, forward slashes, no leading slash, no doubled slashes.
 pub fn normalize_path(path: &str) -> String {
     let mut out = String::with_capacity(path.len());
     let mut last_slash = true;
@@ -41,7 +39,6 @@ impl Fs {
         !self.index.is_empty()
     }
 
-    /// Index the game's directory file. Returns false if it can't be read.
     pub fn load(&mut self, game: &str) -> bool {
         let Ok(d) = std::fs::read(format!("{game}/portal2/pak01_dir.vpk")) else { return false };
         let u32_at = |o: usize| d.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));

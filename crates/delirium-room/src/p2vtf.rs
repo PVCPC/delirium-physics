@@ -1,9 +1,3 @@
-//! VTF textures with their full mip chain (from the Portal 2 Rust Engine).
-//!
-//! The `vtf` crate only decodes the top mip level to RGBA; world textures
-//! need mipmaps and DXT data can go to the GPU untouched, so this reader
-//! keeps every level and only converts formats the GPU cannot sample.
-
 use anyhow::{bail, Context};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
@@ -16,15 +10,11 @@ pub const FLAG_ONEBITALPHA: u32 = 0x1000;
 pub const FLAG_EIGHTBITALPHA: u32 = 0x2000;
 pub const FLAG_ENVMAP: u32 = 0x4000;
 
-/// Pixel data as it will be uploaded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PixelFormat {
     Rgba8,
-    /// DXT1 / BC1 (with or without 1-bit alpha)
     Bc1,
-    /// DXT3 / BC2
     Bc2,
-    /// DXT5 / BC3
     Bc3,
     Rgba16F,
 }
@@ -35,12 +25,8 @@ pub struct VtfTexture {
     pub height: u32,
     pub flags: u32,
     pub format: PixelFormat,
-    /// Mip levels, largest first. For cubemaps each level holds the six
-    /// faces back to back (+X, -X, +Y, -Y, +Z, -Z).
     pub mips: Vec<Vec<u8>>,
-    /// 1, or 6 for cubemaps.
     pub faces: u32,
-    /// The texture has meaningful alpha (from flags or format).
     pub has_alpha: bool,
     pub reflectivity: [f32; 3],
 }
@@ -55,7 +41,6 @@ fn rd_f32(d: &[u8], o: usize) -> f32 {
     f32::from_le_bytes(d[o..o + 4].try_into().unwrap())
 }
 
-/// Bytes for one image of a VTF format, `None` for unknown formats.
 fn image_size(fmt: i32, w: u32, h: u32) -> Option<usize> {
     let (w, h) = (w.max(1) as usize, h.max(1) as usize);
     let blocks = w.div_ceil(4) * h.div_ceil(4);
@@ -83,7 +68,6 @@ fn expand4(v: u16) -> u8 {
     (v as u8 & 0xf) * 17
 }
 
-/// Convert one uncompressed image to RGBA8.
 fn to_rgba8(fmt: i32, src: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
     let n = (w.max(1) * h.max(1)) as usize;
     let mut out = vec![255u8; n * 4];
@@ -119,9 +103,7 @@ fn to_rgba8(fmt: i32, src: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
                 let v = rd_u16(src, i * 2);
                 let (a, b) = (expand5(v >> 11), expand5(v & 0x1f));
                 let g = expand6((v >> 5) & 0x3f);
-                // RGB565: r in high bits; BGR565: b in high bits
                 let (r, bb) = if fmt == 4 { (b, a) } else { (a, b) };
-                // Valve's RGB565 is actually stored with red in the low bits.
                 o[..3].copy_from_slice(&[r, g, bb]);
             }
             18 | 21 => {
@@ -167,7 +149,6 @@ fn to_rgba8(fmt: i32, src: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
 }
 
 impl VtfTexture {
-    /// Parse a VTF (versions 7.0–7.5). Only frame 0, face 0, slice 0 is kept.
     pub fn parse(data: &[u8]) -> anyhow::Result<Self> {
         if data.len() < 64 || &data[0..4] != b"VTF\0" {
             bail!("not a VTF");
@@ -197,7 +178,6 @@ impl VtfTexture {
             1
         };
 
-        // Locate high-res image data.
         let mut hi_offset = None;
         if minor >= 3 && data.len() >= 80 {
             let num_res = rd_u32(data, 68) as usize;
@@ -223,7 +203,6 @@ impl VtfTexture {
             }
         };
 
-        // Clamp the mip count to what the dimensions allow.
         let max_mips = 32 - width.max(height).max(1).leading_zeros();
         let mip_count = mip_count.min(max_mips);
 
@@ -233,7 +212,6 @@ impl VtfTexture {
         if size_of(0).is_none() {
             bail!("unsupported VTF format {hi_fmt}");
         }
-        // Data is stored smallest mip first; within a mip: frames, faces, slices.
         let mut offsets = vec![0usize; mip_count as usize];
         let mut cursor = hi_offset;
         for level in (0..mip_count).rev() {
@@ -282,8 +260,6 @@ impl VtfTexture {
         })
     }
 
-    /// Decompress BC data to RGBA8 in place (for GPUs without BC support or
-    /// textures whose size is not a multiple of the 4x4 block).
     pub fn decompress(&mut self) {
         let fmt = match self.format {
             PixelFormat::Bc1 => texpresso::Format::Bc1,
@@ -305,7 +281,6 @@ impl VtfTexture {
         self.format = PixelFormat::Rgba8;
     }
 
-    /// Top-level RGBA8 pixels (decompressing if needed). For tests and tools.
     pub fn rgba8_level0(&self) -> Option<Vec<u8>> {
         let mut t = self.clone();
         t.mips.truncate(1);
@@ -313,7 +288,6 @@ impl VtfTexture {
         (t.format == PixelFormat::Rgba8).then(|| t.mips.swap_remove(0))
     }
 
-    /// Average colour of the smallest mip, linear-ish sRGB 0..1.
     pub fn average_color(&self) -> [f32; 4] {
         let mut t = self.clone();
         let last = t.mips.len() - 1;
@@ -337,7 +311,6 @@ impl VtfTexture {
         acc.map(|v| v / n)
     }
 
-    /// Build a Bevy image. `bc_supported`: upload DXT as-is. `srgb`: colour data.
     pub fn into_image(mut self, bc_supported: bool, srgb: bool) -> Image {
         let is_bc = matches!(self.format, PixelFormat::Bc1 | PixelFormat::Bc2 | PixelFormat::Bc3);
         if is_bc && (!bc_supported || self.width % 4 != 0 || self.height % 4 != 0) {
@@ -356,7 +329,6 @@ impl VtfTexture {
         };
         let mip_count = self.mips.len() as u32;
         let faces = self.faces.max(1) as usize;
-        // Bevy/wgpu want layer-major data: every mip of face 0, then face 1...
         let data: Vec<u8> = if faces == 1 {
             self.mips.concat()
         } else {

@@ -1,7 +1,3 @@
-//! Valve KeyValues text (VMT, surfaceproperties, gameinfo). Keys are
-//! lowercased; duplicate keys are kept in order. Platform conditionals
-//! (`[$X360]`, `[!$WIN32]`) are evaluated for a Windows PC.
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum KvValue {
     Str(String),
@@ -14,7 +10,6 @@ pub struct Kv {
 }
 
 impl Kv {
-    /// Last string value for a key (later entries override earlier ones, as in the engine).
     pub fn get(&self, key: &str) -> Option<&str> {
         self.entries.iter().rev().find_map(|(k, v)| match v {
             KvValue::Str(s) if k == key => Some(s.as_str()),
@@ -36,7 +31,6 @@ impl Kv {
         })
     }
 
-    /// First (root) entry: `"LightmappedGeneric" { ... }` -> ("lightmappedgeneric", block).
     pub fn root(&self) -> Option<(&str, &Kv)> {
         self.entries.iter().find_map(|(k, v)| match v {
             KvValue::Block(b) => Some((k.as_str(), b)),
@@ -44,7 +38,6 @@ impl Kv {
         })
     }
 
-    /// Set a string value, replacing any existing entries for the key.
     pub fn set(&mut self, key: &str, value: KvValue) {
         self.entries.retain(|(k, _)| k != key);
         self.entries.push((key.to_string(), value));
@@ -62,7 +55,6 @@ impl Kv {
 pub fn parse_f32(s: &str) -> Option<f32> {
     let s = s.trim();
     s.parse::<f32>().ok().or_else(|| {
-        // tolerate trailing junk like "0.5f"
         let end = s
             .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+' || c == 'e'))
             .unwrap_or(s.len());
@@ -70,7 +62,6 @@ pub fn parse_f32(s: &str) -> Option<f32> {
     })
 }
 
-/// Parse `"[1 0.5 0.25]"` or `"{255 128 64}"` (0..255) or a scalar into RGB.
 pub fn parse_color(s: &str) -> Option<[f32; 3]> {
     let t = s.trim();
     let (inner, scale) = if let Some(i) = t.strip_prefix('[') {
@@ -163,7 +154,6 @@ impl<'a> Lexer<'a> {
                     && !b[self.pos].is_ascii_whitespace()
                     && !matches!(b[self.pos], b'{' | b'}' | b'"')
                 {
-                    // `//` starts a comment even mid-token
                     if b[self.pos] == b'/' && self.pos + 1 < b.len() && b[self.pos + 1] == b'/' {
                         break;
                     }
@@ -175,7 +165,6 @@ impl<'a> Lexer<'a> {
     }
 }
 
-/// Evaluate a platform conditional for Windows PC.
 fn cond_true(c: &str) -> bool {
     c.split("||").any(|part| {
         let part = part.trim();
@@ -189,7 +178,6 @@ fn cond_true(c: &str) -> bool {
     })
 }
 
-/// Parse KeyValues text. Never fails: malformed trailing data is ignored.
 pub fn parse(text: &str) -> Kv {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut lx = Lexer { s: text, pos: 0 };
@@ -204,7 +192,6 @@ pub fn parse(text: &str) -> Kv {
         match &toks[i] {
             Tok::Str(s) => {
                 if let Some(key) = pending_key.take() {
-                    // value; check for trailing conditional
                     let keep = match toks.get(i + 1) {
                         Some(Tok::Cond(c)) => {
                             i += 1;
@@ -224,10 +211,8 @@ pub fn parse(text: &str) -> Kv {
                 }
             }
             Tok::Cond(c) => {
-                // conditional after a key and before a block: `"key" [$X360] { }`
                 if !cond_true(c) {
                     if let Some(Tok::Open) = toks.get(i + 1) {
-                        // skip the whole block
                         let mut depth = 0;
                         i += 1;
                         while i < toks.len() {
@@ -249,7 +234,6 @@ pub fn parse(text: &str) -> Kv {
             }
             Tok::Open => {
                 let key = pending_key.take().unwrap_or_default();
-                // stash the key as a marker entry on the parent
                 stack
                     .last_mut()
                     .unwrap()
@@ -270,7 +254,6 @@ pub fn parse(text: &str) -> Kv {
         }
         i += 1;
     }
-    // close unterminated blocks
     while stack.len() > 1 {
         let done = stack.pop().unwrap();
         if let Some((_, KvValue::Block(b))) = stack.last_mut().unwrap().entries.last_mut() {

@@ -1,14 +1,3 @@
-//! CPU simulation of Source particle systems (`.pcf` definitions).
-//!
-//! Everything here runs in **Source space** (inches, Z up), the space the
-//! `.pcf` numbers are authored in. Control points are converted by the caller
-//! ([`crate::render::ParticleEffect`]); the renderer converts positions back.
-//!
-//! Operator order and attribute defaults follow `research/specs/particles-runtime.md`
-//! and `particles-params.md`. Velocities are Verlet-style: `prev` is the
-//! position one step earlier, so `pos - prev` is the last displacement.
-//! Operators the portal effects do not use are logged as unsupported (see
-//! [`SystemInstance::unsupported`]) rather than silently guessed.
 use std::collections::BTreeSet;
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -19,15 +8,12 @@ use super::pcf::{OpDef, ParticleLibrary, SystemDef};
 
 pub const MAX_CONTROL_POINTS: usize = 64;
 
-/// Drag is quoted per 1/30 s step (runtime spec §5, Movement Basic).
 const DRAG_REF_HZ: f32 = 30.0;
 
-/// A control point: position and orientation (columns = local X, Y, Z axes).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ControlPoint {
     pub pos: Vec3,
     pub basis: Mat3,
-    /// Set by the game / parent, rather than defaulted to CP0.
     pub set: bool,
 }
 
@@ -49,7 +35,6 @@ impl ControlPoint {
     }
 }
 
-/// Particle field ids (PARTICLE_ATTRIBUTE_* in the public particles.h).
 pub mod field {
     pub const XYZ: i32 = 0;
     pub const LIFE_DURATION: i32 = 1;
@@ -74,13 +59,9 @@ pub struct Particle {
     pub prev: Vec3,
     pub lifetime: f32,
     pub radius: f32,
-    /// Radians.
     pub rotation: f32,
-    /// Radians per second.
     pub rotation_speed: f32,
-    /// 0-1 per channel, sRGB-encoded as authored.
     pub tint: Vec3,
-    /// 0-1; the rendered alpha is `alpha * alpha2`.
     pub alpha: f32,
     pub alpha2: f32,
     pub created: f32,
@@ -90,7 +71,6 @@ pub struct Particle {
     pub yaw: f32,
     pub normal: Vec3,
     pub id: u32,
-    /// Values when the particle was born, after initializers (for scale and fade operators).
     pub init_radius: f32,
     pub init_alpha: f32,
     pub init_tint: Vec3,
@@ -154,7 +134,6 @@ impl Particle {
     fn age(&self, now: f32) -> f32 {
         now - self.created
     }
-    /// Life fraction, 0 at birth and 1 at death.
     fn life_fraction(&self, now: f32) -> f32 {
         if self.lifetime > 0.0 {
             self.age(now) / self.lifetime
@@ -164,7 +143,6 @@ impl Particle {
     }
 }
 
-/// Deterministic per-particle random numbers in [0, 1).
 fn hash(a: u32, b: u32, c: u32) -> f32 {
     let mut h = a.wrapping_mul(0x9E37_79B1) ^ b.wrapping_mul(0x85EB_CA77) ^ c.wrapping_mul(0xC2B2_AE3D);
     h ^= h >> 15;
@@ -175,7 +153,6 @@ fn hash(a: u32, b: u32, c: u32) -> f32 {
     (h & 0x00FF_FFFF) as f32 / 16_777_216.0
 }
 
-/// Random draw `k` for particle `id`, salted per operator.
 fn rnd(seed: u32, id: u32, salt: u32, k: u32) -> f32 {
     hash(id ^ seed, salt, k)
 }
@@ -189,12 +166,10 @@ fn remap_clamped(v: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
     }
     c + (d - c) * ((v - a) / (b - a)).clamp(0.0, 1.0)
 }
-/// Source's SmoothStep: `t^2 (3 - 2t)`.
 fn smoothstep(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
-/// Source's Bias(): `t^(log(b)/log(0.5))`, so `b = 0.5` is linear.
 fn bias(t: f32, b: f32) -> f32 {
     let b = b.clamp(1e-4, 1.0 - 1e-4);
     t.max(0.0).powf(b.ln() / 0.5f32.ln())
@@ -202,7 +177,6 @@ fn bias(t: f32, b: f32) -> f32 {
 fn v3(a: [f32; 3]) -> Vec3 {
     Vec3::from_array(a)
 }
-/// Uniform point in the unit sphere from three randoms.
 fn in_unit_sphere(r1: f32, r2: f32, r3: f32) -> Vec3 {
     let z = r1 * 2.0 - 1.0;
     let t = r2 * 2.0 * PI;
@@ -210,7 +184,6 @@ fn in_unit_sphere(r1: f32, r2: f32, r3: f32) -> Vec3 {
     Vec3::new(s * t.cos(), s * t.sin(), z) * r3.cbrt()
 }
 
-/// 3-D gradient noise in [-1, 1].
 fn noise3(p: Vec3) -> f32 {
     let i = p.floor();
     let f = p - i;
@@ -240,7 +213,6 @@ fn noise3(p: Vec3) -> f32 {
     (lerp(y0, y1, u.z) * 1.6).clamp(-1.0, 1.0)
 }
 
-/// Emitter state. `remaining` is the instantaneous emitter's unspawned count.
 #[derive(Clone, Debug, Default)]
 struct EmitterState {
     accumulated: f32,
@@ -249,7 +221,6 @@ struct EmitterState {
     done: bool,
 }
 
-/// A child system: started after `delay` seconds, shares the parent's control points.
 #[derive(Clone, Debug)]
 pub struct ChildInstance {
     pub delay: f32,
@@ -258,32 +229,24 @@ pub struct ChildInstance {
     name: String,
 }
 
-/// One running particle system (and its children).
 #[derive(Clone, Debug)]
 pub struct SystemInstance {
     pub def: Arc<SystemDef>,
-    /// System time, seconds since the system started.
     pub time: f32,
     pub cps: [ControlPoint; MAX_CONTROL_POINTS],
     prev_cps: [ControlPoint; MAX_CONTROL_POINTS],
     pub particles: Vec<Particle>,
     next_id: u32,
     emitters: Vec<EmitterState>,
-    /// Emission stopped; end-cap operators now run.
     pub end_cap: bool,
     pub children: Vec<ChildInstance>,
     seed: u32,
     first_update: bool,
-    /// dt of the last step (Verlet time correction) and of the current step.
     pub last_dt: f32,
     cur_dt: f32,
-    /// Particles emitted this step by all emitters (ring even distribution).
     step_spawned: u32,
-    /// Persistent counters of the ring initializers, by initializer index.
     ring_counters: Vec<u32>,
-    /// Particles emitted during the last [`Self::update`] (for stats).
     pub emitted_last: u32,
-    /// Operators in the file that this simulator does not implement.
     pub unsupported: BTreeSet<String>,
 }
 
@@ -342,7 +305,6 @@ const KNOWN_OPERATORS: &[&str] = &[
     "Constrain distance to control point",
 ];
 
-/// Names of operators in `def` that this simulator does not implement.
 fn unsupported_ops(def: &SystemDef) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for e in &def.emitters {
@@ -374,11 +336,6 @@ fn unsupported_ops(def: &SystemDef) -> BTreeSet<String> {
 }
 
 impl SystemInstance {
-    /// Moves the whole running system (particles, their previous positions,
-    /// normals, and the control points) by a rigid transform given in this
-    /// simulator's space: `pt` maps points, `dir` maps directions. Used to
-    /// carry effects that follow the player through a portal, so nothing is
-    /// left behind on the far side for a frame. Children are carried too.
     pub fn carry(&mut self, pt: &dyn Fn(Vec3) -> Vec3, dir: &dyn Fn(Vec3) -> Vec3) {
         for p in &mut self.particles {
             p.pos = pt(p.pos);
@@ -428,7 +385,6 @@ impl SystemInstance {
         }
     }
 
-    /// Set a control point here and in every child.
     pub fn set_cp(&mut self, i: usize, cp: ControlPoint) {
         if i < MAX_CONTROL_POINTS {
             self.cps[i] = cp;
@@ -440,7 +396,6 @@ impl SystemInstance {
         }
     }
 
-    /// Stop emitting and run end-cap behaviour (the system dies out).
     pub fn stop(&mut self) {
         self.end_cap = true;
         for c in &mut self.children {
@@ -450,7 +405,6 @@ impl SystemInstance {
         }
     }
 
-    /// Nothing left to simulate or draw.
     pub fn finished(&self) -> bool {
         let emitting = !self.end_cap && self.emitters.iter().any(|e| !e.done);
         !emitting
@@ -464,14 +418,12 @@ impl SystemInstance {
         self.cps[i.clamp(0, 63) as usize]
     }
 
-    /// Advance the system by `dt` seconds (clamped to the file's maximum step).
     pub fn update(&mut self, dt: f32, lib: &ParticleLibrary) {
         let def = self.def.clone();
         let dt = dt.clamp(0.0, def.maximum_time_step.max(1e-3));
         if dt <= 0.0 {
             return;
         }
-        // Unset control points follow CP0 (the engine default).
         let cp0 = self.cps[0];
         for cp in self.cps.iter_mut().skip(1) {
             if !cp.set {
@@ -486,7 +438,6 @@ impl SystemInstance {
         let now = self.time;
         self.emitted_last = 0;
 
-        // 1. Control-point operators, in file order.
         for op in &def.operators {
             if !self.op_active(op) {
                 continue;
@@ -498,7 +449,6 @@ impl SystemInstance {
             }
         }
 
-        // 2. Emission.
         if !self.end_cap {
             let mut counts = Vec::with_capacity(def.emitters.len());
             for (ei, em) in def.emitters.iter().enumerate() {
@@ -512,13 +462,11 @@ impl SystemInstance {
             }
         }
 
-        // 3. Particle operators, forces, constraints.
         self.run_operators(&def, dt, now);
         self.run_forces(&def, dt);
         self.run_constraints(&def);
         self.particles.retain(|p| !p.dead);
 
-        // 4. Children start after their delay and see the parent's control points.
         for ci in 0..self.children.len() {
             let start = self.children[ci].delay;
             let only_end = self.children[ci].end_cap_only;
@@ -560,7 +508,6 @@ impl SystemInstance {
         }
     }
 
-    /// `operator start/end fadein/fadeout` strength in 0..1 at system time `now`.
     fn op_strength(op: &OpDef, now: f32) -> f32 {
         let (fin_s, fin_e) = (op.f("operator start fadein", 0.0), op.f("operator end fadein", 0.0));
         let (fout_s, fout_e) = (op.f("operator start fadeout", 0.0), op.f("operator end fadeout", 0.0));
@@ -605,10 +552,8 @@ impl SystemInstance {
         }
     }
 
-    /// Particles this emitter creates this step (runtime spec §3).
     fn emit_count(&mut self, ei: usize, em: &OpDef, dt: f32) -> usize {
         let now = self.time;
-        // One random per emitter for "emission_start_time max" (fixed for the system's life).
         let r = rnd(self.seed, ei as u32, 0xE1, 7);
         let start_max = em.f("emission_start_time max", -1.0);
         let start = if start_max >= 0.0 {
@@ -651,7 +596,6 @@ impl SystemInstance {
                 n as usize
             }
             _ => {
-                // Unsupported emitter: nothing emitted (see `unsupported`).
                 st.done = true;
                 0
             }
@@ -690,8 +634,6 @@ impl SystemInstance {
             init_tint: Vec3::ZERO,
             dead: false,
         };
-        // Position creators first, then position modifiers, then the rest in
-        // authored order (modifiers and remaps read the created position).
         let rank = |f: &str| match f {
             "Position Within Sphere Random" | "Position Along Ring" | "Position Along Path Sequential" => 0,
             "Position Modify Warp Random" | "Position Modify Offset Random" | "Velocity Repulse from World" => 1,
@@ -708,7 +650,6 @@ impl SystemInstance {
         self.particles.push(p);
     }
 
-    /// Writes an initializer's output. Angle fields arrive in degrees (as the file states them).
     fn set_initial(p: &mut Particle, f: i32, v: f32, scale_initial: bool) {
         let v = if f == field::ROTATION || f == field::YAW { v.to_radians() } else { v };
         if Particle::is_vector_field(f) {
@@ -781,7 +722,6 @@ impl SystemInstance {
                 let local = rot * ring + in_unit_sphere(r(2), r(3), r(4)) * thick;
                 p.pos = cp.to_world(local);
                 let speed = lerp(op.f("min initial speed", 0.0), op.f("max initial speed", 0.0), r(5));
-                // Outward from the control point, with the file's XY-only option.
                 let outward = (p.pos - cp.pos).normalize_or_zero();
                 p.prev = p.pos - outward * speed * dt;
                 if op.b("XY velocity only", true) {
@@ -793,7 +733,6 @@ impl SystemInstance {
                 let wmin = v3(op.v3("warp min", [1.0; 3]));
                 let wmax = v3(op.v3("warp max", [1.0; 3]));
                 let w = Vec3::new(lerp(wmin.x, wmax.x, r(1)), lerp(wmin.y, wmax.y, r(2)), lerp(wmin.z, wmax.z, r(3)));
-                // Scale position and previous position in the CP's frame.
                 p.pos = cp.to_world(cp.to_local(p.pos) * w);
                 p.prev = cp.to_world(cp.to_local(p.prev) * w);
             }
@@ -812,11 +751,6 @@ impl SystemInstance {
                 p.prev += o;
             }
             "Velocity Repulse from World" => {
-                // No world traces here: these effects (portal close, bad
-                // surface) are spawned on a surface with CP0's +Z as its
-                // normal. A trace of `Trace Length` from a particle on the
-                // surface hits it at distance 0, so in offset mode the particle
-                // moves the full trace length out along the normal [I].
                 if op.b("Offset instead of accelerate", false) {
                     let o = self.cp(0).basis * Vec3::new(0.0, 0.0, op.f("Trace Length", 64.0));
                     p.pos += o;
@@ -835,7 +769,6 @@ impl SystemInstance {
                 let bulge = op.f("bulge", 0.0);
                 let mut pos = start.lerp(end, t);
                 if bulge != 0.0 {
-                    // Approximation: bow the path sideways, zero at both ends.
                     let d = end - start;
                     let side = d.cross(Vec3::Z).normalize_or_zero();
                     pos += side * bulge * (t * PI).sin();
@@ -905,7 +838,6 @@ impl SystemInstance {
                 }
             }
             "Remap Noise to Scalar" => {
-                // Defaults from particles-params.md: time scale 0.1, spatial 0.001.
                 let f = op.i("output field", field::RADIUS);
                 let omin = op.f("output minimum", 0.0);
                 let omax = op.f("output maximum", 1.0);
@@ -969,7 +901,6 @@ impl SystemInstance {
                 Self::set_initial(p, f, v, op.b("output is scalar of initial random range", false));
             }
             "remap initial scalar" => {
-                // Default input is creation time (particles-params.md).
                 let fin = op.i("input field", field::CREATION_TIME);
                 let f = op.i("output field", field::RADIUS);
                 let v = p.scalar(fin);
@@ -1024,7 +955,6 @@ impl SystemInstance {
                         continue;
                     }
                     for p in &mut self.particles {
-                        // The lock fades out over life between per-particle start and end times.
                         let lf = p.life_fraction(now);
                         let s = lerp(start_min, start_max, rand(p.id, 1));
                         let e = lerp(end_min, end_max, rand(p.id, 2));
@@ -1282,7 +1212,6 @@ impl SystemInstance {
                     let axis = v3(op.v3("offset axis", [0.0; 3])).normalize_or_zero();
                     let norm = op.b("normalize", false);
                     for p in &mut self.particles {
-                        // Particle minus CP: points away from the control point.
                         let mut d = p.pos - cp.pos;
                         if axis != Vec3::ZERO && rot != 0.0 {
                             d = Quat::from_axis_angle(axis, rot) * d;
@@ -1401,7 +1330,6 @@ impl SystemInstance {
         }
     }
 
-    /// Visit this system and all running children.
     pub fn for_each<'a>(&'a self, f: &mut dyn FnMut(&'a SystemInstance)) {
         f(self);
         for c in &self.children {

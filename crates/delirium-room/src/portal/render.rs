@@ -1,15 +1,3 @@
-//! Portal surfaces and views: a port of the rendering half of the Portal 2 Rust Engine
-//! (`p2_render`; see CREDITS.md), adapted to this room's Z-up world and Bevy 0.18.
-//!
-//! * the surface is Portal 2's `PortalRefract` (`portal_surface.wgsl`): the burning rim, the opening
-//!   animation, the static fade-in and the wall warp while it opens, with the game's own noise and
-//!   colour-ramp textures read from your Portal 2 install;
-//! * the view through a portal recurses: a tree of virtual cameras, one per sequence of portal
-//!   crossings, down to `DEPTH`, and below that the "depth doubler" re-uses last frame's image;
-//! * a near-plane cap keeps the opening drawn when the eye is closer to it than the near plane.
-//!
-//! A node is a sequence of crossings from the main camera. Node codes are binary: the leading 1 is
-//! the root (the main camera) and each crossing appends a bit (0 = blue, 1 = orange).
 use std::collections::BTreeMap;
 
 use bevy::camera::visibility::RenderLayers;
@@ -28,25 +16,15 @@ use bevy::shader::ShaderRef;
 use super::{through, Frame, HALF};
 use crate::{OursCam, Sim};
 
-/// How many nested views carry real surfaces (Portal 2's `r_portal_stencil_depth`).
 const DEPTH: u32 = 2;
-/// Node codes 1..=NODES: root, levels 1..=DEPTH, and the plain level below with the depth doubler.
 const NODES: usize = (1 << (DEPTH + 2)) - 1;
-/// First render layer used by the surface quads (node `n` draws on `FIRST + n - 1`).
 const FIRST: usize = 8;
-/// A portal opens linearly over this long, seconds.
 const OPEN_TIME: f32 = 0.5;
-/// After linking, the static fades away over this long, seconds.
 const STATIC_FADE: f32 = 1.0;
-/// Distance in front of the wall at which the surface quad sits, metres.
 const STANDOFF: f32 = 0.004;
-/// Depth of the near-plane cap box behind the opening, metres.
 const CAP_DEPTH: f32 = 0.35;
-/// How far beyond the near plane the cap starts to take over, metres.
 const CAP_MARGIN: f32 = 0.02;
-/// The view's oblique near plane sits this far behind the exit plane (1 u).
 const CLIP_BEHIND_EXIT: f32 = 0.0254;
-/// `$PortalColorScale` of `portalstaticoverlay_N`.
 const COLOR_SCALE: f32 = 4.0;
 
 pub fn node_layer(code: u32) -> usize {
@@ -96,8 +74,6 @@ pub struct PortalSurface {
     #[sampler(6)]
     ramp: Option<Handle<Image>>,
     cap: bool,
-    /// Fully open: blend the rim over the frame. While opening it is drawn opaque and reads a copy of
-    /// the opaque pass to warp the wall (blended materials don't get that copy).
     blend: bool,
 }
 
@@ -130,7 +106,6 @@ impl Material for PortalSurface {
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         if key.bind_group_data.cap {
-            // Drawn over the wall: depth neither tested nor written.
             if let Some(ds) = descriptor.depth_stencil.as_mut() {
                 ds.depth_write_enabled = false;
                 ds.depth_compare = CompareFunction::Always;
@@ -149,7 +124,6 @@ impl Frame {
     }
 }
 
-/// One placed portal as seen this frame.
 #[derive(Clone, Copy)]
 struct Info {
     frame: Frame,
@@ -187,8 +161,6 @@ struct Node {
     pos: Vec3,
     rot: Quat,
     clip: Option<Vec4>,
-    /// Where the portal this node looks through sits on screen, as seen by the parent camera
-    /// (min.x, min.y, max.x, max.y, screen UV, y down). Used by the depth doubler.
     via_rect: Option<Vec4>,
 }
 
@@ -212,7 +184,6 @@ fn screen_rect(clip_from_world: Mat4, frame: &Frame) -> Option<Vec4> {
     (hi.x - lo.x > 1e-5 && hi.y - lo.y > 1e-5).then(|| Vec4::new(lo.x, lo.y, hi.x, hi.y))
 }
 
-/// Can this camera see the front face of this portal at all?
 fn portal_visible(clip_from_world: Mat4, cam: Vec3, frame: &Frame) -> bool {
     if frame.plane_distance(cam) <= 0.0 {
         return false;
@@ -229,8 +200,6 @@ fn portal_visible(clip_from_world: Mat4, cam: Vec3, frame: &Frame) -> bool {
     !(all(&|c| c.x < -c.w) || all(&|c| c.x > c.w) || all(&|c| c.y < -c.w) || all(&|c| c.y > c.w))
 }
 
-/// The tree of virtual cameras this frame, down to level `DEPTH + 1`. A child exists only if its
-/// parent's camera can see the portal it looks through.
 fn build_tree(root: (Vec3, Quat), lens: &Lens, infos: &[Option<Info>; 2]) -> BTreeMap<u32, Node> {
     let mut nodes = BTreeMap::new();
     nodes.insert(1, Node { level: 0, pos: root.0, rot: root.1, clip: None, via_rect: None });
@@ -248,7 +217,6 @@ fn build_tree(root: (Vec3, Quat), lens: &Lens, infos: &[Option<Info>; 2]) -> BTr
                 }
                 let (turn, map) = through(&x.frame, &exit.frame);
                 let (pos, rot) = (map(n.pos), (turn * n.rot).normalize());
-                // Oblique near plane: the exit portal's plane, in the child's view space.
                 let inv = rot.inverse();
                 let normal = (inv * exit.frame.normal()).normalize();
                 let at = inv * (exit.frame.at - exit.frame.normal() * CLIP_BEHIND_EXIT - pos);
@@ -285,7 +253,6 @@ struct Cams {
 struct NodeImages {
     size: UVec2,
     images: BTreeMap<u32, Handle<Image>>,
-    /// Last frame's image of each plain-level node (ping-pong with `images`), sampled by the doubler.
     prev: BTreeMap<u32, Handle<Image>>,
 }
 
@@ -357,8 +324,6 @@ pub fn plugin(app: &mut App) {
 #[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Render;
 
-/// The surface quads and caps (one pair per portal and node, hidden until needed), and the pool of
-/// node cameras (all inactive to begin with).
 fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<PortalSurface>>, mut images: ResMut<Assets<Image>>,
          mut cams: ResMut<Cams>) {
     let quad = meshes.add(Rectangle::new(HALF.x * 2.0, HALF.y * 2.0).mesh().build());
@@ -411,7 +376,6 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
     }
 }
 
-/// Portal 2's own noise and colour-ramp textures, read from the linked install the first time.
 fn textures(mut sim: NonSendMut<Sim>, mut images: ResMut<Assets<Image>>) {
     let p = &mut sim.portal;
     let Some(game) = p.game.clone().filter(|_| p.tex.is_none() && !p.tex_tried) else { return };
@@ -447,7 +411,6 @@ fn update_views(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Command
                 mut main: ResMut<Main>, cams: Res<Cams>, mut images: ResMut<Assets<Image>>, mut node_images: ResMut<NodeImages>,
                 main_cam: Query<(Entity, &Camera, &Transform, &Projection, Option<&bevy::pbr::DistanceFog>, Option<&RenderLayers>), With<OursCam>>,
                 mut cam_q: Query<(&mut Camera, &mut Transform, &mut Projection, &mut RenderLayers, &mut RenderTarget), (With<NodeCam>, Without<OursCam>)>) {
-    // Open and static animation (PortalOpenAmount / PortalStatic).
     let (now, dt) = (time.elapsed_secs(), time.delta_secs());
     let ends = sim.portal.ends;
     for i in 0..2 {
@@ -481,7 +444,6 @@ fn update_views(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Command
     main.lens = lens;
     let new = if infos.0.iter().any(Option::is_some) { build_tree((at.translation, at.rotation), &lens, &infos.0) } else { BTreeMap::new() };
 
-    // One image per active child, sized like the main view.
     if node_images.size != size {
         node_images.size = size;
         node_images.images.clear();
@@ -492,7 +454,6 @@ fn update_views(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Command
             let h = new_target(&mut images, size);
             node_images.images.insert(code, h);
         }
-        // Plain level: swap with last frame's image, which the doubler samples.
         if node_level(code) == DEPTH + 1 {
             let prev = node_images.prev.remove(&code).unwrap_or_else(|| new_target(&mut images, size));
             let cur = node_images.images.insert(code, prev).expect("inserted above");
@@ -521,7 +482,6 @@ fn update_views(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Command
         }
         c.is_active = true;
         c.order = -((node.level as isize) * 100) - code as isize;
-        // A view should look like the room: same fog as the main camera.
         match fog {
             Some(f) => commands.entity(entity).insert(f.clone()),
             None => commands.entity(entity).remove::<bevy::pbr::DistanceFog>(),
@@ -556,8 +516,6 @@ fn set_material(mats: &mut Assets<PortalSurface>, h: &Handle<PortalSurface>, par
     }
 }
 
-/// Puts each portal's quads and caps on its wall and pushes this frame's view images, open and
-/// static amounts into every surface.
 #[allow(clippy::too_many_arguments)]
 fn sync_surfaces(sim: NonSend<Sim>, infos: Res<Infos>, tree: Res<Tree>, node_images: Res<NodeImages>, main: Res<Main>, mut parts: ResMut<Parts>,
                  mut mats: ResMut<Assets<PortalSurface>>, mut tfs: Query<(&mut Transform, &mut Visibility, Has<Cap>)>) {
@@ -583,8 +541,6 @@ fn sync_surfaces(sim: NonSend<Sim>, infos: Res<Infos>, tree: Res<Tree>, node_ima
             let mut uv_remap = Vec4::new(1.0, 1.0, 0.0, 0.0);
             let mut doubler = false;
             let view = if node_level(node) == plain {
-                // Depth doubler: this node has no child camera. Show last frame's image of this node,
-                // scaled from where this node's own opening sits on screen into this portal's rectangle.
                 match (info.linked, view_node) {
                     (true, Some(vn)) => {
                         let dst = screen_rect(clip_from_world(&main.lens, vn), &info.frame);
@@ -615,7 +571,6 @@ fn sync_surfaces(sim: NonSend<Sim>, infos: Res<Infos>, tree: Res<Tree>, node_ima
                 *t = Transform::from_translation(info.frame.at + info.frame.normal() * STANDOFF).with_rotation(info.frame.rot);
                 *v = Visibility::Visible;
             }
-            // The cap shows only when this node's camera is just in front of the opening and the view exists.
             let cap_on = match view_node {
                 Some(n) if has_view => {
                     let d = info.frame.plane_distance(n.pos);

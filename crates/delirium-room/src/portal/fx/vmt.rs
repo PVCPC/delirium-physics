@@ -1,46 +1,26 @@
-//! VMT materials: patch resolution and the handful of parameters we render
-//! and collide with.
-//!
-//! `vmt-parser` was not used: its typed serde model rejects shaders it does
-//! not know and drops the `%` compile keys (`%noportal`, `%compileclip`...)
-//! that portalability and tool detection depend on.
-
 use super::kv::{self, Kv};
 
-/// What a material is for, as far as rendering and collision care.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolKind {
-    /// A normal drawn surface.
     None,
-    /// Not drawn but solid (nodraw, invisible, black-on-no-draw...).
     NoDraw,
-    /// Player/NPC clip: invisible, collides with players only.
     PlayerClip,
-    /// Full clip: invisible, collides with everything.
     Clip,
-    /// Triggers, hints, skips, areaportals, occluders: not drawn, not solid.
     NonSolid,
-    /// 2D/3D sky: not drawn by the brush renderer, the skybox is.
     Sky,
 }
 
-/// How a surface is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlendKind {
     Opaque,
-    /// Alpha test with a cutoff.
     Mask,
-    /// `$translucent`
     Blend,
-    /// `$additive`
     Additive,
 }
 
 #[derive(Clone, Debug)]
 pub struct MaterialInfo {
-    /// Normalised material name, no `materials/` prefix or `.vmt` (e.g. `metal/black_wall_metal_002b`).
     pub name: String,
-    /// Lowercased shader (`lightmappedgeneric`, `unlitgeneric`, ...). `missing` if the VMT was not found.
     pub shader: String,
     pub base_texture: Option<String>,
     pub base_texture2: Option<String>,
@@ -49,16 +29,12 @@ pub struct MaterialInfo {
     pub alpha: f32,
     pub color: [f32; 3],
     pub no_cull: bool,
-    /// Drawn without lighting (UnlitGeneric, $selfillum on world, sprites).
     pub unlit: bool,
-    /// `%noportal 1`
     pub no_portal: bool,
     pub surface_prop: Option<String>,
     pub tool: ToolKind,
     pub decal: bool,
-    /// Water, refraction, etc. that we draw as a tinted translucent pane.
     pub is_glassy: bool,
-    /// Every resolved `$param` (keys lowercased), for the Valve-shader path.
     pub params: Kv,
 }
 
@@ -86,19 +62,16 @@ impl MaterialInfo {
         m
     }
 
-    /// Whether the brush renderer should emit geometry for this material.
     pub fn is_drawn(&self) -> bool {
         self.tool == ToolKind::None
     }
 }
 
-/// Classify well-known tool textures by name.
 pub fn tool_from_name(name: &str) -> ToolKind {
     let n = name.trim_start_matches("materials/");
     let Some(t) = n.strip_prefix("tools/") else {
         return ToolKind::None;
     };
-    // toolsblack is a real, drawn black surface in Portal 2.
     if t.starts_with("toolsblack") || t.starts_with("toolswhite") {
         return ToolKind::None;
     }
@@ -117,12 +90,10 @@ pub fn tool_from_name(name: &str) -> ToolKind {
     {
         ToolKind::NoDraw
     } else {
-        // trigger, hint, skip, areaportal, occluder, fog, origin, ...
         ToolKind::NonSolid
     }
 }
 
-/// Strip a texture/material path to its canonical form.
 pub fn canonical_name(path: &str) -> String {
     let p = super::fs::normalize_path(path);
     let p = p.strip_prefix("materials/").unwrap_or(&p);
@@ -132,8 +103,6 @@ pub fn canonical_name(path: &str) -> String {
         .to_string()
 }
 
-/// Load and resolve a VMT (following `patch` includes) into a flat parameter block.
-/// Returns `(shader, params)`.
 pub fn load_vmt(read: &dyn Fn(&str) -> Option<Vec<u8>>, name: &str) -> Option<(String, Kv)> {
     load_vmt_depth(read, &format!("materials/{}.vmt", canonical_name(name)), 0)
 }
@@ -168,13 +137,11 @@ fn load_vmt_depth(
 pub fn texture_param(p: &Kv, key: &str) -> Option<String> {
     let v = p.get(key)?.trim();
     if v.is_empty() || v.starts_with('_') {
-        // `_rt_*` render targets and similar engine textures
         return None;
     }
     Some(canonical_name(v))
 }
 
-/// Interpret a resolved VMT.
 pub fn material_info(name: &str, shader: &str, p: &Kv) -> MaterialInfo {
     let mut m = MaterialInfo::missing(name);
     m.shader = shader.to_string();
@@ -208,7 +175,6 @@ pub fn material_info(name: &str, shader: &str, p: &Kv) -> MaterialInfo {
         "unlitgeneric" | "unlittwotexture" | "sprite" | "spritecard" | "splinerope" | "cable" | "monitorscreen"
     );
 
-    // Compile keys decide what vbsp did with the brush side.
     m.tool = if p.get_bool("%compilesky") || p.get_bool("%compile2dsky") {
         ToolKind::Sky
     } else if p.get_bool("%compileplayerclip") || p.get_bool("%compilenpcclip") {
@@ -237,8 +203,6 @@ pub fn material_info(name: &str, shader: &str, p: &Kv) -> MaterialInfo {
     m
 }
 
-/// Resolve a material name to its info through a file reader, falling back
-/// to a `missing` material when the VMT cannot be found.
 pub fn resolve(read: &dyn Fn(&str) -> Option<Vec<u8>>, name: &str) -> MaterialInfo {
     let canon = canonical_name(name);
     match load_vmt(read, &canon) {

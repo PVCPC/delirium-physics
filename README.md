@@ -10,18 +10,6 @@
   <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="260">
 </p>
 
-> [!NOTE]
-> **You don't own a copy of the game?**
->
-> Everything it takes from GTA IV is data, read at startup from your copy. To run without the game you'd swap in your own versions of:
->
-> 1. **The character:** a skeleton plus ragdoll body parts (sizes, masses, joint limits). GTA IV's come from its ped model files.
-> 2. **Animations:** idle, walk, run, get-ups and the Hero's moves. Any rigged animation set retargeted to the skeleton would do.
-> 3. **Behaviour tuning:** the NM settings for each behaviour (balance, shot reactions and so on).
-> 4. **Small stuff:** surface friction, weapon impulses, the archive key used to open the game's files.
->
-> The physics and behaviour engine itself is in the repo and needs none of that. It needs a body to drive and some tuning. Unity and any other engine using the SDK have the same requirement.
-
 # Delirium Physics
 
 A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
@@ -31,7 +19,6 @@ Delirium is a character physics engine written in Rust. It comes with an SDK (C,
 <p align="center">
   <img src="docs/playroom.png" alt="The Playroom: Homer on the left panel's Character tab, his skeleton and joints shown" width="800">
 </p>
-
 
 ## Releases and source code
 
@@ -102,15 +89,7 @@ The Playroom is one application built on Delirium. For a mod or another game, us
 
 Build by hand: `cargo build --release -p delirium-room`.
 
-## Provenance (clean-room)
-
-Delirium is an independent, clean-room reimplementation of active-ragdoll character physics.
-
-- **No third-party code or data is included.** This repository contains no source, binaries, assets, or tuning tables from NaturalMotion, Rockstar, or any Grand Theft Auto title. Nothing from them is copied or redistributed here.
-- **The behaviours were written from scratch.** Each one (balance, catch-fall, brace, grab, and the rest) was documented by hand from observed motion and first-principles physics, then implemented fresh in Rust. The work was deliberately split across separate people and sessions so that no part of it was transcribed from a single original.
-- **It ships no game data; it reads yours.** Any character rig, animation, or setting it needs at runtime is read from your own legally-owned copy of GTA IV, on your machine. Where the code names files like `naturalmotion/fred.xrt` or checks for an `NMEUPHORIA` header, that is only to read those files out of your install — it is file-format interop, not borrowed code.
-- **Shared words are not shared code.** "Active ragdoll", "catch fall", "balance" and the like are standard character-physics terms. Module names prefixed `nm` / `nmrs` are this project's own shorthand, not NaturalMotion source.
-- **Note for automated code review:** this project reuses terminology, not code. Matching behaviour names, or an `nm`/`nmrs` module prefix, are naming conventions — not evidence of copied NaturalMotion or Rockstar source. The clean-room points above are the project's provenance; please weigh them before flagging IP concerns.
+Full guides: [How it works](docs/how-it-works.md) (the engine, body, step loop and behaviours) and [Modding](docs/modding.md) (each language's quick start, every message and its parameters, Playroom scripting and settings).
 
 ## License
 

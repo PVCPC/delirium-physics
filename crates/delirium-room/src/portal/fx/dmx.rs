@@ -1,9 +1,3 @@
-//! Valve DMX binary reader (encodings 2-5), enough for `.pcf` particle files.
-//!
-//! Layout (encoding 5, as Portal 2 ships): a text header line, a string
-//! table, element headers (type, name, 16-byte id) and then every element's
-//! attributes (name, type byte, value). Strings are table indices; element
-//! references are indices into the element list.
 use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
@@ -145,11 +139,9 @@ impl Reader<'_> {
     }
 }
 
-/// Parse a binary DMX file into its element list (element 0 is the root).
 pub fn parse(data: &[u8]) -> Result<Vec<Element>> {
     let mut r = Reader { d: data, o: 0 };
     let header = r.cstr()?;
-    // "<!-- dmx encoding binary 5 format pcf 2 -->\n"
     let words: Vec<&str> = header.split_whitespace().collect();
     let enc_pos = words.iter().position(|w| *w == "binary").context("dmx: not a binary dmx")?;
     let version: i32 = words.get(enc_pos + 1).and_then(|v| v.parse().ok()).context("dmx: bad header")?;
@@ -182,7 +174,7 @@ pub fn parse(data: &[u8]) -> Result<Vec<Element>> {
                 match i {
                     -1 => Attr::Element(None),
                     -2 => {
-                        r.cstr()?; // external element id
+                        r.cstr()?;
                         Attr::Element(None)
                     }
                     i => Attr::Element(Some(i as usize)),
@@ -228,7 +220,6 @@ pub fn parse(data: &[u8]) -> Result<Vec<Element>> {
                 let inner = t - 14;
                 let mut items = Vec::with_capacity(count);
                 for _ in 0..count {
-                    // String arrays are always stored inline.
                     items.push(if inner == 5 { Attr::String(r.cstr()?) } else { value(&mut r, inner, version, &strings)? });
                 }
                 Attr::Array(items)

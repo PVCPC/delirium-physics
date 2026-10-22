@@ -39,7 +39,6 @@ fn through(a: &Frame, b: &Frame) -> (Quat, impl Fn(Vec3) -> Vec3) {
     ((b.rot * FLIP * a.rot.inverse()).normalize(), move |p| b.at + b.rot * (FLIP * a.local(p)))
 }
 
-/// The room's solid surfaces as the placement rules see them.
 struct SolidWorld<'a>(&'a delirium::collision::Collision);
 
 impl place::World for SolidWorld<'_> {
@@ -56,21 +55,20 @@ pub struct Portals {
     typed: String,
     asked: bool,
     model_tried: bool,
+    cube: Option<Option<(Handle<Mesh>, Handle<StandardMaterial>, Transform)>>,
+    sounds_tried: bool,
     homer_last: [f32; 2],
     obj_last: Vec<[f32; 2]>,
     hero_last: [f32; 2],
-    /// Elapsed time each portal was placed (NaN until the renderer sees it): drives the opening animation.
     placed: [f32; 2],
-    /// Portal 2's `PortalStatic` for the pair: 1 while unlinked, falls to 0 over a second after linking.
     stat: f32,
     was_linked: bool,
-    /// Portal 2's noise texture and the blue and orange colour ramps.
     tex: Option<[Handle<Image>; 3]>,
     tex_tried: bool,
-    /// Particle effects waiting to be started (see `fx::Event`), and whether Portal 2's particle systems loaded.
     fx: Vec<fx::Event>,
     fx_ready: bool,
     pub ots: Option<(Vec3, Vec3)>,
+    pub float: Option<(Vec3, Vec3)>,
 }
 
 impl Portals {
@@ -89,6 +87,8 @@ impl Portals {
         self.game = Some(path);
         self.asked = false;
         self.model_tried = false;
+        self.cube = None;
+        self.sounds_tried = false;
         self.tex = None;
         self.tex_tried = false;
         true
@@ -108,7 +108,7 @@ fn find_portal2() -> Option<String> {
 
 impl Sim {
     pub fn portal_shot(&mut self, i: usize, from: Vec3, dir: Vec3) {
-        // Shots and probes see the room's solid surfaces, not the holes existing portals cut in them.
+        self.sounds.push(crate::sfx::Snd::PortalShoot(i as u8));
         let holes = std::mem::take(&mut self.world.holes);
         let ends = self.portal.ends;
         let windows: Vec<place::Window> = match ends {
@@ -126,7 +126,6 @@ impl Sim {
         let f = match result {
             Ok(f) => Frame { at: f.at + f.normal() * 0.01, ..f },
             Err(why) => {
-                // Show where it wouldn't go, as Portal 2 does: sparks at the hit point.
                 if let Some(h) = trace.hit {
                     self.portal.fx.push(fx::Event::Burst { name: "portal_badsurface", pos: h.point, basis: fx::facing(h.normal), kind: i });
                 }
@@ -145,10 +144,10 @@ impl Sim {
         self.portal.ends[i] = Some(f);
         self.portal.fx.push(fx::Event::Rim { kind: i });
         (self.portal.placed[i], self.portal.stat) = (f32::NAN, 1.0);
+        self.sounds.push(crate::sfx::Snd::PortalOpen(i as u8));
         self.say(format!("portal  {} at {:.2},{:.2},{:.2} facing {:.2},{:.2},{:.2}", ["blue", "orange"][i], f.at.x, f.at.y, f.at.z, n.x, n.y, n.z));
     }
 
-    /// Steer falling ragdolls into floor and ceiling portals (Portal 2's air funnel).
     fn portal_funnel(&mut self, dt: f32) {
         let [Some(a), Some(b)] = self.portal.ends else { return };
         if self.paused || self.held || dt <= 0.0 {
@@ -237,7 +236,21 @@ impl Sim {
             }
             return;
         }
-        let v: Vec<f32> = a.split(',').filter_map(|x| x.parse().ok()).collect();
+        let p = |d: &str| d.split(',').filter_map(|x| x.parse().ok()).collect::<Vec<f32>>();
+        if let Some(d) = a.strip_prefix("float ") && let [x, y, z, ax, ay, az] = p(d)[..] {
+            let (at, aim) = (Vec3::new(x, y, z), Vec3::new(ax, ay, az));
+            (self.portal.gun, self.aim_gun, self.portal.float) = (true, true, Some((at, aim)));
+            (self.gun.at, self.gun.dir, self.gun.aim, self.gun.placed) = (at, (aim - at).normalize(), aim, true);
+            return;
+        }
+        if let Some(d) = a.strip_prefix("aim ") && let (&[x, y, z], Some(f)) = (&p(d)[..], self.portal.float.as_mut()) {
+            f.1 = Vec3::new(x, y, z);
+            return;
+        }
+        if let Some(i) = a.strip_prefix("fire ").and_then(|i| i.parse::<usize>().ok()) && let Some((at, aim)) = self.portal.float {
+            return self.portal_shot(i & 1, at, (aim - at).normalize());
+        }
+        let v = p(a);
         if let [i, fx, fy, fz, dx, dy, dz] = v[..] {
             self.portal_shot(i as usize & 1, Vec3::new(fx, fy, fz), Vec3::new(dx, dy, dz).normalize());
         }
@@ -440,10 +453,8 @@ fn vtf(d: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     Some((w as u32, h as u32, out))
 }
 
-fn gun_model(game: &str) -> Option<(Mesh, Image)> {
-    const B: &str = "models/weapons/w_portalgun";
-    const T: &str = "materials/models/weapons/w_models/portalgun/w_portalgun.vtf";
-    let f = vpk(game, &[&format!("{B}.mdl"), &format!("{B}.vvd"), &format!("{B}.dx90.vtx"), T])?;
+fn model(game: &str, b: &str, t: &str) -> Option<(Mesh, Image)> {
+    let f = vpk(game, &[&format!("{b}.mdl"), &format!("{b}.vvd"), &format!("{b}.dx90.vtx"), t])?;
     let (mdl, vvd, vtx) = (&f[0], &f[1], &f[2]);
     let i = |d: &[u8], o: usize| d.get(o..o + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap())) as usize;
     let fl = |o: usize| f32::from_le_bytes(vvd[o..o + 4].try_into().unwrap());
@@ -492,6 +503,7 @@ fn gun_model(game: &str) -> Option<(Mesh, Image)> {
             }
         }
     }
+    idx.chunks_exact_mut(3).for_each(|t| t.swap(1, 2));
     let mesh = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default())
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos).with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nrm)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv).with_inserted_indices(bevy::mesh::Indices::U32(idx));
@@ -500,6 +512,39 @@ fn gun_model(game: &str) -> Option<(Mesh, Image)> {
     let img = Image::new(Extent3d { width: w, height: h, depth_or_array_layers: 1 }, TextureDimension::D2, rgba,
                          TextureFormat::Rgba8UnormSrgb, bevy::asset::RenderAssetUsages::default());
     Some((mesh, img))
+}
+
+pub fn sounds(sim: &mut Sim, assets: &mut Assets<crate::sfx::Sfx>, bank: &mut crate::sfx::Bank) {
+    use crate::sfx::Snd;
+    let Some(game) = sim.portal.game.clone().filter(|_| !sim.portal.sounds_tried) else { return };
+    sim.portal.sounds_tried = true;
+    const W: &str = "sound/weapons/portalgun/";
+    let mut n = 0;
+    for (s, f) in [(Snd::PortalShoot(0), "portalgun_shoot_blue1"), (Snd::PortalShoot(1), "portalgun_shoot_red1"),
+                   (Snd::PortalOpen(0), "portal_open_blue_01"), (Snd::PortalOpen(1), "portal_open_red_01")] {
+        if let Some(w) = vpk(&game, &[&format!("{W}{f}.wav")]).and_then(|f| crate::sfx::wav(&f[0])) {
+            bank.add(s, assets.add(w));
+            n += 1;
+        }
+    }
+    sim.say(format!("portal  {n} of 4 sounds read"));
+}
+
+pub fn cube(sim: &mut Sim, meshes: &mut Assets<Mesh>, mats: &mut Assets<StandardMaterial>, images: &mut Assets<Image>)
+            -> Option<(Handle<Mesh>, Handle<StandardMaterial>, Transform)> {
+    let game = sim.portal.game.clone()?;
+    if sim.portal.cube.is_none() {
+        let got = model(&game, "models/props/metal_box", "materials/models/props/metal_box_skin001.vtf").and_then(|(mesh, img)| {
+            use bevy::camera::primitives::MeshAabb;
+            let b = mesh.compute_aabb()?;
+            let k = 1.0 / b.half_extents.max_element();
+            let mat = mats.add(StandardMaterial { base_color_texture: Some(images.add(img)), perceptual_roughness: 0.5, ..default() });
+            Some((meshes.add(mesh), mat, Transform::from_scale(Vec3::splat(k)).with_translation(-Vec3::from(b.center) * k)))
+        });
+        sim.say(format!("portal  companion cube {}", if got.is_some() { "read" } else { "not read" }));
+        sim.portal.cube = Some(got);
+    }
+    sim.portal.cube.clone().flatten()
 }
 
 #[derive(Component)]
@@ -517,7 +562,7 @@ pub fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: Re
             return;
         }
         sim.portal.model_tried = true;
-        let Some((mesh, img)) = gun_model(&game) else { return sim.say("portal  w_portalgun: not read".into()) };
+        let Some((mesh, img)) = model(&game, "models/weapons/w_portalgun", "materials/models/weapons/w_models/portalgun/w_portalgun.vtf") else { return sim.say("portal  w_portalgun: not read".into()) };
         let mesh = meshes.add(mesh);
         let holo = mats.add(StandardMaterial { base_color: Color::srgba(0.35, 0.9, 1.0, 0.3), emissive: LinearRgba::rgb(0.1, 0.5, 0.6),
                                                alpha_mode: AlphaMode::Blend, unlit: true, double_sided: true, cull_mode: None, ..default() });
@@ -584,7 +629,6 @@ pub fn plugin(app: &mut App) {
         .add_systems(PostUpdate, ghosts.before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
 }
 
-/// One funnel step for a ragdoll: the change in its steered centre-of-mass velocity goes to every body.
 fn funnel_agent(agent: &mut delirium::nm::Agent, portals: [Frame; 2], dt: f32) {
     let (centre, v) = agent.doll.com();
     let steered = funnel::steer(&portals, 9.81, centre, v, dt);
@@ -610,7 +654,6 @@ fn transit(agent: &mut delirium::nm::Agent, a: Frame, b: Frame, last: &mut [f32;
     for (k, (x, q, v, w)) in parts.into_iter().enumerate() {
         agent.doll.set_body(k, x, q.normalize(), v, w);
     }
-    // Out of a floor or ceiling portal, near enough straight up or down: no sideways drift (the exit gimme).
     let drop = funnel::exit_gimme(&to, agent.doll.com().1);
     if drop != Vec3::ZERO {
         let bodies: Vec<(usize, Transform, Vec3, Vec3)> = agent.doll.frames().enumerate().map(|(k, f)| (k, f, agent.doll.vel(k).0, agent.doll.vel(k).1)).collect();
@@ -674,7 +717,6 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<Standa
                     Some(g) => {
                         if let Ok((_, _, mut gt, mut gv, gm)) = ghosts.get_mut(g) {
                             (*gt, *gv) = (at, Visibility::Visible);
-                            // The copy follows its part's look (colour, glow) and its exit plane.
                             let want = standard.get(&mat.0);
                             let stale = clipped.get(&gm.0).is_some_and(|c| c.extension.clip != planes
                                 || want.is_some_and(|w| c.base.base_color != w.base_color || c.base.emissive != w.emissive || c.base.alpha_mode != w.alpha_mode));

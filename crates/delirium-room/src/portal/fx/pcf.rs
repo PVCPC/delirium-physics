@@ -1,10 +1,8 @@
-//! `.pcf` particle system definitions on top of the DMX reader.
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::dmx::{self, Attr, Element};
 
-/// One operator / initializer / emitter / renderer / force / constraint.
 #[derive(Clone, Debug)]
 pub struct OpDef {
     pub function: String,
@@ -27,7 +25,6 @@ impl OpDef {
     pub fn color(&self, k: &str, default: [u8; 4]) -> [u8; 4] {
         self.params.get(k).and_then(Attr::as_color).unwrap_or(default)
     }
-    /// `operator end cap state`: -1 always, 0 only while running, 1 only in the end cap.
     pub fn end_cap_state(&self) -> i32 {
         self.i("operator end cap state", -1)
     }
@@ -66,7 +63,6 @@ pub struct SystemDef {
     pub children: Vec<ChildDef>,
 }
 
-/// All particle systems from a set of `.pcf` files, by name.
 #[derive(Default, Debug)]
 pub struct ParticleLibrary {
     pub systems: HashMap<String, Arc<SystemDef>>,
@@ -77,7 +73,6 @@ impl ParticleLibrary {
         self.systems.get(name).cloned()
     }
 
-    /// Add every `DmeParticleSystemDefinition` in a pcf. Later files win.
     pub fn load_pcf(&mut self, data: &[u8]) -> anyhow::Result<usize> {
         let els = dmx::parse(data)?;
         let mut n = 0;

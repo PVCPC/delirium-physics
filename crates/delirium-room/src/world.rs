@@ -321,6 +321,11 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
             }
             (v, Vec3::Z * 6.0)
         }
+        "stairsdown" => {
+            let (v, start) = stage("bigstairs", brick, concrete)?;
+            (v.into_iter().map(|(c, h, r)| (c * Vec3::new(1.0, -1.0, 1.0), h, r)).collect(), start)
+        }
+        "portalwall" => (vec![b([-2.15, 0.0, 2.5], [0.15, 4.0, 2.5], concrete)], Vec3::new(2.52, -0.21, 0.0)),
         "rooftop" => (vec![b([0.0, -2.25, 2.0], [3.0, 2.75, 2.0], concrete)], Vec3::Z * 4.0),
         "lowwall" => (vec![b([0.0, 0.45, 0.45], [4.0, 0.15, 0.45], brick)], Vec3::ZERO),
         "kerb" => (vec![b([0.0, 0.45, 0.22], [4.0, 0.15, 0.22], brick)], Vec3::ZERO),
@@ -347,6 +352,16 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
 }
 
 impl Room {
+    pub fn ground(&self, p: Vec3) -> f32 {
+        self.blocks.iter().filter(|(c, h, _)| (p.x - c.x).abs() <= h.x && (p.y - c.y).abs() <= h.y && c.z + h.z <= p.z + 0.05)
+            .map(|(c, h, _)| c.z + h.z).fold(0.0, f32::max)
+    }
+
+    pub fn stairs_ahead(&self, p: Vec3, dir: Vec3) -> bool {
+        let g = [0.0, 0.3, 0.6, 0.9, 1.2].map(|d| self.ground(p + dir * d));
+        g.windows(2).all(|w| (0.0..0.4).contains(&(w[0] - w[1]))) && g[0] - g[4] > 0.3
+    }
+
     pub fn new(surfaces: Vec<(String, f32, f32)>, name: &str) -> Room {
         let row = |n: &str| surfaces.iter().position(|s| s.0 == n).unwrap_or(0) as u8;
         let (blocks, start) = stage(name, row("BRICK_WALL"), row("CONCRETE")).unwrap_or_else(|| (Room::blocks(&row), Vec3::ZERO));

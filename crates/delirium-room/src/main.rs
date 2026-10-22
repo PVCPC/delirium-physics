@@ -104,12 +104,99 @@ fn saved_look() -> Look {
     Look { sky: [n[0], n[1], n[2]], floor: [n[3], n[4], n[5]], grid: n[6] != 0.0, fog: n[7] != 0.0, sun: n[8], glow: n[10] != 0.0 }
 }
 
-/// The sun's default direction (degrees): azimuth and elevation of the light as seen from the scene.
 const SUN_DIR: [f32; 2] = [-33.7, 59.0];
+const SHADOW_SOFT_MAX: f32 = 10.0;
 
 fn saved_sun() -> [f32; 2] {
     let n: Vec<f32> = look_path().and_then(|p| std::fs::read_to_string(p).ok()).map_or(vec![], |t| t.split_whitespace().filter_map(|x| x.parse().ok()).collect());
     if n.len() == 13 { [n[11], n[12]] } else { SUN_DIR }
+}
+
+const SETTINGS: &str = "settings.txt";
+
+fn settings(sim: &Sim) -> String {
+    let b = |x: bool| x as u8;
+    format!("pedcol {}
+eyes {}
+brows {}
+skel {}
+clean {}
+look {}
+avoid {}
+tasks {}
+getup {}
+god {}
+weak {}
+passive {}
+walk {}
+hero_physics {}
+super_punch {}
+shadows {}
+opacity {}
+soft {}
+shadow_soft {}
+fill {}
+sun_r {}
+sun_g {}
+sun_b {}
+sound {}
+vol {}
+vol_fx {}
+vol_portal {}
+",
+            sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
+            b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.shadows), sim.body_alpha,
+            b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
+            sim.volume[0], sim.volume[1], sim.volume[2])
+}
+
+fn load_settings(sim: &mut Sim) {
+    let f = getup::config_dir().join(SETTINGS);
+    let Ok(t) = std::fs::read_to_string(&f) else { return };
+    sim.say(format!("room  settings from {}", f.display()));
+    for (k, v) in t.lines().filter_map(|l| l.split_once(' ')) {
+        let Ok(x) = v.trim().parse::<f32>() else { continue };
+        let (n, on) = (x.max(0.0) as usize, x != 0.0);
+        match k {
+            "pedcol" => if let Some(c) = ped_colour(v.trim()) { (sim.ped_color, sim.body_alpha) = c },
+            "opacity" => sim.body_alpha = x.clamp(0.1, 1.0),
+            "eyes" => sim.eyes = on,
+            "brows" => sim.brows = on,
+            "skel" => sim.skel = on,
+            "clean" => sim.clean = on,
+            "look" => sim.look = on,
+            "avoid" => sim.avoid = on,
+            "tasks" => sim.tasks = on,
+            "getup" => sim.getup_mode = (n % 4) as u8,
+            "god" => sim.god = on,
+            "weak" => sim.weak = on,
+            "passive" => sim.passive = on,
+            "walk" => sim.walk = on,
+            "hero_physics" => sim.hero_physics = on,
+            "super_punch" => sim.super_punch = on,
+            "shadows" => sim.shadows = on,
+            "soft" => sim.soft = on,
+            "shadow_soft" => sim.shadow = x.clamp(0.0, SHADOW_SOFT_MAX),
+            "fill" => sim.fill_k = x.clamp(0.0, 3.0),
+            "sun_r" => sim.sun_color[0] = x.clamp(0.0, 1.0),
+            "sun_g" => sim.sun_color[1] = x.clamp(0.0, 1.0),
+            "sun_b" => sim.sun_color[2] = x.clamp(0.0, 1.0),
+            "sound" => sim.sound = on,
+            "vol" => sim.volume[0] = x.clamp(0.0, 1.0),
+            "vol_fx" => sim.volume[1] = x.clamp(0.0, 1.0),
+            "vol_portal" => sim.volume[2] = x.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+}
+
+fn save_settings(sim: NonSend<Sim>, mut last: Local<Option<Option<String>>>) {
+    let now = settings(&sim);
+    let last = last.get_or_insert_with(|| sim.script.is_empty().then(|| now.clone()));
+    if let Some(l) = last && *l != now {
+        let _ = std::fs::create_dir_all(getup::config_dir()).and_then(|_| std::fs::write(getup::config_dir().join(SETTINGS), &now));
+        *l = now;
+    }
 }
 
 fn help_seen() -> bool {
@@ -182,6 +269,7 @@ const PLAT_ID: i32 = 300;
 const INJURY_MAX: f32 = 0.8;
 const CRUSH_SPEED: f32 = 2.5;
 const DODGE_GAP: f32 = 3.0;
+const DIVE: (f32, f32) = (3.5, 3.0);
 const HANG_SECS: f32 = 3.0;
 const CAB_GAP: f32 = 1.45;
 const CAB_OFF: f32 = 0.12;
@@ -320,6 +408,9 @@ struct Sim {
     film: f32,
     photo: bool,
     soft: bool,
+    shadows: bool,
+    sun_color: [f32; 3],
+    fill_k: f32,
     gun_reach: f32,
     gun_up: f32,
     gun_off: Vec3,
@@ -328,6 +419,9 @@ struct Sim {
     crane_to: Option<([f32; 4], f32, Option<Vec3>)>,
     shadow: f32,
     strict: bool,
+    stairs_rolled: bool,
+    cam_head: bool,
+    pov: bool,
     film_vel: Vec3,
     photo_pending: bool,
     photo_follow: bool,
@@ -407,6 +501,7 @@ struct Sim {
     skin: Look,
     sounds: Vec<sfx::Snd>,
     sound: bool,
+    volume: [f32; 3],
     blood: Vec<(Vec3, Vec3, f32, u8)>,
     pixel_blood: bool,
     show_ripples: bool,
@@ -448,10 +543,10 @@ struct Sim {
     learned: Option<(learn::Net, Vec<Quat>, usize, learn::Pick)>,
     walk_learned: Option<(learn::Net, f32, f32, bool)>,
     ped_color: usize,
+    body_alpha: f32,
     eyes: bool,
     skel: bool,
     clean: bool,
-    /// Direction of the sun: azimuth and elevation, degrees.
     sun_dir: [f32; 2],
     body: usize,
     brows: bool,
@@ -1047,6 +1142,9 @@ impl Sim {
         if self.homer.is_none() && (self.homer_rest > 0.0 || self.agent.fallen || !standing || self.nm_t[0].is_some() || self.musc.is_some() || self.learned.is_some()) {
             return;
         }
+        if self.homer.is_none() {
+            (self.shot_task, self.blast_task) = (None, None);
+        }
         let (Some(clips), Some(hero)) = (self.getup.as_ref(), self.hero.as_mut()) else { return };
         let me = self.homer.get_or_insert_with(|| {
             let fwd = (pelvis - hero.feet).with_z(0.0).normalize_or(Vec3::X);
@@ -1291,6 +1389,20 @@ impl Sim {
         }
     }
 
+    fn stairs_frame(&mut self) {
+        if self.agent.balancing() {
+            self.stairs_rolled = false;
+            return;
+        }
+        let (com, v) = self.agent.doll.com();
+        let on = v.with_z(0.0);
+        if !self.stairs_rolled && on.length() > 0.5 && self.room.stairs_ahead(com, on.normalize()) {
+            self.stairs_rolled = true;
+            self.send_to(0, "rollDownStairs start=true");
+            self.say("room  stairs: rolls down".into());
+        }
+    }
+
     fn ours(&self) -> Side {
         Side::new(self.agent.doll.frames().map(|f| f.translation).collect())
     }
@@ -1499,20 +1611,25 @@ impl Sim {
         }
     }
 
-    fn fire(&mut self, part: usize, aim: Option<(Vec3, Vec3, Vec3)>, fatal: bool) {
+    fn fire(&mut self, part: usize, aim: Option<(Vec3, Vec3, Vec3)>, fatal: bool, more: &[usize]) {
         let (at, dir) = aim.map_or((self.agent.doll.centre(part), Vec3::NEG_Y), |a| (a.0, a.1));
         let part = self.sever_shot(part, at, dir);
         (self.rises, self.still) = ([None, None], [0.0; 2]);
+        self.homer_rest = self.homer_rest.max(HOMER_REST);
         let before = self.health;
         let was_dead = self.dead || before <= 0.0;
         let (label, name, _) = WEAPONS[self.weapon];
         let hit = self.weapons.iter().find(|w| w.name == name).map(|w| {
             use delirium_data::ped;
             let mut h = ped::Health { health: self.health, ..Default::default() };
-            let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: true });
-            let o = ped::damage(&mut h, &hit, &ped::Victim::default(), &mut self.rand);
+            let (mut lost, mut instant) = (0.0, false);
+            for &p in std::iter::once(&part).chain(more) {
+                let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[p], ped::Attacker::Player { sure: true });
+                let o = ped::damage(&mut h, &hit, &ped::Victim::default(), &mut self.rand);
+                (lost, instant) = (lost + o.lost, instant || o.flags & ped::INSTANT != 0);
+            }
             self.health = h.health;
-            (o.lost, o.flags & ped::INSTANT != 0)
+            (lost, instant)
         });
         if fatal {
             self.health = 0.0;
@@ -1808,12 +1925,12 @@ impl Sim {
             return;
         }
         if b == "shot" {
-            self.fire(CHEST, None, false);
+            self.fire(CHEST, None, false, &[]);
             return;
         }
         if b == "shot back" {
             let s = self.ours();
-            self.fire(CHEST, Some((s.p(CHEST) - s.fwd * 0.1, s.fwd, -s.fwd)), false);
+            self.fire(CHEST, Some((s.p(CHEST) - s.fwd * 0.1, s.fwd, -s.fwd)), false, &[]);
             return;
         }
         if b == "replay" {
@@ -1882,12 +1999,8 @@ impl Sim {
             self.sounds.push(sfx::Snd::Shot(self.weapon));
             return self.gun.rockets.push((from, dir * ROCKET_SPEED, 0.0));
         }
-        let hit = self.bullet_any(from, dir);
-        match hit {
-            Some((0, (part, at, normal))) => self.fire(part, Some((at, dir, normal)), fatal),
-            Some((i, (part, at, normal))) => self.crowd_shot(i, part, at, dir, normal, fatal, true),
-            None => self.near_miss(from, dir),
-        }
+        let (_, acc, pellets, _) = self.gun_stats();
+        self.pellets(from, dir, acc, pellets, fatal);
     }
 
     fn bullet_any(&mut self, from: Vec3, dir: Vec3) -> Option<(usize, (usize, Vec3, Vec3))> {
@@ -1915,6 +2028,40 @@ impl Sim {
         let w = self.gun.rnd() * acc * if p < 0.5 { (2.0 * p).max(0.2) } else { 1.0 };
         let most = ped * 1.1 + acc * if ped * 1.1 < 0.5 { (2.2 * ped).max(0.2) } else { 1.0 };
         (0.02 * len * (p + w), 0.02 * len * most)
+    }
+
+    fn pellets(&mut self, from: Vec3, dir: Vec3, acc: f32, pellets: usize, fatal: bool) {
+        let (right, up) = dir.any_orthonormal_pair();
+        let (mut hit, mut hurt, mut more) = (None, vec![], vec![]);
+        for _ in 0..pellets {
+            let d = if pellets > 1 {
+                let half = PELLET_SPREAD * acc;
+                let (a, b) = (self.gun.rnd() * 2.0 - 1.0, self.gun.rnd() * 2.0 - 1.0);
+                (dir + right * a * half + up * b * half).normalize()
+            } else {
+                dir
+            };
+            match self.bullet_any(from, d) {
+                Some((0, h)) => match hit {
+                    None => hit = Some((h, d)),
+                    Some(_) => {
+                        self.mark(0, h.0, h.1, h.2);
+                        more.push(h.0);
+                    }
+                },
+                Some((i, h)) => {
+                    let first = !hurt.contains(&i);
+                    hurt.push(i);
+                    self.crowd_shot(i, h.0, h.1, d, h.2, fatal, first);
+                }
+                None => {}
+            }
+        }
+        match hit {
+            Some(((part, at, normal), d)) => self.fire(part, Some((at, d, normal)), fatal, &more),
+            None if hurt.is_empty() => self.near_miss(from, dir),
+            None => {}
+        }
     }
 
     fn gun_fire(&mut self, fatal: bool) {
@@ -1945,33 +2092,7 @@ impl Sim {
         let (right, up) = self.gun.dir.any_orthonormal_pair();
         let t = self.gun.rnd() * std::f32::consts::TAU;
         let dir = (self.gun.dir * len + (right * t.sin() + up * t.cos()) * r).normalize();
-        let (mut hit, mut hurt) = (None, vec![]);
-        for _ in 0..pellets {
-            let d = if pellets > 1 {
-                let half = PELLET_SPREAD * acc;
-                let (a, b) = (self.gun.rnd() * 2.0 - 1.0, self.gun.rnd() * 2.0 - 1.0);
-                (dir + right * a * half + up * b * half).normalize()
-            } else {
-                dir
-            };
-            match self.bullet_any(from, d) {
-                Some((0, h)) => match hit {
-                    None => hit = Some((h, d)),
-                    Some(_) => self.mark(0, h.0, h.1, h.2),
-                },
-                Some((i, h)) => {
-                    let first = !hurt.contains(&i);
-                    hurt.push(i);
-                    self.crowd_shot(i, h.0, h.1, d, h.2, fatal, first);
-                }
-                None => {}
-            }
-        }
-        match hit {
-            Some(((part, at, normal), d)) => self.fire(part, Some((at, d, normal)), fatal),
-            None if hurt.is_empty() => self.near_miss(from, dir),
-            None => {}
-        }
+        self.pellets(from, dir, acc, pellets, fatal);
         self.gun.kick = KICK[self.weapon];
         self.gun.flash = 0.03 + 0.02 * KICK[self.weapon];
         let side = self.gun.dir.cross(Vec3::Z).normalize_or(Vec3::X);
@@ -2125,6 +2246,7 @@ impl Sim {
             return self.say(format!("room  blast: {near:.1} m from him"));
         }
         let mut o = vec![];
+        let mut hit = vec![];
         for k in 0..ours.parts.len() {
             let p = ours.p(k);
             let f = 1.0 - p.distance(at) / BLAST_R;
@@ -2132,9 +2254,18 @@ impl Sim {
                 continue;
             }
             let imp = ((p - at).normalize_or(Vec3::Z) + Vec3::Z * 0.5).normalize() * self.agent.doll.part_mass(k) * BLAST_DV * f;
+            hit.push((k, p, (at - p).normalize_or(Vec3::Z), f));
             o.push(format!("applyImpulse partIndex={k} hitPoint={} impulse={}", v3(p), v3(imp)));
         }
         let lost = BLAST_DAMAGE * (1.0 - near / BLAST_R);
+        for &(k, ..) in &hit {
+            self.light(0, k, SHOT_GLOW);
+        }
+        if let Some(&(k, p, n, _)) = hit.iter().max_by(|a, b| a.3.total_cmp(&b.3)) {
+            self.mark(0, k, p, n);
+            self.bleed_some(p, n, BLOOD_PIX * 2);
+            self.pop(p, lost);
+        }
         self.health = if self.god { 200.0 } else { (self.health - lost).max(0.0) };
         self.say(format!("room  blast: {near:.1} m from him: -{lost:.0} -> health {:.0}", self.health));
         self.shot_task = None;
@@ -2166,15 +2297,25 @@ impl Sim {
         if d > WHIZZ {
             return self.say(format!("room  shot: missed by {d:.1} m (too far to notice)"));
         }
+        if self.dead || !learn::standing(&self.agent.doll) {
+            return self.say(format!("room  shot: near miss, {d:.2} m from him (down: no reaction)"));
+        }
         self.say(format!("room  shot: near miss, {d:.2} m from him"));
         let now = self.steps as f32 / 60.0;
-        if now - std::mem::replace(&mut self.near_at, now) < DODGE_GAP && !self.dead && !self.no_dodge {
+        if now - std::mem::replace(&mut self.near_at, now) < DODGE_GAP && !self.no_dodge {
             self.say("room  shot at again: he dives (shootDodge)".into());
+            let chest = ours.p(CHEST);
+            let off = (chest - by(chest)).with_z(0.0);
+            let away = if off.length() > 0.05 { off.normalize() } else { dir.cross(Vec3::Z).normalize_or(Vec3::X) };
+            self.agent.doll.kick(away * DIVE.0 + Vec3::Z * DIVE.1);
             return self.send_ours(vec![format!("shootDodge start=true rightArmTarget={} leftArmTarget={}", v3(from), v3(from))]);
         }
-        let msgs = |p: Vec3| vec![format!("upperBodyFlinch start=true pos={} newHit=true", v3(p)), format!("headLook start=true pos={} alwaysLook=true", v3(p))];
+        let msgs = |p: Vec3| vec!["bodyBalance start=true".into(), format!("upperBodyFlinch start=true pos={} newHit=true", v3(p)), format!("headLook start=true pos={} alwaysLook=true", v3(p))];
         let o = msgs(p);
         self.send_ours(o);
+        if let Some(e) = exit("flinch").filter(|_| self.tasks) {
+            (self.exit, self.nm_t, self.failed) = (e, [Some(0.0); 2], [false; 2]);
+        }
     }
 
     fn aim_at(&self, from: Vec3, dir: Vec3) -> Vec3 {
@@ -2264,14 +2405,20 @@ impl Sim {
         if ray.is_none() && self.film > 0.0 {
             (self.gun.at, self.gun.aim) = (chest + self.gun_off, chest + self.gun_aim_off);
         }
+        #[cfg(feature = "portal")]
+        if let Some((at, aim)) = self.portal.float {
+            (self.gun.at, self.gun.aim) = (at, aim);
+        }
         let nearest = |doll: &delirium::ragdoll::Ragdoll, p: Vec3| doll.frames().map(|f| (f.translation, f.translation.distance(p)))
             .fold((p, f32::MAX), |a, b| if b.1 < a.1 { b } else { a });
         if let Some((from, dir)) = ray {
             if !hold {
                 self.gun.at = from + dir * ((chest - from).dot(dir) - 0.5).max(0.5);
-                self.gun.aim = nearest(&self.agent.doll, self.gun.at).0;
-            } else if portal_gun(self) {
+            }
+            if portal_gun(self) {
                 self.gun.aim = from + dir * self.world.contact(from, dir, 200.0).map_or(50.0, |c| c.0);
+            } else if !hold {
+                self.gun.aim = nearest(&self.agent.doll, self.gun.at).0;
             } else {
                 self.gun.aim = self.aim_at(from, dir);
             }
@@ -2629,10 +2776,10 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: false, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
-                        grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, body, skin: saved_look(), ped_color: 0, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
+                        grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -2730,6 +2877,9 @@ fn main() {
     if let Some(n) = headless_steps {
         return headless(sim, n);
     }
+    if sim.script.is_empty() {
+        load_settings(&mut sim);
+    }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
     let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, apply_look, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
@@ -2745,7 +2895,7 @@ fn main() {
         .insert_non_send_resource(sim)
         .add_systems(Startup, setup)
         .add_systems(Update, systems)
-        .add_systems(Update, (sounds, blood_view, planks))
+        .add_systems(Update, (sounds, blood_view, planks, save_settings))
         .add_systems(EguiPrimaryContextPass, ui);
     sfx::plugin(&mut app);
     #[cfg(feature = "portal")]
@@ -3092,7 +3242,7 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         let _ = game;
         for (k, p) in sim.build.parts.iter().enumerate() {
             let name = delirium_data::nm_asset::PARTS.get(k).copied().unwrap_or("");
-            let c = part_color(0, name);
+            let c = part_color(0, name, BODY_ALPHA);
             commands.spawn((Mesh3d(part_mesh(meshes, p)),
                             MeshMaterial3d(mats.add(StandardMaterial { base_color: c, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.6, ..default() })),
                             Transform::default(), Visibility::Hidden, RenderLayers::layer(layer), PartMesh { k,  crowd, watch }));
@@ -3156,6 +3306,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
     let mut new = load(&a, &a, sim.game_dir.as_deref(), VecDeque::new(), None);
     (new.log, new.script, new.show_ui, new.sens, new.walk, new.getup_mode, new.poke, new.god, new.aim_gun) = (std::mem::take(&mut sim.log), std::mem::take(&mut sim.script), sim.show_ui, sim.sens, sim.walk, sim.getup_mode, sim.poke, sim.god, sim.aim_gun);
     (new.show_pops, new.help, new.tab, new.skin) = (sim.show_pops, sim.help, sim.tab, sim.skin);
+    (new.ped_color, new.body_alpha, new.skel, new.soft, new.eyes, new.film) = (sim.ped_color, sim.body_alpha, sim.skel, sim.soft, sim.eyes, sim.film);
     new.scene = Some(scene.clone());
     new.agent.strength = sim.agent.strength;
     *sim = new;
@@ -3216,7 +3367,7 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
     for (p, mut t, mut v, m) in &mut q {
         let ped = p.crowd.map_or(0, |c| c + 1);
         let lit = sim.glow.get(ped).and_then(|g| g.get(p.k)).filter(|_| p.watch.is_none()).map_or(LinearRgba::BLACK, |&(g, (c, _))| c * g);
-        let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""));
+        let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""), sim.body_alpha);
         let col = if sim.clean { col.with_alpha(1.0) } else { col };
         if mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col) {
             if let Some(x) = mats.get_mut(&m.0) {
@@ -3381,12 +3532,12 @@ fn follow_floor(sim: NonSend<Sim>, mut q: Query<&mut Transform, With<Floor>>) {
     }
 }
 
-fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32, [f32; 2])>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, &mut Transform, Has<Fill>)>,
+fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32, [f32; 2], bool, [f32; 3], f32)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, &mut Transform, Has<Fill>)>,
               mut fill: ResMut<GlobalAmbientLight>,
               floor: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<Floor>>, mut mats: ResMut<Assets<StandardMaterial>>,
               cam: Query<Entity, With<OursCam>>, mut commands: Commands) {
     let (l, Ok((f, m))) = (sim.skin, floor.single()) else { return };
-    if *last == Some((l, f, sim.soft, sim.shadow, sim.sun_dir)) {
+    if *last == Some((l, f, sim.soft, sim.shadow, sim.sun_dir, sim.shadows, sim.sun_color, sim.fill_k)) {
         return;
     }
     if last.is_some_and(|o| o.0 != l || o.4 != sim.sun_dir) {
@@ -3396,21 +3547,24 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
             let _ = std::fs::write(p, n.map(|x| x.to_string()).join(" "));
         }
     }
-    *last = Some((l, f, sim.soft, sim.shadow, sim.sun_dir));
-    fill.brightness = if sim.soft { 400.0 } else { GlobalAmbientLight::default().brightness };
+    *last = Some((l, f, sim.soft, sim.shadow, sim.sun_dir, sim.shadows, sim.sun_color, sim.fill_k));
+    fill.brightness = if sim.soft { 400.0 * sim.fill_k } else { GlobalAmbientLight::default().brightness };
     let [r, g, b] = l.sky;
     sky.0 = Color::srgb(r, g, b);
-    // The sun sits 7 m out along its azimuth and elevation, looking at the middle of the scene; the dim
-    // fill light stays roughly opposite it, low.
     let from = |az: f32, el: f32, r: f32| {
         let (az, el) = (az.to_radians(), el.clamp(3.0, 89.0).to_radians());
         Vec3::new(az.cos() * el.cos(), az.sin() * el.cos(), el.sin()) * r
     };
     for (mut s, mut t, fill) in &mut sun {
         *t = Transform::from_translation(if fill { from(sim.sun_dir[0] + 160.6, 22.0, 5.4) } else { from(sim.sun_dir[0], sim.sun_dir[1], 7.0) }).looking_at(Vec3::ZERO, Vec3::Z);
-        let k = match (fill, sim.soft) { (false, true) => 0.75, (false, false) => 1.0, (true, true) => 0.3, (true, false) => 0.0 };
+        let k = match (fill, sim.soft) { (false, true) => 0.75, (false, false) => 1.0, (true, true) => 0.3 * sim.fill_k, (true, false) => 0.0 };
         s.illuminance = bevy::light::light_consts::lux::AMBIENT_DAYLIGHT * l.sun * k;
+        if !fill {
+            let [r, g, b] = sim.sun_color;
+            s.color = Color::srgb(r, g, b);
+        }
         s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some(sim.shadow);
+        s.shadows_enabled = !fill && sim.shadows;
     }
     if sim.room.stage != "street" {
         if let Some(m) = mats.get_mut(&m.0) {
@@ -3440,9 +3594,13 @@ const STAGES: [(&str, &str); 6] = [("room", "room"), ("bigstairs", "big stairs")
 #[derive(Component)]
 struct PropMesh(usize, usize);
 
-fn sounds(mut sim: NonSendMut<Sim>, mut commands: Commands, mut bank: Option<ResMut<sfx::Bank>>) {
-    let (mut q, on) = (std::mem::take(&mut sim.sounds), sim.sound);
-    sfx::play(&mut commands, &mut bank, &mut q, on);
+fn sounds(mut sim: NonSendMut<Sim>, mut commands: Commands, mut bank: Option<ResMut<sfx::Bank>>, mut assets: ResMut<Assets<sfx::Sfx>>) {
+    #[cfg(feature = "portal")]
+    if let Some(b) = bank.as_mut() {
+        portal::sounds(&mut sim, &mut assets, b);
+    }
+    let (mut q, vol) = (std::mem::take(&mut sim.sounds), if sim.sound { sim.volume } else { [0.0; 3] });
+    sfx::play(&mut commands, &mut bank, &mut q, vol);
 }
 
 fn blood_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
@@ -3467,8 +3625,8 @@ fn blood_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Asse
     }
 }
 
-fn props(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
-         mut q: Query<(Entity, &PropMesh, &mut Transform)>, mut made: Local<usize>) {
+fn props(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
+         mut images: ResMut<Assets<Image>>, mut q: Query<(Entity, &PropMesh, &mut Transform)>, mut made: Local<usize>) {
     let objs = &sim.room.objs;
     if objs.len() < *made {
         for (e, _, _) in &q {
@@ -3481,8 +3639,19 @@ fn props(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Me
             *t = sim.shown().filter(|_| p.1 == 0).and_then(|f| f.props.get(p.0).copied()).unwrap_or_else(|| sim.room.obj(p.1, p.0).0);
         }
     }
-    for (j, o) in objs.iter().enumerate().skip(*made) {
-        let (_, s, _, _) = world::KINDS[o.kind];
+    for j in *made..sim.room.objs.len() {
+        let kind = sim.room.objs[j].kind;
+        let (_, s, _, _) = world::KINDS[kind];
+        #[cfg(feature = "portal")]
+        if kind == 1 && let Some((mesh, mat, fit)) = portal::cube(&mut sim, &mut meshes, &mut mats, &mut images) {
+            for i in 0..SIDES {
+                commands.spawn((sim.room.obj(i, j).0, Visibility::default(), PropMesh(j, i))).with_children(|c| {
+                    c.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_scale(Vec3::splat(s)) * fit, RenderLayers::layer(1 + i)));
+                });
+            }
+            continue;
+        }
+        let o = &sim.room.objs[j];
         let mesh = match o.kind {
             0 | 4 => meshes.add(Sphere::new(s)),
             3 => meshes.add(Cylinder::new(s, world::BARREL_HALF * 2.0)),
@@ -3498,7 +3667,7 @@ fn props(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Me
             commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), sim.room.obj(i, j).0, RenderLayers::layer(1 + i), PropMesh(j, i)));
         }
     }
-    *made = objs.len();
+    *made = sim.room.objs.len();
 }
 
 fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
@@ -3972,7 +4141,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
                 mv += d;
             }
         }
-        let cam_mv = if sim.detached {
+        let fly = if sim.detached {
             mv = Vec3::ZERO;
             let fwd = -view(&o);
             let go: Vec3 = [(KeyCode::KeyW, fwd), (KeyCode::KeyS, -fwd), (KeyCode::KeyD, side), (KeyCode::KeyA, -side), (KeyCode::KeyE, Vec3::Z), (KeyCode::KeyQ, -Vec3::Z)]
@@ -3982,6 +4151,10 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             Vec3::ZERO
         };
         if sim.hero.is_some() {
+            let cam_mv = mv;
+            if sim.photo {
+                mv = Vec3::ZERO;
+            }
             for (k, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8,
                              KeyCode::Digit9, KeyCode::Digit0, KeyCode::Minus, KeyCode::Equal]
                 .into_iter().enumerate() {
@@ -4009,10 +4182,10 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
                 sim.play_hero(dt, mv.with_z(0.0).normalize_or_zero(), gait);
                 sim.homer_fight(dt);
             }
-            mv = Vec3::ZERO;
+            mv = if sim.photo { cam_mv } else { Vec3::ZERO };
         }
-        if cam_mv != Vec3::ZERO {
-            o.target += cam_mv * time.delta_secs() * if shift_held(&keys) { 24.0 } else { 8.0 };
+        if fly != Vec3::ZERO {
+            o.target += fly * time.delta_secs() * if shift_held(&keys) { 24.0 } else { 8.0 };
             o.follow = 3;
         }
         if sim.photo {
@@ -4032,7 +4205,6 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             o.follow = 3;
         }
         if keys.just_pressed(KeyCode::KeyC) || std::mem::take(&mut sim.relock) {
-            // One free camera: the detached one. Following and detached are the two states.
             let follow = o.follow == 0 && !sim.detached;
             sim.detached = follow;
             o.follow = if follow { 3 } else { 0 };
@@ -4048,7 +4220,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     if o.follow == 0 {
         let at = sim.taxis.iter().find(|t| t.player).map(|t| t.pos).or(sim.hero.as_ref().map(|n| n.feet))
             .unwrap_or_else(|| { let c = sim.shown().map_or(sim.agent.doll.com().0, |f| f.links[0].translation); c.with_z(c.z - STAND) });
-        let mut at = at.with_z(at.z + sim.look_z);
+        let mut at = if sim.cam_head { sim.agent.doll.centre(HEAD) } else { at.with_z(at.z + sim.look_z) };
         if sim.film > 0.0 && !sim.strict {
             let v = sim.agent.doll.vel(0).0.with_z(0.0);
             sim.film_vel = sim.film_vel.lerp(v, (time.delta_secs() * 1.5).min(1.0));
@@ -4064,6 +4236,9 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     let off = Vec3::new(o.yaw.cos() * o.pitch.cos(), o.yaw.sin() * o.pitch.cos(), o.pitch.sin()) * dist;
     let slide = (-off).cross(Vec3::Z).normalize_or_zero() * (dist * 0.12 * (sim.show_ui && !sim.detached) as u8 as f32);
     *t = Transform::from_translation(o.target + off - slide).looking_at(o.target - slide, Vec3::Z);
+    if let Some(n) = sim.hero.as_ref().filter(|_| sim.pov) {
+        *t = Transform::from_translation(n.head() + n.facing() * 0.25).looking_at(sim.agent.doll.centre(CHEST), Vec3::Z);
+    }
     #[cfg(feature = "portal")]
     {
         sim.portal.ots = None;
@@ -4247,10 +4422,12 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 }
             }
             ("!look", Some(n)) => sim.skin = LOOKS.iter().find(|l| l.0 == n).map_or(sim.skin, |l| l.1),
-            ("!pedcol", Some(n)) => sim.ped_color = PED_COLORS.iter().position(|c| c.0 == n).unwrap_or(sim.ped_color),
+            ("!pedcol", Some(n)) => if let Some(c) = ped_colour(n) { (sim.ped_color, sim.body_alpha) = c },
             ("!eyes", _) => sim.eyes = !sim.eyes,
             ("!skel", _) => sim.skel = !sim.skel,
             ("!clean", _) => sim.clean = !sim.clean,
+            ("!shadows", _) => sim.shadows = !sim.shadows,
+            ("!settings", _) => load_settings(&mut sim),
             ("!hero", _) => sim.toggle_hero(),
             ("!punch", _) => if let Some(n) = sim.hero.as_mut() { n.punch() },
             ("!pad", Some(a)) => if let (Some(n), Ok(b)) = (sim.hero.as_mut(), u32::from_str_radix(a.trim_start_matches("0x"), 16)) { n.scripted = b },
@@ -4309,7 +4486,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!shoot", Some(a)) => {
                 let mut w = a.split_whitespace();
                 let part = w.next().and_then(|k| k.parse().ok()).unwrap_or(0);
-                sim.fire(part, None, w.next() == Some("fatal"));
+                sim.fire(part, None, w.next() == Some("fatal"), &[]);
             }
             ("!nododge", _) => sim.no_dodge = !sim.no_dodge,
             ("!superpunch", _) => sim.button("super punch"),
@@ -4345,6 +4522,20 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             }
             ("!shadow", Some(a)) => sim.shadow = a.parse().unwrap_or(0.0),
             ("!strict", _) => sim.strict = true,
+            ("!camhead", _) => sim.cam_head = true,
+            ("!pov", _) => sim.pov = !sim.pov,
+            ("!miss", Some(a)) => {
+                let head = sim.agent.doll.centre(HEAD);
+                let from = head + Vec3::new(0.0, -6.0, 0.0);
+                sim.near_miss(from, (head + Vec3::X * a.parse().unwrap_or(0.5) - from).normalize());
+            }
+            ("!hatshot", _) => {
+                let head = sim.agent.doll.centre(HEAD);
+                let from = head + Vec3::new(0.0, -4.0, 0.3);
+                let dir = (head + Vec3::Z * 0.15 - from).normalize();
+                sim.hat_off(dir * 3.0);
+                sim.near_miss(from, dir);
+            }
             ("!cam", Some(a)) => {
                 let v: Vec<f32> = a.split_whitespace().filter_map(|x| x.parse().ok()).collect();
                 if let [yaw, pitch, dist, z] = v[..] {
@@ -4582,6 +4773,7 @@ impl Sim {
         }
         self.tackle_frame(1.0 / 60.0);
         self.jump_frame(1.0 / 60.0);
+        self.stairs_frame();
         let doll = self.hero_doll.as_mut().filter(|h| h.rise.is_none()).map(|h| &mut h.agent);
         let mut all: Vec<(&mut Agent, usize, &Build, &[_], &[Capsule])> = std::iter::once(&mut self.agent).skip(learning as usize).chain(self.crowd.iter_mut().map(|c| &mut c.0)).chain(doll).enumerate()
             .map(|(i, a)| (a, i, &self.build, &car[..], &hero[..])).collect();
@@ -4738,17 +4930,23 @@ fn caps_of(build: &Build, d: &Ragdoll) -> Vec<Capsule> {
     }).collect()
 }
 
-const PED_COLORS: [(&str, &str); 5] = [("mixed", "mixed"), ("blue", "all blue"), ("red", "all red"), ("solid", "solid blue"), ("opaque", "mixed, opaque")];
-fn part_color(c: usize, name: &str) -> Color {
-    let (red, blue) = (Color::srgba(0.85, 0.3, 0.25, 0.55), Color::srgba(0.3, 0.45, 0.9, 0.55));
+const PED_COLORS: [(&str, &str); 3] = [("mixed", "Red & blue"), ("blue", "All blue"), ("red", "All red")];
+const BODY_ALPHA: f32 = 0.55;
+fn ped_colour(k: &str) -> Option<(usize, f32)> {
+    match k {
+        "solid" | "3" => Some((1, 1.0)),
+        "opaque" | "4" => Some((0, 1.0)),
+        _ => PED_COLORS.iter().position(|c| c.0 == k).or_else(|| k.parse().ok().filter(|&i: &usize| i < PED_COLORS.len())).map(|i| (i, BODY_ALPHA)),
+    }
+}
+fn part_color(c: usize, name: &str, a: f32) -> Color {
+    let (red, blue) = (Color::srgba(0.85, 0.3, 0.25, a), Color::srgba(0.3, 0.45, 0.9, a));
     match c {
-        4 => part_color(0, name).with_alpha(1.0),
         1 => blue,
         2 => red,
-        3 => Color::srgb(0.3, 0.45, 0.9),
         _ if name.ends_with("Left") => red,
         _ if name.ends_with("Right") => blue,
-        _ => Color::srgba(0.72, 0.72, 0.74, 0.6),
+        _ => Color::srgba(0.72, 0.72, 0.74, (a + 0.05).min(1.0)),
     }
 }
 fn bone_tint(c: usize) -> Option<Color> {
@@ -4903,11 +5101,15 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
 }
 
 const RESET_TIP: &str = "Stand Homer back up (R)";
-const TIPS: [(&str, &str); 38] = [
+const TIPS: [(&str, &str); 42] = [
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
     ("car", "A taxi comes at Homer from his left at 8 m/s and hits him."),
     ("#ripples", "Cyan rings on the floor where a body part lands hard."),
+    ("#shadows", "Shadows on or off. Off is lighter on a slow graphics card."),
+    ("mixed", "Left side red, right side blue: easy to tell his left and right apart."),
+    ("blue", "All blue."),
+    ("red", "All red."),
     ("#skel", "The skeleton's lines and joints drawn over Homer's body."),
     ("#clean", "Hides every debug drawing on the characters (skeleton, boxes, centre of mass, arrows, look and avoid markers) and makes their bodies solid instead of see-through."),
     ("#eyes", "Homer's eyes: they look where he's reacting to, blink, squint when he's hurt and shut when he's out."),
@@ -5350,20 +5552,33 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let (portal, picked) = (sim.portal.on(), sim.portal.gun);
             #[cfg(not(feature = "portal"))]
             let (portal, picked) = (false, false);
+            sub(ui, "Weapon");
             let per = per_row(ui, 108.0);
-            egui::Grid::new("guns").spacing([10.0, 8.0]).show(ui, |ui| {
-                for (i, w) in WEAPONS.iter().enumerate() {
-                    let on = sim.weapon == i && !picked;
-                    let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", _ => w.0 }).selected(on));
-                    if b.clicked() { pressed = Some(format!("#weapon {i}")); }
-                    if i % per == per - 1 {
-                        ui.end_row();
+            for (k, head) in [(0, "Guns"), (1, "Thrown"), (2, "Melee")] {
+                ui.label(egui::RichText::new(head).weak());
+                egui::Grid::new(("guns", k)).spacing([10.0, 8.0]).show(ui, |ui| {
+                    for (j, (i, w)) in WEAPONS.iter().enumerate().filter(|(i, _)| kind(*i) == k).enumerate() {
+                        let on = sim.weapon == i && !picked;
+                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", _ => w.0 }).selected(on));
+                        if b.clicked() { pressed = Some(format!("#weapon {i}")); }
+                        if j % per == per - 1 {
+                            ui.end_row();
+                        }
                     }
-                }
-                if portal && ui.add_sized([108.0, 40.0], egui::Button::new("Portal gun").selected(picked)).clicked() {
+                });
+            }
+            if portal {
+                ui.label(egui::RichText::new("Portal 2").weak());
+                if ui.add_sized([108.0, 40.0], egui::Button::new("Portal gun").selected(picked)).clicked() {
                     pressed = Some("#portalgun".into());
                 }
-            });
+            }
+            if !picked && kind(sim.weapon) == 0 {
+                let (between, _, pellets, _) = sim.gun_stats();
+                let damage = sim.weapons.iter().find(|w| w.name == WEAPONS[sim.weapon].1).map_or(String::new(), |w| format!("Damage {:.0}{} · ", w.damage, if pellets > 1 { " a pellet" } else { "" }));
+                info(ui, &format!("{}{}{:.0} shots a minute · {} a clip", damage, if pellets > 1 { format!("{pellets} pellets · ") } else { String::new() },
+                                  60000.0 / between.max(1.0), sim.clip_size().0));
+            }
             if picked {
                 info(ui, if sim.hero.is_some() { "Hero: click the view to aim with the mouse over his shoulder (Esc frees it). Left click blue, right click orange." }
                          else if shoots { "Left click: blue portal, right click: orange.  Hold Ctrl: at the pointer." }
@@ -5450,13 +5665,28 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             pressed = pressed.take().or(tiles(ui, "homer", &[("look", sim.look, onoff("Look at objects", sim.look)), ("avoid", sim.avoid, onoff("Avoid objects", sim.avoid)),
                 ("game tasks", sim.tasks, onoff("Animation mode", sim.tasks)), ("get-up", sim.getup_mode != 0, format!("get-up: {}", GETUP_MODES[sim.getup_mode as usize])),
                 ("infinite health", sim.god, onoff("Unlimited health", sim.god)), ("weak", sim.weak, onoff("Weaken muscles", sim.weak))]));
-            ui.collapsing("Character appearance", |ui| {
-            let cols: Vec<(&str, bool, String)> = PED_COLORS.iter().enumerate().map(|(i, (k, l))| (*k, sim.ped_color == i, l.to_string())).collect();
-            if let Some(n) = tiles(ui, "pedcol", &cols) {
-                pressed = Some(format!("#pedcol {n}"));
+            egui::CollapsingHeader::new(egui::RichText::new("Character appearance").strong().size(15.0)).default_open(true).show(ui, |ui| {
+            ui.label(egui::RichText::new("Body colour").color(DIM));
+            let tip = |k: &str| TIPS.iter().find(|t| t.0 == k).map_or("", |t| t.1);
+            ui.horizontal_wrapped(|ui| {
+                for (i, (k, l)) in PED_COLORS.iter().enumerate() {
+                    if ui.selectable_label(sim.ped_color == i, *l).on_hover_text(tip(k)).clicked() {
+                        sim.ped_color = i;
+                    }
+                }
+            });
+            let mut see = 1.0 - sim.body_alpha;
+            if ui.add_enabled(!sim.clean, egui::Slider::new(&mut see, 0.0..=0.9).text("See-through").custom_formatter(|x, _| if x <= 0.0 { "solid".into() } else { format!("{:.0}%", x * 100.0) }))
+                .on_hover_text("How much you see through the bodies. Solid hides the skeleton inside; Clean view makes them solid too.").changed() {
+                sim.body_alpha = 1.0 - see;
             }
-            pressed = pressed.take().or(tiles(ui, "face", &[("#eyes", sim.eyes, onoff("Eyes", sim.eyes)), ("#brows", sim.brows, onoff("Eyebrows", sim.brows)),
-                ("#skel", sim.skel, onoff("Skeleton", sim.skel)), ("#clean", sim.clean, onoff("Clean view (no debug, solid body)", sim.clean))]));
+            ui.label(egui::RichText::new("Show").color(DIM));
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut sim.eyes, "Eyes").on_hover_text(tip("#eyes"));
+                ui.checkbox(&mut sim.brows, "Eyebrows").on_hover_text(tip("#brows"));
+                ui.checkbox(&mut sim.skel, "Skeleton").on_hover_text(tip("#skel"));
+                ui.checkbox(&mut sim.clean, "Clean view").on_hover_text(tip("#clean"));
+            });
             });
             if sim.watch.is_some() || [learn::path(), learn::walk_path(false), learn::walk_path(true)].iter().any(|p|
                 std::path::Path::new(p).exists() || std::path::Path::new(&learn::live_path(p)).exists()) {
@@ -5487,6 +5717,11 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             if ui.add_enabled(sim.sound, egui::Button::new("Test sound")).on_hover_text("Play an impact sound through the current Windows output device.").clicked() { sim.sounds.push(sfx::Snd::Hit); }
             info(ui, "8-bit effects for pokes, shots, hits and crashes. No background music. If Test sound is silent, check Delirium in the Windows volume mixer.");
             slide(ui, "Mouse sensitivity", &mut sim.sens, 0.05, 2.0, "");
+            sub(ui, "Audio");
+            slide(ui, "Master volume", &mut sim.volume[0], 0.0, 1.0, "");
+            slide(ui, "Sound effects", &mut sim.volume[1], 0.0, 1.0, "");
+            #[cfg(feature = "portal")]
+            slide(ui, "Portal 2 sounds", &mut sim.volume[2], 0.0, 1.0, "").on_hover_text("The portal gun's shots and portals opening (with Portal 2 on).");
             if ui.button("Enter photo mode  ·  P").on_hover_text("Hide the interface and move the camera freely; P returns to the room.").clicked() {
                 sim.photo_pending = true;
             }
@@ -5513,9 +5748,30 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             slide(ui, "Light intensity", &mut sim.skin.sun, 0.1, 4.0, "×");
             ui.add(egui::Slider::new(&mut sim.sun_dir[0], -180.0..=180.0).text("Sun direction").suffix("°"));
             ui.add(egui::Slider::new(&mut sim.sun_dir[1], 3.0..=89.0).text("Sun height").suffix("°"));
-            if ui.button("Reset sun angle").clicked() {
-                sim.sun_dir = SUN_DIR;
+            sub(ui, "Lights & shadows");
+            pressed = pressed.take().or(tiles(ui, "lights", &[("#shadows", sim.shadows, onoff("Shadows", sim.shadows))]));
+            ui.add_enabled(sim.shadows, egui::Slider::new(&mut sim.shadow, 0.0..=SHADOW_SOFT_MAX).logarithmic(true).smallest_positive(1.0).text("Shadow softness").custom_formatter(|x, _| if x <= 0.0 { "hard".into() } else { format!("{:.0}%", x / SHADOW_SOFT_MAX as f64 * 100.0) }))
+                .on_hover_text("How blurry the shadows' edges are: hard is a sharp outline, high is a cloudy-day blur. Costs more on a slow graphics card.");
+            let mut f = if sim.soft { sim.fill_k } else { 0.0 };
+            if ui.add(egui::Slider::new(&mut f, 0.0..=3.0).text("Fill light").custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{x:.2}×") }))
+                .on_hover_text("How bright the shadows and the dark side are: off is near black, high is flat and washed out.").changed() {
+                (sim.soft, sim.fill_k) = (f > 0.0, if f > 0.0 { f } else { sim.fill_k });
             }
+            ui.horizontal(|ui| {
+                let mut k = sim.sun_color;
+                if ui.color_edit_button_rgb(&mut k).on_hover_text("The sun's colour: warm for sunset, blue for moonlight.").changed() {
+                    sim.sun_color = k;
+                }
+                ui.label("Sun colour");
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Reset sun angle").clicked() {
+                    sim.sun_dir = SUN_DIR;
+                }
+                if ui.button("Reset lights").on_hover_text("Shadows on and sharp, soft fill at 1×, a white sun.").clicked() {
+                    (sim.shadows, sim.shadow, sim.soft, sim.fill_k, sim.sun_color) = (true, 0.0, true, 1.0, [1.0; 3]);
+                }
+            });
         }
 
         if sim.tab & (1 << 5) != 0 {
@@ -5594,6 +5850,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             (Some("#clean"), _) => sim.clean = !sim.clean,
             (Some("#brows"), _) => sim.brows = !sim.brows,
             (Some("#fog"), _) => sim.skin.fog = !sim.skin.fog,
+            (Some("#shadows"), _) => sim.shadows = !sim.shadows,
             (Some("#glow"), _) => sim.skin.glow = !sim.skin.glow,
             (Some("#stage"), Some(n)) => sim.switch_to = Some((n.to_string(), nm() == delirium::nmrs::MARGE)),
             (Some("#click"), Some(m)) => {
@@ -5628,6 +5885,5 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
     Ok(())
 }
 
-// mimalloc: steps ~10% faster alone, ~16% with 28 bodies at once (heap churn of the contact rows).
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;

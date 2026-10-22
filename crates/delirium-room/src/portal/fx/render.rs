@@ -1,9 +1,3 @@
-//! Particle effects: the [`ParticleEffect`] component, the library loader,
-//! the SpriteCard material, and the mesh builder that draws running systems.
-//!
-//! The simulator is in [`crate::sim`]. This module converts between world
-//! space (metres, Y up, used by everything else) and Source space (inches,
-//! Z up, used by the `.pcf` numbers), and turns particles into quads and ropes.
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -22,10 +16,8 @@ use super::pcf::ParticleLibrary;
 use super::sim::{ControlPoint, Particle, SystemInstance};
 
 const SOURCE_UNIT: f32 = 0.0254;
-/// Render layer of the main-view-only effects (the portal rims): portal view cameras don't draw it.
 pub const MAIN_ONLY: usize = 7;
 
-/// Source space (inches) to world (metres). This room is Z-up like Source, so only the scale differs.
 fn source_to_world(v: Vec3) -> Vec3 {
     v * SOURCE_UNIT
 }
@@ -33,68 +25,38 @@ fn source_dir_to_world(v: Vec3) -> Vec3 {
     v
 }
 
-/// The `.pcf` files the effects use (Portal 2's file names).
 pub const PORTAL_PCF_FILES: &[&str] = &["particles/portals.pcf", "particles/portal_projectile.pcf", "particles/portalgun.pcf"];
 
-/// Sprite-sheet layouts (columns, rows) by material name, lowercase, no extension.
-///
-/// The game's sheet layouts are not decoded yet, so this is empty by default.
-/// A host (or a test) can add entries; a material with no entry draws its whole
-/// texture as one frame.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct SheetGrids(pub HashMap<String, (u32, u32)>);
 
-/// Loaded particle systems, filled at startup from the game's `.pcf` files.
-/// A system the game does not provide is logged once and not drawn.
 #[derive(Resource, Clone, Default)]
 pub struct Particles {
-    /// Every system the effects can start.
     pub library: Arc<ParticleLibrary>,
 }
 
-/// Counters for the host and the examples: systems emitted and alive.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct ParticleStats {
-    /// Particles ever emitted, per system name.
     pub emitted: HashMap<String, u64>,
-    /// Particles alive this frame, per system name.
     pub alive: HashMap<String, usize>,
 }
 
-/// A running particle effect. Control points are in **world** space; the
-/// component converts them to Source space. Set them with [`Self::set_cp`]
-/// (positions and orientation) or [`Self::set_cp_vector`] (plain vectors such
-/// as colours, 0-255).
 #[derive(Component)]
 pub struct ParticleEffect {
-    /// The system name (`portal_edge`, `portal_success`, ...).
     pub name: String,
-    /// Simulation state; created on the first frame.
     pub instance: Option<SystemInstance>,
     cps: Vec<(usize, ControlPoint)>,
-    /// Despawn the entity when the effect has finished.
     pub despawn_when_done: bool,
-    /// Start the effect again from the beginning when it finishes (looping rims).
     pub restart_when_done: bool,
-    /// Draw on this render layer instead of the default.
     pub render_layer: Option<usize>,
-    /// Hidden effects pause and draw nothing.
     pub visible: bool,
-    /// Where the effect's simulation space sits in the world. Control points
-    /// and particles live in that space; identity means world space. The
-    /// first-person gun effects use the eye, so they stay glued to the gun
-    /// through fast turns and portal transits (Portal 2 marks them "view
-    /// model effect").
     pub render_transform: Transform,
     stop: bool,
     meshes: HashMap<usize, Entity>,
-    /// Frames since the effect finished: it is hidden first and despawned a few frames later, because
-    /// despawning a mesh that was visible this frame can crash Bevy 0.18's material specialization.
     dying: u8,
 }
 
 impl ParticleEffect {
-    /// A new, not yet started effect of the named system.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -110,22 +72,18 @@ impl ParticleEffect {
             dying: 0,
         }
     }
-    /// Builder: set control point `i` (world space, `basis` = its X/Y/Z axes in world space).
     pub fn with_cp(mut self, i: usize, pos: Vec3, basis: Mat3) -> Self {
         self.set_cp(i, pos, basis);
         self
     }
-    /// Builder: set control point `i` to a plain vector (e.g. a colour, 0-255).
     pub fn with_cp_vector(mut self, i: usize, v: Vec3) -> Self {
         self.set_cp_vector(i, v);
         self
     }
-    /// Set control point `i` to a world-space position and orientation.
     pub fn set_cp(&mut self, i: usize, pos: Vec3, basis: Mat3) {
         let cp = ControlPoint::new(world_to_source(pos), basis_to_source(basis));
         self.put(i, cp);
     }
-    /// Set control point `i` to a plain vector (not converted).
     pub fn set_cp_vector(&mut self, i: usize, v: Vec3) {
         self.put(i, ControlPoint::new(v, Mat3::IDENTITY));
     }
@@ -133,17 +91,13 @@ impl ParticleEffect {
         self.cps.retain(|(k, _)| *k != i);
         self.cps.push((i, cp));
     }
-    /// Stop emitting; the end-cap behaviour runs and the effect dies out.
     pub fn stop(&mut self) {
         self.stop = true;
         self.restart_when_done = false;
-        // Once its end-cap has played out the effect, its meshes and its entity are freed (a looping rim
-        // doesn't despawn by itself, but a stopped one must).
         self.despawn_when_done = true;
     }
 }
 
-/// World metres (Y up) to Source inches (Z up).
 pub fn world_to_source(v: Vec3) -> Vec3 {
     v / SOURCE_UNIT
 }
@@ -152,43 +106,26 @@ fn basis_to_source(b: Mat3) -> Mat3 {
     b
 }
 
-// ------------------------------------------------------------ material --
-
-/// SpriteCard particle material. The fragment shader decodes the Source-style
-/// (sRGB-encoded) colour into linear light, which keeps the blend values the
-/// same as Source's.
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
 #[bind_group_data(SpriteCardKey)]
 pub struct SpriteCardMaterial {
-    /// Blend and colour parameters (see [`SpriteCardParams`]).
     #[uniform(0)]
     pub params: SpriteCardParams,
-    /// The particle texture (not sRGB-decoded by the GPU; the shader decodes).
     #[texture(1)]
     #[sampler(2)]
     pub texture: Option<Handle<Image>>,
-    /// Draw without depth testing (`$ignorez`).
     pub ignore_z: bool,
-    /// A `Refract` card: `texture` is its normal map and the card bends the
-    /// scene behind it (read from the view's opaque-pass copy).
     pub refract: bool,
 }
 
-/// Uniform block of [`SpriteCardMaterial`].
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct SpriteCardParams {
-    /// `$overbrightfactor` (multiplies the colour before the sRGB decode).
     pub overbright: f32,
-    /// `$addself`: adds the texture again, scaled.
     pub add_self: f32,
-    /// bit 0: additive blend. bit 1: `$distancealpha` (alpha is a distance field).
-    /// bit 2: refraction (`Refract` shader).
     pub flags: u32,
-    /// `$refractamount` of a refraction card.
     pub refract: f32,
 }
 
-/// Pipeline key: depth test off for `$ignorez` materials.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpriteCardKey {
     ignore_z: bool,
@@ -214,8 +151,6 @@ impl Material for SpriteCardMaterial {
         SPRITE_SHADER.into()
     }
     fn alpha_mode(&self) -> AlphaMode {
-        // A refraction card writes the (bent) scene itself, blended with the
-        // unbent scene by its alpha, so it is drawn in the opaque-copy phase.
         if self.refract { AlphaMode::Opaque } else { AlphaMode::Premultiplied }
     }
     fn reads_view_transmission_texture(&self) -> bool {
@@ -254,17 +189,13 @@ impl Material for SpriteCardMaterial {
     }
 }
 
-/// A parsed SpriteCard: its material and orientation mode.
 #[derive(Clone, Debug)]
 struct CardInfo {
     material: Handle<SpriteCardMaterial>,
-    /// `$orientation` (3 = along the particle normal).
     orientation: i32,
-    /// Sheet layout (columns, rows), if any.
     grid: Option<(u32, u32)>,
 }
 
-/// Materials by name; `None` when the game does not provide it (not drawn).
 #[derive(Resource, Default)]
 struct CardCache {
     cards: HashMap<String, Option<CardInfo>>,
@@ -280,11 +211,9 @@ fn load_card(
     let grid = grids.0.get(name).copied();
     let read = |p: &str| game.read(p);
     let (shader, kv) = super::vmt::load_vmt(&read, name).unwrap_or_default();
-    // `Refract` cards (e.g. the portal-close warp) have a normal map and no base texture.
     let refract = shader.eq_ignore_ascii_case("refract");
     let g = |k: &str| kv.get(k).map(|s| s.trim().to_string());
     let f = |k: &str, d: f32| g(k).and_then(|s| s.parse::<f32>().ok()).unwrap_or(d);
-    // Particle textures are kept as stored (sRGB-encoded); the shader decodes them.
     let texture = g(if refract { "$normalmap" } else { "$basetexture" }).and_then(|t| {
         let path = format!("materials/{}.vtf", super::vmt::canonical_name(&t));
         let data = read(&path)?;
@@ -292,7 +221,6 @@ fn load_card(
         Some(images.add(tex.into_image(false, false)))
     });
     if texture.is_none() {
-        // Container systems have no material: nothing to draw, nothing to report.
         if !name.is_empty() {
             if shader.is_empty() {
                 warn!("p2_fx: particle material {name} not found in the Portal 2 install; not drawn");
@@ -319,9 +247,6 @@ fn load_card(
     Some(CardInfo { material, orientation: f("$orientation", 0.0) as i32, grid })
 }
 
-// -------------------------------------------------------------- plugin --
-
-/// Registers the particle material and systems.
 pub fn plugin(app: &mut App) {
     let _ = app.world_mut().resource_mut::<Assets<Shader>>()
         .insert(&SPRITE_SHADER, Shader::from_wgsl(include_str!("spritecard.wgsl"), "spritecard.wgsl"));
@@ -334,12 +259,10 @@ pub fn plugin(app: &mut App) {
         .add_systems(Update, load_particles)
         .add_systems(PostUpdate, (super::events::drain, step_effects, build_meshes).chain()
             .before(bevy::transform::TransformSystems::Propagate)
-            // New mesh entities must be seen by this frame's specialization check, or the renderer meets a visible mesh it was never told about.
             .before(bevy::pbr::check_entities_needing_specialization::<SpriteCardMaterial>))
         .add_observer(cleanup_meshes);
 }
 
-/// Index Portal 2's files and parse its particle systems, once, when a Portal 2 folder is linked.
 fn load_particles(mut sim: NonSendMut<crate::Sim>, mut fs: ResMut<GameFsRes>, mut particles: ResMut<Particles>, mut tried: Local<bool>) {
     let Some(game) = sim.portal.game.clone().filter(|_| !*tried) else { return };
     *tried = true;
@@ -359,7 +282,6 @@ fn load_particles(mut sim: NonSendMut<crate::Sim>, mut fs: ResMut<GameFsRes>, mu
     sim.portal.fx_ready = true;
 }
 
-/// Advance every effect and count particles. Runs in `PostUpdate`.
 pub(crate) fn step_effects(
     time: Res<Time>,
     particles: Option<Res<Particles>>,
@@ -419,7 +341,6 @@ pub(crate) fn step_effects(
     }
 }
 
-/// Mesh vertex scratch buffer.
 #[derive(Default)]
 struct MeshBuf {
     pos: Vec<[f32; 3]>,
@@ -461,11 +382,6 @@ fn catmull(a: Vec3, b: Vec3, c: Vec3, d: Vec3, t: f32) -> Vec3 {
     b + 0.5 * t * (c - a + t * (2.0 * a - 5.0 * b + 4.0 * c - d + t * (-a + 3.0 * b - 3.0 * c + d)))
 }
 
-/// UV rectangle `[u0, v0, u1, v1]` of a particle's sheet frame.
-///
-/// The frame index is `sequence + age * rate` (rate in frames per second when
-/// `as_fps`), or `sequence + life_fraction * rate * frames` otherwise, wrapped
-/// to the sheet. Without a grid the whole texture is the frame.
 fn sheet_rect(grid: Option<(u32, u32)>, p: &Particle, now: f32, rate: f32, as_fps: bool) -> [f32; 4] {
     let Some((cols, rows)) = grid else { return [0.0, 0.0, 1.0, 1.0] };
     let cols = cols.max(1);
@@ -480,7 +396,6 @@ fn sheet_rect(grid: Option<(u32, u32)>, p: &Particle, now: f32, rate: f32, as_fp
     [col * cw, row * rh, (col + 1.0) * cw, (row + 1.0) * rh]
 }
 
-/// Source's sprite-sheet animation parameters from a `render_animated_sprites` renderer.
 fn sheet_params(r: &super::pcf::OpDef) -> (f32, bool) {
     (r.f("animation rate", 0.1), r.b("use animation rate as FPS", false))
 }
@@ -555,7 +470,6 @@ fn build_system_mesh(inst: &SystemInstance, card: &CardInfo, time: f32) -> Optio
                         let tangent = dir_to_world((c - b).normalize_or_zero());
                         let v = length * texel + time * scroll;
                         let axis = if oriented {
-                            // Oriented ropes: the width runs along the normal, square to the rope.
                             let nrm = dir_to_world(pa.normal.lerp(pb.normal, t)).normalize_or(Vec3::Y);
                             let ofs = (nrm - tangent * nrm.dot(tangent)).normalize_or(Vec3::Y);
                             [ofs.x, ofs.y, ofs.z, 3.0]
@@ -604,7 +518,6 @@ fn build_system_mesh(inst: &SystemInstance, card: &CardInfo, time: f32) -> Optio
     Some((buf.into_mesh(), main_only))
 }
 
-/// Rebuild the mesh of every running system. Runs in `PostUpdate`.
 #[allow(clippy::too_many_arguments)]
 fn build_meshes(
     mut commands: Commands,
@@ -695,7 +608,6 @@ fn build_meshes(
     }
 }
 
-/// A mesh entity drawing (part of) a [`ParticleEffect`]. Removed with it.
 #[derive(Component)]
 #[allow(dead_code)]
 pub struct ParticleMeshOf(pub Entity);

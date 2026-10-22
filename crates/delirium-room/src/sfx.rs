@@ -15,6 +15,8 @@ pub enum Snd {
     Punch,
     Throw,
     Crash,
+    PortalShoot(u8),
+    PortalOpen(u8),
 }
 
 #[derive(Asset, TypePath, Clone)]
@@ -75,6 +77,7 @@ fn nz(from: f32, to: f32, len: f32, vol: f32) -> Voice {
 fn voices(s: Snd, k: usize) -> Vec<Voice> {
     let p = [1.0, 0.92, 1.08][k];
     match s {
+        Snd::PortalShoot(_) | Snd::PortalOpen(_) => vec![],
         Snd::Shot(0) => vec![nz(9000.0, 6000.0, 0.03, 0.6), Voice { duty: 0.5, ..sq(760.0 * p, 240.0, 0.15, 0.6) }],
         Snd::Shot(1) => vec![Voice { fade: 1.2, ..nz(6000.0 * p, 1500.0, 0.28, 0.9) }, sq(420.0 * p, 90.0, 0.24, 0.6), nz(10000.0, 8000.0, 0.025, 0.6)],
         Snd::Shot(2) => vec![Voice { fade: 1.6, ..nz(10000.0 * p, 6500.0, 0.08, 0.8) }, Voice { duty: 0.125, ..sq(1500.0 * p, 900.0, 0.03, 0.3) }],
@@ -133,6 +136,29 @@ fn render(vs: &[Voice]) -> Vec<f32> {
 #[derive(Resource)]
 pub struct Bank(std::collections::HashMap<Snd, [Handle<Sfx>; 3]>, usize);
 
+impl Bank {
+    pub fn add(&mut self, s: Snd, h: Handle<Sfx>) {
+        self.0.insert(s, [h.clone(), h.clone(), h]);
+    }
+}
+
+pub fn wav(b: &[u8]) -> Option<Sfx> {
+    let u = |o: usize, n: usize| b.get(o..o + n).map(|x| x.iter().rev().fold(0usize, |a, &c| a << 8 | c as usize));
+    let (mut o, mut fmt, mut data) = (12, None, None);
+    while let (Some(id), Some(len)) = (b.get(o..o + 4), u(o + 4, 4)) {
+        match id {
+            b"fmt " => fmt = Some((u(o + 8, 2)?, u(o + 10, 2)?, u(o + 12, 4)?, u(o + 22, 2)?)),
+            b"data" => data = b.get(o + 8..(o + 8 + len).min(b.len())),
+            _ => {}
+        }
+        o += 8 + len + (len & 1);
+    }
+    let ((1, ch, rate, 16), Some(d)) = (fmt?, data) else { return None };
+    let frames: Vec<f32> = d.chunks_exact(2 * ch).map(|f| f.chunks_exact(2).map(|s| i16::from_le_bytes([s[0], s[1]]) as f32).sum::<f32>() / (ch as f32 * 32768.0)).collect();
+    let n = frames.len() * RATE as usize / rate.max(1);
+    Some(Sfx((0..n).map(|i| frames[(i * rate / RATE as usize).min(frames.len() - 1)]).collect()))
+}
+
 pub fn plugin(app: &mut App) {
     app.add_audio_source::<Sfx>().add_systems(Startup, |mut commands: Commands, mut assets: ResMut<Assets<Sfx>>| {
         let all = (0..7).map(Snd::Shot).chain([Snd::Hit, Snd::Kill, Snd::Boom, Snd::Punch, Snd::Throw, Snd::Crash]);
@@ -141,17 +167,18 @@ pub fn plugin(app: &mut App) {
     });
 }
 
-pub fn play(commands: &mut Commands, bank: &mut Option<ResMut<Bank>>, queued: &mut Vec<Snd>, on: bool) {
+pub fn play(commands: &mut Commands, bank: &mut Option<ResMut<Bank>>, queued: &mut Vec<Snd>, vol: [f32; 3]) {
     let Some(bank) = bank.as_mut() else { return queued.clear() };
     let mut seen = vec![];
     for s in queued.drain(..) {
-        if !on || seen.contains(&s) || seen.len() >= 8 {
+        let v = vol[0] * if matches!(s, Snd::PortalShoot(_) | Snd::PortalOpen(_)) { vol[2] } else { vol[1] };
+        if v <= 0.0 || seen.contains(&s) || seen.len() >= 8 {
             continue;
         }
         seen.push(s);
         bank.1 += 1;
         if let Some(h) = bank.0.get(&s) {
-            commands.spawn((AudioPlayer(h[bank.1 % 3].clone()), PlaybackSettings::DESPAWN));
+            commands.spawn((AudioPlayer(h[bank.1 % 3].clone()), PlaybackSettings::DESPAWN.with_volume(bevy::audio::Volume::Linear(v))));
         }
     }
 }
