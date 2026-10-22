@@ -21,6 +21,11 @@
   run1_subject2), licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/): non-commercial
   use only. Changed: retargeted to Homer's body. A preview for this release only. Not affiliated with or endorsed by
   Ubisoft.
+- **FSR 1 upscaler** (`crates/delirium-room/src/fsr1.wgsl`): EASU and RCAS ported from AMD FidelityFX Super Resolution 1
+  ([FidelityFX-FSR](https://github.com/GPUOpen-Effects/FidelityFX-FSR)), Copyright (c) 2021 Advanced Micro Devices, Inc.,
+  MIT licence (in the file). Not affiliated with or endorsed by AMD.
+- **Anti-aliasing and DLSS** (`vendor/`): Bevy's bevy_anti_alias and dlss_wgpu (MIT / Apache-2.0), changed to draw into
+  part of the window. DLSS is NVIDIA's; its runtime (nvngx_dlss.dll) comes under NVIDIA's licence.
 - **Portal 2** is Valve's. None of its files are included: portal mode reads them from your own install. Not affiliated
   with or endorsed by Valve.
 

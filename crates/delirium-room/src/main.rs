@@ -157,11 +157,12 @@ smaa {}
 dlss_mode {}
 sharpen {}
 fps_limit {}
+upscaler {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
-            sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit)
+            sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler)
 }
 
 fn coin() -> bool {
@@ -196,6 +197,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "dlss_mode" => sim.dlss_q = (x as u8).min(3),
             "shadow_quality" => sim.shadow_q = (x as u8).clamp(1, 3),
             "sharpen" => sim.sharpen = x.clamp(0.0, 1.0),
+            "upscaler" => sim.upscaler = (x as u8).min(UP_FSR1),
             "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
             "brows" => sim.brows = on,
@@ -612,6 +614,7 @@ struct Sim {
     gpu_now: String,
     gpus: Option<Vec<String>>,
     sharpen: f32,
+    upscaler: u8,
     dlss_ok: bool,
     fps_limit: f32,
     eyes: bool,
@@ -3032,7 +3035,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, sharpen: 0.0, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, sharpen: 0.0, upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3157,6 +3160,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
+        .add_plugins(bevy::sprite_render::Material2dPlugin::<ScaledMat>::default())
         .insert_resource(bevy::winit::WinitSettings { focused_mode: bevy::winit::UpdateMode::Continuous, unfocused_mode: bevy::winit::UpdateMode::Continuous })
         .insert_resource(ClearColor(Color::srgb(0.78, 0.79, 0.81)))
         .init_gizmo_group::<OursGizmos>()
@@ -3383,6 +3387,23 @@ impl Sim {
 struct OursCam;
 #[derive(Component)]
 struct ScaledView;
+const UP_BASIC: u8 = 0;
+const UP_FSR1: u8 = 1;
+const UP_NAMES: [&str; 2] = ["basic", "FSR 1"];
+const FSR1_SHADER: Handle<Shader> = bevy::asset::uuid_handle!("b6e0c2d4-3f71-4a8e-9c15-7d2a4e9f0b38");
+#[derive(Asset, TypePath, bevy::render::render_resource::AsBindGroup, Clone)]
+struct ScaledMat {
+    #[uniform(0)]
+    p: Vec4,
+    #[texture(1)]
+    #[sampler(2)]
+    img: Handle<Image>,
+}
+impl bevy::sprite_render::Material2d for ScaledMat {
+    fn fragment_shader() -> bevy::shader::ShaderRef {
+        FSR1_SHADER.into()
+    }
+}
 const RENDER_SCALE_MIN: f32 = 0.25;
 #[derive(Component)]
 struct FacePart(usize);
@@ -3453,12 +3474,15 @@ struct PartMesh {
 struct OursGizmos;
 
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, sim: NonSend<Sim>,
+         mut scaled: ResMut<Assets<ScaledMat>>, mut shaders: ResMut<Assets<Shader>>,
          mut gizmos: ResMut<GizmoConfigStore>, mut egui_settings: ResMut<bevy_egui::EguiGlobalSettings>) {
     egui_settings.auto_create_primary_context = false;
     commands.spawn((Camera3d::default(), Camera { order: 0, ..default() }, RenderLayers::from_layers(&[0, 1]), Transform::default(),
                     Orbit { yaw: -1.3, pitch: 0.3, dist: 3.5, target: Vec3::new(0.0, 0.0, 0.8), follow: 0 }, OursCam));
     commands.spawn((Camera2d, Camera { order: 2, clear_color: ClearColorConfig::None, ..default() }, RenderLayers::layer(31), bevy_egui::PrimaryEguiContext));
-    commands.spawn((Sprite::default(), Transform::default(), Visibility::Hidden, RenderLayers::layer(31), ScaledView));
+    let _ = shaders.insert(&FSR1_SHADER, Shader::from_wgsl(include_str!("fsr1.wgsl"), "fsr1.wgsl"));
+    commands.spawn((Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))), MeshMaterial2d(scaled.add(ScaledMat { p: Vec4::ZERO, img: Handle::default() })),
+                    Transform::default(), Visibility::Hidden, RenderLayers::layer(31), ScaledView));
     commands.spawn((DirectionalLight { shadows_enabled: true, ..default() }, Transform::from_xyz(3.0, -2.0, 6.0).looking_at(Vec3::ZERO, Vec3::Z),
                     RenderLayers::from_layers(&[0, 1, 2])));
     commands.spawn((DirectionalLight { shadows_enabled: false, illuminance: 0.0, ..default() }, Transform::from_xyz(-3.0, 4.0, 2.0).looking_at(Vec3::ZERO, Vec3::Z),
@@ -3799,7 +3823,7 @@ fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope
 #[derive(Component)]
 struct Fill;
 
-fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8)>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
+fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8, bool)>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
          info: Option<Res<bevy::render::renderer::RenderAdapterInfo>>, cam: Query<Entity, With<OursCam>>, sun: Query<(Entity, Has<Fill>), With<DirectionalLight>>) {
     if let Some(i) = info.filter(|_| sim.gpu_now.is_empty()) {
         sim.gpu_now = i.name.clone();
@@ -3813,7 +3837,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
         }
     }
     let aa = sim.aa_now();
-    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8);
+    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8, sim.fsr1());
     if *last == Some(now) {
         return;
     }
@@ -3838,7 +3862,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
             c.remove::<(bevy::render::camera::TemporalJitter, bevy::render::camera::MipBias, bevy::core_pipeline::prepass::DepthPrepass,
                         bevy::core_pipeline::prepass::MotionVectorPrepass)>();
         }
-        if sim.sharpen > 0.0 {
+        if sim.sharpen > 0.0 && !sim.fsr1() {
             commands.entity(e).insert(Cas { enabled: true, sharpening_strength: sim.sharpen, denoise: false });
         } else {
             commands.entity(e).remove::<Cas>();
@@ -3871,6 +3895,9 @@ impl Sim {
     }
     fn upscaling(&self) -> bool {
         self.aa_now() >= AA_DLAA
+    }
+    fn fsr1(&self) -> bool {
+        self.render_scale < 0.999 && !self.upscaling() && self.upscaler == UP_FSR1
     }
 }
 
@@ -4443,7 +4470,8 @@ fn room_viewport(rect: egui::Rect, scale: f32, split: bool, right: bool) -> bevy
 }
 
 fn viewports(sim: NonSend<Sim>, mut contexts: EguiContexts, windows: Query<&Window>, mut cams: Query<(Entity, &mut Camera, Has<OursCam>), RoomCameras>,
-             mut commands: Commands, mut images: ResMut<Assets<Image>>, mut shown: Query<(&mut Sprite, &mut Visibility), With<ScaledView>>,
+             mut commands: Commands, mut images: ResMut<Assets<Image>>, mut shown: Query<(&mut Transform, &mut Visibility, &MeshMaterial2d<ScaledMat>), With<ScaledView>>,
+             mut scaled: ResMut<Assets<ScaledMat>>,
              mut target: Local<Option<(Handle<Image>, UVec2)>>) {
     let (Ok(ctx), Ok(window)) = (contexts.ctx_mut(), windows.single()) else { return };
     let rect = if sim.show_ui { ctx.available_rect() } else { ctx.content_rect() };
@@ -4470,10 +4498,18 @@ fn viewports(sim: NonSend<Sim>, mut contexts: EguiContexts, windows: Query<&Wind
             commands.entity(e).insert(to.clone());
         }
     }
-    if let Ok((mut sprite, mut vis)) = shown.single_mut() {
+    if let Ok((mut at, mut vis, mat)) = shown.single_mut() {
         *vis = if target.is_some() { Visibility::Visible } else { Visibility::Hidden };
-        if let Some((h, _)) = &*target {
-            (sprite.image, sprite.custom_size) = (h.clone(), Some(window.size()));
+        if let Some((h, size)) = &*target {
+            at.scale = window.size().extend(1.0);
+            let fsr = sim.upscaler == UP_FSR1;
+            let sharp = if fsr && sim.sharpen > 0.0 { (-2.0 * (1.0 - sim.sharpen)).exp2() } else { 0.0 };
+            let p = Vec4::new(size.x as f32, size.y as f32, sharp, if fsr { 1.0 } else { 0.0 });
+            if scaled.get(&mat.0).is_some_and(|m| m.p != p || m.img != *h) {
+                if let Some(mut m) = scaled.get_mut(&mat.0) {
+                    (m.p, m.img) = (p, h.clone());
+                }
+            }
         }
     }
     for (_, mut camera, ours) in &mut cams {
@@ -6377,6 +6413,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let up = sim.upscaling();
             ui.add_enabled(!up, egui::Slider::new(&mut sim.render_scale, RENDER_SCALE_MIN..=1.0).text("Resolution").custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
                 .on_hover_text("How sharp the 3D view is drawn, as a share of the window's pixels. Lower is blurrier and much faster on a slow graphics card.");
+            if sim.render_scale < 0.999 && !up {
+                let mut u = sim.upscaler as f32;
+                if ui.add(egui::Slider::new(&mut u, 0.0..=UP_FSR1 as f32).step_by(1.0).text("Upscaler").custom_formatter(|x, _| UP_NAMES[x as usize].into()))
+                    .on_hover_text("How the lower Resolution is stretched over the window. Basic just smooths it; FSR 1 (AMD FidelityFX Super Resolution 1, any graphics card) rebuilds sharp edges, and Sharpening sharpens after it.").changed() {
+                    sim.upscaler = u as u8;
+                }
+            }
             ui.add(egui::Slider::new(&mut sim.fps_limit, FPS_VSYNC..=FPS_FREE).step_by(1.0).text("Frame rate limit")
                 .custom_formatter(|x, _| if x <= FPS_VSYNC as f64 { "monitor (V-Sync)".into() } else if x >= FPS_FREE as f64 { "unlimited".into() } else { format!("{x:.0} FPS") }))
                 .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go. With the window in the background it never goes over 60.");
