@@ -97,6 +97,10 @@ version = "0.18.0"
 version = "2"
 optional = true
 
+[dependencies.wgpu]
+version = "27"
+default-features = false
+
 [dependencies.tracing]
 version = "0.1"
 features = ["std"]

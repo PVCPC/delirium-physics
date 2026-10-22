@@ -25,6 +25,11 @@ rapier3d = "0.36.1"
 anyhow = "1"
 texpresso = "2.0.2"
 
+# FSR 3 (fsr3.rs): AMD's DLL, on Vulkan.
+[target.'cfg(windows)'.dependencies]
+ash = "0.38"
+libloading = "0.8"
+
 [features]
 # Portal mode: Portal 2's portal gun, with your own Portal 2 install (none of its files are included). On by default.
 default = ["portal"]

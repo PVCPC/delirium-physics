@@ -74,18 +74,36 @@ impl ViewNode for DlssNode<DlssSuperResolutionFeature> {
         };
 
         let diagnostics = render_context.diagnostic_recorder();
-        let command_encoder = render_context.command_encoder();
         let mut dlss_context = dlss_context.context.lock().unwrap();
 
+        // Delirium's patch: wgpu records an encoder's own commands at its end but DLSS's straight away, so DLSS would
+        // run before the passes ahead of it in the same encoder (the transparent one: no see-through bodies, no
+        // gizmos). Those passes and the barriers DLSS needs go in this encoder, DLSS in one of its own after it.
+        fn resource(texture: &wgpu::Texture) -> wgpu::TextureTransition<&wgpu::Texture> {
+            wgpu::TextureTransition { texture, selector: None, state: wgpu::TextureUses::RESOURCE }
+        }
+        render_context.command_encoder().transition_resources(
+            core::iter::empty(),
+            [
+                resource(view_target.source_texture),
+                resource(&prepass_depth_texture.texture.texture),
+                resource(&prepass_motion_vectors_texture.texture.texture),
+                wgpu::TextureTransition { texture: &**view_target.destination_texture, selector: None, state: wgpu::TextureUses::STORAGE_READ_WRITE },
+            ]
+            .into_iter(),
+        );
+        let mut command_encoder = render_context.render_device().create_command_encoder(&Default::default());
+
         command_encoder.push_debug_group("dlss_super_resolution");
-        let time_span = diagnostics.time_span(command_encoder, "dlss_super_resolution");
+        let time_span = diagnostics.time_span(&mut command_encoder, "dlss_super_resolution");
 
         dlss_context
-            .render(render_parameters, command_encoder, &adapter)
+            .render(render_parameters, &mut command_encoder, &adapter)
             .expect("Failed to render DLSS Super Resolution");
 
-        time_span.end(command_encoder);
+        time_span.end(&mut command_encoder);
         command_encoder.pop_debug_group();
+        render_context.add_command_buffer(command_encoder.finish());
 
         Ok(())
     }

@@ -425,6 +425,7 @@ dependencies = [
  "dlss_wgpu",
  "tracing",
  "uuid",
+ "wgpu",
 ]
 
 [[package]]
@@ -2055,10 +2056,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
+ "ash",
  "bevy",
  "bevy_egui",
  "delirium",
  "delirium-data",
+ "libloading",
  "mimalloc",
  "rapier3d",
  "texpresso",
