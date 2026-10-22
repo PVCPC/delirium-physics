@@ -19,6 +19,8 @@ use std::io::Write;
 mod car;
 mod getup;
 mod learn;
+mod locomotion;
+mod motion_tools;
 mod map;
 #[allow(dead_code)]
 mod melee;
@@ -542,6 +544,11 @@ struct Sim {
     musc: Option<getup::Rise>,
     learned: Option<(learn::Net, Vec<Quat>, usize, learn::Pick)>,
     walk_learned: Option<(learn::Net, f32, f32, bool)>,
+    preview_on: bool,
+    preview: Option<(locomotion::preview::Preview, Vec3)>,
+    preview_wait: bool,
+    preview_keys: (bool, bool),
+    script_jog: bool,
     ped_color: usize,
     body_alpha: f32,
     eyes: bool,
@@ -660,7 +667,7 @@ impl Sim {
                 continue;
             }
             let pelvis = now[0].translation;
-            if i == 0 && (self.learned.is_some() || self.walk_learned.is_some()) {
+            if i == 0 && (self.learned.is_some() || self.walk_learned.is_some() || self.preview.is_some()) {
                 self.last[i] = pelvis;
                 continue;
             }
@@ -1875,6 +1882,10 @@ impl Sim {
                 return self.say(format!("training  {b}: {}", if got { "on (each generation's 8 tries, side by side)" } else { "on, waiting for the trainer" }));
             }
             "walk learned" | "run learned" => return self.start_walk_learned(b == "run learned"),
+            "experimental walk" => {
+                self.preview_on = !self.preview_on;
+                return self.say(format!("ours  experimental walk: {}", if self.preview_on { "on; W walks, Shift+W jogs (straight only), let go to stop" } else { "off" }));
+            }
             "infinite health" => {
                 (self.god, self.health) = (!self.god, 200.0);
                 return self.say(format!("room  infinite health: {}", if self.god { "on (hits never hurt Homer, both sides)" } else { "off" }));
@@ -2779,7 +2790,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
                         weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -4131,6 +4142,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         }
     }
     sim.walk_dir = sim.script_walk;
+    sim.preview_keys = ((!editing && !sim.detached && keys.pressed(KeyCode::KeyW)) || sim.script_walk != Vec3::ZERO, shift_held(&keys) || sim.script_jog);
     if !editing {
         let mut mv = Vec3::ZERO;
         if keys.just_pressed(KeyCode::Tab) {
@@ -4566,6 +4578,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!walk", Some(a)) => {
                 let v: Vec<f32> = a.split(',').filter_map(|x| x.parse().ok()).collect();
                 sim.script_walk = Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), 0.0).normalize_or_zero();
+                sim.script_jog = v.get(2).is_some_and(|&j| j > 0.0);
                 sim.walk = sim.script_walk != Vec3::ZERO;
                 sim.held = false;
             }
@@ -4645,9 +4658,58 @@ impl Sim {
         self.say(format!("ours  learned WASD {}: {path}; use WASD to move, reset or another reaction stops it", if run { "run" } else { "walk" }));
     }
 
+    fn preview_frame(&mut self) -> bool {
+        let (w, shift) = self.preview_keys;
+        self.preview_wait &= w;
+        let w = w || (self.preview.is_some() && self.agent.doll.motion(0).0.with_z(0.0).length() > 1.3);
+        if !self.preview_on || !w || self.preview_wait || self.hero.is_some() || self.driving || self.dead {
+            if self.preview.take().is_some() {
+                self.send("bodyBalance start=true");
+            }
+            return false;
+        }
+        if self.preview.is_none() {
+            if self.agent.doll.frames().nth(HEAD).is_none_or(|f| f.translation.z < 1.3) || self.walk_dir == Vec3::ZERO {
+                return false;
+            }
+            let (p0, at) = (self.frames[0].translation.with_z(0.0), self.agent.doll.frames().next().unwrap().translation.with_z(0.0));
+            let turn = Quat::from_rotation_z(self.walk_dir.y.atan2(self.walk_dir.x)) * locomotion::yaw(&self.frames).inverse();
+            let start: Vec<Transform> = self.frames.iter().map(|f| Transform { translation: turn * (f.translation - p0) + at, rotation: turn * f.rotation, ..*f }).collect();
+            let dir = std::path::Path::new(&learn::path()).with_file_name("learned-preview");
+            match locomotion::preview::Preview::new(&self.build, &self.world, &start, &dir) {
+                Ok((p, a)) => {
+                    self.agent = a;
+                    self.msgs = Default::default();
+                    (self.rises, self.still, self.nm_t, self.musc, self.learned, self.walk_learned) = ([None, None], [0.0; 2], [None, None], None, None, None);
+                    (self.held, self.auto_balance, self.homer, self.tasks, self.watch) = (false, false, None, false, None);
+                    self.preview = Some((p, self.walk_dir.with_z(0.0).normalize()));
+                }
+                Err(e) => {
+                    self.preview_on = false;
+                    self.say(format!("ours  experimental walk: {e} ({})", dir.display()));
+                    return false;
+                }
+            }
+        }
+        let beta = if !self.preview_keys.0 { 0.0 } else if shift { 1.0 } else { 0.25 };
+        let (p, ahead) = self.preview.as_mut().unwrap();
+        let at = self.agent.doll.frames().next().unwrap().translation.with_z(0.0);
+        if [0.4, 1.2].iter().any(|&z| self.world.cast(at + Vec3::Z * z, *ahead, 2.0).is_some()) || (at + *ahead * 4.0).abs().max_element() > 48.0 {
+            (self.preview, self.preview_wait) = (None, true);
+            self.send("bodyBalance start=true");
+            self.say("ours  experimental walk: wall or edge ahead, stopped; turn the camera and press W again".into());
+            return false;
+        }
+        if !p.step(&mut self.agent, &self.build, &self.world, beta) {
+            (self.preview, self.preview_wait) = (None, true);
+            self.say("ours  experimental walk: fell; let go of W and press it again once he's up".into());
+        }
+        true
+    }
+
     fn walk_frame(&mut self) {
         let d = self.walk_dir;
-        if !self.walk || d == Vec3::ZERO || self.musc.is_some() {
+        if !self.walk || d == Vec3::ZERO || self.musc.is_some() || self.preview.is_some() {
             return;
         }
         let mut st = std::mem::take(&mut self.msgs);
@@ -4771,6 +4833,7 @@ impl Sim {
                 self.agent.muscle_stiffness_x(1.0);
             }
         }
+        let learning = self.preview_frame() || learning;
         self.tackle_frame(1.0 / 60.0);
         self.jump_frame(1.0 / 60.0);
         self.stairs_frame();
@@ -5688,6 +5751,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 ui.checkbox(&mut sim.clean, "Clean view").on_hover_text(tip("#clean"));
             });
             });
+            sub(ui, "Experimental movement");
+            pressed = pressed.take().or(tiles(ui, "preview_move", &[("experimental walk", sim.preview_on, "Experimental walk · W walk, Shift jog".into())]));
             if sim.watch.is_some() || [learn::path(), learn::walk_path(false), learn::walk_path(true)].iter().any(|p|
                 std::path::Path::new(p).exists() || std::path::Path::new(&learn::live_path(p)).exists()) {
             sub(ui, "Learned movement · local training");

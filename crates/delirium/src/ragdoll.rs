@@ -1099,6 +1099,10 @@ impl Ragdoll {
         self.bodies.iter().map(|b| Transform::from_translation(b.x + self.o).with_rotation(b.q))
     }
 
+    pub fn turned(&self, turn: Quat) -> impl Iterator<Item = Quat> + '_ {
+        self.bodies.iter().map(move |b| (Quat::from_mat3(&Mat3::from_quat(turn * b.q * b.l)) * b.l.inverse()).normalize())
+    }
+
     pub fn capsules(&self) -> impl Iterator<Item = Transform> + '_ {
         self.bodies.iter().map(|b| Transform::from_translation(b.x + self.o).with_rotation(b.cap()))
     }

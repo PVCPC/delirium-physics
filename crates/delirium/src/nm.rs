@@ -20,6 +20,8 @@ impl Random {
 
 use crate::collision::Collision;
 use crate::ragdoll::{Build, Capsule, Drive, Limit, Muscle, Obstacle, Ragdoll};
+mod locomotion_drive;
+pub use locomotion_drive::LocomotionDrive;
 
 const G: f32 = 9.8;
 const FOOT: f32 = 0.09;
@@ -265,6 +267,9 @@ impl Balance {
 }
 
 pub struct Agent {
+    locomotion_drive: Option<LocomotionDrive>,
+    locomotion_tracking: bool,
+    locomotion_terms: Option<locomotion_drive::NativeTerms>,
     pub doll: Ragdoll,
     pub push: Vec<(usize, Vec3, Vec3)>,
     pub contact_wake: bool,
@@ -388,7 +393,7 @@ impl Agent {
             .map(|(i, p)| p.parent.map_or(frames[i].rotation, |j| frames[j].rotation.inverse() * frames[i].rotation)).collect();
         let roles = Roles::new(build);
         let pelvis_up = facing.inverse() * frames[roles.pelvis].rotation;
-        let mut a = Agent { doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * 1000.0) as u32 + 1), time: 0.0,
+        let mut a = Agent { locomotion_drive: None, locomotion_tracking: false, locomotion_terms: None, doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * 1000.0) as u32 + 1), time: 0.0,
                 stiffness: (10.0, 1.0), relax: None, config: ConfigureBalance::default(), feedback: vec![], balance: None, lean: None,
                 shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), hands_back: false, nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, extras: Default::default(), nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
                 brace: None, head_look: vec![], shot_look: false, eff_override: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -0.22, hip_yaw: crate::nmdbm::CHAR_YAW, legs: (crate::nmdbm::CHAR_LEGS.0 * build.parts[0].grown, crate::nmdbm::CHAR_LEGS.1 * build.parts[0].grown), strength: 1.0, most: build.parts.first().filter(|p| p.heft != 1.0 || p.grown != 1.0).map_or(1.0, |p| p.heft * p.size.powi(3) * p.grown),
@@ -408,6 +413,7 @@ impl Agent {
     }
 
     pub fn stop_all_behaviours(&mut self) {
+        self.locomotion_drive=None;self.locomotion_tracking=false;self.locomotion_terms=None;
         self.extras = Default::default();
         if let Some(ch) = self.ch.as_mut().filter(|_| self.bb_on) {
             crate::nmbb::BodyBalance::deactivate(ch);
@@ -795,6 +801,7 @@ impl Agent {
     }
 
     pub fn body_balance_stop(&mut self) {
+        self.locomotion_drive=None;self.locomotion_tracking=false;self.locomotion_terms=None;
         if !self.balance.as_ref().is_some_and(|b| b.bb.is_some()) {
             return;
         }
@@ -1230,6 +1237,7 @@ impl Agent {
                 }
             }
         }
+        self.apply_locomotion_drive(&mut held,build,dt);
         let pelvis = self.roles.pelvis;
         if let Some(ch) = self.ch.as_mut().filter(|ch| eff_words(ch) != self.held_eff) {
             held.muscles = ch.muscles(Muscle { target: self.zero[pelvis], stiffness: 0.0, damping: 0.0 });
@@ -1720,6 +1728,9 @@ impl Agent {
             }
             if let Some((k, _)) = ch.stabilise {
                 push = crate::nmdbm::stabilise(&body, k, dt);
+            }
+            if self.locomotion_tracking {
+                self.locomotion_terms=Some(locomotion_drive::NativeTerms{torque:torque.clone(),push:push.clone(),yaw:ch.foot_yaw,attached:snap.attached});
             }
             ch.foot_yaw = yaw;
             ch.attached = None;

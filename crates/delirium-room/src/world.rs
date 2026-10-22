@@ -3,6 +3,8 @@ use rapier3d::math::{Pose, Rotation, Vector};
 use rapier3d::prelude::{ColliderBuilder, ColliderHandle, Group, ImpulseJointHandle, InteractionGroups, InteractionTestMode, PhysicsWorld,
                         FixedJointBuilder, RigidBodyBuilder, RigidBodyHandle, RopeJointBuilder, SphericalJointBuilder};
 
+pub const FLOOR_HALF: f32 = 100.0;
+
 pub const KINDS: [(&str, f32, f32, f32); 5] = [("ball", 0.15, 2.0, 14.0), ("box", 0.2, 8.0, 9.0), ("crate", 0.45, 40.0, 0.0),
     ("barrel", 0.3, 30.0, 0.0), ("wrecking ball", 0.5, 250.0, 0.0)];
 const PART_KG: f32 = 40.0;

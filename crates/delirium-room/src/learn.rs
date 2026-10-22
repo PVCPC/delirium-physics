@@ -18,7 +18,35 @@ pub fn live_path(net: &str) -> String {
     format!("{net}.live")
 }
 
-fn save_live(path: &str, generation: usize, scores: &[f32], tries: &[Vec<Vec<Transform>>]) {
+fn replace_live(tmp: &str, path: &str) -> std::io::Result<()> {
+    for attempt in 0..40 {
+        match std::fs::rename(tmp,path) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt == 39 => return Err(e),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+        }
+    }
+    unreachable!()
+}
+
+#[cfg(all(test,windows))]
+#[test]
+fn replay_publication_waits_for_a_windows_reader() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let path=std::env::temp_dir().join(format!("delirium-replay-{stamp}.live"));
+    let tmp=path.with_extension("tmp");
+    std::fs::write(&path,b"previous").unwrap();std::fs::write(&tmp,b"next").unwrap();
+    let reader=std::fs::OpenOptions::new().read(true).share_mode(1).open(&path).unwrap();
+    let (target,source)=(path.clone(),tmp.clone());
+    let writer=std::thread::spawn(move||replace_live(source.to_str().unwrap(),target.to_str().unwrap()));
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    assert_eq!(std::fs::read(&path).unwrap(),b"previous");
+    drop(reader);writer.join().unwrap().unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(),b"next");
+}
+
+pub(crate) fn save_live(path: &str, generation: usize, scores: &[f32], tries: &[Vec<Vec<Transform>>]) {
     let (steps, parts) = (tries.first().map_or(0, |t| t.len()), tries.first().and_then(|t| t.first()).map_or(0, |f| f.len()));
     let mut b: Vec<u8> = [generation, tries.len(), steps, parts].iter().flat_map(|&x| (x as u32).to_le_bytes()).collect();
     b.extend(scores.iter().flat_map(|x| x.to_le_bytes()));
@@ -28,7 +56,7 @@ fn save_live(path: &str, generation: usize, scores: &[f32], tries: &[Vec<Vec<Tra
     }
     let tmp = format!("{path}.tmp");
     if std::fs::write(&tmp, b).is_ok() {
-        let _ = std::fs::rename(&tmp, path);
+        if let Err(error)=replace_live(&tmp,path) {eprintln!("Replay publication failed: {error}");}
     }
 }
 
@@ -55,6 +83,7 @@ pub fn path() -> String {
 pub struct Net {
     pub sizes: [usize; 4],
     pub w: Vec<f32>,
+    frozen: std::sync::OnceLock<Vec<f32>>,
 }
 
 impl Net {
@@ -70,6 +99,30 @@ impl Net {
             let (wl, b) = (&w[o..o + n * m], &w[o + n * m..o + n * m + m]);
             a = (0..m).map(|j| (b[j] + (0..n).map(|i| wl[j * n + i] * a[i]).sum::<f32>()).tanh()).collect();
             o += n * m + m;
+        }
+        a
+    }
+
+    pub fn frozen(&self, x: &[f32]) -> Vec<f32> {
+        let t = self.frozen.get_or_init(|| {
+            let (mut t, mut o) = (Vec::new(), 0);
+            for l in 0..3 {
+                let (n, m) = (self.sizes[l], self.sizes[l + 1]);
+                t.extend((0..n * m).map(|k| self.w[o + (k % m) * n + k / m]));
+                o += n * m + m;
+            }
+            t
+        });
+        let mut a = x.to_vec();
+        let (mut o, mut q) = (0, 0);
+        for l in 0..3 {
+            let (n, m) = (self.sizes[l], self.sizes[l + 1]);
+            let mut s = vec![-0.0f32; m];
+            for (i, &x) in a[..n].iter().enumerate() {
+                for (s, &w) in s.iter_mut().zip(&t[q + i * m..q + (i + 1) * m]) { *s += w * x; }
+            }
+            a = s.iter().zip(&self.w[o + n * m..o + n * m + m]).map(|(&s, &b)| (b + s).tanh()).collect();
+            o += n * m + m; q += n * m;
         }
         a
     }
@@ -101,7 +154,7 @@ impl Net {
         let count = (0..3).try_fold(0usize, |n, l| n.checked_add(sizes[l].checked_mul(sizes[l + 1])?.checked_add(sizes[l + 1])?))?;
         if sizes.contains(&0) || count != (b.len() - 16) / 4 { return None; }
         let w: Vec<f32> = b[16..].chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
-        w.iter().all(|x| x.is_finite()).then_some(Net { sizes, w })
+        w.iter().all(|x| x.is_finite()).then_some(Net { sizes, w, frozen: Default::default() })
     }
 }
 
@@ -109,7 +162,7 @@ pub fn obs(d: &Ragdoll, on: usize) -> Vec<f32> {
     body_obs(d, on, false)
 }
 
-fn body_obs(d: &Ragdoll, on: usize, walking: bool) -> Vec<f32> {
+pub(crate) fn body_obs(d: &Ragdoll, on: usize, walking: bool) -> Vec<f32> {
     let fr: Vec<Transform> = d.frames().collect();
     let root = fr[0];
     let f = if walking { Vec3::Z.cross(fr[4].translation - fr[1].translation) } else { root.rotation * Vec3::X };
@@ -234,7 +287,7 @@ pub fn step(net: &Net, w: &[f32], a: &mut Agent, build: &Build, world: &Collisio
     a.step(build, world, 1.0 / 60.0, &[], &[]);
 }
 
-fn send_line(a: &mut Agent, build: &Build, world: &Collision, line: &str) {
+pub(crate) fn send_line(a: &mut Agent, build: &Build, world: &Collision, line: &str) {
     let mut w = line.split_whitespace();
     let Some(m) = w.next().and_then(msg::find) else { return };
     let ps: Vec<(&str, Value)> = w.filter_map(|kv| {
@@ -312,7 +365,7 @@ pub fn walk_path(run: bool) -> String {
     std::path::Path::new(&path()).with_file_name(if run { "run.net" } else { "walk.net" }).to_string_lossy().into_owned()
 }
 
-fn walk_obs(d: &Ragdoll, phase: f32) -> Vec<f32> {
+pub(crate) fn walk_obs(d: &Ragdoll, phase: f32) -> Vec<f32> {
     let mut x = body_obs(d, 1, true);
     let (s, c) = (phase * std::f32::consts::TAU).sin_cos();
     x.extend([s, c]);
@@ -323,12 +376,19 @@ pub fn walk_sizes(d: &Ragdoll) -> [usize; 4] {
     [walk_obs(d, 0.0).len(), HIDDEN, HIDDEN, 4]
 }
 
+pub const WALK_STEP_BUDGET: u32 = 10_000;
+
 pub fn walk_agent(build: &Build, world: &Collision, frames: &[Transform]) -> Result<Agent, String> {
     let mut a = agent(build, frames);
-    let mut st = std::mem::take(&mut a.msgs);
-    msg::send(&mut a, build, world, &mut st, "bodyBalance", &[("start", Value::Bool(true))]).map_err(|e| format!("bodyBalance: {e:?}"))?;
-    a.msgs = st;
+    start_walk_balance(&mut a,build,world)?;
     Ok(a)
+}
+
+pub fn start_walk_balance(a:&mut Agent,build:&Build,world:&Collision)->Result<(),String>{
+    let mut st = std::mem::take(&mut a.msgs);
+    msg::send(a, build, world, &mut st, "bodyBalance", &[("maxSteps", Value::Int(WALK_STEP_BUDGET as i32)), ("start", Value::Bool(true))]).map_err(|e| format!("bodyBalance: {e:?}"))?;
+    a.msgs = st;
+    Ok(())
 }
 
 pub fn walk_input(a: &mut Agent, build: &Build, world: &Collision, st: &mut msg::State, dir: Vec3,
@@ -345,10 +405,14 @@ fn walk_config(act: &[f32]) -> delirium::nm::ConfigureBalance {
 
 pub fn drive_walk(net: &Net, w: &[f32], a: &mut Agent, phase: &mut f32, duration: f32) {
     let act = net.forward(w, &walk_obs(&a.doll, *phase));
-    a.configure_balance(walk_config(&act));
-    a.muscle_stiffness_x(2f32.powf(act[3]));
+    tune_walk(a, &act);
     a.doll.kick(Vec3::ZERO);
     *phase = (*phase + 1.0 / (60.0 * duration)).rem_euclid(1.0);
+}
+
+pub fn tune_walk(a: &mut Agent, act: &[f32]) {
+    a.configure_balance(walk_config(act));
+    a.muscle_stiffness_x(2f32.powf(act[3]));
 }
 
 fn walk_reward(fr: &[Transform], velocity: Vec3, reference: &[Vec3; 11], forward: Vec3, speed: f32) -> Option<f32> {
@@ -522,7 +586,7 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
             let last = w.len() - (sizes[2] + 1) * sizes[3];
             w[last..].fill(0.0);
         }
-        Net { sizes, w }
+        Net { sizes, w, frozen: Default::default() }
     });
     let np = net.w.len();
     let tries_per_pair = if walk.is_some() { 1 } else { TRIES };

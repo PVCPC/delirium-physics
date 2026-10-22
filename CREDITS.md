@@ -15,6 +15,12 @@
   clip shader (`p2_body/clip.wgsl`), the air funnel (`p2_movement/funnel.rs`), the VTF reader and the VMT/KeyValues
   loaders (`source_assets`), and the particle system reader and simulator (`p2_fx`). The portal surface shader (`portal_surface.wgsl`) and the
   particle card shader (`portal/fx/spritecard.wgsl`) are this project's own.
+- **Experimental walk** (`learned-preview/`, `crates/delirium-room/src/locomotion/`): its walk, fast walk and jog
+  networks and the three motion clips they follow were made from Ubisoft La Forge's
+  [LAFAN1](https://github.com/ubisoft/ubisoft-laforge-animation-dataset) motion capture (walk1_subject1,
+  run1_subject2), licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/): non-commercial
+  use only. Changed: retargeted to Homer's body. A preview for this release only. Not affiliated with or endorsed by
+  Ubisoft.
 - **Portal 2** is Valve's. None of its files are included: portal mode reads them from your own install. Not affiliated
   with or endorsed by Valve.
 
