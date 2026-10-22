@@ -145,23 +145,58 @@ sound {}
 vol {}
 vol_fx {}
 vol_portal {}
+dodge_gap {}
+extra_reactions {}
+hero_opacity {}
+render_scale {}
+msaa {}
+shadow_quality {}
+gpu {}
+aa {}
+smaa {}
+dlss_mode {}
+sharpen {}
+fps_limit {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
-            sim.volume[0], sim.volume[1], sim.volume[2])
+            sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit)
+}
+
+fn coin() -> bool {
+    use std::hash::BuildHasher;
+    std::collections::hash_map::RandomState::new().hash_one(0u8) & 1 == 0
 }
 
 fn load_settings(sim: &mut Sim) {
     let f = getup::config_dir().join(SETTINGS);
     let Ok(t) = std::fs::read_to_string(&f) else { return };
     sim.say(format!("room  settings from {}", f.display()));
+    apply_settings(sim, &t);
+}
+
+fn apply_settings(sim: &mut Sim, t: &str) {
     for (k, v) in t.lines().filter_map(|l| l.split_once(' ')) {
+        if k == "gpu" {
+            sim.gpu = v.trim().into();
+            continue;
+        }
         let Ok(x) = v.trim().parse::<f32>() else { continue };
         let (n, on) = (x.max(0.0) as usize, x != 0.0);
         match k {
             "pedcol" => if let Some(c) = ped_colour(v.trim()) { (sim.ped_color, sim.body_alpha) = c },
             "opacity" => sim.body_alpha = x.clamp(0.1, 1.0),
+            "hero_opacity" => sim.hero_alpha = x.clamp(0.1, 1.0),
+            "render_scale" => sim.render_scale = x.clamp(RENDER_SCALE_MIN, 1.0),
+            "msaa" if x < 1.5 => sim.aa = 0,
+            "msaa" => sim.msaa = [2, 4, 8].into_iter().find(|&k| k as f32 >= x).unwrap_or(8),
+            "aa" => sim.aa = (x as u8).min(AA_DLSS),
+            "smaa" => sim.smaa_q = (x as u8).min(3),
+            "dlss_mode" => sim.dlss_q = (x as u8).min(3),
+            "shadow_quality" => sim.shadow_q = (x as u8).clamp(1, 3),
+            "sharpen" => sim.sharpen = x.clamp(0.0, 1.0),
+            "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
             "brows" => sim.brows = on,
             "skel" => sim.skel = on,
@@ -187,6 +222,8 @@ fn load_settings(sim: &mut Sim) {
             "vol" => sim.volume[0] = x.clamp(0.0, 1.0),
             "vol_fx" => sim.volume[1] = x.clamp(0.0, 1.0),
             "vol_portal" => sim.volume[2] = x.clamp(0.0, 1.0),
+            "dodge_gap" => sim.dodge_gap = x.clamp(0.0, 10.0),
+            "extra_reactions" => sim.extra = on,
             _ => {}
         }
     }
@@ -459,9 +496,20 @@ struct Sim {
     on_fire: Option<delirium::nm::OnFire>,
     god: bool,
     lean_stop: Option<f32>,
+    look_stop: Option<f32>,
+    dodge_at: f32,
+    dodging: bool,
+    look_after: Option<f32>,
+    fall: Option<(f32, bool)>,
+    hold: Option<f32>,
+    airborne: bool,
     hurt: [f32; 4],
     near_at: f32,
     no_dodge: bool,
+    dodge_gap: f32,
+    extra: bool,
+    was_fallen: bool,
+    curled: bool,
     super_punch: bool,
     crush: Option<(i32, u64)>,
     cab_gas: f32,
@@ -499,7 +547,7 @@ struct Sim {
     pops: Vec<(Vec3, f32, f32, bool)>,
     pop_screen: Vec<(Vec2, f32, f32, bool)>,
     show_pops: bool,
-    tab: u8,
+    tab: u16,
     skin: Look,
     sounds: Vec<sfx::Snd>,
     sound: bool,
@@ -551,6 +599,21 @@ struct Sim {
     script_jog: bool,
     ped_color: usize,
     body_alpha: f32,
+    hero_alpha: f32,
+    render_scale: f32,
+    aa: u8,
+    smaa_q: u8,
+    dlss_q: u8,
+    msaa: u8,
+    msaa_max: u8,
+    shadow_q: u8,
+    frame_ms: f32,
+    gpu: String,
+    gpu_now: String,
+    gpus: Option<Vec<String>>,
+    sharpen: f32,
+    dlss_ok: bool,
+    fps_limit: f32,
     eyes: bool,
     skel: bool,
     clean: bool,
@@ -660,6 +723,12 @@ impl Sim {
     }
 
     fn rise(&mut self, dt: f32) {
+        let fallen = self.agent.fallen;
+        if self.extra && fallen && !std::mem::replace(&mut self.was_fallen, fallen) && coin() {
+            self.send("armsWindmillAdaptive start=true disableOnImpact=true");
+            self.say("ours  off balance: windmilling (additional reactions)".into());
+        }
+        self.was_fallen = fallen;
         let Some(clips) = self.getup.take() else { return };
         for i in 0..SIDES {
             let now: Vec<Transform> = self.agent.doll.frames().collect();
@@ -709,8 +778,18 @@ impl Sim {
                 }
                 let down = !(i == 0 && self.getup_mode == 2) && !self.tasks && self.health >= 50.0 && now[HEAD].translation.z - pelvis.z < 0.3 && pelvis.distance(self.last[i]) < 0.2 * dt.max(1e-3);
                 self.still[i] = if down { self.still[i] + dt } else { 0.0 };
-                if self.still[i] >= getup::DOWN_SECS {
+                if self.still[i] >= getup::DOWN_SECS + if i == 0 && self.curled { 3.0 } else { 0.0 } {
                     self.still[i] = 0.0;
+                    if i == 0 && self.extra && !self.curled && coin() {
+                        self.curled = true;
+                        self.send("bodyFoetal start=true");
+                        self.say("ours  curled up (additional reactions)".into());
+                        self.last[i] = pelvis;
+                        continue;
+                    }
+                    if i == 0 && std::mem::take(&mut self.curled) {
+                        self.send("bodyFoetal start=false");
+                    }
                     if i == 0 && self.getup_mode == 3 {
                         match learn::Net::load(&learn::path()) {
                             Some(net) => {
@@ -1197,7 +1276,7 @@ impl Sim {
         let arm = self.homer_weapon.map_or("UNARMED", |w| WEAPONS[w].1);
         let fists = self.weapons.iter().find(|w| w.name == arm).cloned().unwrap_or_default();
         let foe = (hero.feet + Vec3::Z, hero.yaw - std::f32::consts::FRAC_PI_2, 200.0, [None; 5]);
-        let body = if down { vec![] } else { hero.capsules(clips) };
+        let body = match &self.hero_doll { Some(h) => caps_of(&self.build, &h.agent.doll), None => hero.capsules(clips) };
         let hero_arm = (self.hero_gun && kind(self.weapon) == 2).then(|| self.weapons.iter().find(|x| x.name == WEAPONS[self.weapon].1)).flatten();
         me.foe = hero.as_foe(clips, hero_arm);
         let hit = me.update(clips, &self.world, dt, mv, 0, (!down).then_some(foe), &fists, self.homer_weapon.and_then(held), &body);
@@ -1354,6 +1433,11 @@ impl Sim {
         }
     }
 
+    fn knocked_out(&mut self) {
+        self.say("homer  knocked out of his fight".into());
+        self.send("bodyBalance start=true");
+    }
+
     fn land(&mut self, hit: hero::Hit, head: Vec3, what: &str) {
         self.sounds.push(sfx::Snd::Punch);
         let pelvis = self.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
@@ -1389,6 +1473,9 @@ impl Sim {
         self.send_ours(o);
         if self.tasks {
             (self.exit, self.nm_t, self.failed) = (exit(task).unwrap_or(SHOT_EXIT), [Some(0.0); 2], [false; 2]);
+        }
+        if task == "flinch" {
+            self.extra_look(head);
         }
         self.say(format!("{what}: {task} (health {:.0})", self.health));
         if let (hero::Hit::Swing(_, at, _), true) = (hit, self.super_punch && self.hero.is_some()) {
@@ -1533,18 +1620,28 @@ impl Sim {
             let door = o.centre + o.rot * local.clamp(-o.half, o.half) - Vec3::Z * 0.2 - fwd * CAB_OFF;
             self.room.snapped = Some(0.0);
             self.send_ours(vec![format!("armHang start=true constraintPosition={} instanceIndex={TAXI_ID}", v3(door))]);
+            if self.hero.is_none() {
+                self.toggle_hero();
+            }
+            if self.hero.is_some() {
+                (self.taxis[0].player, self.taxis[0].asleep) = (true, false);
+                (self.driving, self.pedals) = (true, (0.0, 0.0, false));
+            }
             return self.say("cab  his hands on the cab's door".into());
         };
-        *t += 1.0 / 60.0;
+        let speed = self.taxis.first().map_or(0.0, |c| c.speed.abs());
+        let hero = self.hero.is_some();
+        if !(hero && *t >= CAB_GO - 1.0 / 60.0 && *t < CAB_GO && !(self.taxis[0].player && speed > 0.5)) {
+            *t += 1.0 / 60.0;
+        }
         let t = *t;
         let at = |x: f32| t - 1.0 / 60.0 < x && t >= x;
-        let speed = self.taxis.first().map_or(0.0, |c| c.speed.abs());
         if at(0.1) {
             self.send_ours(vec!["pedalLegs start=false".into(), "bodyBalance start=true".into()]);
         } else if at(CAB_GO) {
-            self.cab_gas = CAB_GAS;
+            self.cab_gas = if hero { 0.0 } else { CAB_GAS };
             self.send_ours(vec!["bodyBalance start=false".into(), "pedalLegs start=true".into(), "bodyWrithe start=true mask=uk".into()]);
-            self.say("cab  it pulls away with him on the door".into());
+            self.say(format!("cab  {} pulls away with him on the door", if hero { "Hero" } else { "it" }));
         } else if !self.room.fell && t > CAB_GO && (speed > CAB_LET_GO || t > CAB_GO + CAB_HOLD) {
             self.room.fell = true;
             self.send_ours(["armHang", "pedalLegs", "bodyWrithe"].map(|n| format!("{n} start=false")).into_iter().chain(["smartFall start=true".to_string()]).collect());
@@ -1827,6 +1924,152 @@ impl Sim {
         self.sounds.push(sfx::Snd::Hit);
         self.say(format!("room  poke {} ({:.1} N s)", delirium_data::nm_asset::PARTS.get(part).unwrap_or(&"?"), self.poke));
         self.send_ours(o);
+        self.extra_look(hit - dir.normalize_or_zero() * 2.0);
+    }
+
+    fn cast(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3)> {
+        self.world.cast(from, dir, len).into_iter().chain(self.room.cast(from, dir, len)).chain(world::cast_boxes(self.room.resting(), from, dir, len))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+    }
+
+    fn self_preserve(&mut self) {
+        const DODGE_DUE: f32 = 1.0;
+        const BRACE: f32 = 0.45;
+        const ARMS_OUT: &str = "bodyBalance start=true armsOutOnPush=true armsOutOnPushMultiplier=1 armsOutOnPushTimeout=1.1";
+        let now = self.steps as f32 / 60.0;
+        if !self.extra && self.fall.is_none() && self.look_after.is_none() && self.hold.is_none() && !self.airborne {
+            return;
+        }
+        let (me, mv) = self.agent.doll.com();
+        let things: Vec<(Vec3, Vec3, bool)> = (0..self.room.objs.len()).map(|j| { let (t, v) = self.room.obj(0, j); (t.translation, v, true) })
+            .chain(self.crowd.iter().map(|c| { let (p, v) = c.0.doll.com(); (p, v, false) }))
+            .chain(self.hero_doll.iter().map(|h| { let (p, v) = h.agent.doll.com(); (p, v, false) })).collect();
+        let overhead = || things.iter().filter_map(|&(p, v, _)| {
+            let (r, down) = (p - me, -v.z);
+            let h = r.z - 0.8;
+            (h > 0.0 && r.with_z(0.0).length() < 2.5 && down > 1.0).then(|| (p, v, (-down + (down * down + 2.0 * 9.81 * h).sqrt()) / 9.81))
+        }).filter(|x| x.2 < 3.0).min_by(|a, b| a.2.total_cmp(&b.2));
+        if self.look_after.is_some_and(|t| now >= t) {
+            self.look_after = None;
+            if std::mem::take(&mut self.dodging) {
+                self.send("stopAllBehaviours");
+                self.send(ARMS_OUT);
+            }
+            let down = things.iter().map(|x| x.0).filter(|p| (*p - me).length() < 4.0).min_by(|a, b| (*a - me).length().total_cmp(&(*b - me).length()));
+            if let Some(at) = down {
+                self.extra_look(at);
+                self.look_stop = Some(now + 2.5);
+            }
+        }
+        let land = self.cast(me, -Vec3::Z, 50.0).map_or(f32::MAX, |(t, _)| (t - 0.95) / (-mv.z).max(0.1));
+        if self.airborne {
+            if land < 0.12 || mv.z > 0.0 {
+                self.airborne = false;
+                self.send("bodyBalance start=true");
+            }
+        } else if self.extra && self.homer.is_none() && mv.z < -0.8 && land > 0.4 && self.agent.balancing() {
+            self.airborne = true;
+            self.send("highFall start=true");
+            self.say("ours  dropping: arms out (additional reactions)".into());
+        }
+        if self.hold.is_some_and(|t| now >= t) {
+            self.hold = None;
+            self.send("grab start=false");
+        }
+        let (go, chest) = (mv.with_z(0.0), self.ours().p(CHEST));
+        if self.extra && self.homer.is_none() && self.hold.is_none() && self.fall.is_none() && !(self.walk && self.walk_dir != Vec3::ZERO) && self.preview.is_none() && go.length() > 0.4 && chest.z - me.z > 0.2 {
+            let d = go.normalize();
+            let reach = 0.35 + (0.3 * go.length()).min(0.7);
+            let hit = [chest.z, me.z, me.z - 0.3].into_iter().find_map(|z| {
+                let from = me.with_z(z);
+                self.cast(from, d, reach).filter(|h| h.1.z.abs() < 0.5).map(|(t, n)| (from + d * t, n.with_z(0.0).normalize()))
+            });
+            if let Some((h, n)) = hit {
+                let head = chest.z + 0.45;
+                let right = (-n).cross(Vec3::Z);
+                let top = (h - n * 0.03).with_z(head);
+                let top = top.with_z(head - self.cast(top, -Vec3::Z, 1.5).map_or(0.0, |x| x.0));
+                let l = if self.cast(me.with_z(head), d, reach + 0.2).is_some() {
+                    let at = h.with_z(chest.z);
+                    format!("grab start=true justbrace=true useLeft=true useRight=true pos1={} pos2={} normalR={} normalL={}",
+                            v3(at + right * 0.25), v3(at - right * 0.25), v3(n), v3(n))
+                } else if top.z > me.z - 0.15 {
+                    format!("grab start=true linegrab=true useLeft=true useRight=true pos1={} pos2={}", v3(top + right * 0.3), v3(top - right * 0.3))
+                } else {
+                    String::new()
+                };
+                if !l.is_empty() {
+                    self.hold = Some(now + 2.0);
+                    self.send(&l);
+                    self.say(format!("ours  into a wall/rail: {} (additional reactions)", if l.contains("justbrace") { "hands on it" } else { "grabs it" }));
+                }
+            }
+        }
+        if let Some((land, braced)) = self.fall {
+            let seen = overhead();
+            if seen.is_none() && now > land + 0.3 || now > land + 1.5 {
+                (self.fall, self.look_after) = (None, Some(now + 0.4));
+                return;
+            }
+            let Some((at, v, t)) = seen else { return };
+            self.fall = Some((now + t, braced || t < BRACE));
+            if !braced && t < BRACE {
+                let away = (me - at).with_z(0.0).normalize_or(-self.ours().fwd.with_z(0.0));
+                self.dodging = true;
+                self.lean_stop = Some(now + 0.8);
+                for l in ["pointArm start=false".to_string(), ARMS_OUT.to_string(), format!("upperBodyFlinch start=true pos={} newHit=true", v3(at)),
+                          format!("leanInDirection start=true applyAsForce=true leanAmount=0.7 dir={}", v3(away))] {
+                    self.send(&l);
+                }
+            } else if !braced && self.steps % 10 == 0 {
+                self.send(&format!("pointArm start=true target={}", v3(at)));
+            }
+            return;
+        }
+        if !self.extra || self.homer.is_some() || now < self.dodge_at || !self.agent.balancing() {
+            return;
+        }
+        if let Some((at, v, t)) = overhead() {
+            self.dodge_at = now + 3.0;
+            if (at - me).with_z(0.0).dot(self.ours().fwd) < -0.2 {
+                self.look_after = Some(now + t + 0.7);
+                self.send(ARMS_OUT);
+                return self.say("ours  something falling on him from behind: arms out (additional reactions)".into());
+            }
+            self.fall = Some((now + t, false));
+            self.look_stop = None;
+            for l in [format!("headLook start=true pos={} vel={} alwaysLook=true", v3(at), v3(v)), format!("pointArm start=true target={}", v3(at))] {
+                self.send(&l);
+            }
+            return self.say("ours  something falling on him: watches it, arm up (additional reactions)".into());
+        }
+        let due = |p: Vec3, v: Vec3| (me - p).length() / (me - p).normalize_or_zero().dot(v - mv).max(1e-3);
+        let Some(&(at, v, thrown)) = things.iter().find(|&&(p, v, _)| (me - p).length() < 30.0 && (me - p).normalize_or_zero().dot(v - mv) > 3.0 && due(p, v) < DODGE_DUE)
+        else { return };
+        let away = (me - at).with_z(0.0).normalize_or(-self.ours().fwd.with_z(0.0));
+        self.dodge_at = now + 3.0;
+        self.look_stop = Some(now + 2.0);
+        self.lean_stop = Some(now + DODGE_DUE);
+        let lean = format!("leanInDirection start=true applyAsForce=true leanAmount=0.6 dir={}", v3(away));
+        let look = format!("headLook start=true pos={} vel={} alwaysLook=true", v3(at), v3(v));
+        if thrown {
+            self.dodging = true;
+            for l in [look, format!("upperBodyFlinch start=true pos={} newHit=true", v3(at)), lean] {
+                self.send(&l);
+            }
+        } else {
+            for l in [ARMS_OUT.to_string(), look, lean] {
+                self.send(&l);
+            }
+        }
+        self.say("ours  something coming: dodging (additional reactions)".into());
+    }
+
+    fn extra_look(&mut self, at: Vec3) {
+        if self.extra {
+            self.send(&format!("headLook start=true pos={} alwaysLook=true", v3(at)));
+            self.look_stop = Some(self.steps as f32 / 60.0 + 2.0);
+        }
     }
 
     fn pull(&mut self) {
@@ -1855,7 +2098,7 @@ impl Sim {
             }
             "tackle high" | "tackle low" | "tackle high keep" | "tackle low keep" => return self.tackle_start(b.contains("low"), b.ends_with("keep")),
             "hat" => return self.hat_button(),
-            "jump" | "jump dive" => return self.jump_start(b == "jump dive"),
+            "jump" | "jump dive" => return self.jump_start(b == "jump dive", None),
             "dismember" => {
                 self.dismember = !self.dismember;
                 return self.say(format!("sever  dismember: {}", if self.dismember { "on (shots and blasts cut limbs off)" } else { "off" }));
@@ -2313,11 +2556,14 @@ impl Sim {
         }
         self.say(format!("room  shot: near miss, {d:.2} m from him"));
         let now = self.steps as f32 / 60.0;
-        if now - std::mem::replace(&mut self.near_at, now) < DODGE_GAP && !self.no_dodge {
-            self.say("room  shot at again: he dives (shootDodge)".into());
+        if now - std::mem::replace(&mut self.near_at, now) < self.dodge_gap && !self.no_dodge {
+            self.say("room  shot at again: he dives".into());
             let chest = ours.p(CHEST);
             let off = (chest - by(chest)).with_z(0.0);
             let away = if off.length() > 0.05 { off.normalize() } else { dir.cross(Vec3::Z).normalize_or(Vec3::X) };
+            if self.agent.balancing() && self.jump.is_none() {
+                return self.jump_start(true, Some(away));
+            }
             self.agent.doll.kick(away * DIVE.0 + Vec3::Z * DIVE.1);
             return self.send_ours(vec![format!("shootDodge start=true rightArmTarget={} leftArmTarget={}", v3(from), v3(from))]);
         }
@@ -2528,8 +2774,7 @@ impl Sim {
                     }
                 }
                 if imp.length() > 1.0 && self.homer.is_some() {
-                    self.homer_out(false);
-                    self.say("homer  knocked out of his fight".into());
+                    self.knocked_out();
                 }
                 self.held = false;
                 let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(k as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
@@ -2787,7 +3032,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, sharpen: 0.0, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -2893,9 +3138,21 @@ fn main() {
     }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
-    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, apply_look, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
+    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, apply_look, video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+    let gpu = std::fs::read_to_string(getup::config_dir().join(SETTINGS)).ok()
+        .and_then(|t| t.lines().find_map(|l| l.strip_prefix("gpu ").map(|g| g.trim().to_lowercase()))).filter(|g| !g.is_empty());
+    #[cfg(feature = "dlss")]
+    app.insert_resource(bevy::anti_alias::dlss::DlssProjectId(bevy::asset::uuid::uuid!("5d3f1e0a-7c2b-4e8f-9a61-d311e7a0b4c2")));
+    let _ = GPUS.set({
+        let mut l: Vec<String> = wgpu::Instance::default().enumerate_adapters(wgpu::Backends::PRIMARY).into_iter().map(|a| a.get_info())
+            .filter(|i| i.device_type != wgpu::DeviceType::Cpu).map(|i| i.name).collect();
+        l.sort();
+        l.dedup();
+        l
+    });
+    let render = bevy::render::RenderPlugin { render_creation: bevy::render::settings::WgpuSettings { adapter_name: gpu, ..default() }.into(), ..default() };
+    app.add_plugins(DefaultPlugins.set(render).set(WindowPlugin {
             primary_window: Some(Window { title: "Delirium Physics Playroom".into(), resolution: (1600, 900).into(), resize_constraints: WindowResizeConstraints { min_width: 960.0, min_height: 640.0, ..default() }, ..default() }),
             ..default()
         }))
@@ -2911,6 +3168,9 @@ fn main() {
     sfx::plugin(&mut app);
     #[cfg(feature = "portal")]
     portal::plugin(&mut app);
+    #[cfg(feature = "dlss")]
+    app.add_systems(Update, dlss.before(video));
+    app.add_systems(Last, fps_limit);
     app.world().resource::<bevy::asset::io::embedded::EmbeddedAssetRegistry>()
         .insert_asset(std::path::PathBuf::new(), std::path::Path::new("taxi.glb"), include_bytes!("taxi.glb").as_slice());
     app.run();
@@ -3122,6 +3382,9 @@ impl Sim {
 #[derive(Component)]
 struct OursCam;
 #[derive(Component)]
+struct ScaledView;
+const RENDER_SCALE_MIN: f32 = 0.25;
+#[derive(Component)]
 struct FacePart(usize);
 
 fn face_view(sim: NonSend<Sim>, time: Res<Time>, mut q: Query<(&FacePart, &mut Transform, &mut Visibility)>) {
@@ -3195,6 +3458,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
     commands.spawn((Camera3d::default(), Camera { order: 0, ..default() }, RenderLayers::from_layers(&[0, 1]), Transform::default(),
                     Orbit { yaw: -1.3, pitch: 0.3, dist: 3.5, target: Vec3::new(0.0, 0.0, 0.8), follow: 0 }, OursCam));
     commands.spawn((Camera2d, Camera { order: 2, clear_color: ClearColorConfig::None, ..default() }, RenderLayers::layer(31), bevy_egui::PrimaryEguiContext));
+    commands.spawn((Sprite::default(), Transform::default(), Visibility::Hidden, RenderLayers::layer(31), ScaledView));
     commands.spawn((DirectionalLight { shadows_enabled: true, ..default() }, Transform::from_xyz(3.0, -2.0, 6.0).looking_at(Vec3::ZERO, Vec3::Z),
                     RenderLayers::from_layers(&[0, 1, 2])));
     commands.spawn((DirectionalLight { shadows_enabled: false, illuminance: 0.0, ..default() }, Transform::from_xyz(-3.0, 4.0, 2.0).looking_at(Vec3::ZERO, Vec3::Z),
@@ -3318,6 +3582,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
     (new.log, new.script, new.show_ui, new.sens, new.walk, new.getup_mode, new.poke, new.god, new.aim_gun) = (std::mem::take(&mut sim.log), std::mem::take(&mut sim.script), sim.show_ui, sim.sens, sim.walk, sim.getup_mode, sim.poke, sim.god, sim.aim_gun);
     (new.show_pops, new.help, new.tab, new.skin) = (sim.show_pops, sim.help, sim.tab, sim.skin);
     (new.ped_color, new.body_alpha, new.skel, new.soft, new.eyes, new.film) = (sim.ped_color, sim.body_alpha, sim.skel, sim.soft, sim.eyes, sim.film);
+    apply_settings(&mut new, &settings(&sim));
     new.scene = Some(scene.clone());
     new.agent.strength = sim.agent.strength;
     *sim = new;
@@ -3345,10 +3610,10 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
     });
     let rig = sim.getup.as_ref().and_then(|c| c.hero.as_ref());
     for (m, mut t, mut v, mat) in &mut hero {
-        let want = if sim.clean { 1.0 } else { 0.6 };
+        let want = if sim.clean { 1.0 } else { sim.hero_alpha };
         if mats.get(&mat.0).is_some_and(|x| x.base_color.alpha() != want) && let Some(x) = mats.get_mut(&mat.0) {
             x.base_color = x.base_color.with_alpha(want);
-            x.alpha_mode = if sim.clean { AlphaMode::Opaque } else { AlphaMode::Blend };
+            x.alpha_mode = if want >= 1.0 { AlphaMode::Opaque } else { AlphaMode::Blend };
         }
         let at = match &doll {
             Some(f) => rig.and_then(|r| r.build.parts.get(m.0)).and_then(|p| sim.build.parts.iter().position(|q| q.name == p.name)).and_then(|j| f.get(j).copied()),
@@ -3533,6 +3798,138 @@ fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope
 }
 #[derive(Component)]
 struct Fill;
+
+fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8)>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
+         info: Option<Res<bevy::render::renderer::RenderAdapterInfo>>, cam: Query<Entity, With<OursCam>>, sun: Query<(Entity, Has<Fill>), With<DirectionalLight>>) {
+    if let Some(i) = info.filter(|_| sim.gpu_now.is_empty()) {
+        sim.gpu_now = i.name.clone();
+        sim.gpus = GPUS.get().cloned();
+    }
+    if last.is_none() {
+        if let Some(a) = adapter {
+            use bevy::render::render_resource::TextureFormat as F;
+            let ok = |n| [F::Rgba8UnormSrgb, F::Rgba16Float, F::Depth32Float].iter().all(|&f| a.get_texture_format_features(f).flags.sample_count_supported(n));
+            sim.msaa_max = [8, 4, 2].into_iter().find(|&n| ok(n as u32)).unwrap_or(1);
+        }
+    }
+    let aa = sim.aa_now();
+    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8);
+    if *last == Some(now) {
+        return;
+    }
+    *last = Some(now);
+    let msaa = match (aa, sim.msaa.min(sim.msaa_max)) { (AA_MSAA, 2) => Msaa::Sample2, (AA_MSAA, 4) => Msaa::Sample4, (AA_MSAA, 8) => Msaa::Sample8, _ => Msaa::Off };
+    use bevy::anti_alias::{contrast_adaptive_sharpening::ContrastAdaptiveSharpening as Cas, fxaa::Fxaa, smaa::{Smaa, SmaaPreset}, taa::TemporalAntiAliasing};
+    for e in &cam {
+        let mut c = commands.entity(e);
+        c.insert(msaa);
+        if aa == AA_FXAA { c.insert(Fxaa::default()); } else { c.remove::<Fxaa>(); }
+        if aa == AA_SMAA {
+            c.insert(Smaa { preset: [SmaaPreset::Low, SmaaPreset::Medium, SmaaPreset::High, SmaaPreset::Ultra][sim.smaa_q as usize] });
+        } else {
+            c.remove::<Smaa>();
+        }
+        if aa == AA_TAA {
+            c.insert(TemporalAntiAliasing::default());
+        } else {
+            c.remove::<TemporalAntiAliasing>();
+        }
+        if aa < AA_TAA {
+            c.remove::<(bevy::render::camera::TemporalJitter, bevy::render::camera::MipBias, bevy::core_pipeline::prepass::DepthPrepass,
+                        bevy::core_pipeline::prepass::MotionVectorPrepass)>();
+        }
+        if sim.sharpen > 0.0 {
+            commands.entity(e).insert(Cas { enabled: true, sharpening_strength: sim.sharpen, denoise: false });
+        } else {
+            commands.entity(e).remove::<Cas>();
+        }
+    }
+    let b = bevy::light::CascadeShadowConfigBuilder::default();
+    let cascades = match sim.shadow_q {
+        1 => bevy::light::CascadeShadowConfigBuilder { num_cascades: 1, maximum_distance: 12.0, ..b },
+        2 => bevy::light::CascadeShadowConfigBuilder { num_cascades: 2, maximum_distance: 30.0, ..b },
+        _ => b,
+    }.build();
+    for (e, fill) in &sun {
+        if !fill {
+            commands.entity(e).insert(cascades.clone());
+        }
+    }
+}
+
+const AA_NAMES: [&str; 7] = ["off", "FXAA", "SMAA", "MSAA", "TAA", "DLAA", "DLSS"];
+const AA_FXAA: u8 = 1;
+const AA_SMAA: u8 = 2;
+const AA_MSAA: u8 = 3;
+const AA_TAA: u8 = 4;
+const AA_DLAA: u8 = 5;
+const AA_DLSS: u8 = 6;
+
+impl Sim {
+    fn aa_now(&self) -> u8 {
+        if self.aa >= AA_DLAA && !self.dlss_ok { AA_MSAA } else { self.aa }
+    }
+    fn upscaling(&self) -> bool {
+        self.aa_now() >= AA_DLAA
+    }
+}
+
+#[cfg(feature = "dlss")]
+fn dlss(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<bevy::anti_alias::dlss::DlssSuperResolutionSupported>>,
+        cam: Query<(Entity, &Camera), With<OursCam>>, mut panels: Query<&mut Camera, (With<bevy_egui::PrimaryEguiContext>, Without<OursCam>)>, mut last: Local<Option<u8>>) {
+    use bevy::anti_alias::dlss::{Dlss, DlssPerfQualityMode as M};
+    sim.dlss_ok = ok.is_some();
+    let want = match sim.aa_now() { AA_DLAA => 1, AA_DLSS => 2 + sim.dlss_q, _ => 0 };
+    if *last == Some(want) || cam.iter().any(|(_, c)| c.viewport.is_none()) || cam.is_empty() {
+        return;
+    }
+    *last = Some(want);
+    let mode = [M::Dlaa, M::Dlaa, M::Quality, M::Balanced, M::Performance, M::UltraPerformance][want as usize];
+    for mut c in &mut panels {
+        c.clear_color = if want == 0 { ClearColorConfig::None } else { ClearColorConfig::Custom(Color::NONE) };
+    }
+    for (e, _) in &cam {
+        if want == 0 {
+            commands.entity(e).remove::<(Dlss, bevy::render::view::Hdr)>();
+        } else {
+            commands.entity(e).insert(Dlss { perf_quality_mode: mode, ..default() });
+        }
+    }
+}
+
+const FPS_VSYNC: f32 = 19.0;
+const FPS_FREE: f32 = 361.0;
+
+fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::PrimaryWindow>>, mut next: Local<Option<std::time::Instant>>) {
+    use bevy::window::PresentMode;
+    let mode = if sim.fps_limit <= FPS_VSYNC { PresentMode::AutoVsync } else { PresentMode::AutoNoVsync };
+    for mut w in &mut win {
+        if w.present_mode != mode {
+            w.present_mode = mode;
+        }
+    }
+    if sim.fps_limit <= FPS_VSYNC || sim.fps_limit >= FPS_FREE {
+        *next = None;
+        return;
+    }
+    let step = std::time::Duration::from_secs_f32(1.0 / sim.fps_limit);
+    let now = std::time::Instant::now();
+    let due = next.filter(|&t| t + step > now).unwrap_or(now);
+    if let Some(d) = due.checked_duration_since(now).and_then(|d| d.checked_sub(std::time::Duration::from_millis(2))) {
+        std::thread::sleep(d);
+    }
+    while std::time::Instant::now() < due {
+        std::hint::spin_loop();
+    }
+    *next = Some(due + step);
+}
+
+static GPUS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+fn preset(sim: &Sim) -> Option<usize> {
+    VIDEO_PRESETS.iter().position(|&(m, q, soft)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows && sim.shadow_q == q && (sim.shadow > 0.0) == soft)
+}
+const VIDEO_PRESETS: [(u8, u8, bool); 3] = [(1, 1, false), (4, 2, false), (4, 3, false)];
 
 #[derive(Component)]
 struct Floor;
@@ -3843,7 +4240,7 @@ fn smooth(sim: NonSend<Sim>, mut commands: Commands,
           new: Query<(Entity, &Transform), (Or<(With<PartMesh>, With<FacePart>, With<HeroMesh>, With<TaxiMesh>, With<TaxiWheel>, With<CarMesh>)>, Without<Smooth>)>,
           mut q: Query<(&mut Transform, &mut Smooth)>) {
     for (e, t) in &new {
-        commands.entity(e).insert(Smooth { prev: *t, cur: *t, step: sim.steps });
+        commands.entity(e).try_insert(Smooth { prev: *t, cur: *t, step: sim.steps });
     }
     let a = if sim.paused || sim.held || sim.replay.is_some() { 1.0 } else { (sim.acc * 60.0).clamp(0.0, 1.0) };
     for (mut t, mut s) in &mut q {
@@ -3884,12 +4281,12 @@ fn taxi_mesh(sim: NonSend<Sim>, mut commands: Commands, assets: Res<AssetServer>
     let car_of = |e: Entity| up.iter_ancestors(e).find_map(|a| q.get(a).ok().map(|m| m.1.0));
     for e in &meshes {
         if car_of(e).is_some() {
-            commands.entity(e).insert(RenderLayers::layer(1));
+            commands.entity(e).try_insert(RenderLayers::layer(1));
         }
     }
     for (e, name, t) in &named {
         if let (Some(k), Some(i)) = (car_of(e), WHEELS.iter().position(|w| name.as_str() == *w)) {
-            commands.entity(e).insert(TaxiWheel(k, i, t.translation));
+            commands.entity(e).try_insert(TaxiWheel(k, i, t.translation));
         }
     }
     for (w, mut t) in &mut wheels {
@@ -3942,7 +4339,7 @@ fn car_mesh(sim: NonSend<Sim>, mut commands: Commands, assets: Res<AssetServer>,
     }
     for e in &meshes {
         if up.iter_ancestors(e).any(|a| q.contains(a)) {
-            commands.entity(e).insert(RenderLayers::layer(1));
+            commands.entity(e).try_insert(RenderLayers::layer(1));
         }
     }
 }
@@ -4028,17 +4425,50 @@ fn room_viewport(rect: egui::Rect, scale: f32, split: bool, right: bool) -> bevy
     }
 }
 
-fn viewports(sim: NonSend<Sim>, mut contexts: EguiContexts, windows: Query<&Window>, mut cams: Query<(&mut Camera, Has<OursCam>), RoomCameras>) {
+fn viewports(sim: NonSend<Sim>, mut contexts: EguiContexts, windows: Query<&Window>, mut cams: Query<(Entity, &mut Camera, Has<OursCam>), RoomCameras>,
+             mut commands: Commands, mut images: ResMut<Assets<Image>>, mut shown: Query<(&mut Sprite, &mut Visibility), With<ScaledView>>,
+             mut target: Local<Option<(Handle<Image>, UVec2)>>) {
     let (Ok(ctx), Ok(window)) = (contexts.ctx_mut(), windows.single()) else { return };
     let rect = if sim.show_ui { ctx.available_rect() } else { ctx.content_rect() };
     if rect.width() < 2.0 || rect.height() < 1.0 || window.physical_width() == 0 || window.physical_height() == 0 { return; }
-    for (mut camera, ours) in &mut cams {
+    let win = window.physical_size();
+    let s = if sim.render_scale < 0.999 && !sim.upscaling() { sim.render_scale } else { 1.0 };
+    let size = (win.as_vec2() * s).as_uvec2().max(UVec2::ONE);
+    let want = (s < 1.0).then_some(size);
+    let mut bound = want.unwrap_or(win);
+    if target.as_ref().map(|t| t.1) != want {
+        bound = bound.min(target.as_ref().map_or(win, |t| t.1));
+        let to = match want {
+            Some(size) => {
+                let h = images.add(Image::new_target_texture(size.x, size.y, bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb, None));
+                *target = Some((h.clone(), size));
+                bevy::camera::RenderTarget::Image(bevy::camera::ImageRenderTarget { handle: h, scale_factor: window.scale_factor() * s })
+            }
+            None => {
+                *target = None;
+                bevy::camera::RenderTarget::Window(bevy::window::WindowRef::Primary)
+            }
+        };
+        for (e, ..) in &cams {
+            commands.entity(e).insert(to.clone());
+        }
+    }
+    if let Ok((mut sprite, mut vis)) = shown.single_mut() {
+        *vis = if target.is_some() { Visibility::Visible } else { Visibility::Hidden };
+        if let Some((h, _)) = &*target {
+            (sprite.image, sprite.custom_size) = (h.clone(), Some(window.size()));
+        }
+    }
+    for (_, mut camera, ours) in &mut cams {
         camera.is_active = ours || sim.split();
-        camera.viewport = Some(room_viewport(rect, ctx.pixels_per_point(), sim.split(), !ours));
+        let mut v = room_viewport(rect, ctx.pixels_per_point() * s, sim.split(), !ours);
+        v.physical_position = v.physical_position.min(bound - 1);
+        v.physical_size = v.physical_size.min(bound - v.physical_position).max(UVec2::ONE);
+        camera.viewport = Some(v);
     }
 }
 
-fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<ButtonInput<MouseButton>>, mut last: Local<Option<Vec2>>, scroll: Res<AccumulatedMouseScroll>,
+fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<ButtonInput<MouseButton>>, mut last: Local<Option<Vec2>>, mut notches: Local<f32>, scroll: Res<AccumulatedMouseScroll>,
          keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, windows: Query<&Window>,
          motion: Res<bevy::input::mouse::AccumulatedMouseMotion>, mut grab: Query<&mut bevy::window::CursorOptions, With<bevy::window::PrimaryWindow>>,
          mut cam: Query<(&mut Transform, &mut Orbit, &Camera, &GlobalTransform), With<OursCam>>,
@@ -4063,10 +4493,12 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         _ => Vec2::ZERO,
     };
     *last = cur;
-    let wheel = match scroll.unit {
+    let lines = match scroll.unit {
         bevy::input::mouse::MouseScrollUnit::Line => scroll.delta.y,
         bevy::input::mouse::MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
-    }.clamp(-3.0, 3.0) * sim.sens * !filming as u8 as f32;
+    }.clamp(-3.0, 3.0);
+    let hero_wheel = sim.hero.is_some() && !sim.driving;
+    let wheel = lines * sim.sens * !(filming || hero_wheel) as u8 as f32;
     if let Some([yaw, pitch, dist]) = sim.cam.take() {
         (o.yaw, o.pitch, o.dist) = (yaw, pitch, dist);
     }
@@ -4174,6 +4606,13 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
                     sim.hero_take(k.checked_sub(1));
                 }
             }
+            *notches += if sim.over_ui || !hero_wheel { 0.0 } else { lines };
+            while notches.abs() >= 1.0 {
+                let n = WEAPONS.len() + 1;
+                let at = if sim.hero_gun { sim.weapon + 1 } else { 0 };
+                sim.hero_take(((at + if *notches < 0.0 { 1 } else { n - 1 }) % n).checked_sub(1));
+                *notches -= notches.signum();
+            }
             let mut gait = if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) { 2 } else { shift_held(&keys) as usize };
             if mv == Vec3::ZERO {
                 (mv, gait) = sim.hero.as_ref().map_or((mv, gait), |n| n.go);
@@ -4186,7 +4625,9 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
                     .into_iter().filter(|k| keys.pressed(k.0)).fold(0, |b, k| b | k.1);
             }
             let dt = if sim.paused || sim.held { 0.0 } else { time.delta_secs() * sim.speed };
-            if sim.driving {
+            let drive_keys = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD, KeyCode::Space];
+            if sim.driving && !(keys.any_pressed(drive_keys) || keys.any_just_released(drive_keys)) {
+            } else if sim.driving {
                 let k = |c| (keys.pressed(c) && !sim.detached) as i32 as f32;
                 let (pedal, wheel, hb) = (k(KeyCode::KeyW) - k(KeyCode::KeyS), k(KeyCode::KeyD) - k(KeyCode::KeyA), keys.pressed(KeyCode::Space) && !sim.detached);
                 sim.pedals = (pedal, wheel, hb);
@@ -4316,7 +4757,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         }
         return;
     }
-    let shift = shift_held(&keys);
+    let shift = shift_held(&keys) || ctrl && portal_gun(&sim);
     let fatal = shift && buttons.just_pressed(MouseButton::Right);
     if let Some(c) = cur {
         let ray = camera.viewport_to_world(gt, c).ok();
@@ -4474,8 +4915,12 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let v: Vec<f32> = a.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 sim.explode(Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)));
             }
-            ("!poke", Some(k)) => {
-                let (k, s) = (k.parse().unwrap_or(CHEST), sim.ours());
+            ("!poke", Some(a)) => {
+                let mut w = a.split_whitespace();
+                let (k, s) = (w.next().and_then(|k| k.parse().ok()).unwrap_or(CHEST), sim.ours());
+                if let Some(f) = w.next().and_then(|f| f.parse().ok()) {
+                    sim.poke = f;
+                }
                 let eye = sim.eye;
                 sim.poke(k, s.p(k), s.p(k) - eye);
             }
@@ -4526,6 +4971,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!shot", Some(n)) => sim.shot_scene = n.to_string(),
             ("!photo", _) => sim.photo_pending = true,
             ("!film", Some(a)) => sim.film = a.parse().unwrap_or(0.0),
+            ("!speed", Some(a)) => sim.speed = a.parse().unwrap_or(1.0),
             ("!crane", Some(a)) => {
                 let v: Vec<f32> = a.split_whitespace().filter_map(|x| x.parse().ok()).collect();
                 if let [yaw, pitch, dist, z, secs, ref at @ ..] = v[..] {
@@ -4588,6 +5034,27 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!screenshot", Some(f)) => {
                 commands.spawn(bevy::render::view::screenshot::Screenshot::primary_window())
                     .observe(bevy::render::view::screenshot::save_to_disk(f.to_string()));
+            }
+            ("!lift", Some(h)) => {
+                let up = Vec3::Z * h.parse().unwrap_or(2.0);
+                let fr: Vec<Transform> = sim.agent.doll.frames().map(|f| f.with_translation(f.translation + up)).collect();
+                sim.agent = Agent::new(&sim.build, Ragdoll::new(&sim.build, &fr, Vec3::ZERO), Quat::IDENTITY, 0.3);
+                sim.msgs = msg::State::default();
+                sim.send("bodyBalance start=true");
+            }
+            ("!skydrop", Some(a)) => {
+                let v: Vec<f32> = a.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                let s = sim.ours();
+                let off = s.fwd * v.get(1).copied().unwrap_or(0.3) + Vec3::Z * v.first().copied().unwrap_or(3.0);
+                let (pel, flat) = (sim.agent.doll.frames().next().unwrap().translation, Quat::from_axis_angle(s.fwd, std::f32::consts::FRAC_PI_2));
+                let fr: Vec<Transform> = sim.agent.doll.frames().map(|f| Transform::from_translation(pel + flat * (f.translation - pel) + off).with_rotation(flat * f.rotation)).collect();
+                let a = Agent::new(&sim.build, Ragdoll::new(&sim.build, &fr, -off.with_z(0.0).normalize_or_zero() * v.get(2).copied().unwrap_or(0.0)), Quat::IDENTITY, 0.3);
+                sim.crowd.push((a, msg::State::default()));
+                sim.crowd_hp.push(200.0);
+            }
+            ("!ped", Some(n)) => {
+                let scene = sim.scene.clone().unwrap_or_else(|| "room".into());
+                sim.switch_to = Some((scene, n == "marge"));
             }
             ("!body", Some(n)) => if let Some(i) = BODIES.iter().position(|b| b.0 == n) {
                 sim.body = i;
@@ -4672,17 +5139,19 @@ impl Sim {
             if self.agent.doll.frames().nth(HEAD).is_none_or(|f| f.translation.z < 1.3) || self.walk_dir == Vec3::ZERO {
                 return false;
             }
-            let (p0, at) = (self.frames[0].translation.with_z(0.0), self.agent.doll.frames().next().unwrap().translation.with_z(0.0));
-            let turn = Quat::from_rotation_z(self.walk_dir.y.atan2(self.walk_dir.x)) * locomotion::yaw(&self.frames).inverse();
-            let start: Vec<Transform> = self.frames.iter().map(|f| Transform { translation: turn * (f.translation - p0) + at, rotation: turn * f.rotation, ..*f }).collect();
+            let start: Vec<Transform> = self.agent.doll.frames().collect();
+            let moving: Vec<(Vec3, Vec3)> = (0..start.len()).map(|k| self.agent.doll.motion(k)).collect();
             let dir = std::path::Path::new(&learn::path()).with_file_name("learned-preview");
             match locomotion::preview::Preview::new(&self.build, &self.world, &start, &dir) {
-                Ok((p, a)) => {
+                Ok((p, mut a)) => {
+                    for (k, (f, &(v, w))) in start.iter().zip(&moving).enumerate() {
+                        a.doll.set_body(k, f.translation, f.rotation, v, w);
+                    }
                     self.agent = a;
                     self.msgs = Default::default();
                     (self.rises, self.still, self.nm_t, self.musc, self.learned, self.walk_learned) = ([None, None], [0.0; 2], [None, None], None, None, None);
                     (self.held, self.auto_balance, self.homer, self.tasks, self.watch) = (false, false, None, false, None);
-                    self.preview = Some((p, self.walk_dir.with_z(0.0).normalize()));
+                    self.preview = Some((p, locomotion::yaw(&start) * Vec3::X));
                 }
                 Err(e) => {
                     self.preview_on = false;
@@ -4699,6 +5168,12 @@ impl Sim {
             self.send("bodyBalance start=true");
             self.say("ours  experimental walk: wall or edge ahead, stopped; turn the camera and press W again".into());
             return false;
+        }
+        let side = self.walk_dir - *ahead * self.walk_dir.dot(*ahead);
+        if side.length() > 0.01 {
+            let ped = self.agent.doll.frames().next().unwrap().translation;
+            let (f, _) = delirium::playerctl::frame((0, -127), (-side.x).atan2(side.y), ped, self.agent.doll.mass(), &mut self.wander.clone(), &mut self.rand.clone());
+            self.agent.push.push((0, ped, f * side.length()));
         }
         if !p.step(&mut self.agent, &self.build, &self.world, beta) {
             (self.preview, self.preview_wait) = (None, true);
@@ -4809,6 +5284,7 @@ impl Sim {
             self.shot_frame();
             self.blast_frame();
             self.walk_frame();
+            self.self_preserve();
         }
         let t0 = std::time::Instant::now();
         let learning = self.learned.is_some();
@@ -4816,8 +5292,7 @@ impl Sim {
             let back = o.rot.inverse();
             [c.0, (c.0 + c.1) * 0.5, c.1].iter().any(|&p| ((back * (p - o.centre)).abs() - o.half).max_element() < c.2)
         })) {
-            self.homer_out(false);
-            self.say("homer  knocked out of his fight".into());
+            self.knocked_out();
         }
         let learning = learning || self.homer.is_some();
         if let Some((net, zero, n, pick)) = self.learned.as_mut() {
@@ -4837,9 +5312,10 @@ impl Sim {
         self.tackle_frame(1.0 / 60.0);
         self.jump_frame(1.0 / 60.0);
         self.stairs_frame();
-        let doll = self.hero_doll.as_mut().filter(|h| h.rise.is_none()).map(|h| &mut h.agent);
-        let mut all: Vec<(&mut Agent, usize, &Build, &[_], &[Capsule])> = std::iter::once(&mut self.agent).skip(learning as usize).chain(self.crowd.iter_mut().map(|c| &mut c.0)).chain(doll).enumerate()
-            .map(|(i, a)| (a, i, &self.build, &car[..], &hero[..])).collect();
+        let homer = if self.homer.is_some() { caps_of(&self.build, &self.agent.doll) } else { vec![] };
+        let doll = self.hero_doll.as_mut().filter(|h| h.rise.is_none()).map(|h| (&mut h.agent, &homer[..]));
+        let mut all: Vec<(&mut Agent, usize, &Build, &[_], &[Capsule])> = std::iter::once(&mut self.agent).skip(learning as usize).chain(self.crowd.iter_mut().map(|c| &mut c.0))
+            .map(|a| (a, &hero[..])).chain(doll).enumerate().map(|(i, (a, o))| (a, i, &self.build, &car[..], o)).collect();
         Agent::step_group(&mut all, &self.world, 1.0 / 60.0, &mut self.group);
         self.car_hits();
         self.sever_frame(1.0 / 60.0, &car);
@@ -4897,6 +5373,18 @@ impl Sim {
                 let _ = writeln!(r, "- - - - - - - | {:.3} {:.3} {:.3} {:.3} {:.3} | {}{crowd}", self.steps as f32 / 60.0, com.x, com.y, com.z, v.length(), feet.join(" | "));
             }
         }
+        if self.look_stop.is_some_and(|t| self.steps as f32 / 60.0 >= t) {
+            self.look_stop = None;
+            if self.homer.is_none() {
+                self.send("headLook start=false");
+            }
+            if std::mem::take(&mut self.dodging) {
+                if self.agent.balancing() {
+                    self.send("stopAllBehaviours");
+                    self.send("bodyBalance start=true");
+                }
+            }
+        }
         if self.lean_stop.is_some_and(|t| self.steps as f32 / 60.0 >= t) {
             self.lean_stop = None;
             self.say("room  lean stops".into());
@@ -4952,6 +5440,7 @@ fn step(mut sim: NonSendMut<Sim>, time: Res<Time>) {
         }
         return;
     }
+    sim.frame_ms += (time.delta_secs() * 1000.0 - sim.frame_ms) * 0.05;
     if !sim.paused {
         sim.acc += time.delta_secs() * sim.speed;
     }
@@ -5227,11 +5716,11 @@ fn section_title(t: &str) -> egui::RichText {
     egui::RichText::new(t).family(egui::FontFamily::Name("big".into())).size(22.0).color(INK)
 }
 
-const NAV: [(u8, &str); 7] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (1, "Interact"),
-                                     (4, "View"), (6, "Inspect"), (5, "Help")];
+const NAV: [(u8, &str); 8] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (1, "Interact"),
+                                     (4, "View"), (8, "Audio / Video"), (6, "Inspect"), (5, "Help")];
 
-fn active_tab(bits: u8) -> u8 {
-    if bits & 0x7f != 0 { 1 << bits.trailing_zeros() } else if bits & 0x80 != 0 { 1 << 2 } else { 1 }
+fn active_tab(bits: u16) -> u16 {
+    if bits & !0x80 != 0 { 1 << bits.trailing_zeros() } else if bits & 0x80 != 0 { 1 << 2 } else { 1 }
 }
 
 fn bar(ui: &mut egui::Ui, act: &[f32], des: &[f32], strength: f32) {
@@ -5356,6 +5845,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.separator();
             ui.label(egui::RichText::new(format!("Speed: {:.2} m/s   Acceleration: {:.2} m/s²", velocity.length(), motion.2)).monospace().color(HI))
                 .on_hover_text("Homer's centre-of-mass speed and change in velocity per simulation second, sampled between displayed frames. Pause holds the last reading; playback speed does not change the units.");
+            ui.separator();
+            ui.label(egui::RichText::new(format!("{:.0} FPS", 1000.0 / sim.frame_ms.max(0.1))).monospace().color(DIM))
+                .on_hover_text("Frames drawn a second. Audio / Video has the settings that change it.");
             ui.separator();
             if ui.selectable_label(*log_open || sim.typing, if compact { "Console" } else { "Activity & console" }).clicked() { *log_open = !*log_open; }
             if ui.selectable_label(sim.replay.is_some(), if compact { "Replay" } else { "Replay last action" }).on_hover_text(TIPS.iter().find(|t| t.0 == "replay").map_or("", |t| t.1)).clicked() { pressed = Some("replay".into()); }
@@ -5504,7 +5996,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         egui::Grid::new("section navigation").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
             ui.spacing_mut().button_padding.x = 6.0;
             for (i, &(bit, name)) in NAV.iter().enumerate() {
-                if ui.add_sized([nav_width, 34.0], egui::Button::new(egui::RichText::new(name).size(14.0)).wrap().selected(sim.tab == 1 << bit)).on_hover_text(if bit == 4 { "Camera, appearance and audio" } else { name }).clicked() {
+                if ui.add_sized([nav_width, 34.0], egui::Button::new(egui::RichText::new(name).size(14.0)).wrap().selected(sim.tab == 1 << bit)).on_hover_text(match bit { 4 => "Camera and appearance", 8 => "Graphics quality, resolution, shadows, frame rate and sound", _ => name }).clicked() {
                     sim.tab = 1 << bit;
                 }
                 if i % 4 == 3 { ui.end_row(); }
@@ -5535,6 +6027,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     }
                 }
             });
+            ui.add(egui::Slider::new(&mut sim.dodge_gap, 0.0..=10.0).text("Dive if shot at again within").custom_formatter(|x, _| if x <= 0.0 { "never".into() } else { format!("{x:.1} s") }))
+                .on_hover_text("A first near miss: he flinches. Another within this time: he dives out of the line.");
+            ui.checkbox(&mut sim.extra, "Additional experimental reactions")
+                .on_hover_text("Sometimes he windmills his arms as he loses his balance, and sometimes curls up on the ground before getting up.");
             ui.collapsing("Additional reactions", |ui| {
                 info(ui, "Delirium's experimental reactions.");
                 let per = per_row(ui, 145.0);
@@ -5743,6 +6239,11 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .on_hover_text("How much you see through the bodies. Solid hides the skeleton inside; Clean view makes them solid too.").changed() {
                 sim.body_alpha = 1.0 - see;
             }
+            let mut see = 1.0 - sim.hero_alpha;
+            if ui.add_enabled(!sim.clean, egui::Slider::new(&mut see, 0.0..=0.9).text("Hero see-through").custom_formatter(|x, _| if x <= 0.0 { "solid".into() } else { format!("{:.0}%", x * 100.0) }))
+                .on_hover_text("How much you see through the Hero.").changed() {
+                sim.hero_alpha = 1.0 - see;
+            }
             ui.label(egui::RichText::new("Show").color(DIM));
             ui.horizontal_wrapped(|ui| {
                 ui.checkbox(&mut sim.eyes, "Eyes").on_hover_text(tip("#eyes"));
@@ -5774,19 +6275,12 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
 
         if sim.tab & (1 << 4) != 0 {
             ui.add_space(6.0);
-            ui.label(section_title("View & audio"));
-            info(ui, "Adjust the camera, lighting and sound.");
+            ui.label(section_title("View"));
+            info(ui, "Adjust the camera and lighting.");
             pressed = pressed.take().or(tiles(ui, "view", &[("camera", sim.cam_locked, onoff("Follow camera", sim.cam_locked)),
                 ("#pops", sim.show_pops, onoff("Damage numbers", sim.show_pops)),
-                ("#sound", sim.sound, onoff("Sound", sim.sound)), ("#blood", sim.pixel_blood, onoff("Pixel blood", sim.pixel_blood))]));
-            if ui.add_enabled(sim.sound, egui::Button::new("Test sound")).on_hover_text("Play an impact sound through the current Windows output device.").clicked() { sim.sounds.push(sfx::Snd::Hit); }
-            info(ui, "8-bit effects for pokes, shots, hits and crashes. No background music. If Test sound is silent, check Delirium in the Windows volume mixer.");
+                ("#blood", sim.pixel_blood, onoff("Pixel blood", sim.pixel_blood))]));
             slide(ui, "Mouse sensitivity", &mut sim.sens, 0.05, 2.0, "");
-            sub(ui, "Audio");
-            slide(ui, "Master volume", &mut sim.volume[0], 0.0, 1.0, "");
-            slide(ui, "Sound effects", &mut sim.volume[1], 0.0, 1.0, "");
-            #[cfg(feature = "portal")]
-            slide(ui, "Portal 2 sounds", &mut sim.volume[2], 0.0, 1.0, "").on_hover_text("The portal gun's shots and portals opening (with Portal 2 on).");
             if ui.button("Enter photo mode  ·  P").on_hover_text("Hide the interface and move the camera freely; P returns to the room.").clicked() {
                 sim.photo_pending = true;
             }
@@ -5814,9 +6308,6 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.add(egui::Slider::new(&mut sim.sun_dir[0], -180.0..=180.0).text("Sun direction").suffix("°"));
             ui.add(egui::Slider::new(&mut sim.sun_dir[1], 3.0..=89.0).text("Sun height").suffix("°"));
             sub(ui, "Lights & shadows");
-            pressed = pressed.take().or(tiles(ui, "lights", &[("#shadows", sim.shadows, onoff("Shadows", sim.shadows))]));
-            ui.add_enabled(sim.shadows, egui::Slider::new(&mut sim.shadow, 0.0..=SHADOW_SOFT_MAX).logarithmic(true).smallest_positive(1.0).text("Shadow softness").custom_formatter(|x, _| if x <= 0.0 { "hard".into() } else { format!("{:.0}%", x / SHADOW_SOFT_MAX as f64 * 100.0) }))
-                .on_hover_text("How blurry the shadows' edges are: hard is a sharp outline, high is a cloudy-day blur. Costs more on a slow graphics card.");
             let mut f = if sim.soft { sim.fill_k } else { 0.0 };
             if ui.add(egui::Slider::new(&mut f, 0.0..=3.0).text("Fill light").custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{x:.2}×") }))
                 .on_hover_text("How bright the shadows and the dark side are: off is near black, high is flat and washed out.").changed() {
@@ -5837,6 +6328,97 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     (sim.shadows, sim.shadow, sim.soft, sim.fill_k, sim.sun_color) = (true, 0.0, true, 1.0, [1.0; 3]);
                 }
             });
+        }
+
+        if sim.tab & (1 << 8) != 0 {
+            ui.add_space(6.0);
+            ui.label(section_title("Audio / Video"));
+            info(ui, &format!("{:.0} FPS ({:.1} ms a frame). On a slow graphics card, lower Graphics quality first; Resolution is the last resort.", 1000.0 / sim.frame_ms.max(0.1), sim.frame_ms));
+            let custom = preset(&sim);
+            let mut q = custom.unwrap_or(1) as f32;
+            if ui.add(egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text("Graphics quality")
+                .custom_formatter(|x, _| if custom.is_none() { "custom".into() } else { ["Low", "Medium", "High"][x as usize].into() }))
+                .on_hover_text("Sets edge smoothing, shadow quality and softness together. Low: off and low. Medium: 4x and medium. High: 4x and high. All with hard shadow edges; softness is on its own.").changed() {
+                let (m, s, soft) = VIDEO_PRESETS[q as usize];
+                (sim.aa, sim.shadows, sim.shadow_q) = (if m == 1 { 0 } else { AA_MSAA }, true, s);
+                sim.msaa = m.max(2);
+                sim.shadow = if soft { sim.shadow.max(SHADOW_SOFT_MAX * 0.25) } else { 0.0 };
+            }
+            sub(ui, "Graphics card");
+            let names: Vec<String> = std::iter::once(String::new()).chain(sim.gpus.clone().unwrap_or_default()).collect();
+            ui.horizontal_wrapped(|ui| {
+                for n in names {
+                    let label = if n.is_empty() { "Automatic (fastest)".to_string() } else { n.clone() };
+                    if ui.selectable_label(sim.gpu.eq_ignore_ascii_case(&n), label).clicked() {
+                        sim.gpu = n;
+                    }
+                }
+            });
+            let wants = !sim.gpu.is_empty() && !sim.gpu_now.to_lowercase().contains(&sim.gpu.to_lowercase());
+            info(ui, &format!("In use: {}.{}", sim.gpu_now, if wants { " Restart the room to switch." } else { "" }));
+            sub(ui, "Display");
+            let up = sim.upscaling();
+            ui.add_enabled(!up, egui::Slider::new(&mut sim.render_scale, RENDER_SCALE_MIN..=1.0).text("Resolution").custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
+                .on_hover_text("How sharp the 3D view is drawn, as a share of the window's pixels. Lower is blurrier and much faster on a slow graphics card.");
+            ui.add(egui::Slider::new(&mut sim.fps_limit, FPS_VSYNC..=FPS_FREE).step_by(1.0).text("Frame rate limit")
+                .custom_formatter(|x, _| if x <= FPS_VSYNC as f64 { "monitor (V-Sync)".into() } else if x >= FPS_FREE as f64 { "unlimited".into() } else { format!("{x:.0} FPS") }))
+                .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go.");
+            sub(ui, "Anti-aliasing & upscaling");
+            let top = if sim.dlss_ok { AA_DLSS } else { AA_TAA };
+            sim.aa = sim.aa.min(top);
+            let mut m = sim.aa as f32;
+            if ui.add(egui::Slider::new(&mut m, 0.0..=top as f32).step_by(1.0).text("Anti-aliasing").custom_formatter(|x, _| AA_NAMES[x as usize].into()))
+                .on_hover_text("Smooths jagged edges; one method at a time. FXAA: cheapest, a little blurry. SMAA: sharper, still cheap. MSAA: clean edges, costs more on a slow graphics card. TAA: smoothest, can smear when things move fast. DLAA: NVIDIA's, the best looking. DLSS: NVIDIA's, draws the room smaller and rebuilds it sharp, much faster.").changed() {
+                sim.aa = m as u8;
+            }
+            if !sim.dlss_ok {
+                info(ui, if cfg!(feature = "dlss") { "DLAA and DLSS need an NVIDIA RTX graphics card." } else { "DLAA and DLSS aren't in this build." });
+            }
+            match sim.aa {
+                AA_SMAA => {
+                    let mut q = sim.smaa_q as f32;
+                    if ui.add(egui::Slider::new(&mut q, 0.0..=3.0).step_by(1.0).text("SMAA quality").custom_formatter(|x, _| ["low", "medium", "high", "ultra"][x as usize].into()))
+                        .on_hover_text("How hard SMAA looks for edges. Higher catches more, costs a little more.").changed() {
+                        sim.smaa_q = q as u8;
+                    }
+                }
+                AA_MSAA => {
+                    let steps: Vec<u8> = [2, 4, 8].into_iter().filter(|&k| k <= sim.msaa_max).collect();
+                    let mut i = steps.iter().position(|&k| k == sim.msaa).unwrap_or(0) as f32;
+                    if steps.len() > 1 && ui.add(egui::Slider::new(&mut i, 0.0..=(steps.len() - 1) as f32).step_by(1.0).text("MSAA samples")
+                        .custom_formatter(|x, _| format!("{}x", steps[x as usize])))
+                        .on_hover_text("More samples, smoother edges; each step costs more on a slow graphics card.").changed() {
+                        sim.msaa = steps[i as usize];
+                    }
+                }
+                AA_DLSS => {
+                    let mut q = sim.dlss_q as f32;
+                    if ui.add(egui::Slider::new(&mut q, 0.0..=3.0).step_by(1.0).text("DLSS mode")
+                        .custom_formatter(|x, _| ["Quality", "Balanced", "Performance", "Ultra Performance"][x as usize].into()))
+                        .on_hover_text("How small DLSS draws the room before rebuilding it. Quality is sharpest, Ultra Performance fastest.").changed() {
+                        sim.dlss_q = q as u8;
+                    }
+                }
+                _ => {}
+            }
+            ui.add(egui::Slider::new(&mut sim.sharpen, 0.0..=1.0).text("Sharpening").custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
+                .on_hover_text("Crisps the picture after upscaling or a lower Resolution. Too much looks grainy.");
+            sub(ui, "Shadows");
+            let mut q = if sim.shadows { sim.shadow_q as f32 } else { 0.0 };
+            if ui.add(egui::Slider::new(&mut q, 0.0..=3.0).step_by(1.0).text("Shadow quality").custom_formatter(|x, _| ["off", "low", "medium", "high"][x as usize].into()))
+                .on_hover_text("Low draws the sun's shadows once, near the camera; medium twice, further out; high four times, to the horizon. Shadows are the biggest cost after resolution.").changed() {
+                (sim.shadows, sim.shadow_q) = (q > 0.0, (q as u8).max(1));
+            }
+            ui.add_enabled(sim.shadows, egui::Slider::new(&mut sim.shadow, 0.0..=SHADOW_SOFT_MAX).logarithmic(true).smallest_positive(1.0).text("Shadow softness").custom_formatter(|x, _| if x <= 0.0 { "hard".into() } else { format!("{:.0}%", x / SHADOW_SOFT_MAX as f64 * 100.0) }))
+                .on_hover_text("How blurry the shadows' edges are: hard is a sharp outline, high is a cloudy-day blur. Costs more on a slow graphics card.");
+            sub(ui, "Audio");
+            pressed = pressed.take().or(tiles(ui, "audio", &[("#sound", sim.sound, onoff("Sound", sim.sound))]));
+            if ui.add_enabled(sim.sound, egui::Button::new("Test sound")).on_hover_text("Play an impact sound through the current Windows output device.").clicked() { sim.sounds.push(sfx::Snd::Hit); }
+            info(ui, "8-bit effects for pokes, shots, hits and crashes. No background music. If Test sound is silent, check Delirium in the Windows volume mixer.");
+            slide(ui, "Master volume", &mut sim.volume[0], 0.0, 1.0, "");
+            slide(ui, "Sound effects", &mut sim.volume[1], 0.0, 1.0, "");
+            #[cfg(feature = "portal")]
+            slide(ui, "Portal 2 sounds", &mut sim.volume[2], 0.0, 1.0, "").on_hover_text("The portal gun's shots and portals opening (with Portal 2 on).");
         }
 
         if sim.tab & (1 << 5) != 0 {

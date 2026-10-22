@@ -8,7 +8,7 @@
 - **Companion cube**: with Portal mode on, thrown boxes are the companion cube.
 - **Portal sounds**: the portal gun's shots and portals opening play Portal 2's sounds (from your install).
 - **Experimental walk** (preview, this release only): a learned walk, fast walk and jog. Turn it on under Character →
-  Experimental movement, then hold W to walk and Shift+W to jog (it ramps up over about 4 seconds). It walks in a
+  Experimental movement, then hold W to walk and Shift+W to jog (it ramps up over about 6 seconds). It walks in a
   straight line, stops by itself at walls, and slows to a walk before stopping when you let go. Trained on Ubisoft's
   LAFAN1 motion capture (non-commercial; see CREDITS.md). It will be replaced next release.
 - **Audio sliders**: master, effects and portal volume under View → Audio.

@@ -13,8 +13,9 @@ const PUSH_TIME: f32 = 0.1;
 const STIFF: f32 = 16.0;
 const PUSH_LEGS: f32 = 20.0;
 const APEX: f32 = 0.35;
-const DIVE_APEX: f32 = 0.25;
-const DIVE_SPEED: f32 = 3.5;
+const DIVE_APEX: f32 = 0.15;
+const DIVE_SPEED: f32 = 4.5;
+const DIVE_SPIN: f32 = 4.0;
 const NO_TAKEOFF: f32 = 0.3;
 const LAND_SPEED: f32 = 3.0;
 const DOWN: f32 = 0.3;
@@ -42,12 +43,12 @@ enum Phase {
 }
 
 impl Sim {
-    pub(crate) fn jump_start(&mut self, dive: bool) {
+    pub(crate) fn jump_start(&mut self, dive: bool, toward: Option<Vec3>) {
         if !self.agent.balancing() {
             return self.say("jump  Homer must be balancing".into());
         }
         let f: Vec<Transform> = self.agent.doll.frames().collect();
-        let dir = Vec3::Z.cross(f[4].translation - f[1].translation).with_z(0.0).normalize_or(Vec3::X);
+        let dir = toward.unwrap_or_else(|| Vec3::Z.cross(f[4].translation - f[1].translation).with_z(0.0).normalize_or(Vec3::X));
         self.agent.configure_balance(ConfigureBalance { leg_stiffness: CROUCH_LEGS, ..Default::default() });
         let base = self.agent.doll.com().0.z;
         let feet = FEET.map(|k| f[k].translation.z).into_iter().fold(f32::MAX, f32::min);
@@ -86,9 +87,10 @@ impl Sim {
                 let left = ((PUSH_TIME - j.t) / dt).max(0.0) + 1.0;
                 if j.t <= PUSH_TIME + dt * 0.5 {
                     let dv = gap / left;
+                    let spin = if j.dive { Vec3::Z.cross(j.dir) * DIVE_SPIN * dt / (PUSH_TIME + dt) } else { Vec3::ZERO };
                     for (k, x) in f.iter().enumerate() {
                         let m = self.agent.doll.part_mass(k);
-                        self.agent.doll.impulse(k, x.translation, dv * m);
+                        self.agent.doll.impulse(k, x.translation, (dv + spin.cross(x.translation - com)) * m);
                     }
                 }
                 if low > j.feet + OFF {

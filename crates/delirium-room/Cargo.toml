@@ -16,6 +16,8 @@ bevy = { version = "=0.18.1", default-features = false, features = [
     "bevy_camera", "bevy_color", "bevy_gizmos", "bevy_image", "bevy_mesh", "bevy_shader", "bevy_mikktspace",
     "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio", "experimental_pbr_pcss",
 ] }
+# The cards there are (Video → Graphics card); bevy's own wgpu.
+wgpu = { version = "=27.0.1", default-features = false }
 bevy_egui = { version = "=0.39.1", default-features = false, features = ["manage_clipboard", "default_fonts", "render"] }
 # bevy_egui reads the clipboard through arboard, which only talks to X11 unless this is on: without it, pasting on a Wayland session (most Linux desktops) finds nothing.
 arboard = { version = "3.2", features = ["wayland-data-control"] }
@@ -27,3 +29,5 @@ texpresso = "2.0.2"
 # Portal mode: Portal 2's portal gun, with your own Portal 2 install (none of its files are included). On by default.
 default = ["portal"]
 portal = ["delirium/portal"]
+# NVIDIA DLSS / DLAA (Video → Upscaler): needs DLSS_SDK, VULKAN_SDK and LIBCLANG_PATH to build, nvngx_dlss.dll beside the exe.
+dlss = ["bevy/dlss"]

@@ -353,10 +353,35 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
     })
 }
 
+pub fn cast_boxes(boxes: impl Iterator<Item = (Vec3, Vec3)>, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3)> {
+    boxes.filter_map(|(c, h)| {
+        let (a, b) = ((c - h - from) / dir, (c + h - from) / dir);
+        let (lo, t0, t1) = (a.min(b), a.min(b).max_element(), a.max(b).min_element());
+        (t0 <= t1 && (0.0..=len).contains(&t0)).then(|| {
+            let k = (0..3).find(|&k| lo[k] == t0).unwrap_or(2);
+            let mut n = Vec3::ZERO;
+            n[k] = -dir[k].signum();
+            (t0, n)
+        })
+    }).min_by(|a, b| a.0.total_cmp(&b.0))
+}
+
 impl Room {
     pub fn ground(&self, p: Vec3) -> f32 {
         self.blocks.iter().filter(|(c, h, _)| (p.x - c.x).abs() <= h.x && (p.y - c.y).abs() <= h.y && c.z + h.z <= p.z + 0.05)
             .map(|(c, h, _)| c.z + h.z).fold(0.0, f32::max)
+    }
+
+    pub fn cast(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3)> {
+        cast_boxes(self.blocks.iter().map(|&(c, h, _)| (c, h)), from, dir, len)
+    }
+
+    pub fn resting(&self) -> impl Iterator<Item = (Vec3, Vec3)> + '_ {
+        (0..self.objs.len()).filter(|&j| matches!(self.objs[j].kind, 2 | 3) && self.objs[j].anchor.is_none()).filter_map(|j| {
+            let (t, v) = self.obj(0, j);
+            let r = KINDS[self.objs[j].kind].1;
+            (v.length() < 1.0).then(|| (t.translation, if self.objs[j].kind == 3 { Vec3::new(r, r, BARREL_HALF) } else { Vec3::splat(r) }))
+        })
     }
 
     pub fn stairs_ahead(&self, p: Vec3, dir: Vec3) -> bool {
@@ -556,14 +581,19 @@ impl Room {
             let groups = InteractionGroups::new(PARTS, Group::ALL, InteractionTestMode::And);
             self.parts[i] = caps.iter().map(|(t, r, h)| w.insert(RigidBodyBuilder::kinematic_position_based().pose(pose(t)), ColliderBuilder::capsule_y(*h, *r).collision_groups(groups))).collect();
         }
+        let mut part_v = vec![];
         for ((b, _), (t, _, _)) in self.parts[i].iter().zip(caps) {
             let body = &mut w.bodies[*b];
-            if bv(body.translation()).distance(t.translation) > 0.3 {
+            let from = bv(body.translation());
+            if from.distance(t.translation) > 0.3 {
                 body.set_position(pose(t), true);
+                part_v.push(Vec3::ZERO);
             } else {
                 body.set_next_kinematic_position(pose(t));
+                part_v.push((t.translation - from) / dt);
             }
         }
+        let obj_v: Vec<Vec3> = self.objs.iter().map(|o| bv(w.bodies[o.h[i]].linvel())).collect();
         w.integration_parameters.dt = dt;
         #[cfg(feature = "portal")]
         w.step_with_events(&Holes(&self.holes), &());
@@ -579,12 +609,14 @@ impl Room {
                     continue;
                 }
                 let at = bv(w.bodies[self.objs[j].h[i]].translation());
-                let axis = t.rotation * Vec3::Y * *h;
-                let on = t.translation + (at - t.translation).project_onto(axis).clamp_length_max(*h);
+                let axis = t.rotation * Vec3::Y;
+                let on = t.translation + axis * (at - t.translation).dot(axis).clamp(-*h, *h);
                 let hit = on + (at - on).normalize_or_zero() * *r;
                 let imp = if imp.dot(t.translation - at) < 0.0 { -imp } else { imp };
+                let m = w.bodies[self.objs[j].h[i]].mass();
+                let closing = (obj_v[j] - part_v[k]).dot(imp.normalize_or_zero()).max(0.0);
+                let imp = imp.clamp_length_max(m * (closing + 9.81 * dt));
                 let obj = &mut w.bodies[self.objs[j].h[i]];
-                let m = obj.mass();
                 let mine = imp * (PART_KG / (PART_KG + m));
                 obj.apply_impulse(rv(imp - mine), true);
                 out.push((j, k, hit, mine));

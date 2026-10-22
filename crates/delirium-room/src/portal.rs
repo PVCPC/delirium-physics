@@ -264,8 +264,8 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, k
         sim.hero_take(crate::WEAPONS.iter().position(|w| w.0 == "ak47"));
         sim.portal.gun = true;
     }
-    if sim.portal.gun && (hero || sim.click_shoots || sim.aim_gun) && (!sim.over_ui || sim.portal.ots.is_some()) {
-        let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+    if sim.portal.gun && (hero || sim.click_shoots || sim.aim_gun || ctrl || crate::shift_held(&keys)) && (!sim.over_ui || sim.portal.ots.is_some()) {
         for (i, b) in [MouseButton::Left, MouseButton::Right].into_iter().enumerate() {
             if !buttons.just_pressed(b) {
                 continue;

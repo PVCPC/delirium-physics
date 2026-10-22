@@ -3,7 +3,7 @@ use std::path::Path;
 
 fn ramp() -> f32 {
     static R: OnceLock<f32> = OnceLock::new();
-    *R.get_or_init(|| std::env::var("DELIRIUM_PREVIEW_RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(2.0))
+    *R.get_or_init(|| std::env::var("DELIRIUM_PREVIEW_RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(3.0))
 }
 
 pub(super) const TRAINED: Quat = Quat::from_xyzw(0.0, 0.0, -0.74354, 0.6686915);

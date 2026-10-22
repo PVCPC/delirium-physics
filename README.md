@@ -75,7 +75,9 @@ Choose reactions under **Reactions** in the left dock. **Scene** contains locati
 | **T / G** | heavy attack / kick |
 | **V** | block |
 | **Hold Z** | lock on to Homer |
-| **1** fists, **2–8** | guns |
+| **1** fists, **2–0** | guns, grenade, molotov |
+| **-** / **=** | bat / knife |
+| **Mouse wheel** | next / previous weapon |
 | **F** | get in or out of the taxi |
 
 ## For developers
