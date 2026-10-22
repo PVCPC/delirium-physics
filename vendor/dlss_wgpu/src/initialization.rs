@@ -113,6 +113,13 @@ pub fn register_device_extensions(
     let raw_physical_device = raw_adapter.raw_physical_device();
     let mut result = Ok(());
 
+    // Asking NGX about a card that isn't NVIDIA's (an AMD integrated one) crashes: no DLSS there.
+    if unsafe { raw_instance.get_physical_device_properties(raw_physical_device) }.vendor_id != 0x10DE {
+        feature_support.super_resolution_supported = false;
+        feature_support.ray_reconstruction_supported = false;
+        return Ok(());
+    }
+
     match required_device_extensions(
         project_id,
         NVSDK_NGX_Feature_NVSDK_NGX_Feature_SuperSampling,

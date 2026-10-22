@@ -3899,20 +3899,37 @@ fn dlss(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<bevy::a
 
 const FPS_VSYNC: f32 = 19.0;
 const FPS_FREE: f32 = 361.0;
+const FPS_BACKGROUND: f32 = 60.0;
+
+#[cfg(windows)]
+fn in_front(_: &Query<&mut Window, With<bevy::window::PrimaryWindow>>) -> bool {
+    unsafe extern "system" {
+        fn GetForegroundWindow() -> *mut std::ffi::c_void;
+        fn GetWindowThreadProcessId(w: *mut std::ffi::c_void, pid: *mut u32) -> u32;
+    }
+    let mut pid = 0;
+    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut pid) };
+    pid == std::process::id()
+}
+#[cfg(not(windows))]
+fn in_front(win: &Query<&mut Window, With<bevy::window::PrimaryWindow>>) -> bool {
+    win.iter().any(|w| w.focused)
+}
 
 fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::PrimaryWindow>>, mut next: Local<Option<std::time::Instant>>) {
     use bevy::window::PresentMode;
-    let mode = if sim.fps_limit <= FPS_VSYNC { PresentMode::AutoVsync } else { PresentMode::AutoNoVsync };
+    let limit = if in_front(&win) { sim.fps_limit } else { sim.fps_limit.min(FPS_BACKGROUND) };
+    let mode = if limit <= FPS_VSYNC { PresentMode::AutoVsync } else { PresentMode::AutoNoVsync };
     for mut w in &mut win {
         if w.present_mode != mode {
             w.present_mode = mode;
         }
     }
-    if sim.fps_limit <= FPS_VSYNC || sim.fps_limit >= FPS_FREE {
+    if limit <= FPS_VSYNC || limit >= FPS_FREE {
         *next = None;
         return;
     }
-    let step = std::time::Duration::from_secs_f32(1.0 / sim.fps_limit);
+    let step = std::time::Duration::from_secs_f32(1.0 / limit);
     let now = std::time::Instant::now();
     let due = next.filter(|&t| t + step > now).unwrap_or(now);
     if let Some(d) = due.checked_duration_since(now).and_then(|d| d.checked_sub(std::time::Duration::from_millis(2))) {
@@ -6362,7 +6379,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .on_hover_text("How sharp the 3D view is drawn, as a share of the window's pixels. Lower is blurrier and much faster on a slow graphics card.");
             ui.add(egui::Slider::new(&mut sim.fps_limit, FPS_VSYNC..=FPS_FREE).step_by(1.0).text("Frame rate limit")
                 .custom_formatter(|x, _| if x <= FPS_VSYNC as f64 { "monitor (V-Sync)".into() } else if x >= FPS_FREE as f64 { "unlimited".into() } else { format!("{x:.0} FPS") }))
-                .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go.");
+                .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go. With the window in the background it never goes over 60.");
             sub(ui, "Anti-aliasing & upscaling");
             let top = if sim.dlss_ok { AA_DLSS } else { AA_TAA };
             sim.aa = sim.aa.min(top);
