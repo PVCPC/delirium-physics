@@ -185,12 +185,14 @@ lens {}
 chroma {}
 ray_tracing {}
 sky {}
+god_rays {}
+restir {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky)
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir))
 }
 
 fn coin() -> bool {
@@ -244,6 +246,8 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "chroma" => sim.chroma = x.clamp(0.0, 1.0),
             "ray_tracing" => sim.rt = (x as u8).min(2),
             "sky" => sim.sky = (x as u8).min(2),
+            "god_rays" => sim.god_rays = on,
+            "restir" => sim.restir = on,
             "upscaler" => sim.upscaler = (x as u8).min(UP_FSR1),
             "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
@@ -700,6 +704,8 @@ struct Sim {
     lens: f32,
     chroma: f32,
     sky: u8,
+    god_rays: bool,
+    restir: bool,
     rt: u8,
     rt_ok: bool,
     view_px: UVec2,
@@ -3278,7 +3284,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3385,7 +3391,7 @@ fn main() {
     }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
-    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, apply_look, video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
+    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, (apply_look, god_rays, glass_light), video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
     let mut app = App::new();
     let gpu = std::fs::read_to_string(getup::config_dir().join(SETTINGS)).ok()
         .and_then(|t| t.lines().find_map(|l| l.strip_prefix("gpu ").map(|g| g.trim().to_lowercase()))).filter(|g| !g.is_empty());
@@ -3796,6 +3802,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
         commands.spawn((DirectionalLight { shadow_maps_enabled: false, illuminance: 0.0, ..default() }, Transform::from_xyz(-3.0, 4.0, 2.0).looking_at(Vec3::ZERO, Vec3::Z),
                         RenderLayers::layer(layer), Fill));
     }
+    commands.spawn((bevy::light::FogVolume { density_factor: GOD_RAYS_FOG, ..default() }, Transform::from_scale(GOD_RAYS_BOX), Visibility::Hidden,
+                    RenderLayers::layer(1)));
     spawn_world(&mut commands, &mut meshes, &mut mats, &sim, &assets);
     let (cfg, _) = gizmos.config_mut::<OursGizmos>();
     (cfg.render_layers, cfg.depth_bias) = (RenderLayers::layer(SKEL_LAYER), -1.0);
@@ -3835,7 +3843,8 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         let post = sim.room.stage == "bridge" && h == world::POST_HALF;
         if sim.room.stage == "pttest" && h == Vec3::splat(world::GLASS_HALF) {
             let i = ((c.y + 4.0) / 0.5) as usize;
-            commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(glass[i % 16].clone()), Transform::from_translation(c), RenderLayers::layer(1), RoomScenery));
+            commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(glass[i % 16].clone()), Transform::from_translation(c), RenderLayers::layer(1), RoomScenery,
+                            Glass, bevy::light::NotShadowCaster));
             continue;
         }
         let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.24, 0.25, 0.27) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
@@ -4161,6 +4170,10 @@ fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope
 }
 #[derive(Component)]
 struct Fill;
+#[derive(Component)]
+struct Glass;
+#[derive(Component)]
+struct GlassLight;
 
 fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8, bool, (u8, u8), u8, bool, [u8; 5], u8)>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
          mut map: ResMut<bevy::light::DirectionalLightShadowMap>, mut aa_was: Local<Option<u8>>,
@@ -4193,7 +4206,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
     }
     let aa = sim.aa_now();
     let ssao = sim.ssao;
-    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8, sim.fsr1(), (ssao, (sim.ao_strength * 100.0) as u8), (sim.bloom * 100.0) as u8, sim.dof > 0.0, [sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma].map(|x| (x * 100.0) as u8), sim.rt_now());
+    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8, sim.fsr1(), (ssao, (sim.ao_strength * 100.0) as u8), (sim.bloom * 100.0) as u8, sim.dof > 0.0, [sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma].map(|x| (x * 100.0) as u8), sim.rt_now() | (sim.restir as u8) << 4);
     if *last == Some(now) {
         return;
     }
@@ -4248,7 +4261,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
             rt => {
                 c.insert(bevy::camera::CameraMainTextureUsages::default().with(bevy::render::render_resource::TextureUsages::STORAGE_BINDING));
                 if rt == 1 {
-                    c.remove::<Pathtracer>().insert(SolariLighting::default());
+                    c.remove::<Pathtracer>().insert(SolariLighting { restir: sim.restir, ..default() });
                 } else {
                     c.remove::<(SolariLighting, bevy::core_pipeline::prepass::DeferredPrepass)>().insert(Pathtracer::default());
                 }
@@ -4322,14 +4335,14 @@ impl Sim {
 
 fn ray_tracing(mut commands: Commands, mut sim: NonSendMut<Sim>, device: Option<Res<bevy::render::renderer::RenderDevice>>, mut last: Local<u8>,
                mut method: ResMut<bevy::pbr::DefaultOpaqueRendererMethod>, mut mats: ResMut<Assets<StandardMaterial>>, mut meshes: ResMut<Assets<Mesh>>,
-               lit: Query<(Entity, &Mesh3d, &InheritedVisibility, Option<&RenderLayers>, Option<&bevy::solari::prelude::RaytracingMesh3d>), With<MeshMaterial3d<StandardMaterial>>>,
+               lit: Query<(Entity, &Mesh3d, &InheritedVisibility, Option<&RenderLayers>, Option<&bevy::solari::prelude::RaytracingMesh3d>, Has<Glass>, Has<GlassLight>), With<MeshMaterial3d<StandardMaterial>>>,
                ) {
     use bevy::{mesh::Indices, solari::prelude::RaytracingMesh3d};
     sim.rt_ok = device.is_some_and(|d| d.features().contains(bevy::solari::SolariPlugins::required_wgpu_features()));
     let rt = sim.rt_now();
     let ours = RenderLayers::from_layers(&[0, 1]);
-    for (e, m, shown, layers, traced) in &lit {
-        let want = rt > 0 && shown.get() && layers.is_none_or(|l| l.intersects(&ours));
+    for (e, m, shown, layers, traced, glass, fake) in &lit {
+        let want = rt > 0 && shown.get() && layers.is_none_or(|l| l.intersects(&ours)) && !fake && !(rt == 1 && glass);
         if want == traced.is_some() && traced.is_none_or(|t| t.0 == m.0) {
             continue;
         }
@@ -4533,6 +4546,143 @@ fn follow_floor(sim: NonSend<Sim>, mut q: Query<&mut Transform, With<Floor>>) {
     }
 }
 
+fn god_rays(mut commands: Commands, sim: NonSend<Sim>, cam: Query<(Entity, Has<bevy::light::VolumetricFog>), With<OursCam>>,
+            mut suns: Query<(Entity, &RenderLayers, &mut DirectionalLight, Has<bevy::light::VolumetricLight>), Without<Fill>>,
+            mut fog: Query<(&mut Visibility, &mut Transform), With<bevy::light::FogVolume>>) {
+    let on = sim.god_rays && (sim.shadows || sim.rt_now() > 0);
+    let maps = (sim.shadows && sim.rt_now() == 0) || on;
+    for (_, _, mut l, _) in &mut suns {
+        if l.shadow_maps_enabled != maps {
+            l.shadow_maps_enabled = maps;
+        }
+    }
+    for (mut v, mut t) in &mut fog {
+        *v = if on { Visibility::Inherited } else { Visibility::Hidden };
+        t.translation = sim.ours().p(0).with_z(GOD_RAYS_BOX.z * 0.5);
+    }
+    for (c, has) in &cam {
+        if on && !has {
+            commands.entity(c).insert(bevy::light::VolumetricFog { ambient_intensity: 0.0, ..default() });
+        } else if !on && has {
+            commands.entity(c).remove::<bevy::light::VolumetricFog>();
+        }
+    }
+    for (e, l, _, has) in &suns {
+        let want = on && l.intersects(&RenderLayers::layer(1));
+        if want && !has {
+            commands.entity(e).insert(bevy::light::VolumetricLight);
+        } else if !want && has {
+            commands.entity(e).remove::<bevy::light::VolumetricLight>();
+        }
+    }
+}
+fn glass_light(mut commands: Commands, sim: NonSend<Sim>, glass: Query<&Transform, With<Glass>>, made: Query<Entity, With<GlassLight>>,
+               mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, mut last: Local<Option<([f32; 2], bool, bool, f32)>>) {
+    let on = !glass.is_empty() && sim.rt_now() < 2;
+    let now = (sim.sun_dir, sim.god_rays, on, sim.shadow);
+    if *last == Some(now) && made.is_empty() != on {
+        return;
+    }
+    *last = Some(now);
+    made.iter().for_each(|e| commands.entity(e).despawn());
+    if !on {
+        return;
+    }
+    let (az, el) = (sim.sun_dir[0].to_radians(), sim.sun_dir[1].clamp(3.0, 89.0).to_radians());
+    let d = -Vec3::new(az.cos() * el.cos(), az.sin() * el.cos(), el.sin());
+    let floor = |p: Vec3| p + d * (p.z - 0.004) / -d.z;
+    let mut cols: Vec<(f32, Vec3, Vec3)> = vec![];
+    for t in &glass {
+        let (c, h) = (t.translation, world::GLASS_HALF);
+        match cols.iter_mut().find(|k| (k.0 - c.y).abs() < 0.01) {
+            Some(k) => (k.1, k.2) = (k.1.min(c - h), k.2.max(c + h)),
+            None => cols.push((c.y, c - h, c + h)),
+        }
+    }
+    cols.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (lo, hi) = (cols.iter().fold(Vec3::MAX, |m, c| m.min(c.1)), cols.iter().fold(Vec3::MIN, |m, c| m.max(c.2)));
+    let (x, top) = ((lo.x + hi.x) * 0.5, hi.z);
+    let rgb = |y: f32| Vec3::from(GLASS_RGB[((y + 4.0) / 0.5) as usize % 16]);
+    let blur = |z: f32| (z / -d.z * (sim.shadow.max(0.1)).to_radians().tan()).min(0.4);
+    let run = |v: Vec3| v.with_z(0.0).length() / v.z.max(1e-3);
+    let up = |z: f32| blur(z) / run(-d).max(0.2);
+    let line = |w: f32| ((GLASS_FRAME.max(w)) * 0.5, 1.0 - (1.0 - GLASS_FRAME_K) * (GLASS_FRAME / GLASS_FRAME.max(w)));
+    let (h, panes) = (world::GLASS_HALF * 2.0, (top / (world::GLASS_HALF * 2.0)).round() as usize);
+    let mut rows: Vec<(f32, f32)> = vec![(0.0, 1.0)];
+    for k in 1..panes {
+        let z = k as f32 * h;
+        let (hw, dk) = line(up(z));
+        rows.extend([(z - hw, 1.0), (z, dk), (z + hw, 1.0)]);
+    }
+    let (hw, _) = line(up(top));
+    rows.extend([(top - hw, 1.0), (top + hw, 0.0)]);
+    let mut tp: Vec<[f32; 3]> = vec![];
+    let mut tc: Vec<[f32; 4]> = vec![];
+    let tint = |c: Vec3, k: f32| (Vec3::ONE.lerp(c, GLASS_TINT) * k).extend(1.0).to_array();
+    let mut grid: Vec<Vec<(Vec3, [f32; 4])>> = vec![];
+    for &(z, rk) in &rows {
+        let (hw, dk) = line(blur(z.max(0.0)));
+        let mut row = vec![];
+        let mut at = |y: f32, c: Vec3, k: f32| row.push((floor(Vec3::new(x, y, z.max(0.004))), if rk == 0.0 { [1.0; 4] } else { tint(c, k * rk) }));
+        at(cols[0].1.y - hw, Vec3::ONE, 1.0);
+        at(cols[0].1.y, rgb(cols[0].0), dk);
+        for (k, c) in cols.iter().enumerate() {
+            at(c.1.y + hw, rgb(c.0), 1.0);
+            at(c.2.y - hw, rgb(c.0), 1.0);
+            match cols.get(k + 1) {
+                Some(n) => at(c.2.y, (rgb(c.0) + rgb(n.0)) * 0.5, dk),
+                None => {
+                    at(c.2.y, rgb(c.0), dk);
+                    at(c.2.y + hw, Vec3::ONE, 1.0);
+                }
+            }
+        }
+        grid.push(row);
+    }
+    for (r0, r1) in grid.iter().zip(&grid[1..]) {
+        for k in 0..r0.len() - 1 {
+            for (p, c) in [r0[k], r0[k + 1], r1[k + 1], r0[k], r1[k + 1], r1[k]] {
+                tp.push(p.to_array());
+                tc.push(c);
+            }
+        }
+    }
+    let (mut sp, mut sc): (Vec<[f32; 3]>, Vec<[f32; 4]>) = default();
+    for &(y, lo, hi) in &cols {
+        let c = rgb(y) * 0.06;
+        let (a, b2, a0, b0) = (Vec3::new(x, lo.y, hi.z), Vec3::new(x, hi.y, hi.z), Vec3::new(x, lo.y, lo.z), Vec3::new(x, hi.y, lo.z));
+        let (fa, fb, f0, f1) = (floor(a), floor(b2), floor(a0.with_z(0.004)), floor(b0.with_z(0.004)));
+        for p in [a, b2, fb, a, fb, fa, a, fa, f0, a, f0, a0, b2, fb, f1, b2, f1, b0] {
+            sp.push(p.to_array());
+            let k = if p.z < 0.01 && (p - a0).length() > 0.01 && (p - b0).length() > 0.01 { 0.25 } else { 1.0 };
+            sc.push((c * k).extend(1.0).to_array());
+        }
+    }
+    let (mut tint, mut shaft) = (Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, default()), Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, default()));
+    let n = |k: usize| vec![[0.0f32, 0.0, 1.0]; k];
+    tint.insert_attribute(Mesh::ATTRIBUTE_NORMAL, n(tp.len()));
+    tint.insert_attribute(Mesh::ATTRIBUTE_COLOR, tc);
+    tint.insert_attribute(Mesh::ATTRIBUTE_POSITION, tp);
+    shaft.insert_attribute(Mesh::ATTRIBUTE_NORMAL, n(sp.len()));
+    shaft.insert_attribute(Mesh::ATTRIBUTE_COLOR, sc);
+    shaft.insert_attribute(Mesh::ATTRIBUTE_POSITION, sp);
+    let mut mat = |alpha_mode| mats.add(StandardMaterial { unlit: true, alpha_mode, double_sided: true, cull_mode: None, ..default() });
+    commands.spawn((Mesh3d(meshes.add(tint)), MeshMaterial3d(mat(AlphaMode::Multiply)), Transform::default(), RenderLayers::layer(1), GlassLight,
+                    bevy::light::NotShadowCaster));
+    if sim.god_rays {
+        commands.spawn((Mesh3d(meshes.add(shaft)), MeshMaterial3d(mat(AlphaMode::Add)), Transform::default(), RenderLayers::layer(1), GlassLight,
+                        bevy::light::NotShadowCaster));
+    }
+}
+const GLASS_TINT: f32 = 0.4;
+const GLASS_FRAME: f32 = 0.06;
+const GLASS_FRAME_K: f32 = 0.7;
+const GLASS_RGB: [[f32; 3]; 16] = [[0.95, 0.95, 0.95], [0.95, 0.22, 0.01], [0.57, 0.08, 0.51], [0.04, 0.45, 0.70], [0.99, 0.69, 0.05], [0.22, 0.57, 0.01],
+    [0.90, 0.26, 0.40], [0.06, 0.08, 0.09], [0.34, 0.34, 0.31], [0.01, 0.33, 0.33], [0.25, 0.03, 0.48], [0.05, 0.06, 0.40], [0.23, 0.09, 0.03],
+    [0.11, 0.20, 0.01], [0.43, 0.03, 0.02], [0.01, 0.01, 0.02]];
+const GOD_RAYS_BOX: Vec3 = Vec3::new(40.0, 40.0, 12.0);
+const GOD_RAYS_FOG: f32 = 0.15;
+
 fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32, [f32; 2], bool, [f32; 3], f32)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, &mut Transform, Has<Fill>)>,
               mut fill: ResMut<GlobalAmbientLight>,
               floor: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<Floor>>, mut mats: ResMut<Assets<StandardMaterial>>,
@@ -4565,7 +4715,9 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
             s.color = Color::srgb(r, g, b);
         }
         s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some((sim.shadow * 0.5).to_radians().tan());
-        s.shadow_maps_enabled = !fill && sim.shadows && sim.rt_now() == 0;
+        if fill {
+            s.shadow_maps_enabled = false;
+        }
         s.contact_shadows_enabled = !fill && sim.contact > 0.0;
     }
     if sim.room.stage != "street" {
@@ -5812,6 +5964,15 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!screenshot", Some(f)) => {
                 commands.spawn(bevy::render::view::screenshot::Screenshot::primary_window())
                     .observe(bevy::render::view::screenshot::save_to_disk(f.to_string()));
+            }
+            ("!tp", Some(a)) => {
+                if let [x, y] = a.split_whitespace().filter_map(|x| x.parse().ok()).collect::<Vec<f32>>()[..] {
+                    let by = (Vec2::new(x, y) - sim.ours().p(0).truncate()).extend(0.0);
+                    let fr: Vec<Transform> = sim.agent.doll.frames().map(|f| f.with_translation(f.translation + by)).collect();
+                    sim.agent = Agent::new(&sim.build, Ragdoll::new(&sim.build, &fr, Vec3::ZERO), Quat::IDENTITY, 0.3);
+                    sim.msgs = msg::State::default();
+                    sim.send("bodyBalance start=true");
+                }
             }
             ("!lift", Some(h)) => {
                 let up = Vec3::Z * h.parse().unwrap_or(2.0);
@@ -7106,7 +7267,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             }
             pressed = pressed.take().or(tiles(ui, "look on", &[("#grid", sim.skin.grid, onoff("Grid lines", sim.skin.grid)), ("#fog", sim.skin.fog, onoff("Fog", sim.skin.fog)), ("#infinite", sim.infinite, onoff("Extend floor", sim.infinite)),
                 ("#ripples", sim.show_ripples, onoff("Floor ripples", sim.show_ripples)), ("#photosky", sim.sky == 1, onoff("Photo sky", sim.sky == 1)),
-                ("#bevysky", sim.sky == 2, onoff("Bevy sky", sim.sky == 2))]));
+                ("#bevysky", sim.sky == 2, onoff("Bevy sky", sim.sky == 2)), ("#godrays", sim.god_rays, onoff("God rays", sim.god_rays))]));
             sub(ui, "Custom colours & lighting");
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -7142,6 +7303,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .on_disabled_hover_text("Needs a graphics card that can ray trace (RTX, RX 6000 or newer).").changed() {
                 sim.rt = q as u8;
             }
+            ui.add_enabled(sim.rt_now() == 1, egui::Checkbox::new(&mut sim.restir, gpu("ReSTIR", 2)))
+                .on_hover_text("Ray-traced lighting reuses light paths between pixels and frames: finer shadows and steadier light, for a good chunk of speed.")
+                .on_disabled_hover_text("With ray-traced lighting (Ray tracing: lighting).");
             sub(ui, "Effects");
             let mut q = sim.ssao as f32;
             if ui.add(egui::Slider::new(&mut q, 0.0..=4.0).step_by(1.0).text(gpu("Ambient occlusion", 2)).custom_formatter(|x, _| ["off", "low", "medium", "high", "ultra"][x as usize].into()))
@@ -7377,6 +7541,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             (Some("#look"), Some(n)) => sim.skin = LOOKS.iter().find(|l| l.0 == n).map_or(sim.skin, |l| l.1),
             (Some("#grid"), _) => sim.skin.grid = !sim.skin.grid,
             (Some("#photosky"), _) => sim.sky = if sim.sky == 1 { 0 } else { 1 },
+            (Some("#godrays"), _) => sim.god_rays = !sim.god_rays,
             (Some("#bevysky"), _) => sim.sky = if sim.sky == 2 { 0 } else { 2 },
             (Some("#infinite"), _) => sim.infinite = !sim.infinite,
             (Some("#pedcol"), Some(n)) => sim.ped_color = PED_COLORS.iter().position(|c| c.0 == n).unwrap_or(sim.ped_color),
