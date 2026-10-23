@@ -38,7 +38,10 @@ pub struct GpuMaterial {
     perceptual_roughness: f32,
     emissive: Vec3,
     metallic: f32,
-    _padding: Vec3,
+    // Delirium: 1 for glass (transmissive: light passes through it, tinted), and its index of refraction.
+    glass: f32,
+    ior: f32,
+    _padding: f32,
     reflectance: f32,
 }
 
@@ -203,7 +206,9 @@ impl AssetState {
                 emissive,
                 metallic: material.metallic.clamp(0.0, 1.0),
                 reflectance: material.reflectance,
-                _padding: Vec3::ZERO,
+                glass: f32::from(material.specular_transmission > 0.0),
+                ior: material.ior,
+                _padding: 0.0,
             },
         );
 

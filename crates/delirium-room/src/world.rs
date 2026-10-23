@@ -310,6 +310,8 @@ impl Bridge {
     }
 }
 
+pub const GLASS_HALF: f32 = 0.25;
+
 fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, Vec3)> {
     let b = |c: [f32; 3], h: [f32; 3], r| (Vec3::from(c), Vec3::from(h), r);
     Some(match name {
@@ -391,7 +393,7 @@ impl Room {
 
     pub fn new(surfaces: Vec<(String, f32, f32)>, name: &str) -> Room {
         let row = |n: &str| surfaces.iter().position(|s| s.0 == n).unwrap_or(0) as u8;
-        let (blocks, start) = stage(name, row("BRICK_WALL"), row("CONCRETE")).unwrap_or_else(|| (Room::blocks(&row), Vec3::ZERO));
+        let (blocks, start) = stage(name, row("BRICK_WALL"), row("CONCRETE")).unwrap_or_else(|| (Room::blocks(&row, name == "pttest"), Vec3::ZERO));
         let mut w = [PhysicsWorld::new(), PhysicsWorld::new()];
         let mut fixed = [vec![], vec![]];
         for (i, w) in w.iter_mut().enumerate() {
@@ -409,7 +411,7 @@ impl Room {
                bridge, broke: vec![], push: Vec3::NEG_Z * HOMER_N, com_v: Vec3::ZERO, com_a: Vec3::ZERO, #[cfg(feature = "portal")] holes: vec![] }
     }
 
-    fn blocks(row: &dyn Fn(&str) -> u8) -> Vec<(Vec3, Vec3, u8)> {
+    fn blocks(row: &dyn Fn(&str) -> u8, glass: bool) -> Vec<(Vec3, Vec3, u8)> {
         let mut blocks = vec![(Vec3::new(0.0, 3.5, 0.5), Vec3::new(4.0, 0.15, 0.5), row("BRICK_WALL"))];
         for i in 0..10 {
             let top = 0.18 * (i + 1) as f32;
@@ -418,7 +420,10 @@ impl Room {
         blocks.push((Vec3::new(-3.75, 2.0, 0.9), Vec3::new(0.75, 0.5, 0.9), row("CONCRETE")));
         #[cfg(feature = "portal")]
         blocks.extend([(Vec3::new(10.0, 0.0, 3.0), Vec3::new(0.15, 4.0, 3.0), row("CONCRETE")),
-                       (Vec3::new(6.0, 3.0, 5.0), Vec3::new(3.0, 3.0, 0.1), row("CONCRETE"))]);
+                       (Vec3::new(6.0, 3.0, 5.0), Vec3::new(3.0, 3.0, 0.1), row("CONCRETE"))].into_iter().skip(glass as usize));
+        if glass {
+            blocks.extend((0..192).map(|i| (Vec3::new(10.0, -3.75 + 0.5 * (i % 16) as f32, 0.25 + 0.5 * (i / 16) as f32), Vec3::splat(GLASS_HALF), row("CONCRETE"))));
+        }
         blocks
     }
 

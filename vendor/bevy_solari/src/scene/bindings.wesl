@@ -48,7 +48,9 @@ struct Material {
     perceptual_roughness: f32,
     emissive: vec3<f32>,
     metallic: f32,
-    _padding: vec3<f32>,
+    glass: f32,
+    ior: f32,
+    _padding: f32,
     reflectance: f32,
 }
 
@@ -119,6 +121,47 @@ fn trace_ray_previous_frame(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray
     return rayQueryGetCommittedIntersection(&rq);
 }
 
+// Delirium: what a candidate hit lets through: nothing off an opaque surface; glass its colour, the more the more opaque the
+// texel (a stained pane's frame darkest), on the way in only so a block tints once.
+fn glass_filter(hit: RayIntersection, ray_direction: vec3<f32>) -> vec3<f32> {
+    let instance_id = hit.instance_custom_data;
+    let material = materials[material_ids[instance_id]];
+    if material.glass == 0.0 { return vec3(0.0); }
+    let vertices = load_vertices(geometry_ids[instance_id], hit.primitive_index);
+    let barycentrics = vec3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);
+    let transform = affine3_to_square(transforms[instance_id]);
+    let normal = mat3x3(transform[0].xyz, transform[1].xyz, transform[2].xyz) * (mat3x3(vertices[0].normal, vertices[1].normal, vertices[2].normal) * barycentrics);
+    if dot(normal, ray_direction) > 0.0 { return vec3(1.0); }
+    var c = vec4(material.base_color, 1.0);
+    if material.base_color_texture_id != TEXTURE_MAP_NONE {
+        let uv = mat3x2(vertices[0].uv, vertices[1].uv, vertices[2].uv) * barycentrics;
+        c *= textureSampleLevel(textures[material.base_color_texture_id], samplers[material.base_color_texture_id], uv, 0.0);
+    }
+    return mix(vec3(1.0), c.rgb, c.a);
+}
+
+// Delirium: what reaches the end of a shadow ray (this frame's scene or the last's): the glass on the way's tint, none past
+// anything opaque. Any hit, everything a candidate (`glass_filter` sorts them).
+fn trace_transmittance(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_max: f32, previous_frame: bool) -> vec3<f32> {
+    let ray = RayDesc(RAY_FLAG_FORCE_NO_OPAQUE | RAY_FLAG_TERMINATE_ON_FIRST_HIT, RAY_NO_CULL, RAY_T_MIN, ray_t_max, ray_origin, ray_direction);
+    var rq: ray_query;
+    if previous_frame {
+        rayQueryInitialize(&rq, previous_frame_tlas, ray);
+    } else {
+        rayQueryInitialize(&rq, tlas, ray);
+    }
+    var t = vec3(1.0);
+    while rayQueryProceed(&rq) {
+        let f = glass_filter(rayQueryGetCandidateIntersection(&rq), ray_direction);
+        if all(f == vec3(0.0)) {
+            rayQueryConfirmIntersection(&rq);
+        } else {
+            t *= f;
+        }
+    }
+    return select(t, vec3(0.0), rayQueryGetCommittedIntersection(&rq).kind != RAY_QUERY_INTERSECTION_NONE);
+}
+
 fn sample_texture(id: u32, uv: vec2<f32>) -> vec3<f32> {
     return textureSampleLevel(textures[id], samplers[id], uv, 0.0).rgb; // TODO: Mipmap
 }
@@ -130,6 +173,10 @@ struct ResolvedMaterial {
     perceptual_roughness: f32,
     roughness: f32,
     metallic: f32,
+    // Delirium: glass (0 or 1), its index of refraction, and the colour texture's alpha.
+    glass: f32,
+    ior: f32,
+    alpha: f32,
 }
 
 struct ResolvedRayHitFull {
@@ -148,9 +195,14 @@ fn resolve_material(material: Material, uv: vec2<f32>) -> ResolvedMaterial {
     var m: ResolvedMaterial;
 
     m.base_color = material.base_color.rgb;
+    m.alpha = 1.0;
     if material.base_color_texture_id != TEXTURE_MAP_NONE {
-        m.base_color *= sample_texture(material.base_color_texture_id, uv);
+        let c = textureSampleLevel(textures[material.base_color_texture_id], samplers[material.base_color_texture_id], uv, 0.0);
+        m.base_color *= c.rgb;
+        m.alpha = c.a;
     }
+    m.glass = material.glass;
+    m.ior = material.ior;
 
     m.emissive = material.emissive.rgb;
     if material.emissive_texture_id != TEXTURE_MAP_NONE {

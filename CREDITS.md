@@ -6,6 +6,9 @@
 - **Photo sky** (`crates/delirium-room/src/sky.ktx2`): "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal
   ([Poly Haven](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)), [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Changed: made a
   1024-pixel cube, its sun cut out.
+- **Path tracing test textures** (`crates/delirium-room/src/pbr/`: cobblestone, ice, grass and the stained glass): from the
+  [Faithful](https://faithfulpack.net) resource packs by the Faithful Resource Pack team, used under the
+  [Faithful license](https://faithfulpack.net/license). Changed: converted to mipmapped KTX2, normal maps flipped to OpenGL.
 - **Font** (`crates/delirium-room/src/archivo-black.ttf`): Archivo Black, Copyright 2017 The Archivo Black Project
   Authors (https://github.com/Omnibus-Type/ArchivoBlack), licensed under the
   [SIL Open Font License 1.1](https://openfontlicense.org). Unchanged.

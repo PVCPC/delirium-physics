@@ -5,7 +5,7 @@ import bevy_render::utils::octahedral_encode;
 import package::scene::brdf::{brdf_pdf, evaluate_and_sample_brdf, evaluate_brdf, EvaluateAndSampleBrdfResult, F_AB};
 import package::realtime::presample_light_tiles::unpack_resolved_light_sample;
 import package::realtime::bindings::{empty_reservoir, light_tile_resolved_samples, light_tile_samples, Reservoir, constants, view};
-import package::scene::sampling::{calculate_resolved_light_contribution, isinf, LightSample, NULL_LIGHT_ID, power_heuristic, trace_visibility, sample_environment_map_light};
+import package::scene::sampling::{calculate_resolved_light_contribution, isinf, LightSample, NULL_LIGHT_ID, power_heuristic, trace_visibility_color, sample_environment_map_light};
 import package::scene::bindings::{light_sources, RAY_T_MAX, RAY_T_MIN, resolve_ray_hit_full, ResolvedMaterial, ResolvedRayHitFull, trace_ray};
 import package::realtime::world_cache_query::{get_cell_size, query_world_cache, WORLD_CACHE_CELL_LIFETIME};
 
@@ -304,7 +304,11 @@ fn sample_light_ris(ray_origin: vec3<f32>, normal: vec3<f32>, wo: vec3<f32>, mat
     var unbiased_contribution_weight = 0.0;
     if selected_target_function > 0.0 {
         unbiased_contribution_weight = weight_sum / selected_target_function;
-        unbiased_contribution_weight *= trace_visibility(ray_origin, selected_world_position);
+        // Delirium: through glass, tinted: the weight takes its average, the light its colour.
+        let tint = trace_visibility_color(ray_origin, selected_world_position);
+        let visibility = dot(tint, vec3(1.0 / 3.0));
+        unbiased_contribution_weight *= visibility;
+        if visibility > 0.0 { selected_brdf_radiance *= tint / visibility; }
     }
 
     return DiSample(unbiased_contribution_weight, light_tile_samples[selected_tile_sample], selected_wi, selected_brdf_radiance, selected_inverse_solid_angle_pdf, selected_brdf_rays_can_hit);

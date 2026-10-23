@@ -1,7 +1,7 @@
 import bevy_pbr::render::pbr_lighting::D_GGX;
 import bevy_pbr::render::utils::{rand_vec2f, rand_u, rand_range_u};
 import bevy_render::maths::{PI_2, orthonormalize};
-import package::scene::bindings::{trace_ray, trace_ray_previous_frame, RAY_T_MIN, RAY_T_MAX, light_sources, directional_lights, environment_map, environment_map_sampler, environment_map_light, LightSource, LIGHT_SOURCE_KIND_DIRECTIONAL, resolve_triangle_data_full, ResolvedRayHitFull, MIRROR_ROUGHNESS_THRESHOLD};
+import package::scene::bindings::{trace_ray, trace_ray_previous_frame, RAY_T_MIN, RAY_T_MAX, light_sources, directional_lights, environment_map, environment_map_sampler, environment_map_light, LightSource, LIGHT_SOURCE_KIND_DIRECTIONAL, resolve_triangle_data_full, trace_transmittance, ResolvedRayHitFull, MIRROR_ROUGHNESS_THRESHOLD};
 
 enable wgpu_ray_query;
 
@@ -124,7 +124,7 @@ struct GenerateRandomLightSampleResult {
 fn sample_random_light(ray_origin: vec3<f32>, origin_world_normal: vec3<f32>, rng: ptr<function, u32>) -> LightContribution {
     let sample = generate_random_light_sample(rng);
     var light_contribution = calculate_resolved_light_contribution(sample.resolved_light_sample, ray_origin, origin_world_normal);
-    light_contribution.radiance *= trace_visibility(ray_origin, sample.resolved_light_sample.world_position);
+    light_contribution.radiance *= trace_visibility_color(ray_origin, sample.resolved_light_sample.world_position);
     return light_contribution;
 }
 
@@ -224,7 +224,8 @@ fn calculate_resolved_light_contribution(resolved_light_sample: ResolvedLightSam
     return LightContribution(radiance, resolved_light_sample.inverse_pdf, inverse_solid_angle_pdf, wi, resolved_light_sample.world_position.w == 1.0);
 }
 
-fn trace_visibility(ray_origin: vec3<f32>, point: vec4<f32>) -> f32 {
+// Delirium: through glass, tinted (`trace_visibility` its average, for where one number's wanted).
+fn trace_visibility_color(ray_origin: vec3<f32>, point: vec4<f32>) -> vec3<f32> {
     var ray_direction = point.xyz;
     var ray_t_max = RAY_T_MAX;
 
@@ -235,10 +236,13 @@ fn trace_visibility(ray_origin: vec3<f32>, point: vec4<f32>) -> f32 {
         ray_t_max = dist - RAY_T_MIN;
     }
 
-    if ray_t_max < RAY_T_MIN { return 0.0; }
+    if ray_t_max < RAY_T_MIN { return vec3(0.0); }
 
-    let ray_hit = trace_ray(ray_origin, ray_direction, RAY_T_MIN, ray_t_max, RAY_FLAG_TERMINATE_ON_FIRST_HIT);
-    return f32(ray_hit.kind == RAY_QUERY_INTERSECTION_NONE);
+    return trace_transmittance(ray_origin, ray_direction, ray_t_max, false);
+}
+
+fn trace_visibility(ray_origin: vec3<f32>, point: vec4<f32>) -> f32 {
+    return dot(trace_visibility_color(ray_origin, point), vec3(1.0 / 3.0));
 }
 
 fn trace_visibility_previous_frame(ray_origin: vec3<f32>, point: vec4<f32>) -> f32 {
@@ -254,8 +258,7 @@ fn trace_visibility_previous_frame(ray_origin: vec3<f32>, point: vec4<f32>) -> f
 
     if ray_t_max < RAY_T_MIN { return 0.0; }
 
-    let ray_hit = trace_ray_previous_frame(ray_origin, ray_direction, RAY_T_MIN, ray_t_max, RAY_FLAG_TERMINATE_ON_FIRST_HIT);
-    return f32(ray_hit.kind == RAY_QUERY_INTERSECTION_NONE);
+    return dot(trace_transmittance(ray_origin, ray_direction, ray_t_max, true), vec3(1.0 / 3.0));
 }
 
 /// https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf#0004286901.INDD%3ASec22%3A297

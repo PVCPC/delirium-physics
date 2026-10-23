@@ -38,10 +38,38 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var radiance = vec3(0.0);
     var throughput = vec3(1.0);
     var p_bounce = 0.0;
+    var glass_hits = 0u;
     loop {
         let ray = trace_ray(ray_origin, ray_direction, ray_t_min, RAY_T_MAX, RAY_FLAG_NONE);
         if ray.kind != RAY_QUERY_INTERSECTION_NONE {
             let ray_hit = resolve_ray_hit_full(ray);
+
+            // Delirium: glass, smooth: reflected (Fresnel's share) or refracted through, tinted on the way in (as its
+            // shadows are). What it shows next counts in full, like a mirror's.
+            if ray_hit.material.glass > 0.0 {
+                glass_hits += 1u;
+                if glass_hits > 16u { break; }
+                let outward = ray_hit.geometric_world_normal;
+                let entering = dot(ray_direction, outward) < 0.0;
+                let n = select(-outward, outward, entering);
+                let eta = select(ray_hit.material.ior, 1.0 / ray_hit.material.ior, entering);
+                let refracted = refract(ray_direction, n, eta);
+                let f0 = pow((1.0 - eta) / (1.0 + eta), 2.0);
+                let fresnel = select(f0 + (1.0 - f0) * pow(1.0 - saturate(-dot(ray_direction, n)), 5.0), 1.0, all(refracted == vec3(0.0)));
+                if rand_f(&rng) < fresnel {
+                    ray_direction = reflect(ray_direction, n);
+                    ray_origin = ray_hit.world_position + n * RAY_T_MIN;
+                } else {
+                    ray_direction = refracted;
+                    ray_origin = ray_hit.world_position - n * RAY_T_MIN;
+                    if entering {
+                        throughput *= mix(vec3(1.0), ray_hit.material.base_color, ray_hit.material.alpha);
+                    }
+                }
+                ray_t_min = RAY_T_MIN;
+                p_bounce = 0.0;
+                continue;
+            }
             let wo = -ray_direction;
             let NdotV = max(dot(ray_hit.world_normal, wo), 0.0001);
             let F_ab = F_AB(ray_hit.material.perceptual_roughness, NdotV);

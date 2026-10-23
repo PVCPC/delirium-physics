@@ -7,7 +7,7 @@ import package::scene::brdf::{brdf_pdf, evaluate_brdf, F_AB};
 import package::realtime::gbuffer_utils::{gpixel_resolve, permute_pixel, pixel_dissimilar};
 import package::realtime::initial_path::{generate_initial_path, InitialSamplingResult};
 import package::realtime::bindings::{screen, depth_buffer, empty_reservoir, gbuffer, load_motion_vector, previous_depth_buffer, previous_gbuffer, previous_view, reservoirs_a, reservoirs_b, Reservoir, constants, view, view_output};
-import package::scene::sampling::{balance_heuristic, calculate_resolved_light_contribution, isinf, isnan, LightSample, NULL_LIGHT_ID, power_heuristic, resolve_light_sample, ResolvedLightSample, trace_visibility, trace_visibility_previous_frame};
+import package::scene::sampling::{balance_heuristic, calculate_resolved_light_contribution, isinf, isnan, LightSample, NULL_LIGHT_ID, power_heuristic, resolve_light_sample, ResolvedLightSample, trace_visibility, trace_visibility_color, trace_visibility_previous_frame};
 import package::scene::bindings::{light_sources, LIGHT_NOT_PRESENT_THIS_FRAME, previous_frame_light_id_translations, RAY_T_MAX, RAY_T_MIN, ResolvedMaterial};
 import package::realtime::world_cache_query::{query_world_cache, WORLD_CACHE_CELL_LIFETIME};
 
@@ -63,6 +63,12 @@ fn spatial_and_shade(@builtin(global_invocation_id) global_id: vec3<u32>) {
     reservoirs_a[pixel_index] = merge_result.merged_reservoir;
 
     var pixel_color = merge_result.selected_sample_brdf_radiance * merge_result.merged_reservoir.unbiased_contribution_weight;
+    // Delirium: the reservoir's visibility is one number (glass's tint averaged); give the light its colour back.
+    if any(pixel_color != vec3(0.0)) {
+        let tint = trace_visibility_color(surface.world_position + surface.world_normal * RAY_T_MIN, merge_result.selected_sample_world_position);
+        let average = dot(tint, vec3(1.0 / 3.0));
+        if average > 0.0 { pixel_color *= tint / average; }
+    }
     pixel_color += surface.material.emissive;
     pixel_color += textureLoad(view_output, global_id.xy).rgb;
     pixel_color *= view.exposure;
@@ -152,7 +158,7 @@ struct NeighborInfo {
 }
 
 fn empty_material() -> ResolvedMaterial {
-    return ResolvedMaterial(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.0);
+    return ResolvedMaterial(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 1.5, 1.0);
 }
 
 fn jacobian(
@@ -174,6 +180,7 @@ fn jacobian(
 struct ReservoirMergeResult {
     merged_reservoir: Reservoir,
     selected_sample_brdf_radiance: vec3<f32>,
+    selected_sample_world_position: vec4<f32>,
 }
 
 fn merge_reservoirs(
@@ -200,7 +207,7 @@ fn merge_reservoirs(
 
     // Skip resampling empty reservoirs
     if other_reservoir.confidence_weight == 0.0 {
-        return ReservoirMergeResult(canonical_reservoir, canonical_sample_at_canonical.brdf_radiance);
+        return ReservoirMergeResult(canonical_reservoir, canonical_sample_at_canonical.brdf_radiance, canonical_sample_at_canonical.sample_world_position);
     }
 
     var other_resolved: ResolvedLightSample;
@@ -294,7 +301,7 @@ fn merge_reservoirs(
         let inverse_target_function = select(0.0, 1.0 / other_sample_at_canonical.target_function, other_sample_at_canonical.target_function > 0.0);
         combined_reservoir.unbiased_contribution_weight = weight_sum * inverse_target_function;
 
-        return ReservoirMergeResult(combined_reservoir, other_sample_at_canonical.brdf_radiance);
+        return ReservoirMergeResult(combined_reservoir, other_sample_at_canonical.brdf_radiance, other_sample_at_canonical.sample_world_position);
     } else {
         combined_reservoir.sample_point_world_position = canonical_reservoir.sample_point_world_position;
         combined_reservoir.sample_point_world_normal = canonical_reservoir.sample_point_world_normal;
@@ -304,7 +311,7 @@ fn merge_reservoirs(
         let inverse_target_function = select(0.0, 1.0 / canonical_sample_at_canonical.target_function, canonical_sample_at_canonical.target_function > 0.0);
         combined_reservoir.unbiased_contribution_weight = weight_sum * inverse_target_function;
 
-        return ReservoirMergeResult(combined_reservoir, canonical_sample_at_canonical.brdf_radiance);
+        return ReservoirMergeResult(combined_reservoir, canonical_sample_at_canonical.brdf_radiance, canonical_sample_at_canonical.sample_world_position);
     }
 }
 

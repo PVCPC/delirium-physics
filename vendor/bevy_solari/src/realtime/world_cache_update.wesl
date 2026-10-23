@@ -2,7 +2,7 @@ import bevy_core_pipeline::tonemapping::tonemapping_luminance as luminance;
 import bevy_pbr::render::utils::{rand_f, rand_range_u, sample_cosine_hemisphere};
 import bevy_render::maths::PI;
 import package::realtime::presample_light_tiles::unpack_resolved_light_sample;
-import package::scene::sampling::{calculate_resolved_light_contribution, trace_visibility, sample_environment_map_light};
+import package::scene::sampling::{calculate_resolved_light_contribution, trace_visibility_color, sample_environment_map_light};
 import package::scene::bindings::{trace_ray, resolve_ray_hit_full, RAY_T_MIN};
 import package::realtime::world_cache_query::query_world_cache;
 import package::realtime::bindings::{
@@ -115,7 +115,11 @@ fn sample_random_light_ris(world_position: vec3<f32>, world_normal: vec3<f32>, w
         let inverse_target_function = select(0.0, 1.0 / selected_sample_target_function, selected_sample_target_function > 0.0);
         unbiased_contribution_weight = weight_sum * inverse_target_function;
 
-        unbiased_contribution_weight *= trace_visibility(world_position + (world_normal * RAY_T_MIN), selected_sample_world_position);
+        // Delirium: through glass, tinted (so its coloured light bounces coloured).
+        let tint = trace_visibility_color(world_position + (world_normal * RAY_T_MIN), selected_sample_world_position);
+        let visibility = dot(tint, vec3(1.0 / 3.0));
+        unbiased_contribution_weight *= visibility;
+        if visibility > 0.0 { return selected_sample_radiance * unbiased_contribution_weight * tint / visibility; }
     }
 
     return selected_sample_radiance * unbiased_contribution_weight;
