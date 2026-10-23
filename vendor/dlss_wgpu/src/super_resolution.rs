@@ -173,7 +173,8 @@ impl DlssSuperResolution {
             pInBiasCurrentColorMask: bias.as_mut().map_or(ptr::null_mut(), ptr::from_mut),
             InColorSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
             InDepthSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
-            InMVSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
+            // Delirium: at the corner; at the viewport's offset (like the colour) the picture smeared into ghosts while the camera moved.
+            InMVSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
             InTranslucencySubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
             InBiasCurrentColorSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
             InOutputSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
