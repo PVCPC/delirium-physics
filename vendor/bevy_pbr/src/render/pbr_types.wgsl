@@ -98,6 +98,8 @@ struct PbrInput {
     material: StandardMaterial,
     // Note: this gets monochromized upon deferred PbrInput reconstruction.
     diffuse_occlusion: vec3<f32>,
+    // Delirium: SSAO on the direct light too.
+    direct_occlusion: f32,
     // Note: this is 1.0 (entirely unoccluded) when SSAO and SSR are off.
     specular_occlusion: f32,
     frag_coord: vec4<f32>,
@@ -127,6 +129,7 @@ fn pbr_input_new() -> PbrInput {
 
     pbr_input.material = standard_material_new();
     pbr_input.diffuse_occlusion = vec3<f32>(1.0);
+    pbr_input.direct_occlusion = 1.0;
     // If SSAO is enabled, then this gets overwritten with proper specular occlusion. If its not, then we get specular environment map unoccluded (we have no data with which to occlude it with).
     pbr_input.specular_occlusion = 1.0;
 

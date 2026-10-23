@@ -7,7 +7,11 @@
 
 #import bevy_render::view::View
 
+#ifdef MULTISAMPLED
+@group(0) @binding(0) var input_depth: texture_depth_multisampled_2d;
+#else
 @group(0) @binding(0) var input_depth: texture_depth_2d;
+#endif
 #ifdef USE_R16FLOAT
 @group(0) @binding(1) var preprocessed_depth_mip0: texture_storage_2d<r16float, write>;
 @group(0) @binding(2) var preprocessed_depth_mip1: texture_storage_2d<r16float, write>;
@@ -59,8 +63,20 @@ fn preprocess_depth(@builtin(global_invocation_id) global_id: vec3<u32>, @builti
     let pixel_coordinates2 = pixel_coordinates0 + vec2<i32>(0i, 1i);
     let pixel_coordinates3 = pixel_coordinates0 + vec2<i32>(1i, 1i);
     // Delirium: the depth prepass is the whole target's size, the view a viewport in it.
-    let depths_uv = (vec2<f32>(pixel_coordinates0) + view.viewport.xy) / vec2<f32>(textureDimensions(input_depth));
+#ifdef MULTISAMPLED
+    // MSAA's: each pixel's first sample, as textureGather's order.
+    let last = vec2<i32>(textureDimensions(input_depth)) - 1i;
+    let at = pixel_coordinates0 + vec2<i32>(view.main_pass_viewport.xy);
+    let depths = vec4<f32>(
+        textureLoad(input_depth, min(at + vec2<i32>(0i, 1i), last), 0i),
+        textureLoad(input_depth, min(at + vec2<i32>(1i, 1i), last), 0i),
+        textureLoad(input_depth, min(at + vec2<i32>(1i, 0i), last), 0i),
+        textureLoad(input_depth, min(at, last), 0i),
+    );
+#else
+    let depths_uv = (vec2<f32>(pixel_coordinates0) + view.main_pass_viewport.xy) / vec2<f32>(textureDimensions(input_depth));
     let depths = textureGather(0, input_depth, point_clamp_sampler, depths_uv, vec2<i32>(1i, 1i));
+#endif
     textureStore(preprocessed_depth_mip0, pixel_coordinates0, vec4<f32>(depths.w, 0.0, 0.0, 0.0));
     textureStore(preprocessed_depth_mip0, pixel_coordinates1, vec4<f32>(depths.z, 0.0, 0.0, 0.0));
     textureStore(preprocessed_depth_mip0, pixel_coordinates2, vec4<f32>(depths.x, 0.0, 0.0, 0.0));

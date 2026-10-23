@@ -19,7 +19,11 @@
 }
 
 @group(0) @binding(0) var preprocessed_depth: texture_2d<f32>;
+#ifdef MULTISAMPLED
+@group(0) @binding(1) var normals: texture_multisampled_2d<f32>;
+#else
 @group(0) @binding(1) var normals: texture_2d<f32>;
+#endif
 @group(0) @binding(2) var hilbert_index_lut: texture_2d<u32>;
 #ifdef USE_R16FLOAT
 @group(0) @binding(3) var ambient_occlusion: texture_storage_2d<r16float, write>;
@@ -28,7 +32,8 @@
 #endif
 @group(0) @binding(4) var depth_differences: texture_storage_2d<r32uint, write>;
 @group(0) @binding(5) var<uniform> globals: Globals;
-@group(0) @binding(6) var<uniform> thickness: f32;
+// Delirium: x the objects' thickness, y the strength.
+@group(0) @binding(6) var<uniform> thickness_strength: vec2<f32>;
 @group(1) @binding(0) var point_clamp_sampler: sampler;
 @group(1) @binding(1) var linear_clamp_sampler: sampler;
 @group(1) @binding(2) var<uniform> view: View;
@@ -47,7 +52,7 @@ fn load_noise(pixel_coordinates: vec2<i32>) -> vec2<f32> {
 // Calculate differences in depth between neighbor pixels (later used by the spatial denoiser pass to preserve object edges)
 fn calculate_neighboring_depth_differences(pixel_coordinates: vec2<i32>) -> f32 {
     // Sample the pixel's depth and 4 depths around it
-    let uv = vec2<f32>(pixel_coordinates) / view.viewport.zw;
+    let uv = vec2<f32>(pixel_coordinates) / view.main_pass_viewport.zw;
     let depths_upper_left = textureGather(0, preprocessed_depth, point_clamp_sampler, uv);
     let depths_bottom_right = textureGather(0, preprocessed_depth, point_clamp_sampler, uv, vec2<i32>(1i, 1i));
     let depth_center = depths_upper_left.y;
@@ -75,8 +80,13 @@ fn calculate_neighboring_depth_differences(pixel_coordinates: vec2<i32>) -> f32 
 
 fn load_normal_view_space(uv: vec2<f32>) -> vec3<f32> {
     // Delirium: the normal prepass is the whole target's size, the view a viewport in it.
-    let target_uv = (uv * view.viewport.zw + view.viewport.xy) / vec2<f32>(textureDimensions(normals));
+#ifdef MULTISAMPLED
+    let at = vec2<i32>(uv * view.main_pass_viewport.zw + view.main_pass_viewport.xy);
+    var world_normal = textureLoad(normals, min(at, vec2<i32>(textureDimensions(normals)) - 1i), 0i).xyz;
+#else
+    let target_uv = (uv * view.main_pass_viewport.zw + view.main_pass_viewport.xy) / vec2<f32>(textureDimensions(normals));
     var world_normal = textureSampleLevel(normals, point_clamp_sampler, target_uv, 0.0).xyz;
+#endif
     world_normal = (world_normal * 2.0) - 1.0;
     let view_from_world = mat3x3<f32>(
         view.view_from_world[0].xyz,
@@ -118,7 +128,7 @@ fn processSample(
     samples_per_slice: f32,
     bitmask: ptr<function, u32>,
 ) {
-    let delta_position_back_face = delta_position - view_vec * thickness;
+    let delta_position_back_face = delta_position - view_vec * thickness_strength.x;
 
     var front_back_horizon = vec2(
         fast_acos(dot(normalize(delta_position), view_vec)),
@@ -143,7 +153,7 @@ fn ssao(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let falloff_add = falloff_from / falloff_range + 1.0;
 
     let pixel_coordinates = vec2<i32>(global_id.xy);
-    let uv = (vec2<f32>(pixel_coordinates) + 0.5) / view.viewport.zw;
+    let uv = (vec2<f32>(pixel_coordinates) + 0.5) / view.main_pass_viewport.zw;
 
     var pixel_depth = calculate_neighboring_depth_differences(pixel_coordinates);
     pixel_depth += 0.00001; // Avoid depth precision issues
@@ -183,8 +193,8 @@ fn ssao(@builtin(global_invocation_id) global_id: vec3<u32>) {
             s *= s; // https://github.com/GameTechDev/XeGTAO#sample-distribution
             let sample = s * sample_mul;
 
-            // * view.viewport.zw gets us from [0, 1] to [0, viewport_size], which is needed for this to get the correct mip levels
-            let sample_mip_level = clamp(log2(length(sample * view.viewport.zw)) - 3.3, 0.0, 5.0); // https://github.com/GameTechDev/XeGTAO#memory-bandwidth-bottleneck
+            // * view.main_pass_viewport.zw gets us from [0, 1] to [0, viewport_size], which is needed for this to get the correct mip levels
+            let sample_mip_level = clamp(log2(length(sample * view.main_pass_viewport.zw)) - 3.3, 0.0, 5.0); // https://github.com/GameTechDev/XeGTAO#memory-bandwidth-bottleneck
             let sample_position_1 = load_and_reconstruct_view_space_position(uv + sample, sample_mip_level);
             let sample_position_2 = load_and_reconstruct_view_space_position(uv - sample, sample_mip_level);
 
@@ -200,7 +210,7 @@ fn ssao(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     visibility = 1.0 - f32(occluded_sample_count) / (slice_count * 2.0 * samples_per_slice_side);
 
-    visibility = clamp(visibility, 0.03, 1.0);
+    visibility = pow(clamp(visibility, 0.03, 1.0), thickness_strength.y);
 
     textureStore(ambient_occlusion, pixel_coordinates, vec4<f32>(visibility, 0.0, 0.0, 0.0));
 }
