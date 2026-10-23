@@ -3,6 +3,9 @@
 - **Taxi model** (`crates/delirium-room/src/taxi.glb`): "Fairheaven LT '80 Taxi - Low poly model" by Daniel Zhabotinsky
   (Sketchfab), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changed: converted from USDZ to
   glTF, turned to face +Y with Z up, wheels split out and named, origins moved to the wheel centres.
+- **Photo sky** (`crates/delirium-room/src/sky.ktx2`): "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal
+  ([Poly Haven](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)), [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Changed: made a
+  1024-pixel cube, its sun cut out.
 - **Font** (`crates/delirium-room/src/archivo-black.ttf`): Archivo Black, Copyright 2017 The Archivo Black Project
   Authors (https://github.com/Omnibus-Type/ArchivoBlack), licensed under the
   [SIL Open Font License 1.1](https://openfontlicense.org). Unchanged.

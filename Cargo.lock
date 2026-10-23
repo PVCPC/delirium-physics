@@ -1008,6 +1008,7 @@ dependencies = [
  "bevy_utils",
  "bitflags 2.13.2",
  "bytemuck",
+ "flate2",
  "futures-lite",
  "guillotiere",
  "half",

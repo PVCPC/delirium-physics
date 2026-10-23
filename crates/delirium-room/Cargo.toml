@@ -14,7 +14,7 @@ bevy = { version = "=0.20.0", default-features = false, features = [
     "default_app", "std", "bevy_sprite", "bevy_sprite_render", "multi_threaded", "bevy_winit", "x11", "wayland", "bevy_gilrs",
     "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_anti_alias", "bevy_pbr", "bevy_light", "bevy_gizmos_render",
     "bevy_camera", "bevy_color", "bevy_gizmos", "bevy_image", "bevy_mesh", "bevy_shader", "bevy_mikktspace",
-    "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio", "experimental_pbr_pcss", "bevy_solari",
+    "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio", "experimental_pbr_pcss", "bevy_solari", "zlib",
 ] }
 # The cards there are (Video → Graphics card); bevy's own wgpu.
 wgpu = { version = "=30.0.1", default-features = false }
