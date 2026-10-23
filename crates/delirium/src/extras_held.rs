@@ -279,6 +279,7 @@ pub static MESSAGES: [Message; 15] = [
         Param { name: "targetPosition", kind: Kind::Vec3, used: true, doc: "where the arm reaches and he looks (zero: the anchor)" },
         Param { name: "instanceIndex", kind: Kind::Int, used: true, doc: "the object hung from, -1 the world (-1)" },
         Param { name: "boundIndex", kind: Kind::Int, used: true, doc: "its part, from 1 (0: the object as a whole)" },
+        Param { name: "letGo", kind: Kind::Int, used: true, doc: "sent without start while hanging: that hand lets go, 0 left, 1 right (both: he drops)" },
     ] },
     Message { name: "crushReaction", params: &[
         Param { name: "effectorMask", kind: Kind::Str, used: true, doc: "the joints that react, an arm only if all of it is in (ub)" },
@@ -1438,6 +1439,7 @@ pub struct ArmHang {
     t: f32,
     cons: Vec<(usize, Option<Vec3>, Option<Quat>)>,
     out: Vec<String>,
+    free: [bool; 2],
 }
 
 const HANG_ON: f32 = 0.5;
@@ -1446,7 +1448,7 @@ impl ArmHang {
     fn new(p: &mut P) -> Result<ArmHang, Error> {
         let (anchor, target) = (p.v("constraintPosition", Vec3::ZERO)?, p.v("targetPosition", Vec3::ZERO)?);
         let inst = (p.i("instanceIndex", -1)?, p.i("boundIndex", 0)?);
-        Ok(ArmHang { anchor, target, inst, frame: None, local: None, start: vec![], across: Vec3::X, t: 0.0, cons: vec![], out: vec![] })
+        Ok(ArmHang { anchor, target, inst, frame: None, local: None, start: vec![], across: Vec3::X, t: 0.0, cons: vec![], out: vec![], free: [false; 2] })
     }
 }
 
@@ -1471,9 +1473,9 @@ impl Extra for ArmHang {
             pins = local.map(|l| at + q * l);
             (self.anchor, self.across) = ((pins[0] + pins[1]) * 0.5, (pins[0] - pins[1]).normalize_or(self.across));
         }
-        self.cons = (0..2).map(|i| (HANDS[i], Some(self.start[i].lerp(pins[i], on)), None)).collect();
-        for i in 0..2 {
-            reach(c, i, self.cons[i].1.unwrap(), 8.0, 0.8);
+        self.cons = (0..2).filter(|&i| !self.free[i]).map(|i| (HANDS[i], Some(self.start[i].lerp(pins[i], on)), None)).collect();
+        for i in (0..2).filter(|&i| !self.free[i]) {
+            reach(c, i, self.start[i].lerp(pins[i], on), 8.0, 0.8);
         }
         c.ch.set_stiffness(3.0, 0.3, "us", None);
     }
@@ -1484,6 +1486,14 @@ impl Extra for ArmHang {
 
     fn lines(&mut self) -> Vec<String> {
         std::mem::take(&mut self.out)
+    }
+
+    fn let_go(&mut self, hand: usize) {
+        self.free[hand] = true;
+    }
+
+    fn done(&self) -> bool {
+        self.free == [true; 2]
     }
 
     fn stop(&mut self, _c: &mut Ctx) {

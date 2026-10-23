@@ -69,6 +69,7 @@ pub trait Extra: Send + Sync {
         vec![]
     }
     fn fire(&mut self) {}
+    fn let_go(&mut self, _hand: usize) {}
     fn objects(&mut self, _obs: &[crate::ragdoll::Obstacle]) {}
     fn stop(&mut self, _c: &mut Ctx) {}
 }
@@ -99,6 +100,9 @@ impl Extras {
         if !start && !params.iter().any(|(n, _)| *n == "start") {
             if params.iter().any(|(n, v)| *n == "fireWeapon" && *v == Value::Bool(true)) {
                 self.on.iter_mut().filter(|(n, _)| *n == name).for_each(|(_, e)| e.fire());
+            }
+            if let Some(h) = params.iter().find(|(n, _)| *n == "letGo").and_then(|(_, v)| v.i().ok()) {
+                self.on.iter_mut().filter(|(n, _)| *n == name).for_each(|(_, e)| e.let_go(h.clamp(0, 1) as usize));
             }
             return Some(Ok(0));
         }
@@ -153,6 +157,12 @@ impl Extras {
 }
 
 impl Extras {
+    pub fn stop_all(&mut self) {
+        let held: Vec<usize> = self.wanted.iter().copied().chain(self.hard.iter().flat_map(HardConstraint::parts)).collect();
+        *self = Default::default();
+        self.release = held;
+    }
+
     pub fn hard_step(&mut self, doll: &mut crate::ragdoll::Ragdoll, incoming: &[Transform], dt: f32) {
         for k in self.release.drain(..) {
             doll.constrain(k, None, None);

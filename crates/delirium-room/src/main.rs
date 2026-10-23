@@ -145,6 +145,7 @@ walk {}
 hero_physics {}
 super_punch {}
 even_fight {}
+dive_shot {}
 shadows {}
 opacity {}
 soft {}
@@ -186,7 +187,7 @@ ray_tracing {}
 sky {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
-            b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.shadows), sim.body_alpha,
+            b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
             sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky)
@@ -260,6 +261,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "hero_physics" => sim.hero_physics = on,
             "super_punch" => sim.super_punch = on,
             "even_fight" => sim.even = on,
+            "dive_shot" => sim.dive = on,
             "shadows" => sim.shadows = on,
             "soft" => sim.soft = on,
             "sun_size" => sim.shadow = x.clamp(0.0, SUN_SIZE_MAX),
@@ -364,6 +366,10 @@ const CRUSH_SPEED: f32 = 2.5;
 const DODGE_GAP: f32 = 3.0;
 const NEAR_BURST: f32 = 0.5;
 const DIVE: (f32, f32) = (3.5, 3.0);
+fn hang_let_go(grab: bool, hand: usize) -> String {
+    if grab { format!("grab start=true {}=false", ["useLeft", "useRight"][hand]) } else { format!("armHang letGo={hand}") }
+}
+
 const HANG_SECS: f32 = 3.0;
 const CAB_GAP: f32 = 1.45;
 const CAB_OFF: f32 = 0.12;
@@ -564,9 +570,13 @@ struct Sim {
     airborne: bool,
     hurt: [f32; 4],
     near_at: f32,
+    near_last: f32,
+    dived: bool,
     no_dodge: bool,
     dodge_gap: f32,
     extra: bool,
+    dive: bool,
+    hang: Option<(Vec<String>, [bool; 2])>,
     was_fallen: bool,
     curled: bool,
     super_punch: bool,
@@ -1662,9 +1672,40 @@ impl Sim {
         self.cue();
         (self.walk, self.script_walk) = (false, Vec3::ZERO);
         let x = x * (world::PLANK_HALF.x - 0.1);
-        self.send_ours(vec![format!("grab start=true linegrab=true useLeft=true useRight=true dontLetGo=true grabStrength=600 bodyStiffness=10                                      grabDist=4.4 reachAngle=2.8 oneSideReachAngle=1.4 pullUpStrengthLeft=0 pullUpStrengthRight=0 pullUpTime=1 pos1={} pos2={} instanceIndex={inst}",
-                                    v3(edge + x), v3(edge - x)), "dangle start=true hold=false doGrab=true".into()]);
+        let hold = vec![format!("grab start=true linegrab=true useLeft=true useRight=true dontLetGo=true grabStrength=600 bodyStiffness=10                                      grabDist=4.4 reachAngle=2.8 oneSideReachAngle=1.4 pullUpStrengthLeft=0 pullUpStrengthRight=0 pullUpTime=1 pos1={} pos2={} instanceIndex={inst}",
+                                    v3(edge + x), v3(edge - x)), "dangle start=true hold=false doGrab=true".into()];
+        self.hang = Some((hold.clone(), [false; 2]));
+        self.send_ours(hold);
         self.say(format!("bridge  plank {} broke (and {}): grab {}", i + 1, step(i).wrapping_add(1), j.wrapping_add(1)));
+    }
+
+    fn shot_hand(&mut self, part: usize) {
+        let Some(h) = [(14..=16, 0), (18..=20, 1)].into_iter().find(|(r, _)| r.contains(&part)).map(|x| x.1) else { return };
+        if !self.hanging() {
+            return;
+        }
+        let Some((lines, free)) = self.hang.as_mut() else { return };
+        free[h] = true;
+        let grab = lines[0].starts_with("grab");
+        if *free != [true; 2] {
+            let l = hang_let_go(grab, h);
+            self.send_ours(vec![l]);
+            return self.say(format!("room  shot in the {} arm: that hand lets go", ["left", "right"][h]));
+        }
+        self.hang = None;
+        self.say("room  shot in his other holding arm: he drops".into());
+        if grab {
+            return self.send_ours(vec!["grab start=false".into(), "dangle start=false".into()]);
+        }
+        self.send_ours(vec!["armHang start=false".into()]);
+        if self.room.stage == "cab" {
+            self.room.fell = true;
+            self.send_ours(["pedalLegs", "bodyWrithe"].map(|n| format!("{n} start=false")).into_iter().chain(["smartFall start=true".to_string()]).collect());
+        }
+    }
+
+    fn hanging(&self) -> bool {
+        self.hang.is_some() && self.room.snapped.is_some() && !self.room.fell && !self.dead
     }
 
     fn ledge(&mut self) {
@@ -1676,13 +1717,16 @@ impl Sim {
         match self.room.snapped.as_mut() {
             None if p.y > EDGE - 0.05 && (3.0..3.9).contains(&p.z) => {
                 self.room.snapped = Some(0.0);
-                self.send_ours(vec![format!("armHang start=true constraintPosition={}", v3(Vec3::new(p.x.clamp(-2.85, 2.85), EDGE, 4.0)))]);
+                let l = format!("armHang start=true constraintPosition={}", v3(Vec3::new(p.x.clamp(-2.85, 2.85), EDGE, 4.0)));
+                self.hang = Some((vec![l.clone()], [false; 2]));
+                self.send_ours(vec![l]);
                 self.say("rooftop  over the edge: he catches it (armHang)".into());
                 self.cue();
             }
             Some(t) => {
                 *t += 1.0 / 60.0;
-                if *t > HANG_SECS {
+                let held = self.agent.extras.on.iter().any(|(n, _)| *n == "armHang");
+                if *t > HANG_SECS || *t > 0.5 && !held {
                     self.room.fell = true;
                     self.send_ours(vec!["armHang start=false".into(), "highFall start=true".into()]);
                     self.say("rooftop  he lets go: highFall".into());
@@ -1704,7 +1748,9 @@ impl Sim {
             let local = o.rot.inverse() * (s.p(CHEST) - o.centre);
             let door = o.centre + o.rot * local.clamp(-o.half, o.half) - Vec3::Z * 0.2 - fwd * CAB_OFF;
             self.room.snapped = Some(0.0);
-            self.send_ours(vec![format!("armHang start=true constraintPosition={} instanceIndex={TAXI_ID}", v3(door))]);
+            let l = format!("armHang start=true constraintPosition={} instanceIndex={TAXI_ID}", v3(door));
+            self.hang = Some((vec![l.clone()], [false; 2]));
+            self.send_ours(vec![l]);
             if let Some(c) = self.getup.as_ref().filter(|c| c.hero.is_some() && self.hero.is_none()) {
                 self.hero = Some(hero::Hero::new(c, self.agent.doll.com().0, -Vec3::Z.cross(fwd)));
             }
@@ -1799,6 +1845,7 @@ impl Sim {
     fn fire(&mut self, part: usize, aim: Option<(Vec3, Vec3, Vec3)>, fatal: bool, more: &[usize]) {
         let (at, dir) = aim.map_or((self.agent.doll.centre(part), Vec3::NEG_Y), |a| (a.0, a.1));
         let part = self.sever_shot(part, at, dir);
+        self.shot_hand(part);
         (self.rises, self.still) = ([None, None], [0.0; 2]);
         self.homer_rest = self.homer_rest.max(HOMER_REST);
         let before = self.health;
@@ -2056,7 +2103,7 @@ impl Sim {
         const BRACE: f32 = 0.45;
         const ARMS_OUT: &str = "bodyBalance start=true armsOutOnPush=true armsOutOnPushMultiplier=1 armsOutOnPushTimeout=1.1";
         let now = self.steps as f32 / 60.0;
-        if !self.extra && self.fall.is_none() && self.look_after.is_none() && self.hold.is_none() && !self.airborne {
+        if self.dead || !self.extra && self.fall.is_none() && self.look_after.is_none() && self.hold.is_none() && !self.airborne {
             return;
         }
         let (me, mv) = self.agent.doll.com();
@@ -2185,7 +2232,7 @@ impl Sim {
     }
 
     fn extra_look(&mut self, at: Vec3) {
-        if self.extra {
+        if self.extra && !self.dead {
             self.send(&format!("headLook start=true pos={} alwaysLook=true", v3(at)));
             self.look_stop = Some(self.steps as f32 / 60.0 + 2.0);
         }
@@ -2674,17 +2721,29 @@ impl Sim {
         if d > WHIZZ {
             return self.say(format!("room  shot: missed by {d:.1} m (too far to notice)"));
         }
+        let now = self.steps as f32 / 60.0;
+        if now - std::mem::replace(&mut self.near_last, now) >= self.dodge_gap {
+            self.dived = false;
+        }
         if self.dead || !learn::standing(&self.agent.doll) {
+            if !self.dead && self.extra {
+                if !self.curled {
+                    self.curled = true;
+                    self.send("bodyFoetal start=true");
+                }
+                self.still[0] = 0.0;
+                self.send(&format!("headLook start=true pos={} alwaysLook=true", v3(p)));
+                return self.say(format!("room  shot: near miss, {d:.2} m from him (down: curls up, additional reactions)"));
+            }
             return self.say(format!("room  shot: near miss, {d:.2} m from him (down: no reaction)"));
         }
         self.say(format!("room  shot: near miss, {d:.2} m from him"));
-        let now = self.steps as f32 / 60.0;
         let since = now - self.near_at;
         if since >= self.dodge_gap || since < 0.0 {
             self.near_at = now;
         }
-        if self.extra && (NEAR_BURST..self.dodge_gap).contains(&since) && !self.no_dodge {
-            self.near_at = now;
+        if self.dive && (NEAR_BURST..self.dodge_gap).contains(&since) && !self.no_dodge && !self.dived {
+            (self.near_at, self.dived) = (now, true);
             self.say("room  shot at again: he dives".into());
             let chest = ours.p(CHEST);
             let off = (chest - by(chest)).with_z(0.0);
@@ -2861,6 +2920,9 @@ impl Sim {
         self.say(format!("room  {label} ({:.1} kg) {}", kg * self.room.weight, if speed > 0.0 { format!("thrown at {speed} m/s") } else { "dropped".into() }));
         let msgs = |p: Vec3, v: Vec3| {
             let mut m = vec![];
+            if self.dead {
+                return m;
+            }
             if self.look {
                 m.push(format!("headLook start=true pos={} vel={} instanceIndex=-1 alwaysLook=true", v3(p), v3(v)));
             }
@@ -2870,6 +2932,9 @@ impl Sim {
             m
         };
         let o = msgs(from, vel);
+        if self.avoid && !self.dead {
+            (self.dodging, self.look_stop) = (true, Some(self.steps as f32 / 60.0 + 2.0));
+        }
         self.send_ours(o);
     }
 
@@ -2912,7 +2977,14 @@ impl Sim {
     }
 
     fn send(&mut self, line: &str) {
-        self.send_to(0, line)
+        self.send_to(0, line);
+        if line.starts_with("stopAllBehaviours") && self.hanging() {
+            let (lines, free) = self.hang.clone().unwrap();
+            let grab = lines[0].starts_with("grab");
+            for l in lines.into_iter().chain((0..2).filter(|&i| free[i]).map(|i| hang_let_go(grab, i))) {
+                self.send_to(0, &l);
+            }
+        }
     }
 
     fn send_to(&mut self, who: usize, line: &str) {
@@ -3160,7 +3232,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -6710,8 +6782,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 }
             });
             ui.checkbox(&mut sim.extra, "Additional experimental reactions")
-                .on_hover_text("Sometimes he windmills his arms as he loses his balance, sometimes curls up on the ground before getting up, and dives when shot at again.");
-            ui.add_enabled(sim.extra, egui::Slider::new(&mut sim.dodge_gap, 0.0..=10.0).text("Dive if shot at again within").custom_formatter(|x, _| if x <= 0.0 { "never".into() } else { format!("{x:.1} s") }))
+                .on_hover_text("Sometimes he windmills his arms as he loses his balance, sometimes curls up on the ground before getting up, curls up when shot at lying down.");
+            ui.checkbox(&mut sim.dive, "Dive when shot at")
+                .on_hover_text("Shot at again soon after a near miss, he dives out of the line of fire (once a burst: he won't keep diving under automatic fire).");
+            ui.add_enabled(sim.dive, egui::Slider::new(&mut sim.dodge_gap, 0.0..=10.0).text("Dive if shot at again within").custom_formatter(|x, _| if x <= 0.0 { "never".into() } else { format!("{x:.1} s") }))
                 .on_hover_text("A first near miss: he flinches. Another within this time: he dives out of the line. Rounds in the first half second (one click of an automatic) count as one.");
             ui.collapsing("Additional reactions", |ui| {
                 info(ui, "Delirium's experimental reactions.");

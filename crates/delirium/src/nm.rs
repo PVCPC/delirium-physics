@@ -414,7 +414,7 @@ impl Agent {
 
     pub fn stop_all_behaviours(&mut self) {
         self.locomotion_drive=None;self.locomotion_tracking=false;self.locomotion_terms=None;
-        self.extras = Default::default();
+        self.extras.stop_all();
         if let Some(ch) = self.ch.as_mut().filter(|_| self.bb_on) {
             crate::nmbb::BodyBalance::deactivate(ch);
         }
