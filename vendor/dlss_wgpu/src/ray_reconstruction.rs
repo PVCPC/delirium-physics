@@ -243,12 +243,12 @@ impl DlssRayReconstruction {
             InSpecularAlbedoSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
             InNormalsSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
             InRoughnessSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
-            InColorSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
+            InColorSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
             InDepthSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
-            InMVSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
+            InMVSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
             InTranslucencySubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
             InBiasCurrentColorSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
-            InOutputSubrectBase: NVSDK_NGX_Coordinates { X: 0, Y: 0 },
+            InOutputSubrectBase: NVSDK_NGX_Coordinates { X: render_parameters.subrect_origin[0], Y: render_parameters.subrect_origin[1] },
             InPreExposure: 0.0,
             InExposureScale: 0.0,
             InIndicatorInvertXAxis: 0,
@@ -490,6 +490,9 @@ pub struct DlssRayReconstructionRenderParameters<'a> {
     /// Optionally use only a specific subrect of the input textures, rather than the whole textures.
     // TODO: Allow configuring partial texture origins
     pub partial_texture_size: Option<[u32; 2]>,
+    /// Delirium's patch: where the camera's viewport starts in the color, motion vectors and output (the guides are
+    /// the view's own size, at the corner).
+    pub subrect_origin: [u32; 2],
     /// Optional scaling factor to apply to the values contained within [`Self::motion_vectors`].
     pub motion_vector_scale: Option<[f32; 2]>,
 }

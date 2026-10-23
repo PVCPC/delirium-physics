@@ -16,3 +16,5 @@ opt-level = 3
 dlss_wgpu = { path = "vendor/dlss_wgpu" }
 bevy_anti_alias = { path = "vendor/bevy_anti_alias" }
 bevy_pbr = { path = "vendor/bevy_pbr" }
+# Ray tracing with the camera's viewport off the window's corner: the screen textures read at the view's offset.
+bevy_solari = { path = "vendor/bevy_solari" }

@@ -80,6 +80,7 @@ pub fn dlss_ray_reconstruction(
         &ViewTarget,
         &ViewPrepassTextures,
         &ViewDlssRayReconstructionTextures,
+        &bevy_render::view::ExtractedView,
     )>,
     adapter: Res<RenderAdapter>,
     mut ctx: RenderContext,
@@ -92,6 +93,7 @@ pub fn dlss_ray_reconstruction(
         view_target,
         prepass_textures,
         ray_reconstruction_textures,
+        view,
     ) = view.into_inner();
 
     let Some(prepass_motion_vectors_texture) = &prepass_textures.motion_vectors else {
@@ -125,6 +127,8 @@ pub fn dlss_ray_reconstruction(
         reset: dlss.reset,
         jitter_offset: (-temporal_jitter.offset).to_array(),
         partial_texture_size: Some(render_resolution.to_array()),
+        // Delirium's patch: the camera's viewport, not the window's corner.
+        subrect_origin: [view.viewport.x, view.viewport.y],
         motion_vector_scale: Some((-render_resolution.as_vec2()).to_array()),
     };
 
