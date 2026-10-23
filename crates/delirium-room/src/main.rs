@@ -204,7 +204,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "pedcol" => if let Some(c) = ped_colour(v.trim()) { (sim.ped_color, sim.body_alpha) = c },
             "opacity" => sim.body_alpha = x.clamp(0.1, 1.0),
             "hero_opacity" => sim.hero_alpha = x.clamp(0.1, 1.0),
-            "render_scale" => sim.render_scale = x.clamp(RENDER_SCALE_MIN, 1.0),
+            "render_scale" => sim.render_scale = x.clamp(RENDER_SCALE_MIN, RENDER_SCALE_MAX),
             "msaa" if x < 1.5 => sim.aa = 0,
             "msaa" => sim.msaa = [2, 4, 8].into_iter().find(|&k| k as f32 >= x).unwrap_or(8),
             "aa" => sim.aa = (x as u8).min(AA_XESS),
@@ -335,6 +335,7 @@ const PLAT_ID: i32 = 300;
 const INJURY_MAX: f32 = 0.8;
 const CRUSH_SPEED: f32 = 2.5;
 const DODGE_GAP: f32 = 3.0;
+const NEAR_BURST: f32 = 0.5;
 const DIVE: (f32, f32) = (3.5, 3.0);
 const HANG_SECS: f32 = 3.0;
 const CAB_GAP: f32 = 1.45;
@@ -2594,7 +2595,12 @@ impl Sim {
         }
         self.say(format!("room  shot: near miss, {d:.2} m from him"));
         let now = self.steps as f32 / 60.0;
-        if now - std::mem::replace(&mut self.near_at, now) < self.dodge_gap && !self.no_dodge {
+        let since = now - self.near_at;
+        if since >= self.dodge_gap || since < 0.0 {
+            self.near_at = now;
+        }
+        if self.extra && (NEAR_BURST..self.dodge_gap).contains(&since) && !self.no_dodge {
+            self.near_at = now;
             self.say("room  shot at again: he dives".into());
             let chest = ours.p(CHEST);
             let off = (chest - by(chest)).with_z(0.0);
@@ -3467,6 +3473,7 @@ impl bevy::sprite_render::Material2d for ScaledMat {
     }
 }
 const RENDER_SCALE_MIN: f32 = 0.25;
+const RENDER_SCALE_MAX: f32 = 2.0;
 #[derive(Component)]
 struct FacePart(usize);
 
@@ -4641,9 +4648,9 @@ fn viewports(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, windows: Quer
     let rect = if sim.show_ui { ctx.available_rect() } else { ctx.content_rect() };
     if rect.width() < 2.0 || rect.height() < 1.0 || window.physical_width() == 0 || window.physical_height() == 0 { return; }
     let win = window.physical_size();
-    let s = if sim.render_scale < 0.999 && !sim.upscaling() { sim.render_scale } else { 1.0 };
-    let size = (win.as_vec2() * s).as_uvec2().max(UVec2::ONE);
-    let want = (s < 1.0).then_some(size);
+    let s = if (sim.render_scale - 1.0).abs() > 0.001 && !sim.upscaling() { sim.render_scale } else { 1.0 };
+    let size = (win.as_vec2() * s).as_uvec2().clamp(UVec2::ONE, UVec2::splat(8192));
+    let want = (s != 1.0).then_some(size);
     let mut bound = want.unwrap_or(win);
     if target.as_ref().map(|t| t.1) != want {
         bound = bound.min(target.as_ref().map_or(win, |t| t.1));
@@ -4666,7 +4673,7 @@ fn viewports(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, windows: Quer
         *vis = if target.is_some() { Visibility::Visible } else { Visibility::Hidden };
         if let Some((h, size)) = &*target {
             at.scale = window.size().extend(1.0);
-            let fsr = sim.upscaler == UP_FSR1;
+            let fsr = sim.fsr1();
             let sharp = if fsr && sim.sharpen > 0.0 { (-2.0 * (1.0 - sim.sharpen)).exp2() } else { 0.0 };
             let p = Vec4::new(size.x as f32, size.y as f32, sharp, if fsr { 1.0 } else { 0.0 });
             if scaled.get(&mat.0).is_some_and(|m| m.p != p || m.img != *h) {
@@ -6253,10 +6260,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     }
                 }
             });
-            ui.add(egui::Slider::new(&mut sim.dodge_gap, 0.0..=10.0).text("Dive if shot at again within").custom_formatter(|x, _| if x <= 0.0 { "never".into() } else { format!("{x:.1} s") }))
-                .on_hover_text("A first near miss: he flinches. Another within this time: he dives out of the line.");
             ui.checkbox(&mut sim.extra, "Additional experimental reactions")
-                .on_hover_text("Sometimes he windmills his arms as he loses his balance, and sometimes curls up on the ground before getting up.");
+                .on_hover_text("Sometimes he windmills his arms as he loses his balance, sometimes curls up on the ground before getting up, and dives when shot at again.");
+            ui.add_enabled(sim.extra, egui::Slider::new(&mut sim.dodge_gap, 0.0..=10.0).text("Dive if shot at again within").custom_formatter(|x, _| if x <= 0.0 { "never".into() } else { format!("{x:.1} s") }))
+                .on_hover_text("A first near miss: he flinches. Another within this time: he dives out of the line. Rounds in the first half second (one click of an automatic) count as one.");
             ui.collapsing("Additional reactions", |ui| {
                 info(ui, "Delirium's experimental reactions.");
                 let per = per_row(ui, 145.0);
@@ -6607,8 +6614,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             info(ui, &format!("In use: {}.{}", sim.gpu_now, if wants { " Restart the room to switch." } else { "" }));
             sub(ui, "Display");
             let up = sim.upscaling();
-            ui.add_enabled(!up, egui::Slider::new(&mut sim.render_scale, RENDER_SCALE_MIN..=1.0).text(gpu("Resolution", 3)).custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
-                .on_hover_text("How sharp the 3D view is drawn, as a share of the window's pixels. Lower is blurrier and much faster on a slow graphics card.");
+            ui.add_enabled(!up, egui::Slider::new(&mut sim.render_scale, RENDER_SCALE_MIN..=RENDER_SCALE_MAX).text(gpu("Resolution", 3)).custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
+                .on_hover_text("How sharp the 3D view is drawn, as a share of the window's pixels. Lower is blurrier and much faster on a slow graphics card; above 100% it draws more pixels than the window has and shrinks them down, the smoothest edges there are (200% costs about four times 100%).");
             if sim.render_scale < 0.999 && !up {
                 let mut u = sim.upscaler as f32;
                 if ui.add(egui::Slider::new(&mut u, 0.0..=UP_FSR1 as f32).step_by(1.0).text("Upscaler").custom_formatter(|x, _| UP_NAMES[x as usize].into()))
@@ -6623,7 +6630,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 AA_XESS => [1.0, 1.7, 2.0, 2.3, 3.0][sim.xess_q as usize],
                 _ => 1.0,
             };
-            let s = if sim.render_scale < 0.999 && !up { sim.render_scale } else { 1.0 };
+            let s = if (sim.render_scale - 1.0).abs() > 0.001 && !up { sim.render_scale } else { 1.0 };
             let (drawn, shown) = ((v / r).round(), (v / s).round());
             info(ui, &format!("Drawn at {}×{} pixels, shown at {}×{}.", drawn.x, drawn.y, shown.x, shown.y));
             ui.add(egui::Slider::new(&mut sim.fps_limit, FPS_VSYNC..=FPS_FREE).step_by(1.0).text("Frame rate limit")
