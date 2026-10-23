@@ -6473,7 +6473,8 @@ const NAV: [(u8, &str); 8] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), 
                                      (4, "Graphics / Camera"), (8, "Audio / Video"), (6, "Inspect"), (5, "Help")];
 
 fn active_tab(bits: u16) -> u16 {
-    if bits & !0x80 != 0 { 1 << bits.trailing_zeros() } else if bits & 0x80 != 0 { 1 << 2 } else { 1 }
+    let tabs = bits & NAV.iter().fold(0, |m, &(b, _)| m | 1 << b);
+    if tabs != 0 { 1 << tabs.trailing_zeros() } else if bits & 0x80 != 0 { 1 << 2 } else { 1 }
 }
 
 fn bar(ui: &mut egui::Ui, act: &[f32], des: &[f32], strength: f32) {
