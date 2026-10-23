@@ -16,6 +16,7 @@ const MIN_HISTORY_BLEND_RATE: f32 = 0.015; // Minimum blend rate allowed, to ens
 @group(0) @binding(3) var depth: texture_depth_2d;
 @group(0) @binding(4) var nearest_sampler: sampler;
 @group(0) @binding(5) var linear_sampler: sampler;
+@group(0) @binding(6) var<uniform> motion_scale: vec4<f32>;
 
 struct Output {
     @location(0) view_target: vec4<f32>,
@@ -75,8 +76,10 @@ fn sample_view_target(uv: vec2<f32>) -> vec3<f32> {
 }
 
 @fragment
-fn taa(@location(0) uv: vec2<f32>) -> Output {
+fn taa(@builtin(position) position: vec4<f32>) -> Output {
     let texture_size = vec2<f32>(textureDimensions(view_target));
+    // From the pixel, not the fullscreen triangle's 0..1: that spans only the camera's viewport.
+    let uv = position.xy / texture_size;
     let texel_size = 1.0 / texture_size;
 
     // Fetch the current sample
@@ -115,7 +118,7 @@ fn taa(@location(0) uv: vec2<f32>) -> Output {
     if d_br > closest_depth {
         closest_uv = d_uv_br;
     }
-    let closest_motion_vector = textureSample(motion_vectors, nearest_sampler, closest_uv).rg;
+    let closest_motion_vector = textureSample(motion_vectors, nearest_sampler, closest_uv).rg * motion_scale.xy;
 
     // Reproject to find the equivalent sample from the past
     // Uses 5-sample Catmull-Rom filtering (reduces blurriness)

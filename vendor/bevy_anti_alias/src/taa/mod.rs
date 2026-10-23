@@ -24,8 +24,8 @@ use bevy_render::{
     diagnostic::RecordDiagnostics,
     render_graph::{NodeRunError, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner},
     render_resource::{
-        binding_types::{sampler, texture_2d, texture_depth_2d},
-        BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+        binding_types::{sampler, texture_2d, texture_depth_2d, uniform_buffer_sized},
+        BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries, BufferInitDescriptor, BufferUsages,
         CachedRenderPipelineId, Canonical, ColorTargetState, ColorWrites, FilterMode,
         FragmentState, Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
         RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
@@ -181,6 +181,15 @@ impl ViewNode for TemporalAntiAliasNode {
 
         let diagnostics = render_context.diagnostic_recorder();
 
+        // The view's share of the texture: motion vectors are in the view's own 0..1, the textures span the window.
+        let size = view_target.main_texture().size();
+        let scale = camera.viewport.as_ref().map_or(vec2(1.0, 1.0), |v| v.physical_size.as_vec2() / vec2(size.width as f32, size.height as f32));
+        let scale = render_context.render_device().create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("taa_motion_scale"),
+            contents: &[scale.x, scale.y, 0.0f32, 0.0].map(f32::to_le_bytes).concat(),
+            usage: BufferUsages::UNIFORM,
+        });
+
         let view_target = view_target.post_process_write();
 
         let taa_bind_group = render_context.render_device().create_bind_group(
@@ -193,6 +202,7 @@ impl ViewNode for TemporalAntiAliasNode {
                 &prepass_depth_texture.texture.default_view,
                 &pipelines.nearest_sampler,
                 &pipelines.linear_sampler,
+                scale.as_entire_binding(),
             )),
         );
 
@@ -277,6 +287,8 @@ fn init_taa_pipeline(
                 sampler(SamplerBindingType::NonFiltering),
                 // Linear sampler
                 sampler(SamplerBindingType::Filtering),
+                // Motion vector scale (the view's share of the texture)
+                uniform_buffer_sized(false, None),
             ),
         ),
     );

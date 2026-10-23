@@ -3394,7 +3394,10 @@ fn pick_game(args: &[String]) -> ! {
         }
         Ok(())
     }
-    App::new()
+    let mut app = App::new();
+    #[cfg(feature = "dlss")]
+    app.insert_resource(bevy::anti_alias::dlss::DlssProjectId(bevy::asset::uuid::uuid!("5d3f1e0a-7c2b-4e8f-9a61-d311e7a0b4c2")));
+    app
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window { title: "Delirium Physics Playroom".into(), resolution: (900, 460).into(), ..default() }),
             ..default()
@@ -3514,7 +3517,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
     use bevy::render::render_resource::{BlendState, TextureUsages};
     commands.spawn((Camera2d, Camera { order: 2, clear_color: ClearColorConfig::Custom(Color::NONE),
                                        output_mode: bevy::camera::CameraOutputMode::Write { blend_state: Some(BlendState::ALPHA_BLENDING), clear_color: ClearColorConfig::None },
-                                       ..default() }, RenderLayers::layer(31), bevy_egui::PrimaryEguiContext,
+                                       ..default() }, RenderLayers::layer(31), bevy_egui::PrimaryEguiContext, Msaa::Off,
                     bevy::camera::CameraMainTextureUsages(bevy::camera::CameraMainTextureUsages::default().0 | TextureUsages::COPY_SRC)));
     let _ = shaders.insert(&FSR1_SHADER, Shader::from_wgsl(include_str!("fsr1.wgsl"), "fsr1.wgsl"));
     commands.spawn((Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))), MeshMaterial2d(scaled.add(ScaledMat { p: Vec4::ZERO, img: Handle::default() })),
@@ -5247,6 +5250,7 @@ impl Sim {
     }
 
     fn preview_frame(&mut self) -> bool {
+        delirium::nmrs::LOOSE.store(self.preview_on, std::sync::atomic::Ordering::Relaxed);
         let (w, shift) = self.preview_keys;
         self.preview_wait &= w;
         let w = w || (self.preview.is_some() && self.agent.doll.motion(0).0.with_z(0.0).length() > 1.3);

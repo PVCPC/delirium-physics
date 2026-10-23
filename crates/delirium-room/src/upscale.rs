@@ -370,11 +370,11 @@ impl UpscaleCtx {
 }
 
 fn extract(mut commands: Commands, mut main: ResMut<MainWorld>, had: Query<Has<Upscale>>) {
-    let mut cams = main.query_filtered::<(RenderEntity, &Camera, &Projection, Option<&Upscale>), With<Hdr>>();
-    for (e, camera, projection, up) in cams.iter(&main) {
+    let mut cams = main.query::<(RenderEntity, &Camera, &Projection, Option<&Upscale>, Has<Hdr>)>();
+    for (e, camera, projection, up, hdr) in cams.iter(&main) {
         let mut c = commands.entity(e);
         match up {
-            Some(up) if camera.is_active && projection.is_perspective() => {
+            Some(up) if hdr && camera.is_active && projection.is_perspective() => {
                 c.insert(up.clone());
             }
             _ if had.get(e) == Ok(true) => {
@@ -664,3 +664,4 @@ unsafe fn xess_dispatch(x: &Xess, ctx: *mut c_void, cmd: ash::vk::CommandBuffer,
 
 const JITTER_SIGN: f32 = -1.0;
 const XESS_JITTER_SIGN: f32 = 1.0;
+

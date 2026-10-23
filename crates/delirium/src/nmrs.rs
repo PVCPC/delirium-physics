@@ -1,4 +1,15 @@
 use crate::Fma;
+
+pub static LOOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn loose(j: usize, l: [(f32, f32); 3]) -> [(f32, f32); 3] {
+    let want = match j { 0 | 3 => [0.0, 0.0, 40.0f32], 2 | 5 => [50.0, 25.0, 0.0], _ => return l };
+    if !LOOSE.load(std::sync::atomic::Ordering::Relaxed) { return l }
+    std::array::from_fn(|k| {
+        let (mid, half) = ((l[k].0 + l[k].1) * 0.5, ((l[k].1 - l[k].0) * 0.5).max(want[k].to_radians()));
+        (mid - half, mid + half)
+    })
+}
 use crate::prelude::*;
 use delirium_data::nm_asset;
 
@@ -626,7 +637,8 @@ impl Character {
 
     pub fn limits(&self, j: usize) -> [f32; 6] {
         let jd = &self.joints[j];
-        let f = |k: usize| if jd.flip[k] { (-jd.limits[k].1, -jd.limits[k].0) } else { jd.limits[k] };
+        let l = loose(j, jd.limits);
+        let f = |k: usize| if jd.flip[k] { (-l[k].1, -l[k].0) } else { l[k] };
         let ((a, b), (c, d), (e, g)) = (f(0), f(1), f(2));
         [a, b, c, d, e, g]
     }
@@ -677,7 +689,7 @@ impl Character {
                 let mid = if j.three { (j.limits[k].0 + j.limits[k].1) * 0.5 } else { 0.0 };
                 SoftLimit { angle: if f { -l.angle } else { l.angle } - mid, dir: if f { -l.dir } else { l.dir }, ..l }
             });
-            out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: j.limits, max: j.max_torque.map(|m| m * k * most), blend, hinge: !j.three, desired: e.desired[0], jc: j.rigid,
+            out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: loose(i, j.limits), max: j.max_torque.map(|m| m * k * most), blend, hinge: !j.three, desired: e.desired[0], jc: j.rigid,
                                 target, gain: [strength, damping], soft };
         }
         out
