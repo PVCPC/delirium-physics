@@ -624,6 +624,12 @@ impl Room {
                 let obj = &mut w.bodies[self.objs[j].h[i]];
                 let mine = imp * (PART_KG / (PART_KG + m));
                 obj.apply_impulse(rv(imp - mine), true);
+                let n = (on - at).normalize_or_zero();
+                let v = bv(obj.linvel());
+                let over = v.dot(n) - obj_v[j].dot(n).max(part_v[k].dot(n)).max(0.0);
+                if over > 0.0 {
+                    obj.set_linvel(rv(v - n * over), true);
+                }
                 out.push((j, k, hit, mine));
             }
         }
