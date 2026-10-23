@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 
 mod car;
+mod fire;
 mod getup;
 mod learn;
 mod locomotion;
@@ -187,12 +188,15 @@ ray_tracing {}
 sky {}
 god_rays {}
 restir {}
+fire {}
+real_fire {}
+smoke {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir))
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke))
 }
 
 fn coin() -> bool {
@@ -248,6 +252,9 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "sky" => sim.sky = (x as u8).min(2),
             "god_rays" => sim.god_rays = on,
             "restir" => sim.restir = on,
+            "fire" => sim.fire = (x as u8).min(FIRE_HIGH),
+            "real_fire" => sim.real_fire = on,
+            "smoke" => sim.smoke = on,
             "upscaler" => sim.upscaler = (x as u8).min(UP_FSR1),
             "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
@@ -495,6 +502,9 @@ struct BloodPix(usize);
 #[derive(Component)]
 struct Glow(usize);
 const GLOW_MAX: usize = 12;
+const FIRE_LIGHT_OUT: f32 = 0.45;
+const FIRE_HIGH: u8 = 3;
+const FIRE_GLOW: LinearRgba = LinearRgba::rgb(1.4, 0.32, 0.04);
 
 struct Sim {
     build: Build,
@@ -705,6 +715,9 @@ struct Sim {
     chroma: f32,
     sky: u8,
     god_rays: bool,
+    fire: u8,
+    real_fire: bool,
+    smoke: bool,
     restir: bool,
     rt: u8,
     rt_ok: bool,
@@ -3284,7 +3297,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3391,7 +3404,7 @@ fn main() {
     }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
-    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, (apply_look, god_rays, glass_light), video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
+    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, (apply_look, god_rays, glass_light, fire_view), video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
     let mut app = App::new();
     let gpu = std::fs::read_to_string(getup::config_dir().join(SETTINGS)).ok()
         .and_then(|t| t.lines().find_map(|l| l.strip_prefix("gpu ").map(|g| g.trim().to_lowercase()))).filter(|g| !g.is_empty());
@@ -3429,6 +3442,7 @@ fn main() {
         .add_systems(Update, (ray_tracing.before(video), sky));
     #[cfg(feature = "portal")]
     portal::plugin(&mut app);
+    fire::plugin(&mut app);
     #[cfg(feature = "dlss")]
     app.add_systems(Update, dlss.after(apply_look).before(video));
     #[cfg(windows)]
@@ -3975,7 +3989,7 @@ struct HatMesh;
 
 fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<HeroMesh>>,
           mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
-          mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>) {
+          mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>, time: Res<Time>) {
     let doll: Option<Vec<Transform>> = sim.hero_doll.as_ref().map(|h| match h.rise.as_ref().zip(sim.getup.as_ref()).and_then(|(r, c)| c.frames(r)) {
         Some(f) => f.into_iter().enumerate().map(|(k, f)| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k))).collect(),
         None => h.agent.doll.capsules().collect(),
@@ -4015,6 +4029,12 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
     for (p, mut t, mut v, m) in &mut q {
         let ped = p.crowd.map_or(0, |c| c + 1);
         let lit = sim.glow.get(ped).and_then(|g| g.get(p.k)).filter(|_| p.watch.is_none()).map_or(LinearRgba::BLACK, |&(g, (c, _))| c * g);
+        let lit = if ped == 0 && p.watch.is_none() && sim.fire == FIRE_HIGH && sim.burning > 0.0 {
+            let t = time.elapsed_secs() + p.k as f32 * 0.9;
+            lit + FIRE_GLOW * ((sim.burning / 2.0).min(1.0) * (0.6 + 0.4 * (t * 13.0).sin() * (t * 5.1).cos()))
+        } else {
+            lit
+        };
         let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""), sim.body_alpha);
         let col = if sim.clean { col.with_alpha(1.0) } else { col };
         if mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col) {
@@ -4533,9 +4553,10 @@ fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::P
 static GPUS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 fn preset(sim: &Sim) -> Option<usize> {
-    VIDEO_PRESETS.iter().position(|&(m, q, soft)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows == (q > 0) && (q == 0 || sim.shadow_q == q) && (sim.shadow > 0.0) == soft)
+    VIDEO_PRESETS.iter().position(|&(m, q, soft, fire)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows == (q > 0) && (q == 0 || sim.shadow_q == q)
+        && (sim.shadow > 0.0) == soft && sim.fire == fire)
 }
-const VIDEO_PRESETS: [(u8, u8, bool); 3] = [(1, 0, false), (4, 2, false), (4, 3, true)];
+const VIDEO_PRESETS: [(u8, u8, bool, u8); 3] = [(1, 0, false, 0), (4, 2, false, 2), (4, 3, true, FIRE_HIGH)];
 
 #[derive(Component)]
 struct Floor;
@@ -4928,9 +4949,17 @@ fn glow_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Asset
     }
     let t = time.elapsed_secs();
     let flick = |k: f32| 0.8 + 0.2 * (t * 11.0 + k * 1.7).sin() * (t * 7.3 + k).cos();
+    let ball = sim.rt_now() > 0 || sim.fire == 0;
+    let dark = sim.fire == 1;
     let blasts = sim.gun.blasts.iter().map(|&(at, age)| (at, BLAST_R * 0.25 * (age / 0.3).min(1.0).max(0.1), 2.0 * (1.0 - age / 0.8).max(0.0)));
-    let fires = sim.gun.fires.iter().enumerate().map(|(k, &(at, age))| (at + Vec3::Z * 0.25, 0.4, 0.3 * (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0) * flick(k as f32)));
-    let burning = (sim.burning > 0.0).then(|| (sim.ours().p(0) + Vec3::Z * 0.3, 0.25, 0.2 * flick(9.0)));
+    let fires = sim.gun.fires.iter().filter(|_| !dark).enumerate().map(|(k, &(at, age))| (at + Vec3::Z * 0.25, if ball { 0.4 } else { 0.001 }, 0.3 * (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0) * flick(k as f32)));
+    let chest = sim.ours().p(0) + Vec3::Z * 0.3;
+    let round = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y];
+    let burning: Vec<_> = match (sim.burning > 0.0 && !dark, sim.fire == FIRE_HIGH) {
+        (false, _) => vec![],
+        (true, false) => vec![(chest, if ball { 0.25 } else { 0.001 }, 0.2 * flick(9.0))],
+        (true, true) => round.iter().enumerate().map(|(k, d)| (chest + *d * FIRE_LIGHT_OUT, 0.001, 0.08 * flick(9.0 + k as f32))).collect(),
+    };
     let lit: Vec<_> = blasts.chain(fires).chain(burning).take(GLOW_MAX).collect();
     for (g, mut tr, mut v, m, mut light) in &mut q {
         let Some(&(at, r, b)) = lit.get(g.0) else {
@@ -4945,6 +4974,35 @@ fn glow_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Asset
         light.color = Color::LinearRgba(warm);
         light.intensity = 600_000.0 * b;
         *v = Visibility::Visible;
+    }
+}
+
+fn fire_view(sim: NonSend<Sim>, time: Res<Time>, cam: Query<&GlobalTransform, With<OursCam>>,
+             mut q: Query<(&mut fire::Fire, &Mesh3d, &MeshMaterial3d<fire::FlameMaterial>, &mut Visibility)>, mut meshes: ResMut<Assets<Mesh>>,
+             mut mats: ResMut<Assets<fire::FlameMaterial>>) {
+    let (Ok(cam), Ok((mut f, m, mat, mut v))) = (cam.single(), q.single_mut()) else { return };
+    if sim.fire == 0 {
+        if *v != Visibility::Hidden {
+            *v = Visibility::Hidden;
+        }
+        return;
+    }
+    let voxel = if sim.real_fire { 0.0 } else { 1.0 };
+    if mats.get(&mat.0).is_some_and(|x| x.extension.k.y != voxel) {
+        if let Some(mut x) = mats.get_mut(&mat.0) {
+            x.extension.k.y = voxel;
+        }
+    }
+    let mut burns: Vec<fire::Source> = sim.gun.fires.iter().map(|&(at, age)| fire::Source { at, r: FIRE_R * 0.8, k: ((FIRE_LIFE - age) / 2.0).clamp(0.0, 1.0) }).collect();
+    if sim.burning > 0.0 {
+        let ours = sim.ours();
+        burns.extend((0..ours.parts.len()).map(|k| fire::Source { at: ours.p(k), r: 0.12, k: 0.7 * (sim.burning / 2.0).min(1.0) }));
+    }
+    let Some(mut mesh) = meshes.get_mut(&m.0) else { return };
+    let any = fire::step(&mut f, &mut mesh, &burns, time.delta_secs(), cam, !sim.real_fire, sim.smoke);
+    let want = if any { Visibility::Inherited } else { Visibility::Hidden };
+    if *v != want {
+        *v = want;
     }
 }
 
@@ -5113,14 +5171,14 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
         g.sphere(Isometry3d::from_translation(p), 0.05, if molotov { Color::srgb(1.0, 0.6, 0.2) } else { Color::srgb(0.4, 0.95, 1.0) });
     }
     let flick = time.elapsed_secs() * 9.0;
-    for &(at, age) in &sim.gun.fires {
+    for &(at, age) in sim.gun.fires.iter().filter(|_| sim.fire == 0) {
         let a = (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0);
         for k in 0..6 {
             let s = (flick + k as f32 * 1.7).sin() * 0.5 + 0.5;
             g.circle(Isometry3d::from_translation(at + Vec3::Z * (0.02 + 0.12 * k as f32 * (0.5 + s))), FIRE_R * (1.0 - 0.14 * k as f32), Color::srgba(1.0, 0.35 + 0.1 * k as f32, 0.1, a));
         }
     }
-    if sim.burning > 0.0 {
+    if sim.burning > 0.0 && sim.fire == 0 {
         let ours = sim.ours();
         for k in 0..ours.parts.len() {
             let s = (flick + k as f32 * 2.3).sin() * 0.5 + 0.5;
@@ -7314,6 +7372,17 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             }
             ui.add_enabled(sim.ssao > 0, egui::Slider::new(&mut sim.ao_strength, 0.0..=2.0).text("Ambient occlusion strength").custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
                 .on_hover_text("How dark ambient occlusion makes the creases. It darkens all the light there, the sun's too, as most games do.");
+            ui.horizontal(|ui| {
+                let mut q = sim.fire as f32;
+                if ui.add(egui::Slider::new(&mut q, 0.0..=FIRE_HIGH as f32).step_by(1.0).text(gpu("Fire", 1))
+                    .custom_formatter(|x, _| ["wireframe", "flames", "flames + light", "flames + light on Homer"][x as usize].into()))
+                    .on_hover_text("Wireframe: plain rings, for a slow PC. Flames: flames and embers, no light from them. Flames + light: they light the room. \
+                                    Flames + light on Homer: burning Homer glows and his flames light him from every side.").changed() {
+                    sim.fire = q as u8;
+                }
+                ui.add_enabled(sim.fire > 0, egui::Checkbox::new(&mut sim.real_fire, "Realistic")).on_hover_text("Rolling, glowing flames instead of voxels (cubes).");
+                ui.add_enabled(sim.fire > 0, egui::Checkbox::new(&mut sim.smoke, "Smoke"));
+            });
             ui.add(egui::Slider::new(&mut sim.bloom, 0.0..=1.0).text(gpu("Bloom", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
                 .on_hover_text("A soft glow around bright things, like a camera lens.");
             ui.add(egui::Slider::new(&mut sim.dof, 0.0..=1.0).text(gpu("Depth of field", 2)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
@@ -7341,7 +7410,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     sim.sun_dir = SUN_DIR;
                 }
                 if ui.button("Reset tab").on_hover_text("Lights, shadows and effects back to how they start.").clicked() {
-                    reset_settings(&mut sim, &["shadows", "shadow_quality", "sun_size", "soft", "fill", "sun_r", "sun_g", "sun_b", "ssao", "ao_strength", "bloom", "dof", "contact", "contact_strength", "vignette", "lens", "chroma"]);
+                    reset_settings(&mut sim, &["shadows", "shadow_quality", "sun_size", "soft", "fill", "sun_r", "sun_g", "sun_b", "ssao", "ao_strength", "bloom", "dof", "contact", "contact_strength", "vignette", "lens", "chroma", "fire", "real_fire", "smoke"]);
                     sim.sun_dir = SUN_DIR;
                 }
             });
@@ -7355,8 +7424,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let mut q = custom.unwrap_or(1) as f32;
             if ui.add(egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text("Graphics quality")
                 .custom_formatter(|x, _| if custom.is_none() { "custom".into() } else { ["Low", "Medium", "High"][x as usize].into() }))
-                .on_hover_text("Sets edge smoothing, shadow quality and the sun's size together. Low: off, no shadows. Medium: 4x, medium, a point sun. High: 4x, high, a 1° sun.").changed() {
-                let (m, s, soft) = VIDEO_PRESETS[q as usize];
+                .on_hover_text("Sets edge smoothing, shadow quality, the sun's size and fire together. Low: off, no shadows, wireframe fire. Medium: 4x, medium, a point sun, flames + light. High: 4x, high, a 1° sun, flames + light on Homer.").changed() {
+                let (m, s, soft, fire) = VIDEO_PRESETS[q as usize];
+                sim.fire = fire;
                 (sim.aa, sim.shadows, sim.shadow_q) = (if m == 1 { 0 } else { AA_MSAA }, s > 0, s.max(1));
                 sim.msaa = m.max(2);
                 sim.shadow = if soft { sim.shadow.max(1.0) } else { 0.0 };
