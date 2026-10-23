@@ -206,8 +206,8 @@ struct ContactShadowsSettings {
     linear_steps: u32,
     thickness: f32,
     length: f32,
-    @if(SIXTEEN_BYTE_ALIGNMENT)
-    _padding: f32,
+    // Delirium: 0 none to 1 Bevy's own (16 bytes, so no padding).
+    intensity: f32,
 };
 
 struct EnvironmentMapUniform {

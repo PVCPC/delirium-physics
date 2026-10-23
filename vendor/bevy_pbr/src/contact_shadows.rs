@@ -45,6 +45,8 @@ pub struct ContactShadows {
     pub thickness: f32,
     /// The length of the contact shadow ray in world space.
     pub length: f32,
+    /// Delirium: how dark the contact shadows are, 0 none to 1 Bevy's own.
+    pub intensity: f32,
 }
 
 impl Default for ContactShadows {
@@ -53,6 +55,7 @@ impl Default for ContactShadows {
             linear_steps: 16,
             thickness: 0.1,
             length: 0.3,
+            intensity: 1.0,
         }
     }
 }
@@ -63,8 +66,7 @@ pub struct ContactShadowsUniform {
     pub linear_steps: u32,
     pub thickness: f32,
     pub length: f32,
-    #[cfg(feature = "webgl")]
-    pub _padding: f32,
+    pub intensity: f32,
 }
 
 impl From<ContactShadows> for ContactShadowsUniform {
@@ -73,8 +75,7 @@ impl From<ContactShadows> for ContactShadowsUniform {
             linear_steps: settings.linear_steps,
             thickness: settings.thickness,
             length: settings.length,
-            #[cfg(feature = "webgl")]
-            _padding: 0.0,
+            intensity: settings.intensity,
         }
     }
 }

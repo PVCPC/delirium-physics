@@ -167,12 +167,17 @@ ao_strength {}
 bloom {}
 dof {}
 sharp_by {}
+contact {}
+contact_strength {}
+vignette {}
+lens {}
+chroma {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","))
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma)
 }
 
 fn coin() -> bool {
@@ -219,6 +224,11 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "ao_strength" => sim.ao_strength = x.clamp(0.0, 2.0),
             "bloom" => sim.bloom = x.clamp(0.0, 1.0),
             "dof" => sim.dof = x.clamp(0.0, 1.0),
+            "contact" => sim.contact = x.clamp(0.0, 1.0),
+            "contact_strength" => sim.contact_k = x.clamp(0.0, 1.0),
+            "vignette" => sim.vignette = x.clamp(0.0, 1.0),
+            "lens" => sim.lens = x.clamp(0.0, 1.0),
+            "chroma" => sim.chroma = x.clamp(0.0, 1.0),
             "upscaler" => sim.upscaler = (x as u8).min(UP_FSR1),
             "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
@@ -651,6 +661,11 @@ struct Sim {
     ao_strength: f32,
     bloom: f32,
     dof: f32,
+    contact: f32,
+    contact_k: f32,
+    vignette: f32,
+    lens: f32,
+    chroma: f32,
     view_px: UVec2,
     defaults: String,
     upscaler: u8,
@@ -3079,7 +3094,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, was_fallen: false, curled: false, super_punch: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3922,7 +3937,7 @@ fn planks(sim: NonSend<Sim>, mut q: Query<(&Plank, &mut Transform), Without<Rope
 #[derive(Component)]
 struct Fill;
 
-fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8, bool, (u8, u8), u8, bool)>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
+fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8, bool, (u8, u8), u8, bool, [u8; 5])>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
          mut map: ResMut<bevy::light::DirectionalLightShadowMap>, mut aa_was: Local<Option<u8>>,
          info: Option<Res<bevy::render::renderer::RenderAdapterInfo>>, mut cam: Query<(Entity, &Orbit, Option<&mut bevy::post_process::dof::DepthOfField>), With<OursCam>>,
          sun: Query<(Entity, Has<Fill>), With<DirectionalLight>>) {
@@ -3953,7 +3968,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
     }
     let aa = sim.aa_now();
     let ssao = sim.ssao;
-    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8, sim.fsr1(), (ssao, (sim.ao_strength * 100.0) as u8), (sim.bloom * 100.0) as u8, sim.dof > 0.0);
+    let now = (aa, sim.msaa, sim.smaa_q, sim.shadow_q, (sim.sharpen * 100.0) as u8, sim.fsr1(), (ssao, (sim.ao_strength * 100.0) as u8), (sim.bloom * 100.0) as u8, sim.dof > 0.0, [sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma].map(|x| (x * 100.0) as u8));
     if *last == Some(now) {
         return;
     }
@@ -3976,7 +3991,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
         }
         if aa < AA_TAA {
             c.remove::<(bevy::render::camera::TemporalJitter, bevy::render::camera::MipBias, bevy::core_pipeline::prepass::MotionVectorPrepass)>();
-            if ssao == 0 {
+            if ssao == 0 && sim.contact <= 0.0 {
                 c.remove::<bevy::core_pipeline::prepass::DepthPrepass>();
             }
         }
@@ -4000,6 +4015,15 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
         } else {
             c.remove::<bevy::post_process::dof::DepthOfField>();
         }
+        if sim.contact > 0.0 {
+            c.insert(bevy::pbr::ContactShadows { length: sim.contact, intensity: sim.contact_k, ..default() });
+        } else {
+            c.remove::<bevy::pbr::ContactShadows>();
+        }
+        use bevy::post_process::effect_stack::{ChromaticAberration, LensDistortion, Vignette};
+        if sim.vignette > 0.0 { c.insert(Vignette { intensity: 0.6 * sim.vignette, ..default() }); } else { c.remove::<Vignette>(); }
+        if sim.lens > 0.0 { c.insert(LensDistortion { intensity: 0.5 * sim.lens, ..default() }); } else { c.remove::<LensDistortion>(); }
+        if sim.chroma > 0.0 { c.insert(ChromaticAberration { intensity: 0.04 * sim.chroma, ..default() }); } else { c.remove::<ChromaticAberration>(); }
         c.insert(match sim.shadow_q {
             1 => bevy::light::ShadowFilteringMethod::Hardware2x2,
             _ if aa >= AA_TAA => bevy::light::ShadowFilteringMethod::Temporal,
@@ -4192,6 +4216,7 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
         }
         s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some((sim.shadow * 0.5).to_radians().tan());
         s.shadow_maps_enabled = !fill && sim.shadows;
+        s.contact_shadows_enabled = !fill && sim.contact > 0.0;
     }
     if sim.room.stage != "street" {
         if let Some(mut m) = mats.get_mut(&m.0) {
@@ -6572,6 +6597,16 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .on_hover_text("A soft glow around bright things, like a camera lens.");
             ui.add(egui::Slider::new(&mut sim.dof, 0.0..=1.0).text(gpu("Depth of field", 2)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
                 .on_hover_text("Blurs what's nearer or further than what the camera orbits, like a real lens; more blurs more.");
+            ui.add(egui::Slider::new(&mut sim.contact, 0.0..=1.0).text(gpu("Contact shadows", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0} cm", x * 100.0) }))
+                .on_hover_text("Fine sun shadows where things touch, which the shadow map is too coarse for: between the fingers, under the feet. The number is how far they reach.");
+            ui.add_enabled(sim.contact > 0.0, egui::Slider::new(&mut sim.contact_k, 0.0..=1.0).text("Contact shadow strength").custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
+                .on_hover_text("How dark the contact shadows are.");
+            ui.add(egui::Slider::new(&mut sim.vignette, 0.0..=1.0).text(gpu("Vignette", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
+                .on_hover_text("Darkens the corners, like a camera lens.");
+            ui.add(egui::Slider::new(&mut sim.lens, 0.0..=1.0).text(gpu("Lens distortion", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
+                .on_hover_text("Bends straight lines near the edges, like a wide camera lens.");
+            ui.add(egui::Slider::new(&mut sim.chroma, 0.0..=1.0).text(gpu("Chromatic aberration", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
+                .on_hover_text("Splits the colours apart toward the edges, like a cheap lens.");
             info(ui, "Screen-space reflections need Bevy's deferred renderer, which the room doesn't use; not offered yet.");
             ui.horizontal(|ui| {
                 let mut k = sim.sun_color;
@@ -6585,7 +6620,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     sim.sun_dir = SUN_DIR;
                 }
                 if ui.button("Reset tab").on_hover_text("Lights, shadows and effects back to how they start.").clicked() {
-                    reset_settings(&mut sim, &["shadows", "shadow_quality", "sun_size", "soft", "fill", "sun_r", "sun_g", "sun_b", "ssao", "ao_strength", "bloom", "dof"]);
+                    reset_settings(&mut sim, &["shadows", "shadow_quality", "sun_size", "soft", "fill", "sun_r", "sun_g", "sun_b", "ssao", "ao_strength", "bloom", "dof", "contact", "contact_strength", "vignette", "lens", "chroma"]);
                     sim.sun_dir = SUN_DIR;
                 }
             });

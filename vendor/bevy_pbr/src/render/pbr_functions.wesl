@@ -317,7 +317,7 @@ fn calculate_contact_shadow(
 
     let rm_result = raymarch::depth_ray_march_march(&rm);
     if rm_result.hit {
-        return clamp((rm_result.hit_penetration_frac - 0.5) / (1.0 - 0.5), 0.0, 1.0);
+        return mix(1.0, clamp((rm_result.hit_penetration_frac - 0.5) / (1.0 - 0.5), 0.0, 1.0), view_bindings::contact_shadows_settings.intensity);
     }
     return 1.0;
 }
