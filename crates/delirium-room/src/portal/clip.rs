@@ -34,6 +34,6 @@ pub fn exit_planes(exit: &Frame) -> ClipPlanes {
 }
 
 pub fn plugin(app: &mut App) {
-    let _ = app.world_mut().resource_mut::<Assets<Shader>>().insert(&SHADER, Shader::from_wgsl(include_str!("../ghost_clip.wgsl"), "ghost_clip.wgsl"));
+    let _ = app.world_mut().resource_mut::<Assets<Shader>>().insert(&SHADER, Shader::from_wesl(include_str!("../ghost_clip.wesl"), "ghost_clip.wesl"));
     app.add_plugins(MaterialPlugin::<GhostMaterial>::default());
 }

@@ -10,7 +10,7 @@
 //! For further info on how to integrate DLSS into your application, read `$DLSS_SDK/doc/DLSS_Programming_Guide_Release.pdf`.
 //!
 //! ## API Usage
-//! ```rust
+//! ```compile_fail
 //! use dlss_wgpu::{FeatureSupport, DlssSdk, DlssPerfQualityMode, DlssFeatureFlags};
 //! use dlss_wgpu::super_resolution::{DlssSuperResolution, DlssSuperResolutionRenderParameters};
 //!
@@ -20,7 +20,7 @@
 //! // Initialize wgpu
 //! let instance = dlss_wgpu::create_instance(project_id, &instance_descriptor, &mut feature_support).unwrap();
 //! let adapter = instance.request_adapter(&adapter_options).await.unwrap();
-//! let (device, queue) = dlss_wgpu::request_device(project_id, &adapter, &device_descriptor, &mut feature_support).unwrap();
+//! let (device, queue) = dlss_wgpu::request_device(project_id, &adapter, &device_descriptor, &mut feature_support, None).unwrap();
 //!
 //! // Check for feature support, if false don't create DLSS resources
 //! println!("DLSS supported: {}", feature_support.super_resolution_supported);
@@ -46,8 +46,11 @@
 //!
 //! // Encode DLSS render commands
 //! let render_parameters = DlssSuperResolutionRenderParameters { ... };
-//! context.render(render_parameters, &mut command_encoder, &adapter)
+//! let dlss_command_buffer = context.render(render_parameters, &mut command_encoder, &adapter)
 //!     .expect("Failed to render DLSS");
+//!
+//! // Submit render commands
+//! queue.submit([command_encoder.finsh(), dlss_command_buffer]);
 //! ```
 
 #[cfg(not(feature = "mock"))]

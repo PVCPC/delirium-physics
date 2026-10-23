@@ -12,28 +12,35 @@
 [package]
 edition = "2024"
 name = "bevy_anti_alias"
-version = "0.18.1"
+version = "0.20.0"
 build = false
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Provides various anti aliasing implementations for Bevy Engine"
+description = "Provides various anti-aliasing implementations for Bevy Engine"
 homepage = "https://bevy.org"
 readme = "README.md"
 keywords = ["bevy"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/bevyengine/bevy"
-resolver = "2"
 
 [package.metadata.docs.rs]
 rustdoc-args = [
     "-Zunstable-options",
     "--generate-link-to-definition",
+    "--generate-macro-expansion",
 ]
 all-features = true
 features = ["bevy_image/zstd_rust"]
+
+[package.metadata.wgsl-analyzer]
+edition = "2026_pre"
+root = "src"
+
+[package.metadata.wgsl-analyzer.dependencies.bevy_core_pipeline]
+path = "../bevy_core_pipeline"
 
 [features]
 dlss = [
@@ -55,51 +62,50 @@ name = "bevy_anti_alias"
 path = "src/lib.rs"
 
 [dependencies.bevy_app]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_asset]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_camera]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_core_pipeline]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_derive]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_diagnostic]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_ecs]
-version = "0.18.0"
+version = "0.20.0"
+
+[dependencies.bevy_extract]
+version = "0.20.0"
 
 [dependencies.bevy_image]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_math]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_reflect]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_render]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_shader]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.bevy_utils]
-version = "0.18.0"
+version = "0.20.0"
 
 [dependencies.dlss_wgpu]
-version = "2"
+version = "6.0.0"
 optional = true
-
-[dependencies.wgpu]
-version = "27"
-default-features = false
 
 [dependencies.tracing]
 version = "0.1"
@@ -107,7 +113,7 @@ features = ["std"]
 default-features = false
 
 [dependencies.uuid]
-version = "1"
+version = "1.21.0"
 optional = true
 
 [lints.clippy]
@@ -128,7 +134,7 @@ redundant_else = "warn"
 ref_as_ptr = "warn"
 semicolon_if_nothing_returned = "warn"
 std_instead_of_alloc = "warn"
-std_instead_of_core = "warn"
+std_instead_of_core = "allow"
 too_long_first_doc_paragraph = "allow"
 too_many_arguments = "allow"
 type_complexity = "allow"

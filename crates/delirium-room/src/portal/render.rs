@@ -107,8 +107,8 @@ impl Material for PortalSurface {
     ) -> Result<(), SpecializedMeshPipelineError> {
         if key.bind_group_data.cap {
             if let Some(ds) = descriptor.depth_stencil.as_mut() {
-                ds.depth_write_enabled = false;
-                ds.depth_compare = CompareFunction::Always;
+                ds.depth_write_enabled = Some(false);
+                ds.depth_compare = Some(CompareFunction::Always);
             }
         }
         Ok(())
@@ -309,7 +309,7 @@ fn cap_mesh(depth: f32) -> Mesh {
 
 pub fn plugin(app: &mut App) {
     let _ = app.world_mut().resource_mut::<Assets<Shader>>()
-        .insert(&LOOK_SHADER, Shader::from_wgsl(include_str!("../portal_surface.wgsl"), "portal_surface.wgsl"));
+        .insert(&LOOK_SHADER, Shader::from_wesl(include_str!("../portal_surface.wesl"), "portal_surface.wesl"));
     app.add_plugins(MaterialPlugin::<PortalSurface>::default())
         .init_resource::<Infos>()
         .init_resource::<Tree>()
@@ -361,10 +361,11 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
         let level = node_level(code);
         let e = commands.spawn((
             Camera3d::default(),
+            bevy::pbr::ScreenSpaceTransmission::default(),
             Camera { order: -((level as isize) * 100) - code as isize, is_active: false, ..default() },
             RenderTarget::Image(cams.dummy.clone().into()),
             Projection::Perspective(PerspectiveProjection::default()),
-            bevy::render::view::Hdr,
+            bevy::camera::Hdr,
             Tonemapping::None,
             DebandDither::Disabled,
             Msaa::Off,

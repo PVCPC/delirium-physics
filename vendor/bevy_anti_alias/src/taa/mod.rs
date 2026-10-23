@@ -2,27 +2,25 @@ use bevy_app::{App, Plugin};
 use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer};
 use bevy_camera::{Camera, Camera3d};
 use bevy_core_pipeline::{
-    core_3d::graph::{Core3d, Node3d},
     prepass::{DepthPrepass, MotionVectorPrepass, ViewPrepassTextures},
+    schedule::{Core3d, Core3dSystems},
     FullscreenShader,
 };
 use bevy_diagnostic::FrameCount;
 use bevy_ecs::{
     error::BevyError,
     prelude::{Component, Entity, ReflectComponent},
-    query::{QueryItem, With},
+    query::With,
     resource::Resource,
     schedule::IntoScheduleConfigs,
     system::{Commands, Query, Res, ResMut},
-    world::World,
 };
-use bevy_image::{BevyDefault as _, ToExtents};
+use bevy_image::ToExtents;
 use bevy_math::vec2;
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
 use bevy_render::{
     camera::{ExtractedCamera, MipBias, TemporalJitter},
     diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner},
     render_resource::{
         binding_types::{sampler, texture_2d, texture_depth_2d, uniform_buffer_sized},
         BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries, BufferInitDescriptor, BufferUsages,
@@ -32,8 +30,8 @@ use bevy_render::{
         ShaderStages, Specializer, SpecializerKey, TextureDescriptor, TextureDimension,
         TextureFormat, TextureSampleType, TextureUsages, Variants,
     },
-    renderer::{RenderContext, RenderDevice},
-    sync_component::SyncComponentPlugin,
+    renderer::{RenderContext, RenderDevice, ViewQuery},
+    sync_component::{SyncComponent, SyncComponentPlugin},
     sync_world::RenderEntity,
     texture::{CachedTexture, TextureCache},
     view::{ExtractedView, Msaa, ViewTarget},
@@ -50,7 +48,7 @@ pub struct TemporalAntiAliasPlugin;
 
 impl Plugin for TemporalAntiAliasPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "taa.wgsl");
+        embedded_asset!(app, "taa.wesl");
 
         app.add_plugins(SyncComponentPlugin::<TemporalAntiAliasing>::default());
 
@@ -63,22 +61,16 @@ impl Plugin for TemporalAntiAliasPlugin {
             .add_systems(
                 Render,
                 (
-                    prepare_taa_jitter.in_set(RenderSystems::ManageViews),
+                    prepare_taa_jitter.in_set(RenderSystems::PrepareViews),
                     prepare_taa_pipelines.in_set(RenderSystems::Prepare),
                     prepare_taa_history_textures.in_set(RenderSystems::PrepareResources),
                 ),
-            )
-            .add_render_graph_node::<ViewNodeRunner<TemporalAntiAliasNode>>(Core3d, Node3d::Taa)
-            .add_render_graph_edges(
-                Core3d,
-                (
-                    Node3d::StartMainPassPostProcessing,
-                    Node3d::MotionBlur, // Running before TAA reduces edge artifacts and noise
-                    Node3d::Taa,
-                    Node3d::Bloom,
-                    Node3d::Tonemapping,
-                ),
             );
+
+        render_app.add_systems(
+            Core3d,
+            temporal_anti_alias.in_set(Core3dSystems::EarlyPostProcess),
+        );
     }
 }
 
@@ -137,114 +129,105 @@ impl Default for TemporalAntiAliasing {
     }
 }
 
-/// Render [`bevy_render::render_graph::Node`] used by temporal anti-aliasing.
-#[derive(Default)]
-pub struct TemporalAntiAliasNode;
+impl SyncComponent<RenderApp> for TemporalAntiAliasing {
+    type Target = Self;
+}
 
-impl ViewNode for TemporalAntiAliasNode {
-    type ViewQuery = (
-        &'static ExtractedCamera,
-        &'static ViewTarget,
-        &'static TemporalAntiAliasHistoryTextures,
-        &'static ViewPrepassTextures,
-        &'static TemporalAntiAliasPipelineId,
-        &'static Msaa,
+pub fn temporal_anti_alias(
+    view: ViewQuery<(
+        &ExtractedCamera,
+        &ViewTarget,
+        &TemporalAntiAliasHistoryTextures,
+        &ViewPrepassTextures,
+        &TemporalAntiAliasPipelineId,
+        &Msaa,
+    )>,
+    pipelines: Option<Res<TaaPipeline>>,
+    pipeline_cache: Res<PipelineCache>,
+    mut ctx: RenderContext,
+) {
+    let (camera, view_target, taa_history_textures, prepass_textures, taa_pipeline_id, msaa) =
+        view.into_inner();
+
+    if *msaa != Msaa::Off {
+        warn!("Temporal anti-aliasing requires MSAA to be disabled");
+        return;
+    }
+
+    let Some(pipelines) = pipelines else {
+        return;
+    };
+    let (Some(taa_pipeline), Some(prepass_motion_vectors_texture), Some(prepass_depth_texture)) = (
+        pipeline_cache.get_render_pipeline(taa_pipeline_id.0),
+        &prepass_textures.motion_vectors,
+        &prepass_textures.depth,
+    ) else {
+        return;
+    };
+
+    // The view's share of the texture: motion vectors are in the view's own 0..1, the textures span the window.
+    let size = view_target.main_texture().size();
+    let scale = camera.viewport.as_ref().map_or(vec2(1.0, 1.0), |v| v.physical_size.as_vec2() / vec2(size.width as f32, size.height as f32));
+    let scale = ctx.render_device().create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("taa_motion_scale"),
+        contents: &[scale.x, scale.y, 0.0f32, 0.0].map(f32::to_le_bytes).concat(),
+        usage: BufferUsages::UNIFORM,
+    });
+
+    let view_target = view_target.post_process_write();
+
+    let taa_bind_group = ctx.render_device().create_bind_group(
+        "taa_bind_group",
+        &pipeline_cache.get_bind_group_layout(&pipelines.taa_bind_group_layout),
+        &BindGroupEntries::sequential((
+            view_target.source,
+            &taa_history_textures.read.default_view,
+            &prepass_motion_vectors_texture.texture.default_view,
+            &prepass_depth_texture.texture.default_view,
+            &pipelines.nearest_sampler,
+            &pipelines.linear_sampler,
+            scale.as_entire_binding(),
+        )),
     );
 
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        (camera, view_target, taa_history_textures, prepass_textures, taa_pipeline_id, msaa): QueryItem<
-            Self::ViewQuery,
-        >,
-        world: &World,
-    ) -> Result<(), NodeRunError> {
-        if *msaa != Msaa::Off {
-            warn!("Temporal anti-aliasing requires MSAA to be disabled");
-            return Ok(());
-        }
+    let diagnostics = ctx.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
 
-        let (Some(pipelines), Some(pipeline_cache)) = (
-            world.get_resource::<TaaPipeline>(),
-            world.get_resource::<PipelineCache>(),
-        ) else {
-            return Ok(());
-        };
-        let (Some(taa_pipeline), Some(prepass_motion_vectors_texture), Some(prepass_depth_texture)) = (
-            pipeline_cache.get_render_pipeline(taa_pipeline_id.0),
-            &prepass_textures.motion_vectors,
-            &prepass_textures.depth,
-        ) else {
-            return Ok(());
-        };
+    let mut taa_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
+        label: Some("taa"),
+        color_attachments: &[
+            Some(RenderPassColorAttachment {
+                view: view_target.destination,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations::default(),
+            }),
+            Some(RenderPassColorAttachment {
+                view: &taa_history_textures.write.default_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations::default(),
+            }),
+        ],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    let pass_span = diagnostics.pass_span(&mut taa_pass, "taa");
 
-        let diagnostics = render_context.diagnostic_recorder();
-
-        // The view's share of the texture: motion vectors are in the view's own 0..1, the textures span the window.
-        let size = view_target.main_texture().size();
-        let scale = camera.viewport.as_ref().map_or(vec2(1.0, 1.0), |v| v.physical_size.as_vec2() / vec2(size.width as f32, size.height as f32));
-        let scale = render_context.render_device().create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("taa_motion_scale"),
-            contents: &[scale.x, scale.y, 0.0f32, 0.0].map(f32::to_le_bytes).concat(),
-            usage: BufferUsages::UNIFORM,
-        });
-
-        let view_target = view_target.post_process_write();
-
-        let taa_bind_group = render_context.render_device().create_bind_group(
-            "taa_bind_group",
-            &pipeline_cache.get_bind_group_layout(&pipelines.taa_bind_group_layout),
-            &BindGroupEntries::sequential((
-                view_target.source,
-                &taa_history_textures.read.default_view,
-                &prepass_motion_vectors_texture.texture.default_view,
-                &prepass_depth_texture.texture.default_view,
-                &pipelines.nearest_sampler,
-                &pipelines.linear_sampler,
-                scale.as_entire_binding(),
-            )),
-        );
-
-        {
-            let mut taa_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-                label: Some("taa"),
-                color_attachments: &[
-                    Some(RenderPassColorAttachment {
-                        view: view_target.destination,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: Operations::default(),
-                    }),
-                    Some(RenderPassColorAttachment {
-                        view: &taa_history_textures.write.default_view,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: Operations::default(),
-                    }),
-                ],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            let pass_span = diagnostics.pass_span(&mut taa_pass, "taa");
-
-            taa_pass.set_render_pipeline(taa_pipeline);
-            taa_pass.set_bind_group(0, &taa_bind_group, &[]);
-            if let Some(viewport) = camera.viewport.as_ref() {
-                taa_pass.set_camera_viewport(viewport);
-            }
-            taa_pass.draw(0..3, 0..1);
-
-            pass_span.end(&mut taa_pass);
-        }
-
-        Ok(())
+    taa_pass.set_render_pipeline(taa_pipeline);
+    taa_pass.set_bind_group(0, &taa_bind_group, &[]);
+    if let Some(viewport) = camera.viewport.as_ref() {
+        taa_pass.set_camera_viewport(viewport);
     }
+    taa_pass.draw(0..3, 0..1);
+
+    pass_span.end(&mut taa_pass);
 }
 
 #[derive(Resource)]
-struct TaaPipeline {
+pub struct TaaPipeline {
     taa_bind_group_layout: BindGroupLayoutDescriptor,
     nearest_sampler: Sampler,
     linear_sampler: Sampler,
@@ -293,7 +276,7 @@ fn init_taa_pipeline(
         ),
     );
 
-    let fragment_shader = load_embedded_asset!(asset_server.as_ref(), "taa.wgsl");
+    let fragment_shader = load_embedded_asset!(asset_server.as_ref(), "taa.wesl");
 
     let variants = Variants::new(
         TaaPipelineSpecializer,
@@ -321,7 +304,8 @@ struct TaaPipelineSpecializer;
 
 #[derive(PartialEq, Eq, Hash, Clone, SpecializerKey)]
 struct TaaPipelineKey {
-    hdr: bool,
+    target_format: TextureFormat,
+    tonemap: bool,
     reset: bool,
 }
 
@@ -334,19 +318,16 @@ impl Specializer<RenderPipeline> for TaaPipelineSpecializer {
         descriptor: &mut RenderPipelineDescriptor,
     ) -> Result<Canonical<Self::Key>, BevyError> {
         let fragment = descriptor.fragment_mut()?;
-        let format = if key.hdr {
+        if key.tonemap {
             fragment.shader_defs.push("TONEMAP".into());
-            ViewTarget::TEXTURE_FORMAT_HDR
-        } else {
-            TextureFormat::bevy_default()
-        };
+        }
 
         if key.reset {
             fragment.shader_defs.push("RESET".into());
         }
 
         let color_target_state = ColorTargetState {
-            format,
+            format: key.target_format,
             blend: None,
             write_mask: ColorWrites::ALL,
         };
@@ -424,9 +405,9 @@ fn prepare_taa_history_textures(
     mut texture_cache: ResMut<TextureCache>,
     render_device: Res<RenderDevice>,
     frame_count: Res<FrameCount>,
-    views: Query<(Entity, &ExtractedCamera, &ExtractedView), With<TemporalAntiAliasing>>,
+    cameras: Query<(Entity, &ExtractedView, &ExtractedCamera), With<TemporalAntiAliasing>>,
 ) {
-    for (entity, camera, view) in &views {
+    for (entity, view, camera) in &cameras {
         if let Some(physical_target_size) = camera.physical_target_size {
             let mut texture_descriptor = TextureDescriptor {
                 label: None,
@@ -434,11 +415,7 @@ fn prepare_taa_history_textures(
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: if view.hdr {
-                    ViewTarget::TEXTURE_FORMAT_HDR
-                } else {
-                    TextureFormat::bevy_default()
-                },
+                format: view.target_format,
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             };
@@ -473,11 +450,17 @@ fn prepare_taa_pipelines(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
     mut pipeline: ResMut<TaaPipeline>,
-    views: Query<(Entity, &ExtractedView, &TemporalAntiAliasing)>,
+    cameras: Query<(
+        Entity,
+        &ExtractedCamera,
+        &ExtractedView,
+        &TemporalAntiAliasing,
+    )>,
 ) -> Result<(), BevyError> {
-    for (entity, view, taa_settings) in &views {
+    for (entity, camera, view, taa_settings) in &cameras {
         let mut pipeline_key = TaaPipelineKey {
-            hdr: view.hdr,
+            target_format: view.target_format,
+            tonemap: camera.hdr,
             reset: taa_settings.reset,
         };
         let pipeline_id = pipeline

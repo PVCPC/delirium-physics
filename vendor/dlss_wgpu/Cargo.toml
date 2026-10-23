@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "dlss_wgpu"
-version = "2.0.0"
+version = "6.0.0"
 build = "build.rs"
 autolib = false
 autobins = false
@@ -43,9 +43,6 @@ version = "0.38"
 [dependencies.bitflags]
 version = "2"
 
-[dependencies.glam]
-version = "0.30"
-
 [dependencies.thiserror]
 version = "2"
 
@@ -53,12 +50,12 @@ version = "2"
 version = "1"
 
 [dependencies.wgpu]
-version = "27"
+version = "30"
 features = ["vulkan"]
 default-features = false
 
 [build-dependencies.bindgen]
-version = "0.72"
+version = "0.73"
 
 [build-dependencies.cc]
 version = "1"

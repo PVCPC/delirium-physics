@@ -1,14 +1,12 @@
-use bevy::camera::{CameraMainTextureUsages, MainPassResolutionOverride, Projection};
-use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
+use bevy::camera::{CameraMainTextureUsages, Hdr, MainPassResolutionOverride, Projection};
+use bevy::core_pipeline::schedule::{Core3d, Core3dSystems};
 use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass, ViewPrepassTextures};
 use bevy::diagnostic::FrameCount;
-use bevy::ecs::query::QueryItem;
 use bevy::prelude::*;
 use bevy::render::camera::{MipBias, TemporalJitter};
-use bevy::render::render_graph::{NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner};
-use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue};
+use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery};
 use bevy::render::sync_world::RenderEntity;
-use bevy::render::view::{prepare_view_targets, ExtractedView, Hdr, ViewTarget};
+use bevy::render::view::{prepare_view_targets, ExtractedView, ViewTarget};
 use bevy::render::{ExtractSchedule, MainWorld, Render, RenderApp, RenderSystems};
 use std::ffi::c_void;
 use std::ptr::null_mut;
@@ -85,9 +83,8 @@ impl Plugin for UpscalePlugin {
         app.sub_app_mut(RenderApp)
             .insert_resource(Libs { ffx, xess, copy })
             .add_systems(ExtractSchedule, extract)
-            .add_systems(Render, prepare.in_set(RenderSystems::ManageViews).before(prepare_view_targets))
-            .add_render_graph_node::<ViewNodeRunner<UpscaleNode>>(Core3d, UpscaleLabel)
-            .add_render_graph_edges(Core3d, (Node3d::MotionBlur, UpscaleLabel, Node3d::Bloom));
+            .add_systems(Render, prepare.in_set(RenderSystems::PrepareViews).before(prepare_view_targets))
+            .add_systems(Core3d, upscale.in_set(Core3dSystems::EarlyPostProcess));
     }
 }
 
@@ -529,75 +526,64 @@ fn ffx_context(ffx: &Ffx, render: UVec2, out_size: UVec2) -> Option<*mut c_void>
     Some(ctx)
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct UpscaleLabel;
-
-#[derive(Default)]
-struct UpscaleNode;
-
-impl ViewNode for UpscaleNode {
-    type ViewQuery = (&'static Upscale, &'static UpscaleCtx, &'static MainPassResolutionOverride, &'static TemporalJitter, &'static ViewTarget,
-                      &'static ViewPrepassTextures, &'static ExtractedView);
-
-    fn run(&self, _: &mut RenderGraphContext, render_context: &mut RenderContext, (fsr, c, render, jitter, target, prepass, view): QueryItem<Self::ViewQuery>,
-           world: &World) -> Result<(), NodeRunError> {
-        let (Some(depth), Some(mv)) = (&prepass.depth, &prepass.motion_vectors) else { return Ok(()) };
-        let copy = &world.resource::<Libs>().copy;
-        let write = target.post_process_write();
-        let render = render.0;
-        let bind = render_context.render_device().wgpu_device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("upscale_copy_in"),
-            layout: &copy.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(write.source) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&depth.texture.default_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&mv.texture.default_view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&c.views[0]) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&c.views[1]) },
-                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&c.views[2]) },
-                wgpu::BindGroupEntry { binding: 6, resource: c.at.as_entire_binding() },
-            ],
-        });
-        let encoder = render_context.command_encoder();
-        encoder.push_debug_group("upscale");
-        {
-            let mut pass = encoder.begin_compute_pass(&default());
-            pass.set_pipeline(copy);
-            pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(render.x.div_ceil(8), render.y.div_ceil(8), 1);
-        }
-        let state = |texture, state| wgpu::TextureTransition { texture, selector: None, state };
-        encoder.transition_resources(std::iter::empty(), [
-            state(&c.color, wgpu::TextureUses::RESOURCE),
-            state(&c.depth, wgpu::TextureUses::RESOURCE),
-            state(&c.mv, wgpu::TextureUses::RESOURCE),
-            state(&c.out, wgpu::TextureUses::STORAGE_READ_WRITE),
-        ].into_iter());
-        encoder.pop_debug_group();
-        let mut own = render_context.render_device().wgpu_device().create_command_encoder(&default());
-        let mut ctx = c.ctx.lock().unwrap();
-        let jitter = JITTER_SIGN * jitter.offset;
-        let r = unsafe {
-            own.as_hal_mut::<Vulkan, _, _>(|e| {
-                let cmd = e.unwrap().raw_handle();
-                match &c.lib {
-                    Lib::Ffx(ffx) => ffx_dispatch(ffx, &mut ctx.0, cmd, c, fsr, render, jitter, view, world) as i32,
-                    Lib::Xess(x) => xess_dispatch(x, ctx.0, cmd, c, render, jitter),
-                }
-            })
-        };
-        render_context.add_command_buffer(own.finish());
-        if r != 0 {
-            error!("{:?}: dispatch failed ({r})", c.by());
-        }
-        let at = wgpu::Origin3d { x: view.viewport.x, y: view.viewport.y, z: 0 };
-        render_context.command_encoder().copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo { texture: &c.out, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::TexelCopyTextureInfo { texture: write.destination_texture, mip_level: 0, origin: at, aspect: wgpu::TextureAspect::All },
-            wgpu::Extent3d { width: c.out_size.x, height: c.out_size.y, depth_or_array_layers: 1 },
-        );
-        Ok(())
+fn upscale(world: &World, q: ViewQuery<(&Upscale, &UpscaleCtx, &MainPassResolutionOverride, &TemporalJitter, &ViewTarget, &ViewPrepassTextures, &ExtractedView)>,
+           mut render_context: RenderContext) {
+    let (fsr, c, render, jitter, target, prepass, view) = q.into_inner();
+    let (Some(depth), Some(mv)) = (&prepass.depth, &prepass.motion_vectors) else { return };
+    let copy = &world.resource::<Libs>().copy;
+    let write = target.post_process_write();
+    let render = render.0;
+    let bind = render_context.render_device().wgpu_device().create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("upscale_copy_in"),
+        layout: &copy.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(write.source) },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&depth.texture.default_view) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&mv.texture.default_view) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&c.views[0]) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&c.views[1]) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&c.views[2]) },
+            wgpu::BindGroupEntry { binding: 6, resource: c.at.as_entire_binding() },
+        ],
+    });
+    let encoder = render_context.command_encoder();
+    encoder.push_debug_group("upscale");
+    {
+        let mut pass = encoder.begin_compute_pass(&default());
+        pass.set_pipeline(copy);
+        pass.set_bind_group(0, &bind, &[]);
+        pass.dispatch_workgroups(render.x.div_ceil(8), render.y.div_ceil(8), 1);
     }
+    let state = |texture, state| wgpu::TextureTransition { texture, selector: None, state };
+    encoder.transition_resources(std::iter::empty(), [
+        state(&c.color, wgpu::TextureUses::RESOURCE),
+        state(&c.depth, wgpu::TextureUses::RESOURCE),
+        state(&c.mv, wgpu::TextureUses::RESOURCE),
+        state(&c.out, wgpu::TextureUses::STORAGE_READ_WRITE),
+    ].into_iter());
+    encoder.pop_debug_group();
+    let mut own = render_context.render_device().wgpu_device().create_command_encoder(&default());
+    let mut ctx = c.ctx.lock().unwrap();
+    let jitter = JITTER_SIGN * jitter.offset;
+    let r = unsafe {
+        own.as_hal_mut::<Vulkan, _, _>(|e| {
+            let cmd = e.unwrap().raw_handle();
+            match &c.lib {
+                Lib::Ffx(ffx) => ffx_dispatch(ffx, &mut ctx.0, cmd, c, fsr, render, jitter, view, world) as i32,
+                Lib::Xess(x) => xess_dispatch(x, ctx.0, cmd, c, render, jitter),
+            }
+        })
+    };
+    render_context.add_command_buffer(own.finish());
+    if r != 0 {
+        error!("{:?}: dispatch failed ({r})", c.by());
+    }
+    let at = wgpu::Origin3d { x: view.viewport.x, y: view.viewport.y, z: 0 };
+    render_context.command_encoder().copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo { texture: &c.out, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyTextureInfo { texture: write.destination_texture, mip_level: 0, origin: at, aspect: wgpu::TextureAspect::All },
+        wgpu::Extent3d { width: c.out_size.x, height: c.out_size.y, depth_or_array_layers: 1 },
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

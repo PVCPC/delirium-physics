@@ -3,7 +3,8 @@ use ash::{Entry, vk::PhysicalDevice};
 use std::{ffi::CStr, ptr, slice};
 use uuid::Uuid;
 use wgpu::{
-    Adapter, Device, DeviceDescriptor, Instance, InstanceDescriptor, Queue, RequestDeviceError,
+    Adapter, Device, DeviceDescriptor, Instance, InstanceDescriptor, Limits, Queue,
+    RequestDeviceError,
     hal::{
         DeviceError, InstanceError,
         api::Vulkan,
@@ -27,6 +28,8 @@ pub fn create_instance(
                 flags: instance_descriptor.flags,
                 memory_budget_thresholds: instance_descriptor.memory_budget_thresholds,
                 backend_options: instance_descriptor.backend_options.clone(),
+                telemetry: None,
+                display: None,
             },
             Some(Box::new(|mut args| {
                 result = register_instance_extensions(project_id, &mut args, feature_support);
@@ -77,6 +80,7 @@ pub fn request_device(
     adapter: &Adapter,
     device_descriptor: &DeviceDescriptor,
     feature_support: &mut FeatureSupport,
+    limits: Option<Limits>,
 ) -> Result<(Device, Queue), InitializationError> {
     unsafe {
         let raw_adapter = adapter
@@ -85,12 +89,13 @@ pub fn request_device(
         let mut result = Ok(());
         let open_device = raw_adapter.open_with_callback(
             device_descriptor.required_features,
+            &limits.unwrap_or(adapter.limits()),
             &device_descriptor.memory_hints,
             Some(Box::new(|mut args| {
                 result = register_device_extensions(
                     project_id,
                     &mut args,
-                    &*raw_adapter,
+                    &raw_adapter,
                     feature_support,
                 );
             })),

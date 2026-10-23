@@ -179,10 +179,10 @@ impl Material for SpriteCardMaterial {
         descriptor.primitive.cull_mode = None;
         if let Some(ds) = descriptor.depth_stencil.as_mut() {
             if key.bind_group_data.ignore_z {
-                ds.depth_compare = CompareFunction::Always;
+                ds.depth_compare = Some(CompareFunction::Always);
             }
             if key.bind_group_data.refract {
-                ds.depth_write_enabled = false;
+                ds.depth_write_enabled = Some(false);
             }
         }
         Ok(())
@@ -249,7 +249,7 @@ fn load_card(
 
 pub fn plugin(app: &mut App) {
     let _ = app.world_mut().resource_mut::<Assets<Shader>>()
-        .insert(&SPRITE_SHADER, Shader::from_wgsl(include_str!("spritecard.wgsl"), "spritecard.wgsl"));
+        .insert(&SPRITE_SHADER, Shader::from_wesl(include_str!("spritecard.wesl"), "spritecard.wesl"));
     app.add_plugins(MaterialPlugin::<SpriteCardMaterial>::default())
         .init_resource::<CardCache>()
         .init_resource::<SheetGrids>()
@@ -612,7 +612,7 @@ fn build_meshes(
 #[allow(dead_code)]
 pub struct ParticleMeshOf(pub Entity);
 
-fn cleanup_meshes(remove: On<Remove, ParticleEffect>, q: Query<&ParticleEffect>, mut commands: Commands) {
+fn cleanup_meshes(remove: On<Remove<ParticleEffect>>, q: Query<&ParticleEffect>, mut commands: Commands) {
     if let Ok(fx) = q.get(remove.entity) {
         for &m in fx.meshes.values() {
             if let Ok(mut ec) = commands.get_entity(m) {

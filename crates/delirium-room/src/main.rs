@@ -3193,7 +3193,7 @@ fn main() {
     #[cfg(feature = "dlss")]
     app.insert_resource(bevy::anti_alias::dlss::DlssProjectId(bevy::asset::uuid::uuid!("5d3f1e0a-7c2b-4e8f-9a61-d311e7a0b4c2")));
     let _ = GPUS.set({
-        let mut l: Vec<String> = wgpu::Instance::default().enumerate_adapters(wgpu::Backends::PRIMARY).into_iter().map(|a| a.get_info())
+        let mut l: Vec<String> = bevy::tasks::block_on(wgpu::Instance::default().enumerate_adapters(wgpu::Backends::PRIMARY)).into_iter().map(|a| a.get_info())
             .filter(|i| i.device_type != wgpu::DeviceType::Cpu).map(|i| i.name).collect();
         l.sort();
         l.dedup();
@@ -3211,7 +3211,7 @@ fn main() {
         .insert_resource(bevy::winit::WinitSettings { focused_mode: bevy::winit::UpdateMode::Continuous, unfocused_mode: bevy::winit::UpdateMode::Continuous })
         .insert_resource(ClearColor(Color::srgb(0.78, 0.79, 0.81)))
         .init_gizmo_group::<OursGizmos>()
-        .insert_non_send_resource(sim)
+        .insert_non_send(sim)
         .add_systems(Startup, setup)
         .add_systems(Update, systems)
         .add_systems(Update, skel_cams.after(smooth))
@@ -3351,14 +3351,15 @@ fn pick_game(args: &[String]) -> ! {
             }
         }
         let ctx = contexts.ctx_mut()?;
-        ctx.style_mut(|s| {
+        ctx.global_style_mut(|s| {
             s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(18.0));
             s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(18.0));
             s.spacing.item_spacing = egui::vec2(8.0, 12.0);
             s.spacing.button_padding = egui::vec2(14.0, 8.0);
         });
         let copying = pick.copy.as_ref().map(|c| c.lock().unwrap().clone());
-        egui::CentralPanel::default().show(ctx, |ui| {
+        let mut root = egui::Ui::new(ctx.clone(), "root".into(), egui::UiBuilder::new().layer_id(egui::LayerId::background()).max_rect(ctx.content_rect()));
+        egui::CentralPanel::default().show(&mut root, |ui| {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
                 ui.heading(egui::RichText::new("Delirium Physics Playroom").size(30.0));
@@ -3556,7 +3557,7 @@ fn skel_cams(mut skel: Query<(&SkelCam, &mut Camera, &mut Transform, &mut Projec
         at.set_if_neq(*t);
         *proj = p.clone();
         if to.is_changed() {
-            *target = to.clone();
+            *target = (*to).clone();
         }
     }
 }
@@ -3566,10 +3567,10 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
          mut gizmos: ResMut<GizmoConfigStore>, mut egui_settings: ResMut<bevy_egui::EguiGlobalSettings>) {
     egui_settings.auto_create_primary_context = false;
     use bevy::render::render_resource::{BlendState, TextureUsages};
-    let ours = commands.spawn((Camera3d::default(), Camera { order: 0, ..default() }, RenderLayers::from_layers(&[0, 1]), Transform::default(),
+    let ours = commands.spawn((Camera3d::default(), bevy::pbr::ScreenSpaceTransmission::default(), Camera { order: 0, ..default() }, RenderLayers::from_layers(&[0, 1]), Transform::default(),
                     Orbit { yaw: -1.3, pitch: 0.3, dist: 3.5, target: Vec3::new(0.0, 0.0, 0.8), follow: 0 }, OursCam)).id();
     for (order, layer, of) in [(2, SKEL_LAYER, ours), ] {
-        commands.spawn((Camera3d::default(), Camera { order, clear_color: ClearColorConfig::Custom(Color::NONE),
+        commands.spawn((Camera3d::default(), bevy::pbr::ScreenSpaceTransmission::default(), Camera { order, clear_color: ClearColorConfig::Custom(Color::NONE),
                                                       output_mode: bevy::camera::CameraOutputMode::Write { blend_state: Some(BlendState::ALPHA_BLENDING), clear_color: ClearColorConfig::None },
                                                       ..default() }, RenderLayers::layer(layer), Transform::default(), Msaa::Off, SkelCam(of),
                         bevy::camera::CameraMainTextureUsages(bevy::camera::CameraMainTextureUsages::default().0 | TextureUsages::COPY_DST)));
@@ -3578,12 +3579,12 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
                                        output_mode: bevy::camera::CameraOutputMode::Write { blend_state: Some(BlendState::ALPHA_BLENDING), clear_color: ClearColorConfig::None },
                                        ..default() }, RenderLayers::layer(31), bevy_egui::PrimaryEguiContext, Msaa::Off,
                     bevy::camera::CameraMainTextureUsages(bevy::camera::CameraMainTextureUsages::default().0 | TextureUsages::COPY_SRC)));
-    let _ = shaders.insert(&FSR1_SHADER, Shader::from_wgsl(include_str!("fsr1.wgsl"), "fsr1.wgsl"));
+    let _ = shaders.insert(&FSR1_SHADER, Shader::from_wesl(include_str!("fsr1.wesl"), "fsr1.wesl"));
     commands.spawn((Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))), MeshMaterial2d(scaled.add(ScaledMat { p: Vec4::ZERO, img: Handle::default() })),
                     Transform::default(), Visibility::Hidden, RenderLayers::layer(31), ScaledView));
-    commands.spawn((DirectionalLight { shadows_enabled: true, ..default() }, Transform::from_xyz(3.0, -2.0, 6.0).looking_at(Vec3::ZERO, Vec3::Z),
+    commands.spawn((DirectionalLight { shadow_maps_enabled: true, ..default() }, Transform::from_xyz(3.0, -2.0, 6.0).looking_at(Vec3::ZERO, Vec3::Z),
                     RenderLayers::from_layers(&[0, 1, 2])));
-    commands.spawn((DirectionalLight { shadows_enabled: false, illuminance: 0.0, ..default() }, Transform::from_xyz(-3.0, 4.0, 2.0).looking_at(Vec3::ZERO, Vec3::Z),
+    commands.spawn((DirectionalLight { shadow_maps_enabled: false, illuminance: 0.0, ..default() }, Transform::from_xyz(-3.0, 4.0, 2.0).looking_at(Vec3::ZERO, Vec3::Z),
                     RenderLayers::from_layers(&[0, 1, 2]), Fill));
     spawn_world(&mut commands, &mut meshes, &mut mats, &sim);
     let (cfg, _) = gizmos.config_mut::<OursGizmos>();
@@ -3733,7 +3734,7 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
     let rig = sim.getup.as_ref().and_then(|c| c.hero.as_ref());
     for (m, mut t, mut v, mat) in &mut hero {
         let want = if sim.clean { 1.0 } else { sim.hero_alpha };
-        if mats.get(&mat.0).is_some_and(|x| x.base_color.alpha() != want) && let Some(x) = mats.get_mut(&mat.0) {
+        if mats.get(&mat.0).is_some_and(|x| x.base_color.alpha() != want) && let Some(mut x) = mats.get_mut(&mat.0) {
             x.base_color = x.base_color.with_alpha(want);
             x.alpha_mode = if want >= 1.0 { AlphaMode::Opaque } else { AlphaMode::Blend };
         }
@@ -3768,7 +3769,7 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
         let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""), sim.body_alpha);
         let col = if sim.clean { col.with_alpha(1.0) } else { col };
         if mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col) {
-            if let Some(x) = mats.get_mut(&m.0) {
+            if let Some(mut x) = mats.get_mut(&m.0) {
                 x.emissive = lit;
                 x.base_color = col;
                 x.alpha_mode = if col.alpha() < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque };
@@ -3991,7 +3992,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
         } else {
             c.remove::<bevy::post_process::bloom::Bloom>();
             if !sim.upscaling() {
-                c.remove::<bevy::render::view::Hdr>();
+                c.remove::<bevy::camera::Hdr>();
             }
         }
         if sim.dof > 0.0 {
@@ -4064,9 +4065,9 @@ fn dlss(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<bevy::a
     let mode = [M::Dlaa, M::Dlaa, M::Quality, M::Balanced, M::Performance, M::UltraPerformance][want as usize];
     for (e, _) in &cam {
         if want == 0 {
-            commands.entity(e).remove::<(Dlss, bevy::render::view::Hdr)>();
+            commands.entity(e).remove::<(Dlss, bevy::camera::Hdr)>();
         } else {
-            commands.entity(e).insert(Dlss { perf_quality_mode: mode, ..default() });
+            commands.entity(e).insert(Dlss::<bevy::anti_alias::dlss::DlssSuperResolutionFeature> { perf_quality_mode: mode, ..default() });
         }
     }
 }
@@ -4088,11 +4089,11 @@ fn upscale(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<upsc
     let was = last.replace(now).is_some_and(|l| l.0 > 0);
     for (e, _) in &cam {
         if let Some(by) = by {
-            commands.entity(e).insert((upscale::Upscale { by, mode, sharpness: sim.sharpen }, bevy::render::view::Hdr));
+            commands.entity(e).insert((upscale::Upscale { by, mode, sharpness: sim.sharpen }, bevy::camera::Hdr));
         } else if was {
             commands.entity(e).remove::<upscale::Upscale>();
             if !sim.upscaling() {
-                commands.entity(e).remove::<bevy::render::view::Hdr>();
+                commands.entity(e).remove::<bevy::camera::Hdr>();
             }
         }
     }
@@ -4190,10 +4191,10 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
             s.color = Color::srgb(r, g, b);
         }
         s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some((sim.shadow * 0.5).to_radians().tan());
-        s.shadows_enabled = !fill && sim.shadows;
+        s.shadow_maps_enabled = !fill && sim.shadows;
     }
     if sim.room.stage != "street" {
-        if let Some(m) = mats.get_mut(&m.0) {
+        if let Some(mut m) = mats.get_mut(&m.0) {
             let [r, g, b] = l.floor;
             m.base_color = Color::srgb(r, g, b);
         }
@@ -4494,7 +4495,7 @@ fn taxi_mesh(sim: NonSend<Sim>, mut commands: Commands, assets: Res<AssetServer>
     }
     for k in (0..have.len()).filter(|&k| !have[k]) {
         commands.spawn((Transform::default(), Visibility::Visible, TaxiMesh(k)))
-            .with_child((SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("embedded://taxi.glb"))), Transform::from_xyz(0.0, -0.071, -TAXI_RADIUS)));
+            .with_child((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("embedded://taxi.glb"))), Transform::from_xyz(0.0, -0.071, -TAXI_RADIUS)));
     }
     let car_of = |e: Entity| up.iter_ancestors(e).find_map(|a| q.get(a).ok().map(|m| m.1.0));
     for e in &meshes {
@@ -4553,7 +4554,7 @@ fn car_mesh(sim: NonSend<Sim>, mut commands: Commands, assets: Res<AssetServer>,
     }
     for k in (0..have.len()).filter(|&k| !have[k]) {
         commands.spawn((car_at(cars[k].0, cars[k].1), Visibility::Visible, CarMesh(k)))
-            .with_child((SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("embedded://taxi.glb"))), Transform::from_xyz(0.0, 0.0, -0.757)));
+            .with_child((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("embedded://taxi.glb"))), Transform::from_xyz(0.0, 0.0, -0.757)));
     }
     for e in &meshes {
         if up.iter_ancestors(e).any(|a| q.contains(a)) {
@@ -4563,7 +4564,7 @@ fn car_mesh(sim: NonSend<Sim>, mut commands: Commands, assets: Res<AssetServer>,
 }
 
 fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>, mut contexts: EguiContexts) {
-    if sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input()) {
+    if sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.egui_wants_keyboard_input()) {
         return;
     }
     if k.just_pressed(KeyCode::Space) {
@@ -4593,7 +4594,7 @@ fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>, mut contexts: Eg
 }
 
 fn console(mut sim: NonSendMut<Sim>, mut typed: MessageReader<KeyboardInput>, mut contexts: EguiContexts) {
-    if !sim.typing && contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input()) {
+    if !sim.typing && contexts.ctx_mut().is_ok_and(|ctx| ctx.egui_wants_keyboard_input()) {
         typed.clear();
         return;
     }
@@ -4643,12 +4644,14 @@ fn room_viewport(rect: egui::Rect, scale: f32, split: bool, right: bool) -> bevy
     }
 }
 
+const VIEW_RECT: &str = "view rect";
+
 fn viewports(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, windows: Query<&Window>, mut cams: Query<(Entity, &mut Camera, Has<OursCam>), RoomCameras>,
              mut commands: Commands, mut images: ResMut<Assets<Image>>, mut shown: Query<(&mut Transform, &mut Visibility, &MeshMaterial2d<ScaledMat>), With<ScaledView>>,
              mut scaled: ResMut<Assets<ScaledMat>>,
              mut target: Local<Option<(Handle<Image>, UVec2)>>) {
     let (Ok(ctx), Ok(window)) = (contexts.ctx_mut(), windows.single()) else { return };
-    let rect = if sim.show_ui { ctx.available_rect() } else { ctx.content_rect() };
+    let rect = match ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(VIEW_RECT))) { Some(r) if sim.show_ui => r, _ => ctx.content_rect() };
     if rect.width() < 2.0 || rect.height() < 1.0 || window.physical_width() == 0 || window.physical_height() == 0 { return; }
     let win = window.physical_size();
     let s = if (sim.render_scale - 1.0).abs() > 0.001 && !sim.upscaling() { sim.render_scale } else { 1.0 };
@@ -4703,7 +4706,7 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
          motion: Res<bevy::input::mouse::AccumulatedMouseMotion>, mut grab: Query<&mut bevy::window::CursorOptions, With<bevy::window::PrimaryWindow>>,
          mut cam: Query<(&mut Transform, &mut Orbit, &Camera, &GlobalTransform), With<OursCam>>,
          ) {
-    let editing = sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_keyboard_input());
+    let editing = sim.typing || contexts.ctx_mut().is_ok_and(|ctx| ctx.egui_wants_keyboard_input());
     let Ok((mut t, mut o, camera, gt)) = cam.single_mut() else { return };
     let filming = sim.film > 0.0 && !sim.photo;
     let ots = portal_gun(&sim) && sim.hero.is_some() && !sim.detached && !sim.driving && sim.hero_doll.is_none() && !filming && !sim.photo;
@@ -5982,7 +5985,7 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut log_open: Local<
         ctx.set_fonts(f);
         return Ok(());
     }
-    ctx.style_mut(|s| {
+    ctx.global_style_mut(|s| {
         s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
         s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(15.0));
         s.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(21.0));
@@ -6045,7 +6048,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
     let mut pressed: Option<String> = None;
 
     sim.tab = active_tab(sim.tab);
-    egui::TopBottomPanel::top("playback").exact_height(58.0).show(ctx, |ui| {
+    let mut root = egui::Ui::new(ctx.clone(), "root".into(), egui::UiBuilder::new().layer_id(egui::LayerId::background()).max_rect(ctx.content_rect()));
+    egui::Panel::top("playback").exact_size(58.0).show(&mut root, |ui| {
         ui.horizontal_centered(|ui| {
             ui.label(egui::RichText::new("DELIRIUM").family(egui::FontFamily::Name("big".into())).size(20.0).color(HI));
             ui.label(egui::RichText::new("/ Playroom").color(DIM));
@@ -6065,7 +6069,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             if ui.add_enabled(sim.speed < SPEEDS.1, egui::Button::new("Faster")).on_hover_text("Double simulation speed (])").clicked() { pressed = Some("#faster".into()); }
         });
     });
-    egui::TopBottomPanel::bottom("status").exact_height(38.0).show(ctx, |ui| {
+    egui::Panel::bottom("status").exact_size(38.0).show(&mut root, |ui| {
         let velocity = sim.agent.doll.com().1;
         if sim.steps > motion.0 {
             motion.2 = (velocity - motion.1).length() / ((sim.steps - motion.0) as f32 / 60.0);
@@ -6096,7 +6100,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         });
     });
     if *log_open || sim.typing {
-    egui::TopBottomPanel::bottom("activity").resizable(true).default_height(180.0).height_range(100.0..=320.0).show(ctx, |ui| {
+    egui::Panel::bottom("activity").resizable(true).default_size(180.0).size_range(100.0..=320.0).show(&mut root, |ui| {
         ui.horizontal(|ui| {
             ui.strong("Activity & console");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -6189,7 +6193,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         }
     });
 
-    egui::SidePanel::left("control dock").resizable(true).default_width(400.0).width_range(380.0..=480.0).frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(16.0)).show(ctx, |ui| {
+    egui::Panel::left("control dock").resizable(true).default_size(400.0).size_range(380.0..=480.0).frame(egui::Frame::side_top_panel(&ctx.global_style()).inner_margin(16.0)).show(&mut root, |ui| {
         let a = &sim.agent;
         let state = [(a.balancing(), "balancing"), (a.fallen, "fallen"), (a.settled(), "settled"), (a.relaxing(), "relaxing"), (a.catching(), "catching his fall"),
                      (a.rolled_up(), "rolled up"), (!a.doll.awake(), "asleep")].iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join(", ");
@@ -6749,7 +6753,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
 
         });
     });
-    sim.over_ui = ctx.is_pointer_over_area() || ctx.wants_pointer_input();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(VIEW_RECT), root.available_rect_before_wrap()));
+    sim.over_ui = ctx.is_pointer_over_egui() || ctx.egui_wants_pointer_input();
     if let Some((c, s)) = sim.hover.clone() {
         egui::Area::new("hover".into()).fixed_pos([c.x + 14.0, c.y + 4.0]).interactable(false).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(mono(s)));

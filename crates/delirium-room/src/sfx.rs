@@ -33,14 +33,14 @@ impl Iterator for Play {
 }
 
 impl Source for Play {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         None
     }
-    fn channels(&self) -> u16 {
-        1
+    fn channels(&self) -> std::num::NonZero<u16> {
+        std::num::NonZero::<u16>::MIN
     }
-    fn sample_rate(&self) -> u32 {
-        RATE
+    fn sample_rate(&self) -> std::num::NonZero<u32> {
+        std::num::NonZero::new(RATE).unwrap()
     }
     fn total_duration(&self) -> Option<Duration> {
         Some(Duration::from_secs_f32(self.0.len() as f32 / RATE as f32))
@@ -48,7 +48,6 @@ impl Source for Play {
 }
 
 impl Decodable for Sfx {
-    type DecoderItem = f32;
     type Decoder = Play;
     fn decoder(&self) -> Play {
         Play(self.0.clone(), 0)

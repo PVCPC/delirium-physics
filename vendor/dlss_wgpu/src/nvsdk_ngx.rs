@@ -22,7 +22,6 @@ type VkPhysicalDevice = ash::vk::PhysicalDevice;
 use ash::vk::{
     ImageAspectFlags, ImageSubresourceRange, REMAINING_ARRAY_LAYERS, REMAINING_MIP_LEVELS,
 };
-use glam::UVec2;
 use wgpu::{Adapter, TextureUsages, TextureView, wgc::api::Vulkan};
 
 /// How much DLSS should upscale by.
@@ -42,12 +41,12 @@ pub enum DlssPerfQualityMode {
 impl DlssPerfQualityMode {
     pub(crate) fn as_perf_quality_value(
         &self,
-        upscaled_resolution: UVec2,
+        upscaled_resolution: [u32; 2],
     ) -> NVSDK_NGX_PerfQuality_Value {
         match self {
             Self::Auto => {
                 let mega_pixels =
-                    (upscaled_resolution.x * upscaled_resolution.y) as f32 / 1_000_000.0;
+                    (upscaled_resolution[0] * upscaled_resolution[1]) as f32 / 1_000_000.0;
 
                 if mega_pixels < 2.03 {
                     NVSDK_NGX_PerfQuality_Value_NVSDK_NGX_PerfQuality_Value_DLAA
@@ -88,6 +87,8 @@ bitflags::bitflags! {
         /// Camera is using a reverse depth buffer for [`crate::DlssRenderParameters::depth`].
         const InvertedDepth = NVSDK_NGX_DLSS_Feature_Flags_NVSDK_NGX_DLSS_Feature_Flags_DepthInverted;
         /// Have DLSS apply auto-exposure.
+        ///
+        /// Not supported by [`crate::DlssRayReconstruction`].
         const AutoExposure = NVSDK_NGX_DLSS_Feature_Flags_NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
         /// Use a 4 channel RGBA texture for [`crate::DlssRenderParameters::color`] instead of a 3 channel RGB texture.
         const AlphaUpscaling = NVSDK_NGX_DLSS_Feature_Flags_NVSDK_NGX_DLSS_Feature_Flags_AlphaUpscaling;
@@ -169,34 +170,50 @@ pub enum DlssError {
         "The requested feature or functionality has not been implemented in the current version of the NGX SDK, display driver, or feature library."
     )]
     NotImplemented,
+    #[error("The NGX SDK returned an unknown error code {0:#x}")]
+    Unknown(NVSDK_NGX_Result),
 }
 
 pub fn check_ngx_result(result: NVSDK_NGX_Result) -> Result<(), DlssError> {
     match result {
-        NVSDK_NGX_Result_Success => Ok(()),
-        NVSDK_NGX_Result_FAIL_FeatureNotSupported => Err(DlssError::FeatureNotSupported),
-        NVSDK_NGX_RESULT_FAIL_PlatformError => Err(DlssError::PlatformError),
-        NVSDK_NGX_RESULT_FAIL_FeatureAlreadyExists => Err(DlssError::FeatureAlreadyExists),
-        NVSDK_NGX_RESULT_FAIL_FeatureNotFound => Err(DlssError::FeatureNotFound),
-        NVSDK_NGX_RESULT_FAIL_InvalidParameters => Err(DlssError::InvalidParameters),
-        NVSDK_NGX_RESULT_FAIL_ScratchBufferTooSmall => Err(DlssError::ScratchBufferTooSmall),
-        NVSDK_NGX_RESULT_FAIL_NotInitialized => Err(DlssError::NotInitialized),
-        NVSDK_NGX_RESULT_FAIL_UnsupportedInputFormat => Err(DlssError::UnsupportedInputFormat),
-        NVSDK_NGX_RESULT_FAIL_RWFlagMissing => Err(DlssError::RWFlagMissing),
-        NVSDK_NGX_RESULT_FAIL_MissingInput => Err(DlssError::MissingInput),
-        NVSDK_NGX_RESULT_FAIL_UnableToInitializeFeature => {
+        NVSDK_NGX_Result_NVSDK_NGX_Result_Success => Ok(()),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_FeatureNotSupported => {
+            Err(DlssError::FeatureNotSupported)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_PlatformError => Err(DlssError::PlatformError),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_FeatureAlreadyExists => {
+            Err(DlssError::FeatureAlreadyExists)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_FeatureNotFound => Err(DlssError::FeatureNotFound),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_InvalidParameter => {
+            Err(DlssError::InvalidParameters)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_ScratchBufferTooSmall => {
+            Err(DlssError::ScratchBufferTooSmall)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_NotInitialized => Err(DlssError::NotInitialized),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_UnsupportedInputFormat => {
+            Err(DlssError::UnsupportedInputFormat)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_RWFlagMissing => Err(DlssError::RWFlagMissing),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_MissingInput => Err(DlssError::MissingInput),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_UnableToInitializeFeature => {
             Err(DlssError::UnableToInitializeFeature)
         }
-        NVSDK_NGX_RESULT_FAIL_OutOfDate => Err(DlssError::OutOfDate),
-        NVSDK_NGX_RESULT_FAIL_OutOfGPUMemory => Err(DlssError::OutOfGPUMemory),
-        NVSDK_NGX_RESULT_FAIL_UnsupportedFormat => Err(DlssError::UnsupportedFormat),
-        NVSDK_NGX_RESULT_FAIL_UnableToWriteToAppDataPath => {
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_OutOfDate => Err(DlssError::OutOfDate),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_OutOfGPUMemory => Err(DlssError::OutOfGPUMemory),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_UnsupportedFormat => {
+            Err(DlssError::UnsupportedFormat)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_UnableToWriteToAppDataPath => {
             Err(DlssError::UnableToWriteToAppDataPath)
         }
-        NVSDK_NGX_RESULT_FAIL_UnsupportedParameter => Err(DlssError::UnsupportedParameter),
-        NVSDK_NGX_RESULT_FAIL_Denied => Err(DlssError::Denied),
-        NVSDK_NGX_RESULT_FAIL_NotImplemented => Err(DlssError::NotImplemented),
-        _ => unreachable!(),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_UnsupportedParameter => {
+            Err(DlssError::UnsupportedParameter)
+        }
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_Denied => Err(DlssError::Denied),
+        NVSDK_NGX_Result_NVSDK_NGX_Result_FAIL_NotImplemented => Err(DlssError::NotImplemented),
+        other => Err(DlssError::Unknown(other)),
     }
 }
 

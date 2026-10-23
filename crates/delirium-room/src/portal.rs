@@ -536,7 +536,7 @@ pub fn cube(sim: &mut Sim, meshes: &mut Assets<Mesh>, mats: &mut Assets<Standard
     if sim.portal.cube.is_none() {
         let got = model(&game, "models/props/metal_box", "materials/models/props/metal_box_skin001.vtf").and_then(|(mesh, img)| {
             use bevy::camera::primitives::MeshAabb;
-            let b = mesh.compute_aabb()?;
+            let b = mesh.get_aabb()?;
             let k = 1.0 / b.half_extents.max_element();
             let mat = mats.add(StandardMaterial { base_color_texture: Some(images.add(img)), perceptual_roughness: 0.5, ..default() });
             Some((meshes.add(mesh), mat, Transform::from_scale(Vec3::splat(k)).with_translation(-Vec3::from(b.center) * k)))
