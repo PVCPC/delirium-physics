@@ -1705,12 +1705,8 @@ impl Sim {
             let door = o.centre + o.rot * local.clamp(-o.half, o.half) - Vec3::Z * 0.2 - fwd * CAB_OFF;
             self.room.snapped = Some(0.0);
             self.send_ours(vec![format!("armHang start=true constraintPosition={} instanceIndex={TAXI_ID}", v3(door))]);
-            if self.hero.is_none() {
-                self.toggle_hero();
-            }
-            if self.hero.is_some() {
-                (self.taxis[0].player, self.taxis[0].asleep) = (true, false);
-                (self.driving, self.pedals) = (true, (0.0, 0.0, false));
+            if let Some(c) = self.getup.as_ref().filter(|c| c.hero.is_some() && self.hero.is_none()) {
+                self.hero = Some(hero::Hero::new(c, self.agent.doll.com().0, -Vec3::Z.cross(fwd)));
             }
             return self.say("cab  his hands on the cab's door".into());
         };
@@ -4189,7 +4185,7 @@ impl Sim {
             AA_DLAA | AA_DLSS if !self.dlss_ok => AA_MSAA,
             AA_FSR3 if !self.fsr_ok => AA_MSAA,
             AA_XESS if !self.xess_ok => AA_MSAA,
-            _ if self.rt_now() == 2 => 0,
+            _ if self.rt_now() == 2 => if self.dlss_ok { AA_DLAA } else { 0 },
             aa if aa < AA_DLAA && self.rt_now() == 1 => if self.dlss_ok { AA_DLAA } else { aa.max(AA_TAA) },
             aa => aa,
         }
@@ -4313,7 +4309,7 @@ fn dlss(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<bevy::a
     use bevy::anti_alias::dlss::{Dlss, DlssPerfQualityMode as M, DlssRayReconstructionFeature as Rr, DlssSuperResolutionFeature as Sr};
     sim.dlss_ok = ok.is_some();
     let want = match sim.aa_now() { AA_DLAA => 1, AA_DLSS => 2 + sim.dlss_q, _ => 0 };
-    let want = want + if want > 0 && sim.rt_now() == 1 && rr.is_some() { 8 } else { 0 };
+    let want = want + if want > 0 && sim.rt_now() > 0 && rr.is_some() { 8 } else { 0 };
     if *last == Some(want) || cam.iter().any(|(_, c)| c.viewport.is_none()) || cam.is_empty() {
         return;
     }
@@ -7010,7 +7006,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 .on_hover_text("How big the sun is. Like real shadows, they stay sharp where they touch and soften further away; a bigger sun softens more. The real sun is about 0.5°, a hazy sky 2–5°; a point is sharp everywhere. Costs more on a slow graphics card; grainy without TAA, DLAA, DLSS, FSR 3 or XeSS.");
             let mut q = sim.rt as f32;
             if ui.add_enabled(sim.rt_ok, egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text(gpu("Ray tracing", 3)).custom_formatter(|x, _| ["off", "lighting", "path traced"][x as usize].into()))
-                .on_hover_text("Lighting: light and shadows traced as rays (Bevy's Solari), bouncing off the walls and floor, in real time; with an RTX card DLSS's Ray Reconstruction cleans up the noise (anti-aliasing turns to DLAA if it was below it), other cards are grainy. Path traced: the true picture, built up over a few seconds while the camera holds still; for screenshots.")
+                .on_hover_text("Lighting: light and shadows traced as rays (Bevy's Solari), bouncing off the walls and floor, in real time; with an RTX card DLSS's Ray Reconstruction cleans up the noise (anti-aliasing turns to DLAA if it was below it), other cards are grainy. Path traced: the true picture, every bounce of light traced; with an RTX card DLSS's Ray Reconstruction cleans it up as it goes (as games' path tracing modes do), so it holds up while the camera moves; other cards build it up over a few seconds while the camera holds still.")
                 .on_disabled_hover_text("Needs a graphics card that can ray trace (RTX, RX 6000 or newer).").changed() {
                 sim.rt = q as u8;
             }

@@ -59,6 +59,8 @@ impl Plugin for PathtracingPlugin {
                 Core3d,
                 pathtracer
                     .after(Core3dSystems::MainPass)
+                    // Delirium: before DLSS's Ray Reconstruction, which cleans up its picture.
+                    .before(Core3dSystems::EarlyPostProcess)
                     .before(tonemapping),
             );
     }
