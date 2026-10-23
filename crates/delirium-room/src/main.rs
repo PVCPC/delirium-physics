@@ -4520,9 +4520,9 @@ fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::P
 static GPUS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 fn preset(sim: &Sim) -> Option<usize> {
-    VIDEO_PRESETS.iter().position(|&(m, q, soft)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows && sim.shadow_q == q && (sim.shadow > 0.0) == soft)
+    VIDEO_PRESETS.iter().position(|&(m, q, soft)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows == (q > 0) && (q == 0 || sim.shadow_q == q) && (sim.shadow > 0.0) == soft)
 }
-const VIDEO_PRESETS: [(u8, u8, bool); 3] = [(1, 1, false), (4, 2, false), (4, 3, true)];
+const VIDEO_PRESETS: [(u8, u8, bool); 3] = [(1, 0, false), (4, 2, false), (4, 3, true)];
 
 #[derive(Component)]
 struct Floor;
@@ -7191,9 +7191,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let mut q = custom.unwrap_or(1) as f32;
             if ui.add(egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text("Graphics quality")
                 .custom_formatter(|x, _| if custom.is_none() { "custom".into() } else { ["Low", "Medium", "High"][x as usize].into() }))
-                .on_hover_text("Sets edge smoothing, shadow quality and the sun's size together. Low: off, low, a point sun. Medium: 4x, medium, a point sun. High: 4x, high, a 1° sun.").changed() {
+                .on_hover_text("Sets edge smoothing, shadow quality and the sun's size together. Low: off, no shadows. Medium: 4x, medium, a point sun. High: 4x, high, a 1° sun.").changed() {
                 let (m, s, soft) = VIDEO_PRESETS[q as usize];
-                (sim.aa, sim.shadows, sim.shadow_q) = (if m == 1 { 0 } else { AA_MSAA }, true, s);
+                (sim.aa, sim.shadows, sim.shadow_q) = (if m == 1 { 0 } else { AA_MSAA }, s > 0, s.max(1));
                 sim.msaa = m.max(2);
                 sim.shadow = if soft { sim.shadow.max(1.0) } else { 0.0 };
             }
