@@ -26,6 +26,8 @@
   MIT licence (in the file). Not affiliated with or endorsed by AMD.
 - **Anti-aliasing and DLSS** (`vendor/`): Bevy's bevy_anti_alias and dlss_wgpu (MIT / Apache-2.0), changed to draw into
   part of the window. DLSS is NVIDIA's; its runtime (nvngx_dlss.dll) comes under NVIDIA's licence.
+- **Shadows and ambient occlusion** (`vendor/bevy_pbr`): Bevy's bevy_pbr (MIT / Apache-2.0), changed for soft shadows sized
+  by the sun and for ambient occlusion in part of the window.
 - **FSR 3 upscaler** (`crates/delirium-room/src/upscale.rs`): calls AMD FidelityFX SDK's Vulkan runtime
   (amd_fidelityfx_vk.dll, [FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK)), Copyright (c)
   Advanced Micro Devices, Inc., MIT licence. Not affiliated with or endorsed by AMD.

@@ -11,7 +11,8 @@ publish = false
 [profile.dev]
 opt-level = 3
 
-# DLSS with the camera's viewport off the window's corner (the dock): the offset passed through (vendor/).
+# DLSS with the camera's viewport off the window's corner (the dock): the offset passed through; PCSS soft shadows sized by the sun (vendor/).
 [patch.crates-io]
 dlss_wgpu = { path = "vendor/dlss_wgpu" }
 bevy_anti_alias = { path = "vendor/bevy_anti_alias" }
+bevy_pbr = { path = "vendor/bevy_pbr" }
