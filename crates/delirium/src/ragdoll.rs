@@ -524,6 +524,26 @@ struct Row {
     target: f64,
     lambda: f64,
     kind: RowKind,
+    at: Spot,
+}
+
+#[derive(Clone, Copy)]
+struct Spot {
+    at: [usize; 2],
+    cut: usize,
+}
+
+impl Spot {
+    const OWN: Spot = Spot { at: [0, 0], cut: usize::MAX };
+
+    fn of(self, i: usize) -> usize {
+        if i < self.cut { self.at[0] + i } else { self.at[1] + i - self.cut }
+    }
+
+    fn runs(self, len: usize) -> [(std::ops::Range<usize>, std::ops::Range<usize>); 2] {
+        let c = self.cut.min(len);
+        [(self.at[0]..self.at[0] + c, 0..c), (self.at[1]..self.at[1] + len - c, c..len)]
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -541,7 +561,7 @@ impl Row {
 
     fn with(j: Vec<f64>, mj: Vec<f64>, target: f64, kind: RowKind) -> Row {
         let eff = j.iter().zip(&mj).map(|(a, b)| a * b).sum::<f64>().max(1e-12);
-        Row { j, mj, eff, target, lambda: 0.0, kind }
+        Row { j, mj, eff, target, lambda: 0.0, kind, at: Spot::OWN }
     }
 }
 
@@ -562,6 +582,7 @@ struct Block {
     held: Option<(usize, usize)>,
     scale: DVec3,
     ob: Option<(i32, usize, Vec3, Vec3)>,
+    at: Spot,
 }
 
 impl Block {
@@ -581,17 +602,19 @@ impl Block {
     }
 
     fn with(j: [Vec<f64>; 3], mj: [Vec<f64>; 3], k: DMat3, target: DVec3, mu: f64, held: Option<(usize, usize)>, warm: Vec3) -> Block {
-        Block { j, mj, kinv: ldl_inverse(k), axis: k.row(0) / k.x_axis.x, target, lambda: warm.as_dvec3(), mu, held, scale: DVec3::ONE, ob: None }
+        Block { j, mj, kinv: ldl_inverse(k), axis: k.row(0) / k.x_axis.x, target, lambda: warm.as_dvec3(), mu, held, scale: DVec3::ONE, ob: None, at: Spot::OWN }
     }
 
     fn apply(&self, d: DVec3, qd: &mut [f64]) {
-        for (i, q) in qd.iter_mut().enumerate() {
-            *q += self.mj[0][i] * d.x + self.mj[1][i] * d.y + self.mj[2][i] * d.z;
+        for (q, e) in self.at.runs(self.mj[0].len()) {
+            for (((q, x), y), z) in qd[q].iter_mut().zip(&self.mj[0][e.clone()]).zip(&self.mj[1][e.clone()]).zip(&self.mj[2][e]) {
+                *q += x * d.x + y * d.y + z * d.z;
+            }
         }
     }
 
-    fn solve(&mut self, qd: &mut [f64], nz: &[usize]) -> f64 {
-        let v = DVec3::from_array(std::array::from_fn(|a| nz.iter().map(|&i| self.j[a][i] * qd[i]).sum()));
+    fn solve(&mut self, qd: &mut [f64], nz: &[(usize, usize)]) -> f64 {
+        let v = DVec3::from_array(std::array::from_fn(|a| nz.iter().map(|&(i, g)| self.j[a][i] * qd[g]).sum()));
         let mut l = self.lambda - self.kinv * (v - self.target);
         let an = self.axis.dot(l);
         let tt = l.y * l.y + l.z * l.z;
@@ -637,28 +660,30 @@ fn ldl_inverse(k: DMat3) -> DMat3 {
 
 fn impulses(rows: &mut [Row], blocks: &mut [Block], qd: &mut [f64]) {
     let apply = |row: &Row, d: f64, qd: &mut [f64]| {
-        for (q, m) in qd.iter_mut().zip(&row.mj) {
-            *q += m * d;
+        for (q, e) in row.at.runs(row.mj.len()) {
+            for (q, m) in qd[q].iter_mut().zip(&row.mj[e]) {
+                *q += m * d;
+            }
         }
     };
     for b in blocks.iter() {
         b.apply(b.lambda, qd);
     }
     let mut flat = Vec::with_capacity(8 * (blocks.len() + rows.len()));
-    let mut nz = |j: &[&Vec<f64>]| {
+    let mut nz = |j: &[&Vec<f64>], at: Spot| {
         let from = flat.len();
         for c in (0..j[0].len() / 6).filter(|&c| j.iter().fold(0, |a, j| j[6 * c..6 * c + 6].iter().fold(a, |a, x| a | x.to_bits() << 1)) != 0) {
-            flat.extend((6 * c..6 * c + 6).filter(|&i| j.iter().any(|j| j[i] != 0.0)));
+            flat.extend((6 * c..6 * c + 6).filter(|&i| j.iter().any(|j| j[i] != 0.0)).map(|i| (i, at.of(i))));
         }
         from..flat.len()
     };
-    let (bnz, rnz): (Vec<_>, Vec<_>) = (blocks.iter().map(|b| nz(&[&b.j[0], &b.j[1], &b.j[2]])).collect(), rows.iter().map(|r| nz(&[&r.j])).collect());
+    let (bnz, rnz): (Vec<_>, Vec<_>) = (blocks.iter().map(|b| nz(&[&b.j[0], &b.j[1], &b.j[2]], b.at)).collect(), rows.iter().map(|r| nz(&[&r.j], r.at)).collect());
     for _ in 0..SWEEPS {
         let mut moved: f64 = blocks.iter_mut().zip(&bnz).map(|(b, nz)| b.solve(qd, &flat[nz.clone()])).sum();
         for r in 0..rows.len() {
             let lo = if matches!(rows[r].kind, RowKind::Push) { 0.0 } else { f64::MIN };
             let row = &mut rows[r];
-            let v: f64 = flat[rnz[r].clone()].iter().map(|&i| row.j[i] * qd[i]).sum();
+            let v: f64 = flat[rnz[r].clone()].iter().map(|&(i, g)| row.j[i] * qd[g]).sum();
             let was = row.lambda;
             row.lambda = (was + (row.target - v) / row.eff).max(lo);
             let d = row.lambda - was;
@@ -2174,8 +2199,7 @@ struct Entry {
     node: usize,
     a: usize,
     b: usize,
-    block: Block,
-    push: Block,
+    at: usize,
     src: Src,
 }
 
@@ -2217,8 +2241,6 @@ impl Ragdoll {
         let n = ms.len();
         let boxes = Self::group_boxes(ms);
         let meet = |i: usize, k: usize| boxes[i].0.cmple(boxes[k].1).all() && boxes[k].0.cmple(boxes[i].1).all();
-        let mut held = std::collections::HashMap::new();
-        let mut cross: Vec<(usize, usize, Block, Block, Src)> = vec![];
         let mut joined: Vec<usize> = (0..n).collect();
         fn root(j: &mut [usize], mut i: usize) -> usize {
             while j[i] != i {
@@ -2226,26 +2248,41 @@ impl Ragdoll {
             }
             i
         }
+        let frame_of = |d: &Ragdoll, t: &[Mat3], a: usize| {
+            let f = (d.bodies[a].x + d.o, t[a]);
+            (f, d.seen.get(a).map_or(f, |s| (s.0 + d.o, s.1)))
+        };
+        let parts: Vec<Vec<((Vec3, Mat3), (Vec3, Mat3), (Vec3, Vec3))>> = (0..n).map(|i| if st[i].is_none() { vec![] } else {
+            let d = &*ms[i].doll;
+            let t = d.turns();
+            (0..d.bodies.len()).map(|a| { let (f, s) = frame_of(d, &t, a); (f, s, swept_box(&ms[i].build.parts[a], f, s)) }).collect()
+        }).collect();
+        struct Job { i: usize, k: usize, cross: Vec<(usize, usize, Block, Block, Src)>, held: Vec<((usize, usize, usize, usize), Vec<Held>)>, joined: bool }
+        let mut jobs = vec![];
         for i in 0..n {
             for k in i + 1..n {
                 let (i, k) = if ms[i].id < ms[k].id { (i, k) } else { (k, i) };
-                let (Some(si), Some(sk)) = (&st[i], &st[k]) else { continue };
-                if !meet(i, k) {
-                    continue;
+                if st[i].is_some() && st[k].is_some() && meet(i, k) {
+                    jobs.push(Job { i, k, cross: vec![], held: vec![], joined: false });
                 }
+            }
+        }
+        let kept = std::mem::take(&mut group.held);
+        {
+            let (ms, st, parts, kept) = (&*ms, &st, &parts, &kept);
+            par_each(&mut jobs, |job| {
+                let (i, k) = (job.i, job.k);
+                let (Some(si), Some(sk)) = (&st[i], &st[k]) else { return };
                 let (di, dk) = (&*ms[i].doll, &*ms[k].doll);
-                let (ti, tk) = (di.turns(), dk.turns());
-                let frame_of = |d: &Ragdoll, t: &[Mat3], a: usize| {
-                    let f = (d.bodies[a].x + d.o, t[a]);
-                    (f, d.seen.get(a).map_or(f, |s| (s.0 + d.o, s.1)))
-                };
-                for a in 0..di.bodies.len() {
-                    for c in 0..dk.bodies.len() {
+                for (a, &(fa, sa, ba)) in parts[i].iter().enumerate() {
+                    for (c, &(fc, sc, bc)) in parts[k].iter().enumerate() {
+                        if ba.0.distance_squared(bc.0) > (ba.1.length() + bc.1.length()).powi(2) {
+                            continue;
+                        }
                         let key = (ms[i].id, a, ms[k].id, c);
-                        let mut h = group.held.remove(&key).unwrap_or_default();
-                        let ((fa, sa), (fc, sc)) = (frame_of(di, &ti, a), frame_of(dk, &tk, c));
+                        let mut h = kept.get(&key).cloned().unwrap_or_default();
                         let (pa, pc) = (&ms[i].build.parts[a], &ms[k].build.parts[c]);
-                        Self::pair_manifold(&mut h, (pa, fa, sa), (pc, fc, sc), [swept_box(pa, fa, sa), swept_box(pc, fc, sc)]);
+                        Self::pair_manifold(&mut h, (pa, fa, sa), (pc, fc, sc), [ba, bc]);
                         if h.is_empty() {
                             continue;
                         }
@@ -2271,15 +2308,22 @@ impl Ragdoll {
                             let b = Block { scale: elastic(e), ..Block::with(std::array::from_fn(|t| both(t, false)), std::array::from_fn(|t| both(t, true)), k3, to,
                                 (part_friction(pa) * part_friction(pc)) as f64, None, r.imp) };
                             let pb = Self::push_block(&b, over, si.h, r.pimp);
-                            cross.push((i, k, b, pb, Src::Cross(key, x)));
+                            job.cross.push((i, k, b, pb, Src::Cross(key, x)));
                         }
-                        if h.iter().any(|r| !r.off) {
-                            let (ri, rk) = (root(&mut joined, i), root(&mut joined, k));
-                            joined[ri.max(rk)] = ri.min(rk);
-                        }
-                        held.insert(key, h);
+                        job.joined |= h.iter().any(|r| !r.off);
+                        job.held.push((key, h));
                     }
                 }
+            });
+        }
+        let mut held = std::collections::HashMap::new();
+        let mut cross: Vec<Option<(usize, usize, Block, Block, Src)>> = vec![];
+        for job in jobs {
+            cross.extend(job.cross.into_iter().map(Some));
+            held.extend(job.held);
+            if job.joined {
+                let (ri, rk) = (root(&mut joined, job.i), root(&mut joined, job.k));
+                joined[ri.max(rk)] = ri.min(rk);
             }
         }
         group.held = held;
@@ -2300,18 +2344,21 @@ impl Ragdoll {
                 off[i] = total;
                 total += st[i].as_ref().unwrap().qd0.len();
             }
-            let pad = |v: &[f64], at: usize| { let mut p = vec![0.0; total]; p[at..at + v.len()].copy_from_slice(v); p };
-            let pad_row = |r: &Row, at: usize, base: usize| Row { j: pad(&r.j, at), mj: pad(&r.mj, at), eff: r.eff, target: r.target, lambda: r.lambda,
-                kind: match r.kind { RowKind::Friction { of, mu } => RowKind::Friction { of: of + base, mu }, k => k } };
-            let pad_block = |b: &Block, at: usize| Block { j: b.j.clone().map(|j| pad(&j, at)), mj: b.mj.clone().map(|j| pad(&j, at)), ..b.clone() };
-            let (mut rows, mut push) = (vec![], vec![]);
+            let alone_at = |at: usize| Spot { at: [at, 0], cut: usize::MAX };
+            let lay_row = |r: Row, at: Spot, base: isize| Row { kind: match r.kind { RowKind::Friction { of, mu } => RowKind::Friction { of: of.wrapping_add_signed(base), mu }, k => k }, at, ..r };
+            let mut firsts = vec![(0, 0); n];
+            let mut counts = vec![(0, 0); n];
+            let (mut rows, mut push): (Vec<Row>, Vec<Row>) = (vec![], vec![]);
+            let (mut bank, mut push_bank): (Vec<Option<Block>>, Vec<Option<Block>>) = (vec![], vec![]);
             let mut list: Vec<Entry> = vec![];
             let mut nodes: Vec<(Option<usize>, Option<usize>)> = vec![];
             for &i in &is {
-                let s = st[i].as_ref().unwrap();
+                let s = st[i].as_mut().unwrap();
                 let (rb, pbase) = (rows.len(), push.len());
-                rows.extend(s.rows.iter().map(|r| pad_row(r, off[i], rb)));
-                push.extend(s.push.iter().map(|r| pad_row(r, off[i], pbase)));
+                (firsts[i], counts[i]) = ((rb, pbase), (s.rows.len(), s.push.len()));
+                rows.extend(std::mem::take(&mut s.rows).into_iter().map(|r| lay_row(r, alone_at(off[i]), rb as isize)));
+                push.extend(std::mem::take(&mut s.push).into_iter().map(|r| lay_row(r, alone_at(off[i]), pbase as isize)));
+                let s = &*s;
                 let mut idx: Vec<usize> = (0..s.blocks.len()).collect();
                 island_sort(&mut idx);
                 let mut pre = vec![0; idx.len()];
@@ -2328,14 +2375,17 @@ impl Ragdoll {
                 if pre.iter().any(|&p| is_self(p)) {
                     nodes.push((Some(own), Some(own)));
                 }
+                let base = bank.len();
                 list.extend(pre.iter().map(|&p| Entry { node: if is_self(p) { own_self } else { ground }, a: own, b: if is_self(p) { own } else { 0 },
-                    block: pad_block(&s.blocks[p], off[i]), push: pad_block(&s.push_blocks[p], off[i]), src: Src::Own(i, p) }));
+                    at: base + p, src: Src::Own(i, p) }));
+                let s = st[i].as_mut().unwrap();
+                bank.extend(std::mem::take(&mut s.blocks).into_iter().map(|b| Some(Block { at: alone_at(off[i]), ..b })));
+                push_bank.extend(std::mem::take(&mut s.push_blocks).into_iter().map(|b| Some(Block { at: alone_at(off[i]), ..b })));
             }
             let mut pairs_across: Vec<((usize, usize), usize)> = vec![];
-            for (i, k, b, pb, from) in cross.iter().filter(|c| is.contains(&c.0)) {
-                let lay = |b: &Block| { let mut q = b.clone(); let na = st[*i].as_ref().unwrap().qd0.len();
-                    q.j = b.j.clone().map(|j| { let mut p = pad(&j[..na], off[*i]); p[off[*k]..off[*k] + j.len() - na].copy_from_slice(&j[na..]); p });
-                    q.mj = b.mj.clone().map(|j| { let mut p = pad(&j[..na], off[*i]); p[off[*k]..off[*k] + j.len() - na].copy_from_slice(&j[na..]); p }); q };
+            for (i, k, b, pb, from) in cross.iter_mut().filter(|c| c.as_ref().is_some_and(|c| is.contains(&c.0))).map(|c| c.take().unwrap()) {
+                let (i, k) = (&i, &k);
+                let spot = Spot { at: [off[*i], off[*k]], cut: st[*i].as_ref().unwrap().qd0.len() };
                 let node = match pairs_across.iter().find(|x| x.0 == (*i, *k)) {
                     Some(x) => x.1,
                     None => {
@@ -2344,49 +2394,73 @@ impl Ragdoll {
                         nodes.len() - 1
                     }
                 };
-                list.push(Entry { node, a: ms[*i].id + 1, b: ms[*k].id + 1, block: lay(b), push: lay(pb), src: *from });
+                list.push(Entry { node, a: ms[*i].id + 1, b: ms[*k].id + 1, at: bank.len(), src: from });
+                bank.push(Some(Block { at: spot, ..b }));
+                push_bank.push(Some(Block { at: spot, ..pb }));
             }
             let at: Vec<usize> = island_order(&nodes).iter().enumerate().fold(vec![0; nodes.len()], |mut at, (r, &x)| { at[x] = r; at });
             list.sort_by_key(|x| at[x.node]);
             let mut pushed = list.clone();
             sgi_sort(&mut list, |x| x.a);
             sgi_sort(&mut pushed, |x| x.b);
-            let (mut blocks, mut push_blocks): (Vec<Block>, Vec<Block>) = (list.iter().map(|x| x.block.clone()).collect(), pushed.iter().map(|x| x.push.clone()).collect());
+            let mut blocks: Vec<Block> = list.iter().map(|x| bank[x.at].take().unwrap()).collect();
+            let mut push_blocks: Vec<Block> = pushed.iter().map(|x| push_bank[x.at].take().unwrap()).collect();
             let mut qd: Vec<f64> = is.iter().flat_map(|&i| st[i].as_ref().unwrap().qd0.clone()).collect();
             impulses(&mut rows, &mut blocks, &mut qd);
-            let part = |b: &Block, at: usize, len: usize| Block { j: b.j.clone().map(|j| j[at..at + len].to_vec()), mj: b.mj.clone().map(|j| j[at..at + len].to_vec()), held: None, ..b.clone() };
-            let mut rb = 0;
-            for &i in &is {
-                let s = st[i].as_mut().unwrap();
-                for r in s.rows.iter_mut() {
-                    r.lambda = rows[rb].lambda;
-                    rb += 1;
-                }
-            }
-            for (x, b) in list.iter().zip(&blocks) {
+            let part = |b: &Block, first: bool| {
+                let side = |j: &Vec<f64>| if first { j[..b.at.cut].to_vec() } else { j[b.at.cut..].to_vec() };
+                Block { j: b.j.each_ref().map(side), mj: b.mj.each_ref().map(side), held: None, at: Spot::OWN, ..b.clone() }
+            };
+            let mut own: Vec<Vec<Option<Block>>> = (0..n).map(|_| vec![]).collect();
+            let mut theirs: Vec<Vec<Block>> = (0..n).map(|_| vec![]).collect();
+            for (x, b) in list.iter().zip(blocks) {
                 match x.src {
-                    Src::Own(i, p) => st[i].as_mut().unwrap().blocks[p].lambda = b.lambda,
+                    Src::Own(i, p) => {
+                        if own[i].len() <= p {
+                            own[i].resize_with(p + 1, || None);
+                        }
+                        own[i][p] = Some(Block { at: Spot::OWN, ..b });
+                    }
                     Src::Cross(key, at) => {
                         group.held.get_mut(&key).unwrap()[at].imp = b.lambda.as_vec3();
                         let (i, k) = is.iter().fold((usize::MAX, usize::MAX), |acc, &m| if ms[m].id == key.0 { (m, acc.1) } else if ms[m].id == key.2 { (acc.0, m) } else { acc });
-                        for m in [i, k] {
-                            let len = st[m].as_ref().unwrap().qd0.len();
-                            st[m].as_mut().unwrap().blocks.push(part(b, off[m], len));
+                        for (m, first) in [(i, true), (k, false)] {
+                            theirs[m].push(part(&b, first));
                         }
                     }
                 }
+            }
+            let mut rows = rows.into_iter();
+            for &i in &is {
+                let s = st[i].as_mut().unwrap();
+                s.rows = rows.by_ref().take(counts[i].0).map(|r| lay_row(r, Spot::OWN, -(firsts[i].0 as isize))).collect();
+                s.blocks = std::mem::take(&mut own[i]).into_iter().map(|b| b.unwrap()).chain(std::mem::take(&mut theirs[i])).collect();
             }
             let mut go = vec![false; n];
             for &i in &is {
                 go[i] = ms[i].doll.middle(st[i].as_mut().unwrap());
             }
             let mut qp = vec![0.0; total];
+            let push_was: Vec<f64> = push.iter().map(|r| r.lambda).collect();
             impulses(&mut push, &mut push_blocks, &mut qp);
-            for (x, b) in pushed.iter().zip(&push_blocks) {
+            let mut own: Vec<Vec<Option<Block>>> = (0..n).map(|_| vec![]).collect();
+            for (x, b) in pushed.iter().zip(push_blocks) {
                 match x.src {
-                    Src::Own(i, p) => st[i].as_mut().unwrap().push_blocks[p].lambda = b.lambda,
+                    Src::Own(i, p) => {
+                        if own[i].len() <= p {
+                            own[i].resize_with(p + 1, || None);
+                        }
+                        own[i][p] = Some(Block { at: Spot::OWN, ..b });
+                    }
                     Src::Cross(key, at) => group.held.get_mut(&key).unwrap()[at].pimp = b.lambda.as_vec3(),
                 }
+            }
+            let mut push = push.into_iter();
+            for &i in &is {
+                let s = st[i].as_mut().unwrap();
+                let was = &push_was[firsts[i].1..];
+                s.push = push.by_ref().take(counts[i].1).zip(was).map(|(r, &lambda)| Row { lambda, ..lay_row(r, Spot::OWN, -(firsts[i].1 as isize)) }).collect();
+                s.push_blocks = std::mem::take(&mut own[i]).into_iter().map(|b| b.unwrap()).collect();
             }
             for &i in &is {
                 let s = st[i].take().unwrap();

@@ -600,6 +600,7 @@ struct Sim {
     eye: Vec3,
     hover: Option<(Vec2, String)>,
     crowd: Vec<(Agent, msg::State)>,
+    stress: bool,
     group: delirium::ragdoll::Group,
     cars: Vec<(Vec3, Vec3, f32)>,
     lanes: Option<[f32; 2]>,
@@ -959,7 +960,51 @@ impl Sim {
         self.homers("grid", &at);
     }
 
+    fn stress(&mut self) {
+        let mut at: Vec<(f32, f32)> = (0..49).filter(|&i| i != 24).map(|i| (((i / 7) as f32 - 3.0) * 1.1, ((i % 7) as f32 - 3.0) * 1.1)).collect();
+        at.push((4.4, 0.0));
+        self.homers("stress", &at);
+        self.stress = !self.crowd.is_empty();
+    }
+
+    fn stress_step(&mut self) {
+        if !self.stress || self.steps % 20 != 0 {
+            return;
+        }
+        let centre = self.ours().p(0);
+        for i in 1..=self.crowd.len() {
+            let h = ((self.steps / 20) as u32).wrapping_mul(2654435761) ^ (i as u32).wrapping_mul(40503);
+            let h = (h ^ (h >> 15)).wrapping_mul(2246822519);
+            let h = h ^ (h >> 13);
+            if h % 5 != 0 {
+                continue;
+            }
+            let (p, _) = self.crowd[i - 1].0.doll.com();
+            let to = (centre - p).with_z(0.0).normalize_or_zero();
+            let shove = |k: f32| format!("applyImpulse partIndex=10 impulse={}", v3(to * k + Vec3::Z * 5.0));
+            let lines = match (h >> 8) % 9 {
+                0 | 1 => vec![shove(60.0 + (h >> 16) as f32 % 40.0), "bodyBalance start=true".into()],
+                2 => {
+                    let part = [0, 7, 9, 10, 12, 15, 19][(h >> 16) as usize % 7];
+                    let at = self.crowd[i - 1].0.doll.frames().nth(part).map_or(p, |f| f.translation);
+                    self.crowd_shot(i, part, at, -to, to, false, true);
+                    vec![]
+                }
+                3 => vec!["bodyWrithe start=true".into()],
+                4 => vec!["bodyFoetal start=true".into()],
+                5 => vec!["armsWindmill start=true".into(), shove(40.0)],
+                6 => vec![shove(50.0), "stumble start=true".into()],
+                7 => vec![shove(90.0), "catchFall start=true".into()],
+                _ => vec!["applyImpulse partIndex=0 impulse=0,0,250".into(), "highFall start=true".into()],
+            };
+            for l in lines {
+                self.send_to(i, &l);
+            }
+        }
+    }
+
     fn homers(&mut self, name: &str, at: &[(f32, f32)]) {
+        self.stress = false;
         let had = std::mem::take(&mut self.crowd).len();
         (self.crowd_hp, self.car_hit, self.car_reacts) = (vec![200.0; at.len()], vec![], vec![]);
         self.glow.truncate(1);
@@ -2381,6 +2426,7 @@ impl Sim {
             }
             "crowd" => return self.crowd(),
             "grid" => return self.grid(),
+            "stress" => return self.stress(),
             "car" => return self.car(),
             "push front" => return self.push(true),
             "push back" => return self.push(false),
@@ -3233,7 +3279,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
                         weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
-                        getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
+                        getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
@@ -3362,6 +3408,7 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(bevy::sprite_render::Material2dPlugin::<ScaledMat>::default())
         .insert_resource(bevy::winit::WinitSettings { focused_mode: bevy::winit::UpdateMode::Continuous, unfocused_mode: bevy::winit::UpdateMode::Continuous })
+        .insert_resource(Time::<Virtual>::from_max_delta(std::time::Duration::from_secs_f32(if std::env::var_os("FRAME_LOG").is_some() { 10.0 } else { 0.25 })))
         .insert_resource(ClearColor(Color::srgb(0.78, 0.79, 0.81)))
         .init_gizmo_group::<OursGizmos>()
         .insert_non_send(sim)
@@ -4447,7 +4494,7 @@ fn in_front(win: &Query<&mut Window, With<bevy::window::PrimaryWindow>>) -> bool
 
 fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::PrimaryWindow>>, mut next: Local<Option<std::time::Instant>>) {
     use bevy::window::PresentMode;
-    let limit = if in_front(&win) { sim.fps_limit } else { sim.fps_limit.min(FPS_BACKGROUND) };
+    let limit = if in_front(&win) || std::env::var_os("FRAME_LOG").is_some() { sim.fps_limit } else { sim.fps_limit.min(FPS_BACKGROUND) };
     let mode = if limit <= FPS_VSYNC { PresentMode::AutoVsync } else { PresentMode::AutoNoVsync };
     for mut w in &mut win {
         if w.present_mode != mode {
@@ -5948,6 +5995,7 @@ impl Sim {
         }
         self.bridge();
         self.trampoline();
+        self.stress_step();
         self.room.shook += 1.0 / 60.0;
         if let Some((p, t, m)) = self.room.plat_triangles() {
             self.world.remove_chunk(PLAT_CHUNK);
@@ -6173,7 +6221,7 @@ fn headless(mut sim: Sim, n: usize) {
     }
 }
 
-fn step(mut sim: NonSendMut<Sim>, time: Res<Time>) {
+fn step(mut sim: NonSendMut<Sim>, time: Res<Time>, mut timing: Local<(f32, f32, u32)>) {
     let ready = time.elapsed_secs() > 2.0;
     if sim.auto_balance && sim.held && ready {
         sim.auto_balance = false;
@@ -6191,10 +6239,11 @@ fn step(mut sim: NonSendMut<Sim>, time: Res<Time>) {
     if !sim.paused {
         sim.acc += time.delta_secs() * sim.speed;
     }
-    sim.acc = sim.acc.min(0.25);
+    sim.acc = sim.acc.min(4.0 / 60.0);
     if sim.held {
         sim.acc = 0.0;
     }
+    let started = std::time::Instant::now();
     while sim.acc >= 1.0 / 60.0 {
         sim.acc -= 1.0 / 60.0;
         sim.tick();
@@ -6202,6 +6251,14 @@ fn step(mut sim: NonSendMut<Sim>, time: Res<Time>) {
     let dt = if sim.paused { 0.0 } else { time.delta_secs() * sim.speed };
     sim.rise(dt);
     sim.hero_frame(dt);
+    if std::env::var_os("FRAME_LOG").is_some() {
+        *timing = (timing.0 + time.delta_secs() * 1000.0, timing.1 + started.elapsed().as_secs_f32() * 1000.0, timing.2 + 1);
+        if timing.0 >= 1000.0 {
+            let n = timing.2 as f32;
+            eprintln!("frame {:.1} FPS, {:.1} ms a frame, physics {:.1} ms", n * 1000.0 / timing.0, timing.0 / n, timing.1 / n);
+            *timing = (0.0, 0.0, 0);
+        }
+    }
     let mut news = None;
     if let Some(w) = sim.watch.as_mut() {
         w.t += dt;
@@ -7366,3 +7423,26 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
 
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[test]
+#[ignore = "needs the game; timing: cargo test --release stress_50 -- --ignored --nocapture"]
+fn stress_50() {
+    let mut sim = crate::load(&["sandbox".into()], &[], saved_game().as_deref(), Default::default(), None);
+    sim.button("stress");
+    let t = std::time::Instant::now();
+    let mut worst = 0.0f32;
+    for _ in 0..600 {
+        let s = std::time::Instant::now();
+        sim.tick();
+        worst = worst.max(s.elapsed().as_secs_f32() * 1000.0);
+    }
+    let mut h = 0u64;
+    for c in &sim.crowd {
+        for f in c.0.doll.frames() {
+            for x in f.translation.to_array() {
+                h = h.wrapping_mul(1099511628211).wrapping_add(x.to_bits() as u64);
+            }
+        }
+    }
+    eprintln!("stress_50: hash {h:x}, {} Homers, {:.1} ms a step, worst {worst:.1}", sim.crowd.len() + 1, t.elapsed().as_secs_f32() * 1000.0 / 600.0);
+}
