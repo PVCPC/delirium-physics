@@ -360,7 +360,7 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
         "bigstairs" => {
             let mut v = vec![b([0.0, -0.45, 3.0], [1.5, 1.05, 3.0], concrete)];
             v.extend([-1.6, 1.6].map(|x| b([x, -0.45, 3.5], [0.1, 1.05, 3.5], brick)));
-            for i in 0..40 {
+            for i in 0..39 {
                 let (top, y) = (6.0 - 0.15 * (i + 1) as f32, 0.75 + 0.3 * i as f32);
                 v.push(b([0.0, y, top * 0.5], [1.5, 0.15, top * 0.5], concrete));
                 v.extend([-1.6, 1.6].map(|x| b([x, y, (top + 1.0) * 0.5], [0.1, 0.15, (top + 1.0) * 0.5], brick)));
