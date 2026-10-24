@@ -4016,6 +4016,25 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
             commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(mats.add(mat)), Transform::from_xyz(-2.2 + 2.2 * k as f32, -6.0, 0.002),
                             RenderLayers::layer(1), RoomScenery));
         }
+        let n = 32;
+        let wire: Vec<u8> = (0..n * n).flat_map(|i: i32| {
+            let (x, y) = (i % n, i / n);
+            if (x + y).rem_euclid(n / 2) < 2 || (x - y).rem_euclid(n / 2) < 2 { [150, 155, 160, 255] } else { [0; 4] }
+        }).collect();
+        let mut img = Image::new(bevy::render::render_resource::Extent3d { width: n as u32, height: n as u32, depth_or_array_layers: 1 },
+                                 bevy::render::render_resource::TextureDimension::D2, wire, bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+                                 RenderAssetUsages::default());
+        img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { address_mode_u: ImageAddressMode::Repeat, address_mode_v: ImageAddressMode::Repeat,
+                                                                        ..ImageSamplerDescriptor::nearest() });
+        let mut mesh = Mesh::from(Plane3d::new(Vec3::Z, Vec2::new(2.0, 1.0)));
+        if let Some(bevy::mesh::VertexAttributeValues::Float32x2(uv)) = mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
+            uv.iter_mut().for_each(|u| *u = [u[0] * 16.0, u[1] * 8.0]);
+        }
+        let _ = mesh.generate_tangents();
+        let fence = StandardMaterial { base_color_texture: Some(assets.add(img)), alpha_mode: AlphaMode::Mask(0.5), double_sided: true, cull_mode: None,
+                                       metallic: 0.8, perceptual_roughness: 0.4, ..default() };
+        commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(mats.add(fence)), Transform::from_xyz(3.0, -1.0, 1.0).with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2) * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                        RenderLayers::layer(1), RoomScenery));
         let (at, half, deep) = (SKY_POOL, Vec2::splat(1.5), 1.0);
         let pane = mats.add(StandardMaterial { base_color: Color::srgba(0.9, 0.97, 1.0, 0.2), alpha_mode: AlphaMode::Blend, specular_transmission: 1.0, ior: 1.5,
                                                perceptual_roughness: 0.02, ..default() });
@@ -8046,14 +8065,14 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.add_enabled(sim.shadows, egui::Slider::new(&mut sim.shadow, 0.0..=SUN_SIZE_MAX).logarithmic(true).smallest_positive(0.25).text(gpu("Sun size", 2)).custom_formatter(|x, _| if x <= 0.0 { "point (hard)".into() } else { format!("{x:.1}°") }))
                 .on_hover_text("How big the sun is. Like real shadows, they stay sharp where they touch and soften further away; a bigger sun softens more. The real sun is about 0.5°, a hazy sky 2–5°; a point is sharp everywhere. Costs more on a slow graphics card; grainy without TAA, DLAA, DLSS, FSR 3 or XeSS.");
             let mut q = sim.rt as f32;
-            if ui.add_enabled(sim.rt_ok, egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text(gpu("Ray tracing", 3)).custom_formatter(|x, _| ["off", "lighting", "path traced"][x as usize].into()))
-                .on_hover_text("Lighting: light and shadows traced as rays (Bevy's Solari), bouncing off the walls and floor, in real time; with an RTX card DLSS's Ray Reconstruction cleans up the noise (anti-aliasing turns to DLAA if it was below it), other cards are grainy. Path traced: the true picture, every bounce of light traced; with an RTX card DLSS's Ray Reconstruction cleans it up as it goes (as games' path tracing modes do), so it holds up while the camera moves; other cards build it up over a few seconds while the camera holds still.")
+            if ui.add_enabled(sim.rt_ok, egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text(gpu("Lighting", 3)).custom_formatter(|x, _| ["raster", "ray traced", "path traced"][x as usize].into()))
+                .on_hover_text("Raster: the usual game lighting, fast (shadow maps, ambient occlusion). Ray traced: light and shadows traced as rays (Bevy's Solari), bouncing off the walls and floor, in real time; with an RTX card DLSS's Ray Reconstruction cleans up the noise (anti-aliasing turns to DLAA if it was below it), other cards are grainy. Path traced: the true picture, every bounce of light traced; with an RTX card DLSS's Ray Reconstruction cleans it up as it goes (as games' path tracing modes do), so it holds up while the camera moves; other cards build it up over a few seconds while the camera holds still.")
                 .on_disabled_hover_text("Needs a graphics card that can ray trace (RTX, RX 6000 or newer).").changed() {
                 sim.rt = q as u8;
             }
             ui.add_enabled(sim.rt_now() == 1, egui::Checkbox::new(&mut sim.restir, gpu("ReSTIR", 2)))
                 .on_hover_text("Ray-traced lighting reuses light paths between pixels and frames: finer shadows and steadier light, for a good chunk of speed.")
-                .on_disabled_hover_text("With ray-traced lighting (Ray tracing: lighting).");
+                .on_disabled_hover_text("With ray-traced lighting (Lighting: ray traced).");
             sub(ui, "Effects");
             let mut q = sim.ssao as f32;
             if ui.add(egui::Slider::new(&mut q, 0.0..=4.0).step_by(1.0).text(gpu("Ambient occlusion", 2)).custom_formatter(|x, _| ["off", "low", "medium", "high", "ultra"][x as usize].into()))

@@ -50,7 +50,7 @@ struct Material {
     metallic: f32,
     glass: f32,
     ior: f32,
-    _padding: f32,
+    alpha_cutoff: f32,
     reflectance: f32,
     absorption: vec3<f32>,
     _padding2: f32,
@@ -127,11 +127,29 @@ fn trace_ray_past_glass(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_m
 }
 
 fn trace_ray(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_min: f32, ray_t_max: f32, ray_flag: u32) -> RayIntersection {
-    let ray = RayDesc(ray_flag, RAY_NO_CULL, ray_t_min, ray_t_max, ray_origin, ray_direction);
-    var rq: ray_query;
-    rayQueryInitialize(&rq, tlas, ray);
-    rayQueryProceed(&rq);
-    return rayQueryGetCommittedIntersection(&rq);
+    var t = ray_t_min;
+    var hit: RayIntersection;
+    // Delirium: on through a cut-out's holes (up to 8 of them).
+    for (var i = 0u; i < 8u; i++) {
+        let ray = RayDesc(ray_flag, RAY_NO_CULL, t, ray_t_max, ray_origin, ray_direction);
+        var rq: ray_query;
+        rayQueryInitialize(&rq, tlas, ray);
+        rayQueryProceed(&rq);
+        hit = rayQueryGetCommittedIntersection(&rq);
+        if hit.kind == RAY_QUERY_INTERSECTION_NONE || !cut_out(hit) { break; }
+        t = hit.t + RAY_T_MIN;
+    }
+    return hit;
+}
+
+// Delirium: whether a hit's in a cut-out's hole (its colour texture's alpha below the material's cutoff).
+fn cut_out(hit: RayIntersection) -> bool {
+    let material = materials[material_ids[hit.instance_custom_data]];
+    if material.alpha_cutoff <= 0.0 || material.base_color_texture_id == TEXTURE_MAP_NONE { return false; }
+    let vertices = load_vertices(geometry_ids[hit.instance_custom_data], hit.primitive_index);
+    let uv = mat3x2(vertices[0].uv, vertices[1].uv, vertices[2].uv) * vec3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);
+    let id = material.base_color_texture_id;
+    return textureSampleLevel(textures[id], samplers[id], uv, 0.0).a < material.alpha_cutoff;
 }
 
 fn trace_ray_previous_frame(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_min: f32, ray_t_max: f32, ray_flag: u32) -> RayIntersection {
@@ -142,11 +160,12 @@ fn trace_ray_previous_frame(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray
     return rayQueryGetCommittedIntersection(&rq);
 }
 
-// Delirium: what a candidate hit lets through: nothing off an opaque surface; glass its colour, the more the more opaque the
+// Delirium: what a candidate hit lets through: nothing off an opaque surface, all through a cut-out's hole; glass its colour, the more the more opaque the
 // texel (a stained pane's frame darkest), on the way in only so a block tints once.
 fn glass_filter(hit: RayIntersection, ray_direction: vec3<f32>) -> vec3<f32> {
     let instance_id = hit.instance_custom_data;
     let material = materials[material_ids[instance_id]];
+    if cut_out(hit) { return vec3(1.0); }
     if material.glass == 0.0 { return vec3(0.0); }
     let vertices = load_vertices(geometry_ids[instance_id], hit.primitive_index);
     let barycentrics = vec3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);

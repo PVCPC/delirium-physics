@@ -91,6 +91,9 @@ version = "0.20.0"
 [dependencies.bevy_light]
 version = "0.20.0"
 
+[dependencies.bevy_material]
+version = "0.20.0"
+
 [dependencies.bevy_math]
 version = "0.20.0"
 

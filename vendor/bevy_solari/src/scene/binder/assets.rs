@@ -41,7 +41,8 @@ pub struct GpuMaterial {
     // Delirium: 1 for glass (transmissive: light passes through it, tinted), and its index of refraction.
     glass: f32,
     ior: f32,
-    _padding: f32,
+    // Delirium: a cut-out's alpha cutoff (`AlphaMode::Mask`): rays pass where its colour texture's alpha is below it (0: solid).
+    alpha_cutoff: f32,
     reflectance: f32,
     // Delirium: what a metre of it soaks up (glass that's a body, as water: Beer's law from `attenuation_color` and
     // `attenuation_distance`; none when that's infinite).
@@ -212,7 +213,7 @@ impl AssetState {
                 reflectance: material.reflectance,
                 glass: f32::from(material.specular_transmission > 0.0),
                 ior: material.ior,
-                _padding: 0.0,
+                alpha_cutoff: if let bevy_material::AlphaMode::Mask(c) = material.alpha_mode { c } else { 0.0 },
                 absorption: if material.attenuation_distance.is_finite() && material.attenuation_distance > 0.0 {
                     -LinearRgba::from(material.attenuation_color).to_vec3().max(Vec3::splat(1e-4)).map(f32::ln) / material.attenuation_distance
                 } else {
