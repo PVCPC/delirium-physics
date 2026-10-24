@@ -428,6 +428,8 @@ impl FromWorld for SsaoPipelines {
                     texture_2d(TextureSampleType::Float { filterable: false }),
                     texture_2d(TextureSampleType::Uint),
                     texture_storage_2d(depth_format, StorageTextureAccess::WriteOnly),
+                    // Delirium: the strength, applied once denoised.
+                    uniform_buffer::<SsaoSettingsUniform>(false),
                 ),
             ),
         );
@@ -794,6 +796,7 @@ fn prepare_ssao_bind_groups(
                 &ssao_resources
                     .screen_space_ambient_occlusion_texture
                     .default_view,
+                ssao_resources.settings_buffer.as_entire_binding(),
             )),
         );
 

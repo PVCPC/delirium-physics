@@ -17,6 +17,13 @@ import bevy_render::view::View;
 @group(0) @binding(2) var ambient_occlusion: texture_storage_2d<r16float, write>;
 @else
 @group(0) @binding(2) var ambient_occlusion: texture_storage_2d<r32float, write>;
+// Delirium: the strength (ssao.wesl's settings), applied once denoised.
+struct SsaoSettings {
+    radius: f32,
+    thickness: f32,
+    strength: f32,
+}
+@group(0) @binding(3) var<uniform> settings: SsaoSettings;
 @group(1) @binding(0) var point_clamp_sampler: sampler;
 @group(1) @binding(1) var linear_clamp_sampler: sampler;
 @group(1) @binding(2) var<uniform> view: View;
@@ -82,7 +89,7 @@ fn spatial_denoise(@builtin(global_invocation_id) global_id: vec3<u32>) {
     sum_weight += bottom_left_weight;
     sum_weight += bottom_right_weight;
 
-    let denoised_visibility = sum / sum_weight;
+    let denoised_visibility = pow(sum / sum_weight, settings.strength);
 
     textureStore(ambient_occlusion, pixel_coordinates, vec4<f32>(denoised_visibility, 0.0, 0.0, 0.0));
 }

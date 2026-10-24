@@ -206,7 +206,8 @@ fn ssao(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     visibility = 1.0 - f32(occluded_sample_count) / (slice_count * 2.0 * samples_per_slice_side);
 
-    visibility = pow(clamp(visibility, 0.03, 1.0), settings.strength);
+    // Delirium: the strength's power after the denoise (spatial_denoise): on the noisy samples it made grain.
+    visibility = clamp(visibility, 0.03, 1.0);
 
     textureStore(ambient_occlusion, pixel_coordinates, vec4<f32>(visibility, 0.0, 0.0, 0.0));
 }
