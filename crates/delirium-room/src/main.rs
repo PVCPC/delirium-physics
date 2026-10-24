@@ -613,6 +613,7 @@ struct Sim {
     fall: Option<(f32, bool)>,
     hold: Option<f32>,
     airborne: bool,
+    wet: bool,
     hurt: [f32; 4],
     near_at: f32,
     near_last: f32,
@@ -2263,6 +2264,12 @@ impl Sim {
             self.send("highFall start=true");
             self.say("ours  dropping: arms out (additional reactions)".into());
         }
+        let wet = self.room.pool && world::over_pool(me) && me.z < if self.wet { 0.8 } else { 0.3 };
+        if wet != self.wet {
+            self.wet = wet;
+            self.say(format!("ours  {} the pool at {}", if wet { "into" } else { "out of" }, v3(me)));
+            self.send(&if wet { format!("buoyancy start=true surfacePoint={}", v3(Vec3::Z * world::WATER)) } else { "buoyancy start=false".into() });
+        }
         if self.hold.is_some_and(|t| now >= t) {
             self.hold = None;
             self.send("grab start=false");
@@ -3367,7 +3374,8 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let frames: Vec<Transform> = frames.iter().map(|f| Transform { translation: f.translation + shift, ..*f }).collect();
     let mut world = Collision::default();
     let concrete = room.surfaces.iter().position(|s| s.0 == "CONCRETE").unwrap_or(0) as u8;
-    world.add_floor(0.0, 0.0, 0.0, 50.0, concrete);
+    let (fp, ft) = world::floor_tris(room.pool, 50.0);
+    world.add(&fp, &ft, &vec![concrete; ft.len()]);
     let (p, t, m) = room.triangles();
     world.add(&p, &t, &m);
     if let Some(i) = room.snap {
@@ -3380,7 +3388,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3917,7 +3925,21 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
 
 fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut Assets<StandardMaterial>, sim: &Sim, assets: &AssetServer) {
     let floor = if sim.room.stage == "street" || sim.room.stage == "cab" { Color::srgb(0.2, 0.2, 0.22) } else { Color::srgb(0.58, 0.59, 0.61) };
-    commands.spawn((Mesh3d(meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(30.0)))),
+    let mut mesh = Mesh::from(Plane3d::new(Vec3::Z, Vec2::splat(30.0)));
+    if sim.room.pool {
+        let plane = |(lo, hi): (Vec2, Vec2)| Mesh::from(Plane3d::new(Vec3::Z, (hi - lo) * 0.5)).translated_by(((lo + hi) * 0.5).extend(0.0));
+        let r = world::floor_rects(true, 3000.0);
+        mesh = plane(r[0]);
+        for &x in &r[1..] {
+            let _ = mesh.merge(&plane(x));
+        }
+        let [a, b] = world::POOL;
+        commands.spawn((Mesh3d(meshes.add(Plane3d::new(Vec3::Z, (b - a) * 0.5))),
+                        MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgba(0.12, 0.42, 0.62, 0.55), alpha_mode: AlphaMode::Blend,
+                                                                   perceptual_roughness: 0.05, reflectance: 0.6, ..default() })),
+                        Transform::from_translation(((a + b) * 0.5).extend(world::WATER)), RenderLayers::layer(1), RoomScenery, bevy::light::NotShadowCaster));
+    }
+    commands.spawn((Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(mats.add(StandardMaterial { base_color: floor, perceptual_roughness: 1.0, ..default() })), RoomScenery, Floor));
     use bevy::image::{ImageAddressMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor};
     let tex = |name: String, _srgb: bool, sharp: bool| assets.load_builder().with_settings(move |l: &mut ImageLoaderSettings| {
@@ -3953,7 +3975,7 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
                             Glass, bevy::light::NotShadowCaster));
             continue;
         }
-        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.24, 0.25, 0.27) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
+        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.24, 0.25, 0.27) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if c.z + h.z < 0.0 { Color::srgb(0.62, 0.8, 0.86) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
         let (mesh, rot) = match post {
             true => (meshes.add(Cylinder::new(h.x * 1.5, h.z * 2.0)), Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             false => (meshes.add(Cuboid::from_size(h * 2.0)), Quat::IDENTITY),
@@ -5000,6 +5022,10 @@ struct Floor;
 
 fn follow_floor(sim: NonSend<Sim>, mut q: Query<&mut Transform, With<Floor>>) {
     for mut t in &mut q {
+        if sim.room.pool {
+            (t.translation, t.scale) = (Vec3::ZERO, Vec3::ONE);
+            continue;
+        }
         (t.translation, t.scale) = (sim.ours().p(0).with_z(0.0), Vec3::new(100.0, 100.0, 1.0));
     }
 }
@@ -6999,6 +7025,26 @@ fn side_color(name: &str) -> Color {
     }
 }
 
+fn grid_line(g: &mut Gizmos, pool: bool, a: Vec3, b: Vec3, c: Color) {
+    let [lo, hi] = world::POOL;
+    let (k, across) = if a.x == b.x { (1, a.x) } else { (0, a.y) };
+    let (l0, l1, c0, c1) = if k == 1 { (lo.y, hi.y, lo.x, hi.x) } else { (lo.x, hi.x, lo.y, hi.y) };
+    if !pool || across <= c0 || across >= c1 || b[k] <= l0 || a[k] >= l1 {
+        g.line(a, b, c);
+        return;
+    }
+    if a[k] < l0 {
+        let mut e = b;
+        e[k] = l0;
+        g.line(a, e, c);
+    }
+    if b[k] > l1 {
+        let mut s = a;
+        s[k] = l1;
+        g.line(s, b, c);
+    }
+}
+
 fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
     let dark = sim.skin.sky.iter().sum::<f32>() < 1.0;
     for (j, o) in sim.room.objs.iter().enumerate() {
@@ -7014,8 +7060,8 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
         let x = i as f32 * 0.5;
         let c = if dark { Color::srgba(0.4, 0.65, 1.0, 0.2) } else { Color::srgba(0.35, 0.36, 0.4, 0.35) };
         if !void {
-            g.line(o + Vec3::new(x, -(n as f32 * 0.5), 0.002), o + Vec3::new(x, (n as f32 * 0.5), 0.002), c);
-            g.line(o + Vec3::new(-(n as f32 * 0.5), x, 0.002), o + Vec3::new((n as f32 * 0.5), x, 0.002), c);
+            grid_line(&mut g, sim.room.pool, o + Vec3::new(x, -(n as f32 * 0.5), 0.002), o + Vec3::new(x, (n as f32 * 0.5), 0.002), c);
+            grid_line(&mut g, sim.room.pool, o + Vec3::new(-(n as f32 * 0.5), x, 0.002), o + Vec3::new((n as f32 * 0.5), x, 0.002), c);
             continue;
         }
         for j in -n..n {
@@ -7023,7 +7069,7 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
             for (a, b) in [(o + Vec3::new(x, y0, 0.002), o + Vec3::new(x, y1, 0.002)), (o + Vec3::new(y0, x, 0.002), o + Vec3::new(y1, x, 0.002))] {
                 let f = (1.0 - ((a + b) * 0.5).distance(me) / fade).clamp(0.0, 1.0);
                 if f > 0.0 {
-                    g.line(a, b, c.with_alpha(0.35 * f));
+                    grid_line(&mut g, sim.room.pool, a, b, c.with_alpha(0.35 * f));
                 }
             }
         }

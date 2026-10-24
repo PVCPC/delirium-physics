@@ -5,6 +5,37 @@ use rapier3d::prelude::{ColliderBuilder, ColliderHandle, Group, ImpulseJointHand
 
 pub const FLOOR_HALF: f32 = 100.0;
 
+pub const POOL: [Vec2; 2] = [Vec2::new(-3.0, 5.0), Vec2::new(3.0, 9.0)];
+pub const POOL_DEEP: f32 = 1.5;
+pub const WATER: f32 = -0.1;
+
+pub fn floor_rects(pool: bool, half: f32) -> Vec<(Vec2, Vec2)> {
+    let ([a, b], h) = (POOL, half);
+    if !pool {
+        return vec![(Vec2::splat(-h), Vec2::splat(h))];
+    }
+    vec![(Vec2::new(-h, -h), Vec2::new(h, a.y)), (Vec2::new(-h, b.y), Vec2::new(h, h)),
+         (Vec2::new(-h, a.y), Vec2::new(a.x, b.y)), (Vec2::new(b.x, a.y), Vec2::new(h, b.y))]
+}
+
+pub fn floor_tris(pool: bool, half: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let (mut p, mut t) = (vec![], vec![]);
+    for (lo, hi) in floor_rects(pool, half) {
+        for x in lo.x as i32..hi.x as i32 {
+            for y in lo.y as i32..hi.y as i32 {
+                let (a, b, k) = (x as f32, y as f32, p.len() as u32);
+                p.extend([[a, b, 0.0], [a + 1.0, b, 0.0], [a + 1.0, b + 1.0, 0.0], [a, b + 1.0, 0.0]]);
+                t.extend([[k, k + 1, k + 2], [k, k + 2, k + 3]]);
+            }
+        }
+    }
+    (p, t)
+}
+
+pub fn over_pool(p: Vec3) -> bool {
+    (POOL[0].x..POOL[1].x).contains(&p.x) && (POOL[0].y..POOL[1].y).contains(&p.y)
+}
+
 pub const KINDS: [(&str, f32, f32, f32); 5] = [("ball", 0.15, 2.0, 14.0), ("box", 0.2, 8.0, 9.0), ("crate", 0.45, 40.0, 0.0),
     ("barrel", 0.3, 30.0, 0.0), ("wrecking ball", 0.5, 250.0, 0.0)];
 const PART_KG: f32 = 40.0;
@@ -38,6 +69,7 @@ pub struct Room {
     pub surfaces: Vec<(String, f32, f32)>,
     pub weight: f32,
     pub stage: String,
+    pub pool: bool,
     pub start: Vec3,
     pub snap: Option<usize>,
     pub snapped: Option<f32>,
@@ -371,7 +403,7 @@ pub fn cast_boxes(boxes: impl Iterator<Item = (Vec3, Vec3)>, from: Vec3, dir: Ve
 impl Room {
     pub fn ground(&self, p: Vec3) -> f32 {
         self.blocks.iter().filter(|(c, h, _)| (p.x - c.x).abs() <= h.x && (p.y - c.y).abs() <= h.y && c.z + h.z <= p.z + 0.05)
-            .map(|(c, h, _)| c.z + h.z).fold(0.0, f32::max)
+            .map(|(c, h, _)| c.z + h.z).fold(if self.pool && over_pool(p) { -POOL_DEEP } else { 0.0 }, f32::max)
     }
 
     pub fn cast(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3)> {
@@ -393,12 +425,16 @@ impl Room {
 
     pub fn new(surfaces: Vec<(String, f32, f32)>, name: &str) -> Room {
         let row = |n: &str| surfaces.iter().position(|s| s.0 == n).unwrap_or(0) as u8;
+        let pool = stage(name, 0, 0).is_none();
         let (blocks, start) = stage(name, row("BRICK_WALL"), row("CONCRETE")).unwrap_or_else(|| (Room::blocks(&row, name == "pttest"), Vec3::ZERO));
         let mut w = [PhysicsWorld::new(), PhysicsWorld::new()];
         let mut fixed = [vec![], vec![]];
         for (i, w) in w.iter_mut().enumerate() {
             w.gravity = Vector::new(0.0, 0.0, -9.81);
-            fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(Vector::new(0.0, 0.0, -0.5)), ColliderBuilder::cuboid(50.0, 50.0, 0.5).friction(1.0)).0);
+            for (lo, hi) in floor_rects(pool && i == 0, 50.0) {
+                let (c, h) = ((lo + hi) * 0.5, (hi - lo) * 0.5);
+                fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(Vector::new(c.x, c.y, -0.5)), ColliderBuilder::cuboid(h.x, h.y, 0.5).friction(1.0)).0);
+            }
             for &(c, h, _) in blocks.iter().filter(|_| i == 0) {
                 fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(rv(c)), ColliderBuilder::cuboid(h.x, h.y, h.z).friction(1.0)).0);
             }
@@ -407,7 +443,7 @@ impl Room {
         let seed = std::env::var("BRIDGE_SEED").ok().and_then(|s| s.parse().ok())
             .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.subsec_nanos()));
         let bridge = (name == "bridge").then(|| Bridge::new(&mut w[0], seed));
-        Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), start, snap, snapped: None, fell: false, bounced: 9.0, shook: 0.0,
+        Room { w, fixed, parts: [vec![], vec![]], objs: vec![], blocks, surfaces, weight: 1.0, stage: name.to_string(), pool, start, snap, snapped: None, fell: false, bounced: 9.0, shook: 0.0,
                bridge, broke: vec![], push: Vec3::NEG_Z * HOMER_N, com_v: Vec3::ZERO, com_a: Vec3::ZERO, #[cfg(feature = "portal")] holes: vec![] }
     }
 
@@ -418,6 +454,17 @@ impl Room {
             blocks.push((Vec3::new(-3.75, -1.5 + 0.3 * i as f32 + 0.15, top * 0.5), Vec3::new(0.75, 0.15, top * 0.5), row("CONCRETE")));
         }
         blocks.push((Vec3::new(-3.75, 2.0, 0.9), Vec3::new(0.75, 0.5, 0.9), row("CONCRETE")));
+        let ([a, b], d, rim) = (POOL, POOL_DEEP, 0.3);
+        let (m, hw, z) = ((a + b) * 0.5, (b - a) * 0.5, -(d + 0.2) * 0.5 - 0.001);
+        for (c, h) in [(Vec2::new(a.x - rim * 0.5, m.y), Vec2::new(rim * 0.5, hw.y + rim)), (Vec2::new(b.x + rim * 0.5, m.y), Vec2::new(rim * 0.5, hw.y + rim)),
+                       (Vec2::new(m.x, a.y - rim * 0.5), Vec2::new(hw.x, rim * 0.5)), (Vec2::new(m.x, b.y + rim * 0.5), Vec2::new(hw.x, rim * 0.5))] {
+            blocks.push((c.extend(z), h.extend(z.abs() - 0.001), row("CONCRETE")));
+        }
+        blocks.push((m.extend(-d - 0.1), hw.extend(0.1), row("CONCRETE")));
+        for i in 0..8 {
+            let top = -0.18 * (i + 1) as f32;
+            blocks.push((Vec3::new(b.x - 0.3 * i as f32 - 0.15, b.y - 0.6, (top - d) * 0.5), Vec3::new(0.15, 0.6, (top + d) * 0.5), row("CONCRETE")));
+        }
         #[cfg(feature = "portal")]
         blocks.extend([(Vec3::new(10.0, 0.0, 3.0), Vec3::new(0.15, 4.0, 3.0), row("CONCRETE")),
                        (Vec3::new(6.0, 3.0, 5.0), Vec3::new(3.0, 3.0, 0.1), row("CONCRETE"))].into_iter().skip(glass as usize));
@@ -437,6 +484,7 @@ impl Room {
             }
         }
         self.blocks.clear();
+        self.pool = false;
     }
 
     pub fn triangles(&self) -> (Vec<[f32; 3]>, Vec<[u32; 3]>, Vec<u8>) {
@@ -596,6 +644,19 @@ impl Room {
             } else {
                 body.set_next_kinematic_position(pose(t));
                 part_v.push((t.translation - from) / dt);
+            }
+        }
+        if i == 0 && self.pool {
+            for o in &self.objs {
+                let body = &mut w.bodies[o.h[0]];
+                let (at, r) = (bv(body.translation()), KINDS[o.kind].1);
+                let under = ((WATER - at.z + r) / (2.0 * r)).clamp(0.0, 1.0);
+                if under > 0.0 && over_pool(at) {
+                    let (m, v) = (body.mass(), bv(body.linvel()));
+                    body.apply_impulse(rv((Vec3::Z * m * 9.81 * 2.0 - v * m * 2.0) * under * dt), true);
+                    let spin = bv(body.angvel());
+                    body.apply_torque_impulse(rv(-spin * m * r * r * under * dt), true);
+                }
             }
         }
         let obj_v: Vec<Vec3> = self.objs.iter().map(|o| bv(w.bodies[o.h[i]].linvel())).collect();
