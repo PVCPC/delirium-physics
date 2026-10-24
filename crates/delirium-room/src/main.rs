@@ -884,6 +884,13 @@ impl Sim {
         self.shock = 0.0;
         self.hurt = [0.0; 4];
         self.wounds.clear();
+        if matches!(self.room.stage.as_str(), "rooftop" | "bridge") {
+            (self.room.snapped, self.room.fell, self.hang) = (None, false, None);
+        }
+        if let Some(b) = self.room.bridge.as_mut() {
+            b.rehang(&mut self.room.w[0]);
+            self.room.broke.clear();
+        }
         self.say("ours  reset: pose held (pick a behaviour)".into());
     }
 

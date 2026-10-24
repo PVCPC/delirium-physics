@@ -325,6 +325,13 @@ impl Bridge {
         broke
     }
 
+    pub fn rehang(&mut self, w: &mut PhysicsWorld) {
+        for h in self.planks.iter().flat_map(|p| p.h).chain(self.knots.iter().flatten().flatten().copied()) {
+            w.remove_body(h);
+        }
+        *self = Bridge::new(w, self.seed);
+    }
+
     pub fn hold(&mut self, i: usize) {
         self.planks[i].holds = f32::INFINITY;
     }
