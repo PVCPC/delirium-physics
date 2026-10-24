@@ -309,7 +309,7 @@ fn cap_mesh(depth: f32) -> Mesh {
 
 pub fn plugin(app: &mut App) {
     let _ = app.world_mut().resource_mut::<Assets<Shader>>()
-        .insert(&LOOK_SHADER, Shader::from_wesl(include_str!("../portal_surface.wesl"), "portal_surface.wesl"));
+        .insert(&LOOK_SHADER, Shader::from_wesl(include_str!("surface.wesl"), "surface.wesl"));
     app.add_plugins(MaterialPlugin::<PortalSurface>::default())
         .init_resource::<Infos>()
         .init_resource::<Tree>()

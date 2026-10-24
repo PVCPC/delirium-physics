@@ -249,7 +249,7 @@ fn load_card(
 
 pub fn plugin(app: &mut App) {
     let _ = app.world_mut().resource_mut::<Assets<Shader>>()
-        .insert(&SPRITE_SHADER, Shader::from_wesl(include_str!("spritecard.wesl"), "spritecard.wesl"));
+        .insert(&SPRITE_SHADER, Shader::from_wesl(include_str!("card.wesl"), "card.wesl"));
     app.add_plugins(MaterialPlugin::<SpriteCardMaterial>::default())
         .init_resource::<CardCache>()
         .init_resource::<SheetGrids>()
