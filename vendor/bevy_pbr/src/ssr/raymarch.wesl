@@ -14,7 +14,7 @@
 //
 // at your option.
 
-import package::render::mesh_view_bindings::depth_prepass_texture;
+import package::render::mesh_view_bindings::{depth_prepass_texture, view};
 import package::render::view_transformations::{
     direction_world_to_clip,
     ndc_to_uv,
@@ -62,14 +62,22 @@ fn depth_sample_bilinear_clamped(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
     return mix(d0, d1, frac.y);
 }
 
-fn depth_sample_linear(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
+/// Delirium: the view's uv in the depth texture, which is the whole target: a camera with a viewport (ours, right of
+/// the side panel) else reads the wrong pixels (a shifted copy of the scene, a hard-edged patch).
+fn viewport_uv(uv: vec2<f32>) -> vec2<f32> {
+    return (uv * view.viewport.zw + view.viewport.xy) / vec2<f32>(textureDimensions(depth_prepass_texture));
+}
+
+fn depth_sample_linear(uv_view: vec2<f32>, tex_size: vec2<f32>) -> f32 {
+    let uv = viewport_uv(uv_view);
     @if(USE_DEPTH_SAMPLERS)
     return textureSampleLevel(depth_prepass_texture, depth_linear_sampler, uv, 0u);
     @else
     return depth_sample_bilinear_clamped(uv, tex_size);
 }
 
-fn depth_sample_nearest(uv: vec2<f32>, tex_size: vec2<f32>) -> f32 {
+fn depth_sample_nearest(uv_view: vec2<f32>, tex_size: vec2<f32>) -> f32 {
+    let uv = viewport_uv(uv_view);
     @if(USE_DEPTH_SAMPLERS)
     return textureSampleLevel(depth_prepass_texture, depth_nearest_sampler, uv, 0u);
     @else
