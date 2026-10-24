@@ -43,6 +43,10 @@ pub struct GpuMaterial {
     ior: f32,
     _padding: f32,
     reflectance: f32,
+    // Delirium: what a metre of it soaks up (glass that's a body, as water: Beer's law from `attenuation_color` and
+    // `attenuation_distance`; none when that's infinite).
+    absorption: Vec3,
+    _padding2: f32,
 }
 
 impl_atomic_pod!(GpuMaterial, GpuMaterialBlob);
@@ -209,6 +213,12 @@ impl AssetState {
                 glass: f32::from(material.specular_transmission > 0.0),
                 ior: material.ior,
                 _padding: 0.0,
+                absorption: if material.attenuation_distance.is_finite() && material.attenuation_distance > 0.0 {
+                    -LinearRgba::from(material.attenuation_color).to_vec3().max(Vec3::splat(1e-4)).map(f32::ln) / material.attenuation_distance
+                } else {
+                    Vec3::ZERO
+                },
+                _padding2: 0.0,
             },
         );
 

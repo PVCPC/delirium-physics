@@ -23,6 +23,8 @@ struct AtmosphereSettings {
     aerial_view_lut_max_distance: f32,
     sky_max_samples: u32,
     rendering_method: u32,
+    // Delirium: the sky's own pixels left alone.
+    sky_off: u32,
 }
 
 /// "Atmosphere space" uses local up for the zenith so the horizon-detail

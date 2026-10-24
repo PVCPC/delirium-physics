@@ -492,6 +492,12 @@ fn layout_entries(
             (38, sampler(SamplerBindingType::Filtering)),
         ));
     }
+    // Delirium: water's caustics (fog.rs's `WaterCaustics`).
+    entries = entries.extend_with_indices((
+        (39, texture_2d(TextureSampleType::Float { filterable: true })),
+        (40, sampler(SamplerBindingType::Filtering)),
+        (41, uniform_buffer::<crate::render::fog::GpuWaterCaustics>(false)),
+    ));
 
     let mut binding_array_entries = DynamicBindGroupLayoutEntries::new(ShaderStages::FRAGMENT);
     if layout_key.contains(MeshPipelineViewLayoutKey::ENVIRONMENT_MAP) {
@@ -693,6 +699,10 @@ pub fn prepare_mesh_view_bind_groups(
         Res<Bluenoise>,
         Res<AreaLightLuts>,
         Res<DfgLut>,
+    ),
+    (water_caustics, water_caustics_buffer): (
+        Option<Res<crate::render::fog::WaterCaustics>>,
+        Res<crate::render::fog::WaterCausticsBuffer>,
     ),
     // TODO: Figure out how to reuse the memory. `BindGroupEntry` is non-send on wasm with atomics.
     #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
@@ -912,6 +922,17 @@ pub fn prepare_mesh_view_bind_groups(
                     .map(|img| (&img.texture_view, &img.sampler))
                     .unwrap_or((&fallback_image.d2.texture_view, &fallback_image.d2.sampler));
                 entries = entries.extend_with_indices(((37, dfg_view), (38, dfg_sampler)));
+            }
+
+            // Delirium: water's caustics.
+            let (wc_view, wc_sampler) = water_caustics
+                .as_ref()
+                .and_then(|c| c.image.as_ref())
+                .and_then(|h| images.get(h))
+                .map(|img| (&img.texture_view, &img.sampler))
+                .unwrap_or((&fallback_image.d2.texture_view, &fallback_image.d2.sampler));
+            if let Some(b) = water_caustics_buffer.0.binding() {
+                entries = entries.extend_with_indices(((39, wc_view), (40, wc_sampler), (41, b)));
             }
 
             let environment_map_bind_group_entries =

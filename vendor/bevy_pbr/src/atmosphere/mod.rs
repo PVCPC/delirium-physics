@@ -341,6 +341,9 @@ pub struct AtmosphereSettings {
 
     /// The rendering method to use for the atmosphere.
     pub rendering_method: AtmosphereMode,
+
+    /// Delirium: the sky's own pixels left alone (something else drew them: water seen from below).
+    pub sky_off: bool,
 }
 
 impl Default for AtmosphereSettings {
@@ -358,6 +361,7 @@ impl Default for AtmosphereSettings {
             aerial_view_lut_max_distance: 3.2e4,
             sky_max_samples: 16,
             rendering_method: AtmosphereMode::LookupTexture,
+            sky_off: false,
         }
     }
 }
@@ -377,6 +381,7 @@ pub struct GpuAtmosphereSettings {
     pub aerial_view_lut_max_distance: f32,
     pub sky_max_samples: u32,
     pub rendering_method: u32,
+    pub sky_off: u32,
 }
 
 impl Default for GpuAtmosphereSettings {
@@ -400,6 +405,7 @@ impl From<AtmosphereSettings> for GpuAtmosphereSettings {
             aerial_view_lut_max_distance: s.aerial_view_lut_max_distance,
             sky_max_samples: s.sky_max_samples,
             rendering_method: s.rendering_method as u32,
+            sky_off: s.sky_off as u32,
         }
     }
 }

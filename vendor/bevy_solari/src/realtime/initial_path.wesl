@@ -4,9 +4,9 @@ import bevy_render::maths::PI;
 import bevy_render::utils::octahedral_encode;
 import package::scene::brdf::{brdf_pdf, evaluate_and_sample_brdf, evaluate_brdf, EvaluateAndSampleBrdfResult, F_AB};
 import package::realtime::presample_light_tiles::unpack_resolved_light_sample;
-import package::realtime::bindings::{empty_reservoir, light_tile_resolved_samples, light_tile_samples, Reservoir, constants, view};
+import package::realtime::bindings::{empty_reservoir, light_tile_resolved_samples, light_tile_samples, Reservoir, constants, view, water_through};
 import package::scene::sampling::{calculate_resolved_light_contribution, isinf, LightSample, NULL_LIGHT_ID, power_heuristic, trace_visibility_color, sample_environment_map_light};
-import package::scene::bindings::{light_sources, RAY_T_MAX, RAY_T_MIN, resolve_ray_hit_full, ResolvedMaterial, ResolvedRayHitFull, trace_ray};
+import package::scene::bindings::{light_sources, RAY_T_MAX, RAY_T_MIN, resolve_ray_hit_full, ResolvedMaterial, ResolvedRayHitFull, trace_ray, trace_ray_past_glass};
 import package::realtime::world_cache_query::{get_cell_size, query_world_cache, WORLD_CACHE_CELL_LIFETIME};
 
 @if(DLSS_RR_GUIDE_BUFFERS)
@@ -99,7 +99,7 @@ fn generate_initial_path(world_position: vec3<f32>, world_normal: vec3<f32>, mat
         // Sample the BRDF and trace the next ray
         let next_bounce = evaluate_and_sample_brdf(path.wo, path.normal, path.material, F_ab, rng);
         if next_bounce.pdf == 0.0 { break; }
-        let ray = trace_ray(path.ray_origin, next_bounce.wi, RAY_T_MIN, RAY_T_MAX, RAY_FLAG_NONE);
+        let ray = trace_ray_past_glass(path.ray_origin, next_bounce.wi, RAY_T_MIN, RAY_T_MAX);
 
         if ray.kind == RAY_QUERY_INTERSECTION_NONE {
             @if(DLSS_RR_GUIDE_BUFFERS)
@@ -162,6 +162,9 @@ fn generate_initial_path(world_position: vec3<f32>, world_normal: vec3<f32>, mat
             // Later bounces keep the full brdf*cos/pdf for L_at_reconnection.
             path.throughput_past_first_hit *= next_bounce.throughput;
         }
+
+        // Delirium: soaked up on its way through water.
+        path.throughput_past_first_hit *= water_through(path.ray_origin, ray_hit.world_position);
 
         // Resample emissive hits
         if any(ray_hit.material.emissive > vec3(0.0)) && dot(ray_hit.world_normal, -next_bounce.wi) > 0.0 {

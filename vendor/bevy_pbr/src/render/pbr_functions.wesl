@@ -613,6 +613,8 @@ fn apply_pbr_lighting(
         }
 
         var light_contrib = lighting::directional_light(i, &lighting_input, enable_diffuse);
+        // Delirium: under water, its caustics.
+        light_contrib *= water_caustic(in.world_position.xyz);
 
         @if(DIRECTIONAL_LIGHT_SHADOW_MAP_DEBUG_CASCADES)
         light_contrib = shadows::cascade_debug_visualization(light_contrib, i, view_z);
@@ -878,6 +880,12 @@ fn apply_fog(
     // fog shape that looks a bit fake
     let distance = length(view_to_world);
 
+    // Delirium: only the share of the way below the fog's surface hazy.
+    let lo = min(fragment_world_position.z, view_world_position.z);
+    let hi = max(fragment_world_position.z, view_world_position.z);
+    let below = select(clamp((fog_params.surface - lo) / (hi - lo), 0.0, 1.0), select(0.0, 1.0, lo < fog_params.surface), hi - lo < 1e-4);
+    let fogged = distance * below;
+
     // Calculate view_z for shadow cascade selection
     let view_pos = view_transformations::position_world_to_view(fragment_world_position);
     let view_z = view_pos.z;
@@ -910,13 +918,13 @@ fn apply_fog(
     }
 
     if fog_params.mode == mesh_view_types::FOG_MODE_LINEAR {
-        return package::render::fog::linear_fog(fog_params, input_color, distance, scattering);
+        return package::render::fog::linear_fog(fog_params, input_color, fogged, scattering);
     } else if fog_params.mode == mesh_view_types::FOG_MODE_EXPONENTIAL {
-        return package::render::fog::exponential_fog(fog_params, input_color, distance, scattering);
+        return package::render::fog::exponential_fog(fog_params, input_color, fogged, scattering);
     } else if fog_params.mode == mesh_view_types::FOG_MODE_EXPONENTIAL_SQUARED {
-        return package::render::fog::exponential_squared_fog(fog_params, input_color, distance, scattering);
+        return package::render::fog::exponential_squared_fog(fog_params, input_color, fogged, scattering);
     } else if fog_params.mode == mesh_view_types::FOG_MODE_ATMOSPHERIC {
-        return package::render::fog::atmospheric_fog(fog_params, input_color, distance, scattering);
+        return package::render::fog::atmospheric_fog(fog_params, input_color, fogged, scattering);
     } else {
         return input_color;
     }
@@ -1008,4 +1016,26 @@ fn main_pass_post_lighting_processing(
     @if(PREMULTIPLY_ALPHA)
     output_color = premultiply_alpha(pbr_input.material.flags, output_color);
     return output_color;
+}
+
+// Delirium: the light (over flat water's) water's caustics put at `p` (render/fog.rs's `WaterCaustics`): 1 out of the
+// water, and on its pool's floor and walls (theirs their own).
+fn water_caustic(p: vec3<f32>) -> f32 {
+    let w = view_bindings::water_caustics_params;
+    if w.on == 0.0 || p.z >= w.surface { return 1.0; }
+    let size = w.max - w.min;
+    let uv = vec2((p.x - w.min.x) / size.x, (w.max.y - p.y) / size.y);
+    let depth = w.surface - p.z;
+    let edge = 0.03 / size;
+    if depth > w.deep - 0.03 || any(uv < edge) || any(uv > 1.0 - edge) { return 1.0; }
+    let f = depth / w.deep * w.layers - 1.0;
+    let below = water_layer(uv, max(floor(f), 0.0), w.layers);
+    if f < 0.0 { return mix(1.0, below, depth / (w.deep / w.layers)); }
+    return mix(below, water_layer(uv, min(floor(f) + 1.0, w.layers - 1.0), w.layers), fract(f));
+}
+
+fn water_layer(uv: vec2<f32>, k: f32, layers: f32) -> f32 {
+    let half = 0.5 * layers / f32(textureDimensions(view_bindings::water_caustics).y);
+    let v = (k + clamp(uv.y, half, 1.0 - half)) / layers;
+    return textureSampleLevel(view_bindings::water_caustics, view_bindings::water_caustics_sampler, vec2(uv.x, v), 0.0).r * 4.0;
 }

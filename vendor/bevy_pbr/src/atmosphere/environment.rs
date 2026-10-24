@@ -11,7 +11,7 @@ use bevy_ecs::{
     entity::Entity,
     lifecycle::{Insert, Remove},
     observer::On,
-    query::{Has, With, Without},
+    query::{Has, With},
     resource::Resource,
     system::{Commands, Query, Res, ResMut},
     template::FromTemplate,
@@ -143,16 +143,17 @@ pub(super) fn prepare_atmosphere_probe_bind_groups(
 
 pub(super) fn prepare_probe_textures(
     view_textures: Query<&AtmosphereTextures, With<ExtractedAtmosphere>>,
-    probes: Query<(Entity, &AtmosphereEnvironmentMap), Without<AtmosphereProbeTextures>>,
+    // Delirium: every frame, not once (the map's texture can be made again, and the views' LUTs are the texture cache's,
+    // each frame's own), from its own camera's LUTs (any view's first: one not drawn, e.g. starting in ray-traced
+    // lighting, left the map black).
+    probes: Query<(Entity, &AtmosphereEnvironmentMap)>,
     gpu_images: Res<RenderAssets<GpuImage>>,
     mut commands: Commands,
 ) {
-    // Get the first view entity's textures to borrow
-    let Some(view_textures) = view_textures.iter().next() else {
-        return;
-    };
-
     for (probe, render_env_map) in &probes {
+        let Some(view_textures) = view_textures.get(probe).ok().or_else(|| view_textures.iter().next()) else {
+            return;
+        };
         let Some(environment) = gpu_images.get(&render_env_map.environment_map) else {
             continue;
         };

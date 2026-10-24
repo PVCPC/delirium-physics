@@ -22,6 +22,7 @@ pub struct Clips {
     ids: Vec<u16>,
     pub fight: Option<(std::rc::Rc<crate::melee::Data>, std::collections::HashMap<String, usize>)>,
     fight_from: usize,
+    pub swim: Option<usize>,
     parts: Vec<(usize, Transform)>,
     chest: usize,
     scale: (Vec<f32>, Vec<f32>),
@@ -211,6 +212,11 @@ impl Clips {
                 (clips.len() - 2, clips.len() - 1)
             }));
         }
+        let swim = ["idle", "walk", "run", "sprint"].map(|c| clip("swimming.xad", c)).into_iter().collect::<Result<Vec<_>, _>>()
+            .map_err(|e| eprintln!("swimming: {e}")).ok().map(|s| {
+                clips.extend(s);
+                clips.len() - 4
+            });
         let mut fight_from = clips.len();
         let fight = (|| -> Result<crate::melee::Data, String> {
             let (c, toc) = if pc() { (vec![], vec![]) } else { let c = rd("common.rpf")?; let t = rpf::read_toc(&c, &key)?; (c, t) };
@@ -246,7 +252,7 @@ impl Clips {
                 let bind: Vec<(Vec3, Quat)> = bones.iter().map(|b| (Vec3::from(b.translation), Quat::from_array(b.rotation).normalize())).collect();
                 delirium::ragdoll::Rig::new(&p, &bones.iter().map(|b| b.parent).collect::<Vec<_>>(), &bind, &bones, delirium::nmrs::HOMER)
             }).map(std::rc::Rc::new),
-            clips, parts, chest, guns, names: bones.iter().map(|b| b.name.clone()).collect(), ids: bones.iter().map(|b| b.id).collect(), fight, fight_from,
+            clips, parts, chest, guns, names: bones.iter().map(|b| b.name.clone()).collect(), ids: bones.iter().map(|b| b.id).collect(), fight, fight_from, swim,
         })
     }
 

@@ -5,7 +5,7 @@ use rapier3d::prelude::{ColliderBuilder, ColliderHandle, Group, ImpulseJointHand
 
 pub const FLOOR_HALF: f32 = 100.0;
 
-pub const POOL: [Vec2; 2] = [Vec2::new(-3.0, 5.0), Vec2::new(3.0, 9.0)];
+pub const POOL: [Vec2; 2] = [Vec2::new(-3.0, 5.0), Vec2::new(3.0, 25.0)];
 pub const POOL_DEEP: f32 = 1.5;
 pub const WATER: f32 = -0.1;
 
@@ -344,6 +344,9 @@ impl Bridge {
 
 pub const GLASS_HALF: f32 = 0.25;
 
+pub const HALL: [Vec2; 2] = [Vec2::new(-3.0, -19.0), Vec2::new(3.0, 6.0)];
+pub const HALL_TOP: f32 = 4.0;
+
 fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, Vec3)> {
     let b = |c: [f32; 3], h: [f32; 3], r| (Vec3::from(c), Vec3::from(h), r);
     Some(match name {
@@ -366,6 +369,14 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
         "lowwall" => (vec![b([0.0, 0.45, 0.45], [4.0, 0.15, 0.45], brick)], Vec3::ZERO),
         "kerb" => (vec![b([0.0, 0.45, 0.22], [4.0, 0.15, 0.22], brick)], Vec3::ZERO),
         "open" => (vec![], Vec3::ZERO),
+        "lights" => {
+            let (c, h) = ((HALL[0] + HALL[1]) * 0.5, (HALL[1] - HALL[0]) * 0.5);
+            let t = 0.15;
+            (vec![b([c.x, c.y, 0.001], [h.x, h.y, 0.001], concrete), b([c.x, c.y, HALL_TOP + t], [h.x + 2.0 * t, h.y + 2.0 * t, t], concrete),
+                  b([HALL[0].x - t, c.y, HALL_TOP * 0.5], [t, h.y, HALL_TOP * 0.5], concrete), b([HALL[1].x + t, c.y, HALL_TOP * 0.5], [t, h.y, HALL_TOP * 0.5], concrete),
+                  b([c.x, HALL[0].y - t, HALL_TOP * 0.5], [h.x + 2.0 * t, t, HALL_TOP * 0.5], concrete),
+                  b([c.x, HALL[1].y + t, HALL_TOP * 0.5], [h.x + 2.0 * t, t, HALL_TOP * 0.5], concrete)], Vec3::ZERO)
+        }
         "rail" => (vec![b([0.0, -0.5, 1.18], [1.5, 0.03, 0.03], concrete), b([-1.5, -0.5, 0.6], [0.03, 0.03, 0.6], concrete),
                         b([1.5, -0.5, 0.6], [0.03, 0.03, 0.6], concrete)], Vec3::ZERO),
         "street" => {
@@ -463,7 +474,7 @@ impl Room {
         blocks.push((m.extend(-d - 0.1), hw.extend(0.1), row("CONCRETE")));
         for i in 0..8 {
             let top = -0.18 * (i + 1) as f32;
-            blocks.push((Vec3::new(b.x - 0.3 * i as f32 - 0.15, b.y - 0.6, (top - d) * 0.5), Vec3::new(0.15, 0.6, (top + d) * 0.5), row("CONCRETE")));
+            blocks.push((Vec3::new(b.x - 0.3 * i as f32 - 0.15, a.y + 0.6, (top - d) * 0.5), Vec3::new(0.15, 0.6, (top + d) * 0.5), row("CONCRETE")));
         }
         #[cfg(feature = "portal")]
         blocks.extend([(Vec3::new(10.0, 0.0, 3.0), Vec3::new(0.15, 4.0, 3.0), row("CONCRETE")),

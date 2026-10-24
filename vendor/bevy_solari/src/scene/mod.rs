@@ -9,6 +9,10 @@ pub use binder::prepare_raytracing_scene_resources;
 pub use binder::{RaytracingSceneBindings, RaytracingSceneNeedsPreviousFrameData};
 pub use types::RaytracingMesh3d;
 
+/// Delirium's patch: the suns' colour's share left on the ground (an atmosphere's transmittance: raster's sun gets it
+/// from its sky, ours not), set by the app.
+pub static SUN_TINT: std::sync::Mutex<bevy_math::Vec3> = std::sync::Mutex::new(bevy_math::Vec3::ONE);
+
 use crate::SolariPlugins;
 use bevy_app::{App, Plugin};
 use bevy_ecs::schedule::IntoScheduleConfigs;
@@ -41,6 +45,7 @@ impl Plugin for RaytracingScenePlugin {
         load_shader_library!(app, "brdf.wesl");
         load_shader_library!(app, "bindings.wesl");
         load_shader_library!(app, "sampling.wesl");
+        load_shader_library!(app, "water_beams.wesl");
         embedded_asset!(app, "binder/setup_tlas_instances.wesl");
     }
 

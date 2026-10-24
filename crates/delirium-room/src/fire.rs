@@ -32,6 +32,7 @@ enum Kind {
     Flame,
     Ember,
     Smoke,
+    Steam,
 }
 struct P {
     at: Vec3,
@@ -88,9 +89,20 @@ fn rate(r: f32) -> f32 {
 }
 const EMBERS: f32 = 0.1;
 const SMOKE: f32 = 0.12;
+const STEAM: usize = 6;
 const VOXEL: f32 = 0.07;
 const VOXEL_RATE: f32 = 5.0;
 const MAX: usize = 4000;
+
+pub fn steam(fire: &mut Fire, at: &[Vec3]) {
+    for &p in at {
+        for _ in 0..STEAM {
+            let v = Vec3::new(fire.range(-0.3, 0.3), fire.range(-0.3, 0.3), fire.range(0.5, 1.2));
+            let (life, size, seed) = (fire.range(1.2, 2.2), fire.range(0.15, 0.3), fire.rand());
+            fire.ps.push(P { at: p + v * 0.1, v, age: 0.0, life, size, seed, k: 1.0, kind: Kind::Steam });
+        }
+    }
+}
 
 pub fn step(fire: &mut Fire, mesh: &mut Mesh, sources: &[Source], dt: f32, cam: &GlobalTransform, voxel: bool, smoke: bool) -> bool {
     fire.owed.resize(sources.len(), 0.0);
@@ -152,7 +164,7 @@ pub fn step(fire: &mut Fire, mesh: &mut Mesh, sources: &[Source], dt: f32, cam: 
     }
     let n = fire.ps.len() + sheets.len();
     let (mut pos, mut uv, mut col, mut idx) = (Vec::with_capacity(n * 4), Vec::with_capacity(n * 4), Vec::with_capacity(n * 4), Vec::with_capacity(n * 6));
-    for kind in [Kind::Sheet, Kind::Flame, Kind::Ember, Kind::Smoke] {
+    for kind in [Kind::Sheet, Kind::Flame, Kind::Ember, Kind::Smoke, Kind::Steam] {
         for p in fire.ps.iter().chain(&sheets).filter(|p| p.kind == kind) {
             let t = p.age / p.life;
             let (x, y, w, h, base) = match kind {
@@ -163,7 +175,7 @@ pub fn step(fire: &mut Fire, mesh: &mut Mesh, sources: &[Source], dt: f32, cam: 
                     (side, Vec3::Z, s, s * 1.9, p.at)
                 }
                 Kind::Ember => (right, up, p.size, p.size, p.at - up * p.size * 0.5),
-                Kind::Smoke => {
+                Kind::Smoke | Kind::Steam => {
                     let s = p.size * (1.0 + 2.5 * t);
                     (right, up, s, s, p.at - up * s * 0.5)
                 }
@@ -172,7 +184,7 @@ pub fn step(fire: &mut Fire, mesh: &mut Mesh, sources: &[Source], dt: f32, cam: 
             for (u, v) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
                 pos.push((base + x * (u - 0.5) * w + y * v * h).to_array());
                 uv.push([u, v]);
-                col.push([t, p.seed, match kind { Kind::Sheet => 0.25, Kind::Flame => 0.0, Kind::Ember => 0.5, Kind::Smoke => 1.0 }, p.k]);
+                col.push([t, p.seed, match kind { Kind::Sheet => 0.25, Kind::Flame => 0.0, Kind::Ember => 0.5, Kind::Smoke => 1.0, Kind::Steam => 1.5 }, p.k]);
             }
             idx.extend([at, at + 1, at + 2, at, at + 2, at + 3]);
         }
@@ -192,7 +204,7 @@ fn voxels(fire: &Fire, mesh: &mut Mesh, cam: &GlobalTransform) -> bool {
         let (size, kind) = match p.kind {
             Kind::Flame => (snap(p.size * 0.8 * (1.0 - t)), 0.0),
             Kind::Ember => (VOXEL * 0.5, 0.5),
-            Kind::Smoke | Kind::Sheet => return None,
+            Kind::Smoke | Kind::Steam | Kind::Sheet => return None,
         };
         let at = (p.at / VOXEL).round() * VOXEL + Vec3::Z * size * 0.5;
         Some((at.distance_squared(eye), at, size, [t, p.seed, kind, p.k]))
@@ -214,13 +226,13 @@ fn voxels(fire: &Fire, mesh: &mut Mesh, cam: &GlobalTransform) -> bool {
             idx.extend([k, k + 1, k + 2, k, k + 2, k + 3]);
         }
     }
-    for p in fire.ps.iter().filter(|p| p.kind == Kind::Smoke) {
+    for p in fire.ps.iter().filter(|p| matches!(p.kind, Kind::Smoke | Kind::Steam)) {
         let (t, k) = (p.age / p.life, pos.len() as u32);
         let s = p.size * (1.0 + 2.5 * t);
         for (u, v) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
             pos.push((p.at - up * s * 0.5 + right * (u - 0.5) * s + up * v * s).to_array());
             uv.push([u, v]);
-            col.push([t, p.seed, 1.0, p.k]);
+            col.push([t, p.seed, if p.kind == Kind::Steam { 1.5 } else { 1.0 }, p.k]);
         }
         idx.extend([k, k + 1, k + 2, k, k + 2, k + 3]);
     }

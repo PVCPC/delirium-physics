@@ -3,13 +3,14 @@ import bevy_pbr::render::utils::{rand_f, rand_range_u, sample_cosine_hemisphere}
 import bevy_render::maths::PI;
 import package::realtime::presample_light_tiles::unpack_resolved_light_sample;
 import package::scene::sampling::{calculate_resolved_light_contribution, trace_visibility_color, sample_environment_map_light};
-import package::scene::bindings::{trace_ray, resolve_ray_hit_full, RAY_T_MIN};
+import package::scene::bindings::{trace_ray, trace_ray_past_glass, resolve_ray_hit_full, RAY_T_MIN};
 import package::realtime::world_cache_query::query_world_cache;
 import package::realtime::bindings::{
     light_tile_resolved_samples,
     view,
     constants,
     world_cache,
+    water_through,
 };
 
 enable wgpu_ray_query;
@@ -40,12 +41,13 @@ fn sample_gi(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(global_inv
     if rand_f(&rng) >= f32(constants.world_cache_cell_updates_soft_target) / f32(world_cache.active_cells_count) { return; }
 
     let ray_direction = sample_cosine_hemisphere(geometry_data.world_normal, &rng);
-    let ray = trace_ray(geometry_data.world_position + (geometry_data.world_normal * RAY_T_MIN), ray_direction, RAY_T_MIN, constants.world_cache_max_gi_ray_distance, RAY_FLAG_NONE);
+    let ray = trace_ray_past_glass(geometry_data.world_position + (geometry_data.world_normal * RAY_T_MIN), ray_direction, RAY_T_MIN, constants.world_cache_max_gi_ray_distance);
     if ray.kind != RAY_QUERY_INTERSECTION_NONE {
         let ray_hit = resolve_ray_hit_full(ray);
         let cell_life = atomicLoad(&world_cache.life[cell_index]);
         let radiance = query_world_cache(ray_hit.world_position, ray_hit.geometric_world_normal, view.world_position, ray.t, cell_life, &rng);
-        world_cache.active_cells_new_radiance[active_cell_id.x] += ray_hit.material.base_color * radiance;
+        // Delirium: soaked up on its way through water.
+        world_cache.active_cells_new_radiance[active_cell_id.x] += ray_hit.material.base_color * radiance * water_through(geometry_data.world_position, ray_hit.world_position);
     } else {
         // The ray is cut short at world_cache_max_gi_ray_distance to save on traversal costs. 
         // A miss here may actually have been a surface further away if we kept tracing, and not actually have been a miss.

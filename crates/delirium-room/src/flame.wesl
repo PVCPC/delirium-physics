@@ -1,5 +1,5 @@
 // Fire (fire.rs): flames, embers and smoke, all procedural. Each quad's colour carries its particle: r how far
-// through its life (0..1), g a seed, b its kind (0 a lick of flame, 0.25 a sheet of flame, 0.5 an ember, 1 smoke),
+// through its life (0..1), g a seed, b its kind (0 a lick of flame, 0.25 a sheet of flame, 0.5 an ember, 1 smoke, 1.5 steam),
 // a how strongly it burns. Flames and embers add their light (alpha 0 under premultiplied blending); smoke covers.
 // Voxel fire (flame.k.y 1): its flames and embers solid cubes, each flat in a fire palette's colour for its heat, its
 // face's shade in uv.x.
@@ -123,8 +123,9 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
         // Smoke: a soft, churning puff, thinning as it spreads.
         let n = fbm(uv * 3.0 + vec2(seed, seed - time * 0.4));
         let r = length(uv - 0.5) * 2.0 + (n - 0.5) * 0.6;
-        let a = (1.0 - smoothstep(0.0, 1.0, r)) * smoothstep(0.0, 0.2, t) * (1.0 - t) * 0.2 * k;
-        let shade = (0.4 + 0.25 * n) * SMOKE_NITS * view.exposure;
+        let a = (1.0 - smoothstep(0.0, 1.0, r)) * smoothstep(0.0, 0.2, t) * (1.0 - t) * select(0.2, 0.6, kind > 1.25) * k;
+        // (Steam white.)
+        let shade = select(0.4 + 0.25 * n, 3.0 + 0.5 * n, kind > 1.25) * SMOKE_NITS * view.exposure;
         out.color = vec4(vec3(shade) * a, a);
     }
     return out;

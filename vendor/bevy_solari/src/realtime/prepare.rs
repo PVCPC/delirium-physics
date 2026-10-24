@@ -75,6 +75,8 @@ struct SolariLightingUniforms {
     world_cache_position_lod_scale: f32,
     frame_rng: u32,
     reset: u32,
+    water_fog: [f32; 4],
+    water_fog_color: [f32; 4],
 }
 
 impl SolariLightingUniforms {
@@ -92,6 +94,8 @@ impl SolariLightingUniforms {
             world_cache_position_lod_scale: settings.world_cache_position_lod_scale,
             frame_rng: frame_count.wrapping_mul(5782582),
             reset: (settings.reset || force_reset) as u32,
+            water_fog: settings.water_fog,
+            water_fog_color: settings.water_fog_color,
         }
     }
 }

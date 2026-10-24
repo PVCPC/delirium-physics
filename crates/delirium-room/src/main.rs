@@ -18,6 +18,7 @@ use std::io::Write;
 
 mod car;
 mod fire;
+mod flood;
 mod getup;
 mod learn;
 mod locomotion;
@@ -30,6 +31,7 @@ mod sfx;
 mod jump;
 mod sever;
 mod tackle;
+mod water;
 mod world;
 #[cfg(feature = "portal")]
 mod portal;
@@ -134,6 +136,7 @@ fn settings(sim: &Sim) -> String {
 eyes {}
 brows {}
 skel {}
+skel_style {}
 clean {}
 look {}
 avoid {}
@@ -192,12 +195,14 @@ fire {}
 real_fire {}
 smoke {}
 fire_reaction {}
+water_quality {}
+voxel_water {}
 ",
-            sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
+            sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), sim.skel_style, b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react))
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water))
 }
 
 fn coin() -> bool {
@@ -257,11 +262,14 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "real_fire" => sim.real_fire = on,
             "smoke" => sim.smoke = on,
             "fire_reaction" => sim.fire_react = on,
+            "water_quality" => sim.water_q = (x as u8).min(4),
+            "voxel_water" => sim.voxel_water = on,
             "upscaler" => sim.upscaler = (x as u8).min(UP_FSR1),
             "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
             "brows" => sim.brows = on,
             "skel" => sim.skel = on,
+            "skel_style" => sim.skel_style = (x as u8).min(2),
             "clean" => sim.clean = on,
             "look" => sim.look = on,
             "avoid" => sim.avoid = on,
@@ -522,6 +530,7 @@ struct BloodPix(usize);
 #[derive(Component)]
 struct Glow(usize);
 const GLOW_MAX: usize = 12;
+const SKY_POOL: Vec3 = Vec3::new(6.0, -7.0, 2.5);
 const FIRE_LIGHT_OUT: f32 = 0.45;
 const FIRE_HIGH: u8 = 3;
 const CHAR_TIME: f32 = 12.0;
@@ -601,6 +610,7 @@ struct Sim {
     reloading: Option<f32>,
     blast_task: Option<delirium::explosion::Explosion>,
     burning: f32,
+    steam: (u32, Vec<Vec3>),
     shock: f32,
     charred: Vec<f32>,
     on_fire: Option<delirium::nm::OnFire>,
@@ -752,6 +762,9 @@ struct Sim {
     god_rays: bool,
     fire: u8,
     real_fire: bool,
+    water_q: u8,
+    voxel_water: bool,
+    flood: Option<flood::Flood>,
     smoke: bool,
     restir: bool,
     rt: u8,
@@ -763,6 +776,7 @@ struct Sim {
     fps_limit: f32,
     eyes: bool,
     skel: bool,
+    skel_style: u8,
     clean: bool,
     sun_dir: [f32; 2],
     body: usize,
@@ -1391,7 +1405,7 @@ impl Sim {
         n.foe = self.homer.as_ref().map_or_else(Default::default, |h| h.as_foe(clips, homer_arm));
         let frames: Vec<Transform> = self.agent.doll.frames().collect();
         let homer = up.then(|| (pelvis, (-fwd.x).atan2(fwd.y), self.health, clips.points(self.build.parts.iter().map(|p| p.name.as_str()), &frames)));
-        let hit = n.update(clips, &self.world, dt, mv, gait, homer, &fists, held, &caps_of(&self.build, &self.agent.doll));
+        let hit = n.update(clips, &self.world, dt, mv, gait, homer, &fists, held, &caps_of(&self.build, &self.agent.doll), self.room.pool.then_some(self.flood.as_ref().map_or(world::WATER, |f| f.level)));
         if n.disarmed() && self.homer.is_some() {
             if let Some(w) = self.homer_weapon.take() {
                 self.say(format!("hero  disarms Homer: takes his {}", WEAPONS[w].0));
@@ -1443,7 +1457,7 @@ impl Sim {
             me.keys = 0;
             let mv = if to.length() > 8.0 { to.normalize() } else { Vec3::ZERO };
             let fists = self.weapons.iter().find(|w| w.name == "UNARMED").cloned().unwrap_or_default();
-            me.update(clips, &self.world, dt, mv, 0, None, &fists, None, &hero.capsules(clips));
+            me.update(clips, &self.world, dt, mv, 0, None, &fists, None, &hero.capsules(clips), self.room.pool.then_some(self.flood.as_ref().map_or(world::WATER, |f| f.level)));
             if me.homer.len() == self.build.parts.len() {
                 self.agent.doll = Ragdoll::new(&self.build, &me.homer, Vec3::ZERO);
             }
@@ -1476,7 +1490,7 @@ impl Sim {
         let body = match &self.hero_doll { Some(h) => caps_of(&self.build, &h.agent.doll), None => hero.capsules(clips) };
         let hero_arm = (self.hero_gun && kind(self.weapon) == 2).then(|| self.weapons.iter().find(|x| x.name == WEAPONS[self.weapon].1)).flatten();
         me.foe = hero.as_foe(clips, hero_arm);
-        let hit = me.update(clips, &self.world, dt, mv, 0, (!down).then_some(foe), &fists, self.homer_weapon.and_then(held), &body);
+        let hit = me.update(clips, &self.world, dt, mv, 0, (!down).then_some(foe), &fists, self.homer_weapon.and_then(held), &body, self.room.pool.then_some(self.flood.as_ref().map_or(world::WATER, |f| f.level)));
         let took = me.disarmed() && hero_arm.is_some();
         let (frames, blocked) = (me.homer.clone(), hero.blocking(clips));
         if frames.len() == self.build.parts.len() {
@@ -2760,6 +2774,22 @@ impl Sim {
         }
     }
 
+    fn pose(&self) -> Vec<Transform> {
+        self.shown().map(|f| f.links.clone()).or_else(|| self.getup.as_ref().zip(self.rises[0].as_ref()).and_then(|(c, r)| c.frames(r)))
+            .unwrap_or_else(|| self.agent.doll.frames().collect())
+    }
+
+    fn water_level(&self) -> f32 {
+        self.flood.as_ref().map_or(world::WATER, |f| f.level)
+    }
+
+    fn flood_toggle(&mut self) {
+        if self.room.pool {
+            let f = self.flood.get_or_insert_with(|| flood::Flood::new(&self.world));
+            f.pouring = !f.pouring;
+        }
+    }
+
     fn fire_frame(&mut self, dt: f32) {
         if self.shock > 0.0 {
             self.shock -= dt;
@@ -2771,6 +2801,22 @@ impl Sim {
             f.1 += dt;
         }
         self.gun.fires.retain(|f| f.1 < FIRE_LIFE);
+        if self.room.pool {
+            let doused: Vec<Vec3> = self.gun.fires.iter().map(|f| f.0)
+                .filter(|&at| (world::over_pool(at) && at.z < self.water_level() + 0.05) || self.flood.as_ref().is_some_and(|f| f.depth_at(at) > 0.005)).collect();
+            self.gun.fires.retain(|f| !doused.contains(&f.0));
+            let ours = self.ours();
+            let wet = (0..ours.parts.len()).filter(|&k| world::over_pool(ours.p(k)) && ours.p(k).z < world::WATER).count();
+            let mut steam: Vec<Vec3> = doused.iter().map(|p| p.with_z(world::WATER)).collect();
+            if self.burning > 0.0 && wet * 2 > ours.parts.len() {
+                steam.extend((0..ours.parts.len()).map(|k| ours.p(k).with_z(world::WATER)));
+                self.burning = 0.0;
+                self.say("room  the water puts Homer out".into());
+            }
+            if !steam.is_empty() {
+                self.steam = (self.steam.0 + 1, steam);
+            }
+        }
         let ours = self.ours();
         let caught = self.gun.fires.iter().any(|&(at, _)| (0..ours.parts.len()).map(|k| ours.p(k)).any(|p| (p - at).with_z(0.0).length() < FIRE_R && p.z - at.z < 1.0));
         if caught && !self.dead {
@@ -3388,10 +3434,10 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
+                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -3525,6 +3571,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(Update, systems)
         .add_systems(Update, skel_cams.after(smooth))
+        .add_systems(Update, muscles.after(smooth))
         .add_systems(Update, (sounds, blood_view, glow_view, planks, save_settings))
         .add_systems(EguiPrimaryContextPass, ui);
     sfx::plugin(&mut app);
@@ -3534,6 +3581,8 @@ fn main() {
     #[cfg(feature = "portal")]
     portal::plugin(&mut app);
     fire::plugin(&mut app);
+    water::plugin(&mut app);
+    app.add_systems(Update, flood::view);
     #[cfg(feature = "dlss")]
     app.add_systems(Update, dlss.after(apply_look).before(video));
     #[cfg(windows)]
@@ -3873,6 +3922,7 @@ struct PartMesh {
 }
 #[derive(Default, Reflect, GizmoConfigGroup)]
 struct OursGizmos;
+const SKEL_STYLES: [&str; 3] = ["Lines", "Muscles", "Stick"];
 const SKEL_LAYER: usize = 29;
 #[derive(Component)]
 struct SkelCam(Entity);
@@ -3934,10 +3984,11 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
             let _ = mesh.merge(&plane(x));
         }
         let [a, b] = world::POOL;
-        commands.spawn((Mesh3d(meshes.add(Plane3d::new(Vec3::Z, (b - a) * 0.5))),
-                        MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgba(0.12, 0.42, 0.62, 0.55), alpha_mode: AlphaMode::Blend,
-                                                                   perceptual_roughness: 0.05, reflectance: 0.6, ..default() })),
-                        Transform::from_translation(((a + b) * 0.5).extend(world::WATER)), RenderLayers::layer(1), RoomScenery, bevy::light::NotShadowCaster));
+        commands.spawn((Mesh3d(meshes.add(water::surface(b - a))),
+                        MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgba(0.12, 0.42, 0.62, 0.55), alpha_mode: AlphaMode::Blend, ior: 1.33, thickness: 0.0,
+                                                                   attenuation_color: Color::linear_rgb(0.325, 0.741, 0.819), attenuation_distance: 2.5,
+                                                                   perceptual_roughness: 0.02, reflectance: 0.5, ..default() })),
+                        Transform::from_translation(((a + b) * 0.5).extend(world::WATER)), RenderLayers::layer(1), RoomScenery, Water, bevy::light::NotShadowCaster));
     }
     commands.spawn((Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(mats.add(StandardMaterial { base_color: floor, perceptual_roughness: 1.0, ..default() })), RoomScenery, Floor));
@@ -3965,6 +4016,36 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
             commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(mats.add(mat)), Transform::from_xyz(-2.2 + 2.2 * k as f32, -6.0, 0.002),
                             RenderLayers::layer(1), RoomScenery));
         }
+        let (at, half, deep) = (SKY_POOL, Vec2::splat(1.5), 1.0);
+        let pane = mats.add(StandardMaterial { base_color: Color::srgba(0.9, 0.97, 1.0, 0.2), alpha_mode: AlphaMode::Blend, specular_transmission: 1.0, ior: 1.5,
+                                               perceptual_roughness: 0.02, ..default() });
+        let water = mats.add(StandardMaterial { base_color: Color::srgba(0.72, 0.9, 1.0, 0.7), specular_transmission: 1.0, ior: 1.33,
+                                                attenuation_color: Color::linear_rgb(0.325, 0.741, 0.819), attenuation_distance: 2.5, perceptual_roughness: 0.02,
+                                                reflectance: 0.5, ..default() });
+        let g = 0.02;
+        for (c, h) in [(Vec3::new(0.0, 0.0, -g * 0.5), half.extend(g * 0.5) + Vec3::new(g, g, 0.0)),
+                       (Vec3::new(half.x + g * 0.5, 0.0, deep * 0.6), Vec3::new(g * 0.5, half.y + g, deep * 0.6)),
+                       (Vec3::new(-half.x - g * 0.5, 0.0, deep * 0.6), Vec3::new(g * 0.5, half.y + g, deep * 0.6)),
+                       (Vec3::new(0.0, half.y + g * 0.5, deep * 0.6), Vec3::new(half.x, g * 0.5, deep * 0.6)),
+                       (Vec3::new(0.0, -half.y - g * 0.5, deep * 0.6), Vec3::new(half.x, g * 0.5, deep * 0.6))] {
+            commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(h * 2.0))), MeshMaterial3d(pane.clone()), Transform::from_translation(at + c), RenderLayers::layer(1),
+                            RoomScenery, Clear, bevy::light::NotShadowCaster));
+        }
+        let inner = half.extend(deep * 0.5) - Vec3::splat(0.003);
+        commands.spawn((Mesh3d(meshes.add(Cuboid::from_size(inner * 2.0))), MeshMaterial3d(water), Transform::from_translation(at + Vec3::Z * deep * 0.5),
+                        RenderLayers::layer(1), RoomScenery, Clear, bevy::light::NotShadowCaster));
+    }
+    if sim.room.stage == "lights" {
+        let k = 1.5 / bevy::camera::Exposure::default().exposure();
+        let panel = meshes.add(Plane3d::new(Vec3::Z, Vec2::new(2.5, 1.5)));
+        for (i, c) in [[1.0, 0.08, 0.05], [1.0, 0.4, 0.03], [1.0, 0.85, 0.05], [0.1, 1.0, 0.15], [0.05, 0.9, 1.0], [0.08, 0.2, 1.0], [0.6, 0.1, 1.0]].into_iter().enumerate() {
+            let at = Vec3::new(0.0, world::HALL[1].y - 2.0 - 3.0 * i as f32, 0.004);
+            let col = LinearRgba::rgb(c[0], c[1], c[2]);
+            commands.spawn((Mesh3d(panel.clone()), MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::BLACK, emissive: col * k, emissive_exposure_weight: 1.0, reflectance: 0.0, ..default() })),
+                            Transform::from_translation(at), RenderLayers::layer(1), RoomScenery, bevy::light::NotShadowCaster));
+            commands.spawn((PointLight { color: col.into(), intensity: 200_000.0, range: 12.0, ..default() }, Transform::from_translation(at + Vec3::Z * 0.3),
+                            RenderLayers::layer(1), RoomScenery));
+        }
     }
     for &(c, h, row) in &sim.room.blocks {
         let brick = sim.room.surfaces.get(row as usize).is_some_and(|s| s.0 == "BRICK_WALL");
@@ -3972,10 +4053,10 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         if sim.room.stage == "pttest" && h == Vec3::splat(world::GLASS_HALF) {
             let i = ((c.y + 4.0) / 0.5) as usize;
             commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(glass[i % 16].clone()), Transform::from_translation(c), RenderLayers::layer(1), RoomScenery,
-                            Glass, bevy::light::NotShadowCaster));
+                            Glass, Clear, bevy::light::NotShadowCaster));
             continue;
         }
-        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if post { Color::srgb(0.24, 0.25, 0.27) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if c.z + h.z < 0.0 { Color::srgb(0.62, 0.8, 0.86) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
+        let color = if sim.room.stage == "trampoline" { Color::srgb(0.2, 0.3, 0.75) } else if sim.room.stage == "lights" { Color::srgb(0.9, 0.9, 0.88) } else if post { Color::srgb(0.24, 0.25, 0.27) } else if h.z < 0.01 { Color::srgb(0.92, 0.92, 0.9) } else if c.z + h.z < 0.0 { Color::srgb(0.9, 0.92, 0.93) } else if brick { Color::srgb(0.8, 0.42, 0.33) } else { Color::srgb(0.68, 0.68, 0.7) };
         let (mesh, rot) = match post {
             true => (meshes.add(Cylinder::new(h.x * 1.5, h.z * 2.0)), Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             false => (meshes.add(Cuboid::from_size(h * 2.0)), Quat::IDENTITY),
@@ -4011,7 +4092,7 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
         }
     }
     let sides = [(false, 1)];
-    let homer = sides.into_iter().map(|(g, l)| (g, l, None, None)).chain((0..24).map(|c| (false, 1, Some(c), None)))
+    let homer = sides.into_iter().map(|(g, l)| (g, l, None, None)).chain((0..49).map(|c| (false, 1, Some(c), None)))
         .chain((0..learn::LIVE).map(|w| (false, 1, None, Some(w))));
     let bone = mats.add(StandardMaterial { base_color: Color::srgb(0.95, 0.97, 1.0), emissive: BONE_GLOW, unlit: true, depth_bias: BONE_BIAS, ..default() });
     let socket = mats.add(StandardMaterial { base_color: Color::BLACK, unlit: true, depth_bias: BONE_BIAS, ..default() });
@@ -4652,6 +4733,10 @@ struct Fill;
 #[derive(Component)]
 struct Glass;
 #[derive(Component)]
+pub struct Clear;
+#[derive(Component)]
+struct Water;
+#[derive(Component)]
 struct GlassLight;
 
 fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Option<(u8, u8, u8, u8, u8, bool, (u8, u8), u8, bool, [u8; 5], u8)>>, adapter: Option<Res<bevy::render::renderer::RenderAdapter>>,
@@ -4723,7 +4808,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
             c.insert(bevy::post_process::bloom::Bloom { intensity: 0.3 * sim.bloom, ..bevy::post_process::bloom::Bloom::NATURAL });
         } else {
             c.remove::<bevy::post_process::bloom::Bloom>();
-            if !sim.upscaling() && sim.sky != 2 {
+            if !sim.needs_hdr() {
                 c.remove::<bevy::camera::Hdr>();
             }
         }
@@ -4807,6 +4892,9 @@ impl Sim {
     fn upscaling(&self) -> bool {
         self.aa_now() >= AA_DLAA
     }
+    fn needs_hdr(&self) -> bool {
+        self.upscaling() || self.bloom > 0.0 || self.sky == 2
+    }
     fn fsr1(&self) -> bool {
         self.render_scale < 0.999 && !self.upscaling() && self.upscaler == UP_FSR1
     }
@@ -4814,14 +4902,19 @@ impl Sim {
 
 fn ray_tracing(mut commands: Commands, mut sim: NonSendMut<Sim>, device: Option<Res<bevy::render::renderer::RenderDevice>>, mut last: Local<u8>,
                mut method: ResMut<bevy::pbr::DefaultOpaqueRendererMethod>, mut mats: ResMut<Assets<StandardMaterial>>, mut meshes: ResMut<Assets<Mesh>>,
-               lit: Query<(Entity, &Mesh3d, &InheritedVisibility, Option<&RenderLayers>, Option<&bevy::solari::prelude::RaytracingMesh3d>, Has<Glass>, Has<GlassLight>), With<MeshMaterial3d<StandardMaterial>>>,
+               lit: Query<(Entity, &Mesh3d, &InheritedVisibility, Option<&RenderLayers>, Option<&bevy::solari::prelude::RaytracingMesh3d>, Has<Clear>, Has<GlassLight>, Has<Water>, Has<water::Caustic>), (With<MeshMaterial3d<StandardMaterial>>, Or<(Without<water::Fx>, With<water::Caustic>)>)>,
                ) {
     use bevy::{mesh::Indices, solari::prelude::RaytracingMesh3d};
     sim.rt_ok = device.is_some_and(|d| d.features().contains(bevy::solari::SolariPlugins::required_wgpu_features()));
     let rt = sim.rt_now();
     let ours = RenderLayers::from_layers(&[0, 1]);
-    for (e, m, shown, layers, traced, glass, fake) in &lit {
-        let want = rt > 0 && shown.get() && layers.is_none_or(|l| l.intersects(&ours)) && !fake && !(rt == 1 && glass);
+    for (e, m, shown, layers, traced, glass, fake, water, caustic) in &lit {
+        let want = rt > 0 && shown.get() && (layers.is_none_or(|l| l.intersects(&ours)) || water || glass) && !fake
+            && !(rt == 1 && (water || caustic) && sim.water_q < 3);
+        let to = RenderLayers::layer(if rt > 0 { water::TRACED_ONLY } else { 1 });
+        if glass && layers != Some(&to) {
+            commands.entity(e).insert(to);
+        }
         if want == traced.is_some() && traced.is_none_or(|t| t.0 == m.0) {
             continue;
         }
@@ -4863,7 +4956,7 @@ fn ray_tracing(mut commands: Commands, mut sim: NonSendMut<Sim>, device: Option<
 }
 
 fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Image>>, assets: Res<AssetServer>,
-       mut media: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>, cam: Query<Entity, With<OursCam>>,
+       mut media: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>, mut cam: Query<(Entity, &mut Camera), Or<(With<OursCam>, With<water::Mirror>)>>,
        planet: Query<Entity, With<bevy::light::Atmosphere>>, mut last: Local<Option<(u8, u8, [f32; 3], f32)>>) {
     use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, GeneratedEnvironmentMapLight, Skybox};
     let now = match sim.sky {
@@ -4884,7 +4977,8 @@ fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Imag
     if sim.sky == 2 && planet.is_empty() {
         commands.spawn((Atmosphere::earth(media.add(bevy::light::atmosphere::ScatteringMedium::default())), Transform::from_xyz(0.0, 0.0, -6_360_000.0)));
     }
-    for e in &cam {
+    for (e, mut camera) in &mut cam {
+        camera.clear_color = if sim.sky == 2 { ClearColorConfig::Custom(Color::BLACK) } else { ClearColorConfig::Default };
         let mut c = commands.entity(e);
         c.remove::<(Skybox, EnvironmentMapLight, GeneratedEnvironmentMapLight, AtmosphereEnvironmentMapLight, bevy::pbr::AtmosphereSettings)>();
         match sim.sky {
@@ -4929,7 +5023,10 @@ fn dlss(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<bevy::a
     for (e, _) in &cam {
         let mut c = commands.entity(e);
         if want == 0 {
-            c.remove::<(Dlss<Sr>, Dlss<Rr>, bevy::camera::Hdr)>();
+            c.remove::<(Dlss<Sr>, Dlss<Rr>)>();
+            if !sim.needs_hdr() {
+                c.remove::<bevy::camera::Hdr>();
+            }
         } else if want >= 8 {
             c.remove::<Dlss<Sr>>().insert(Dlss::<Rr> { perf_quality_mode: mode, ..default() });
         } else {
@@ -4958,7 +5055,7 @@ fn upscale(mut commands: Commands, mut sim: NonSendMut<Sim>, ok: Option<Res<upsc
             commands.entity(e).insert((upscale::Upscale { by, mode, sharpness: sim.sharpen }, bevy::camera::Hdr));
         } else if was {
             commands.entity(e).remove::<upscale::Upscale>();
-            if !sim.upscaling() {
+            if !sim.needs_hdr() {
                 commands.entity(e).remove::<bevy::camera::Hdr>();
             }
         }
@@ -5012,10 +5109,10 @@ fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::P
 static GPUS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 fn preset(sim: &Sim) -> Option<usize> {
-    VIDEO_PRESETS.iter().position(|&(m, q, soft, fire)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows == (q > 0) && (q == 0 || sim.shadow_q == q)
-        && (sim.shadow > 0.0) == soft && sim.fire == fire)
+    VIDEO_PRESETS.iter().position(|&(m, q, soft, fire, water)| (if m == 1 { sim.aa == 0 } else { sim.aa == AA_MSAA && sim.msaa == m }) && sim.shadows == (q > 0) && (q == 0 || sim.shadow_q == q)
+        && (sim.shadow > 0.0) == soft && sim.fire == fire && sim.water_q == water)
 }
-const VIDEO_PRESETS: [(u8, u8, bool, u8); 3] = [(1, 0, false, 0), (4, 2, false, 2), (4, 3, true, FIRE_HIGH)];
+const VIDEO_PRESETS: [(u8, u8, bool, u8, u8); 3] = [(1, 0, false, 0, 0), (4, 2, false, 2, 1), (4, 3, true, FIRE_HIGH, 2)];
 
 #[derive(Component)]
 struct Floor;
@@ -5030,10 +5127,10 @@ fn follow_floor(sim: NonSend<Sim>, mut q: Query<&mut Transform, With<Floor>>) {
     }
 }
 
-fn god_rays(mut commands: Commands, sim: NonSend<Sim>, cam: Query<(Entity, Has<bevy::light::VolumetricFog>), With<OursCam>>,
+fn god_rays(mut commands: Commands, sim: NonSend<Sim>, under: Res<water::Under>, cam: Query<(Entity, Has<bevy::light::VolumetricFog>), With<OursCam>>,
             mut suns: Query<(Entity, &RenderLayers, &mut DirectionalLight, Has<bevy::light::VolumetricLight>), Without<Fill>>,
-            mut fog: Query<(&mut Visibility, &mut Transform), With<bevy::light::FogVolume>>) {
-    let on = sim.god_rays && (sim.shadows || sim.rt_now() > 0);
+            mut fog: Query<(&mut Visibility, &mut Transform), (With<bevy::light::FogVolume>, Without<water::Haze>)>) {
+    let on = ((sim.god_rays && !(under.0 && sim.rt_now() > 0)) || (under.0 && sim.rt_now() == 0)) && (sim.shadows || sim.rt_now() > 0);
     let maps = (sim.shadows && sim.rt_now() == 0) || on;
     for (_, _, mut l, _) in &mut suns {
         if l.shadow_maps_enabled != maps {
@@ -5041,7 +5138,7 @@ fn god_rays(mut commands: Commands, sim: NonSend<Sim>, cam: Query<(Entity, Has<b
         }
     }
     for (mut v, mut t) in &mut fog {
-        *v = if on { Visibility::Inherited } else { Visibility::Hidden };
+        *v = if on && sim.god_rays { Visibility::Inherited } else { Visibility::Hidden };
         t.translation = sim.ours().p(0).with_z(GOD_RAYS_BOX.z * 0.5);
     }
     for (c, has) in &cam {
@@ -5062,7 +5159,7 @@ fn god_rays(mut commands: Commands, sim: NonSend<Sim>, cam: Query<(Entity, Has<b
 }
 fn glass_light(mut commands: Commands, sim: NonSend<Sim>, glass: Query<&Transform, With<Glass>>, made: Query<Entity, With<GlassLight>>,
                mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, mut last: Local<Option<([f32; 2], bool, bool, f32)>>) {
-    let on = !glass.is_empty() && sim.rt_now() < 2;
+    let on = !glass.is_empty() && sim.rt_now() == 0;
     let now = (sim.sun_dir, sim.god_rays, on, sim.shadow);
     if *last == Some(now) && made.is_empty() != on {
         return;
@@ -5164,15 +5261,38 @@ const GLASS_FRAME_K: f32 = 0.7;
 const GLASS_RGB: [[f32; 3]; 16] = [[0.95, 0.95, 0.95], [0.95, 0.22, 0.01], [0.57, 0.08, 0.51], [0.04, 0.45, 0.70], [0.99, 0.69, 0.05], [0.22, 0.57, 0.01],
     [0.90, 0.26, 0.40], [0.06, 0.08, 0.09], [0.34, 0.34, 0.31], [0.01, 0.33, 0.33], [0.25, 0.03, 0.48], [0.05, 0.06, 0.40], [0.23, 0.09, 0.03],
     [0.11, 0.20, 0.01], [0.43, 0.03, 0.02], [0.01, 0.01, 0.02]];
+fn sky_transmittance(el: f32) -> Vec3 {
+    let (r0, top) = (6_360_000.0f32, 100_000.0f32);
+    let d = Vec2::new(el.to_radians().cos(), el.to_radians().sin());
+    let len = -r0 * d.y + ((r0 * d.y).powi(2) + (r0 + top).powi(2) - r0 * r0).sqrt();
+    let (n, medium) = (256, bevy::light::atmosphere::ScatteringMedium::default());
+    let mut depth = Vec3::ZERO;
+    for i in 0..n {
+        let h = (Vec2::new(0.0, r0) + d * (i as f32 + 0.5) * len / n as f32).length() - r0;
+        for t in &medium.terms {
+            depth += (t.absorption + t.scattering) * t.falloff.sample(1.0 - h / top) * len / n as f32;
+        }
+    }
+    (-depth).exp()
+}
+
+#[test]
+fn sky_reddens_low_sun() {
+    let (hi, lo) = (sky_transmittance(89.0), sky_transmittance(3.0));
+    assert!(hi.x > 0.8 && hi.z < hi.x && hi.z > 0.5, "{hi}");
+    assert!(lo.x < hi.x && lo.z < 0.2 * lo.x, "{lo}");
+}
+
+const SKY_FILL: Color = Color::srgb(0.66, 0.78, 1.0);
 const GOD_RAYS_BOX: Vec3 = Vec3::new(40.0, 40.0, 12.0);
 const GOD_RAYS_FOG: f32 = 0.15;
 
-fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32, [f32; 2], bool, [f32; 3], f32)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, &mut Transform, Has<Fill>)>,
+fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32, [f32; 2], bool, [f32; 3], f32, u8, u8)>>, mut sky: ResMut<ClearColor>, mut sun: Query<(&mut DirectionalLight, &mut Transform, Has<Fill>)>,
               mut fill: ResMut<GlobalAmbientLight>,
               floor: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<Floor>>, mut mats: ResMut<Assets<StandardMaterial>>,
               cam: Query<Entity, With<OursCam>>, mut commands: Commands) {
     let (l, Ok((f, m))) = (sim.skin, floor.single()) else { return };
-    if *last == Some((l, f, sim.soft, sim.shadow, sim.sun_dir, sim.shadows, sim.sun_color, sim.fill_k)) {
+    if *last == Some((l, f, sim.soft, sim.shadow, sim.sun_dir, sim.shadows, sim.sun_color, sim.fill_k, sim.sky, sim.rt_now())) {
         return;
     }
     if last.is_some_and(|o| o.0 != l || o.4 != sim.sun_dir) {
@@ -5182,22 +5302,24 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
             let _ = std::fs::write(p, n.map(|x| x.to_string()).join(" "));
         }
     }
-    *last = Some((l, f, sim.soft, sim.shadow, sim.sun_dir, sim.shadows, sim.sun_color, sim.fill_k));
+    *last = Some((l, f, sim.soft, sim.shadow, sim.sun_dir, sim.shadows, sim.sun_color, sim.fill_k, sim.sky, sim.rt_now()));
     fill.brightness = if sim.soft { 400.0 * sim.fill_k } else { GlobalAmbientLight::default().brightness };
+    if sim.sky != 0 {
+        fill.brightness = 0.0;
+    }
+    fill.color = if sim.soft { SKY_FILL } else { Color::WHITE };
     let [r, g, b] = l.sky;
     sky.0 = Color::srgb(r, g, b);
     let from = |az: f32, el: f32, r: f32| {
         let (az, el) = (az.to_radians(), el.clamp(3.0, 89.0).to_radians());
         Vec3::new(az.cos() * el.cos(), az.sin() * el.cos(), el.sin()) * r
     };
+    *bevy::solari::scene::SUN_TINT.lock().unwrap() = if sim.sky == 2 { sky_transmittance(sim.sun_dir[1].clamp(3.0, 89.0)) } else { Vec3::ONE };
     for (mut s, mut t, fill) in &mut sun {
         *t = Transform::from_translation(if fill { from(sim.sun_dir[0] + 160.6, 22.0, 5.4) } else { from(sim.sun_dir[0], sim.sun_dir[1], 7.0) }).looking_at(Vec3::ZERO, Vec3::Z);
-        let k = match (fill, sim.soft) { (false, true) => 0.75, (false, false) => 1.0, (true, true) => 0.3 * sim.fill_k, (true, false) => 0.0 };
+        let k = match (fill, sim.soft) { (false, _) => 1.0, (true, true) if sim.rt_now() == 0 && sim.sky == 0 => 0.3 * sim.fill_k, (true, _) => 0.0 };
         s.illuminance = bevy::light::light_consts::lux::AMBIENT_DAYLIGHT * l.sun * k;
-        if !fill {
-            let [r, g, b] = sim.sun_color;
-            s.color = Color::srgb(r, g, b);
-        }
+        s.color = if fill { SKY_FILL } else { Color::srgb(sim.sun_color[0], sim.sun_color[1], sim.sun_color[2]) };
         s.soft_shadow_size = (!fill && sim.shadow > 0.0).then_some((sim.shadow * 0.5).to_radians().tan());
         if fill {
             s.shadow_maps_enabled = false;
@@ -5211,7 +5333,7 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
         }
     }
     for c in &cam {
-        if l.fog {
+        if l.fog && sim.sky == 0 {
             let (start, end) = if r + g + b < 0.3 { (4.0, 12.0) } else { (6.0, 28.0) };
             commands.entity(c).insert(bevy::pbr::DistanceFog { color: Color::srgb(r, g, b), falloff: bevy::pbr::FogFalloff::Linear { start, end }, ..default() });
         } else {
@@ -5223,7 +5345,7 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
 const SCENE_R: f32 = 40.0;
 const STAND: f32 = 0.95;
 const SCENES: [&str; 4] = ["room", "stairs", "wall", "ledge"];
-const EXTRAS: [(&str, &str); 6] = [("bridge", "rope bridge"), ("trampoline", "trampoline"), ("quake", "earthquake"), ("bull", "mechanical bull"), ("cab", "cab door"), ("pttest", "path tracing test")];
+const EXTRAS: [(&str, &str); 7] = [("lights", "coloured lights hall"), ("bridge", "rope bridge"), ("trampoline", "trampoline"), ("quake", "earthquake"), ("bull", "mechanical bull"), ("cab", "cab door"), ("pttest", "path tracing test")];
 const PBR: [(&str, &[u8]); 23] = [
     ("pbr/cobblestone.ktx2", include_bytes!("pbr/cobblestone.ktx2")),
     ("pbr/cobblestone_n.ktx2", include_bytes!("pbr/cobblestone_n.ktx2")),
@@ -5442,7 +5564,7 @@ fn glow_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Asset
 
 fn fire_view(sim: NonSend<Sim>, time: Res<Time>, cam: Query<&GlobalTransform, With<OursCam>>,
              mut q: Query<(&mut fire::Fire, &Mesh3d, &MeshMaterial3d<fire::FlameMaterial>, &mut Visibility)>, mut meshes: ResMut<Assets<Mesh>>,
-             mut mats: ResMut<Assets<fire::FlameMaterial>>, mut warm: Local<u32>, mut spills: Local<(Vec<(Vec3, f32)>, f32, u32)>) {
+             mut mats: ResMut<Assets<fire::FlameMaterial>>, mut warm: Local<u32>, mut spills: Local<(Vec<(Vec3, f32)>, f32, u32)>, mut steamed: Local<u32>) {
     let (Ok(cam), Ok((mut f, m, mat, mut v))) = (cam.single(), q.single_mut()) else { return };
     if *warm < 30 {
         *warm += 1;
@@ -5485,6 +5607,10 @@ fn fire_view(sim: NonSend<Sim>, time: Res<Time>, cam: Query<&GlobalTransform, Wi
         *due = 0.0;
     }
     burns.extend(spilt.iter().map(|&(at, age)| fire::Source { at, r: 0.1, k: 0.6 * (1.0 - age / SPILL_LIFE) }));
+    if *steamed != sim.steam.0 {
+        *steamed = sim.steam.0;
+        fire::steam(&mut f, &sim.steam.1);
+    }
     let Some(mut mesh) = meshes.get_mut(&m.0) else { return };
     let any = fire::step(&mut f, &mut mesh, &burns, time.delta_secs(), cam, !sim.real_fire, sim.smoke);
     let want = if any { Visibility::Inherited } else { Visibility::Hidden };
@@ -6342,6 +6468,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
         let mut w = line.splitn(2, ' ');
         match (w.next().unwrap_or(""), w.next()) {
             ("!button", Some(b)) => sim.button(b),
+            ("!flood", a) => if a.is_some_and(|a| a.trim() == "drain") { sim.flood = None } else { sim.flood_toggle() },
             ("!sun", Some(a)) => {
                 let v: Vec<f32> = a.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 if let [az, el] = v[..] {
@@ -7015,6 +7142,51 @@ fn bone_tint(c: usize) -> Option<Color> {
     [None, Some(Color::srgb(0.35, 0.55, 1.0)), Some(Color::srgb(1.0, 0.35, 0.3)), Some(Color::srgb(0.35, 0.55, 1.0)), None][c.min(4)]
 }
 
+fn skel_tint(sim: &Sim) -> Option<Color> {
+    if sim.skel_style == 2 { Some(Color::srgb(1.0, 0.85, 0.1)) } else { bone_tint(sim.ped_color) }
+}
+
+fn muscles(mut commands: Commands, sim: NonSend<Sim>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
+           mut parts: Local<Vec<(Entity, Entity, Entity)>>, mut at: Query<(&mut Transform, &mut Visibility)>) {
+    let on = sim.skel && !sim.clean && sim.skel_style == 1 && sim.watch.is_none();
+    if parts.len() != sim.build.parts.len() {
+        if !on {
+            return;
+        }
+        let bone = meshes.add(ConicalFrustum { radius_top: 0.5, radius_bottom: 1.0, height: 1.0 });
+        let ball = meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap());
+        let red = mats.add(StandardMaterial { base_color: Color::srgb(0.7, 0.1, 0.08), emissive: LinearRgba::rgb(0.3, 0.02, 0.015), perceptual_roughness: 0.45, ..default() });
+        let yellow = mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.8, 0.1), emissive: LinearRgba::rgb(0.6, 0.4, 0.02), perceptual_roughness: 0.35, ..default() });
+        let layer = RenderLayers::layer(SKEL_LAYER);
+        *parts = sim.build.parts.iter().map(|_| {
+            let mut spawn = |m: &Handle<Mesh>, c: &Handle<StandardMaterial>| commands.spawn((Mesh3d(m.clone()), MeshMaterial3d(c.clone()), Transform::default(),
+                                                                                               Visibility::Hidden, layer.clone(), bevy::light::NotShadowCaster)).id();
+            (spawn(&bone, &red), spawn(&bone, &red), spawn(&ball, &yellow))
+        }).collect();
+        return;
+    }
+    let fr = sim.pose();
+    let joint = |k: usize| fr.get(k).map(|f| if sim.build.parts[k].parent.is_some() { f.translation + f.rotation * sim.build.parts[k].anchor } else { f.translation });
+    let mut put = |e: Entity, ab: Option<(Vec3, Vec3)>, w: Option<f32>| if let Ok((mut t, mut v)) = at.get_mut(e) {
+        let Some((a, b)) = ab.filter(|_| on) else {
+            *v = Visibility::Hidden;
+            return;
+        };
+        let d = b - a;
+        let w = w.unwrap_or((d.length() * 0.14).clamp(0.015, 0.05));
+        *v = Visibility::Inherited;
+        *t = Transform { translation: (a + b) * 0.5, rotation: Quat::from_rotation_arc(Vec3::NEG_Y, d.normalize_or(Vec3::Z)), scale: Vec3::new(w, d.length(), w) };
+    };
+    for (k, p) in sim.build.parts.iter().enumerate() {
+        let (bone, tip, ball) = parts[k];
+        let x = joint(k);
+        put(bone, x.zip(p.parent.and_then(&joint)).map(|(x, y)| (y, x)), None);
+        let end = p.parent.is_some() && !sim.build.parts.iter().any(|c| c.parent == Some(k));
+        put(tip, x.zip(fr.get(k)).filter(|_| end).map(|(x, f)| (x, f.translation * 2.0 - x)), None);
+        put(ball, x.map(|x| (x - Vec3::Z * 0.015, x + Vec3::Z * 0.015)), Some(0.03));
+    }
+}
+
 fn side_color(name: &str) -> Color {
     if name.ends_with("Left") {
         Color::srgb(0.9, 0.25, 0.2)
@@ -7079,13 +7251,13 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
     let up = |i: usize| sim.getup.as_ref().zip(sim.rises[i].as_ref()).and_then(|(c, r)| c.frames(r));
     let ours_up = up(0);
     let rising = ours_up.is_some();
-    let fr: Vec<Transform> = sim.shown().map(|f| f.links.clone()).or(ours_up).unwrap_or_else(|| doll.frames().collect());
+    let fr = sim.pose();
     if let Some(w) = sim.watch.as_ref() {
         for i in 0..w.tries.len() {
             skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| w.at(i, k), |_| false);
         }
-    } else if dbg {
-        skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| fr.get(k).copied(), |k| doll.touch[k] & 0x48 != 0);
+    } else if dbg && sim.skel_style != 1 {
+        skeleton(&mut ours, &sim.build, skel_tint(&sim), |k| fr.get(k).copied(), |k| doll.touch[k] & 0x48 != 0);
     }
     if let Some(p) = sim.throw_at.filter(|_| !sim.clean) {
         ours.sphere(Isometry3d::from_translation(p), 0.08, Color::srgb(1.0, 0.85, 0.2)).resolution(16);
@@ -7124,7 +7296,7 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
     }
     for (a, _) in sim.crowd.iter().filter(|_| dbg) {
         let f: Vec<Transform> = a.doll.frames().collect();
-        skeleton(&mut ours, &sim.build, bone_tint(sim.ped_color), |k| f.get(k).copied(), |k| a.doll.touch[k] & 0x48 != 0);
+        skeleton(&mut ours, &sim.build, skel_tint(&sim), |k| f.get(k).copied(), |k| a.doll.touch[k] & 0x48 != 0);
     }
     let (com, v) = doll.com();
     let (com, v) = if rising { (fr[0].translation, Vec3::ZERO) } else { (com, v) };
@@ -7714,7 +7886,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.label(section_title("Scene"));
             info(ui, "Choose a location, then add people or vehicles.");
             sub(ui, "Location");
-            let stages: Vec<(&str, bool, String)> = STAGES.iter().chain(EXTRAS.iter()).map(|&(k, l)| (k, sim.room.stage == k, match l { "room" => "Room", "big stairs" => "Big stairs", "rooftop" => "Rooftop", "low wall" => "Low wall", "rail" => "Railing", "street" => "Street", "rope bridge" => "Rope bridge", "trampoline" => "Trampoline", "earthquake" => "Earthquake", "mechanical bull" => "Mechanical bull", "cab door" => "Taxi door test", "path tracing test" => "Path tracing test", _ => l }.to_string())).collect();
+            let stages: Vec<(&str, bool, String)> = STAGES.iter().chain(EXTRAS.iter()).map(|&(k, l)| (k, sim.room.stage == k, match l { "room" => "Room", "big stairs" => "Big stairs", "rooftop" => "Rooftop", "low wall" => "Low wall", "rail" => "Railing", "street" => "Street", "rope bridge" => "Rope bridge", "trampoline" => "Trampoline", "earthquake" => "Earthquake", "mechanical bull" => "Mechanical bull", "cab door" => "Taxi door test", "path tracing test" => "Path tracing test", "coloured lights hall" => "Coloured lights hall", _ => l }.to_string())).collect();
             if let Some(k) = tiles(ui, "stage", &stages) {
                 pressed = Some(format!("#stage {k}"));
             }
@@ -7795,6 +7967,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 ui.checkbox(&mut sim.eyes, "Eyes").on_hover_text(tip("#eyes"));
                 ui.checkbox(&mut sim.brows, "Eyebrows").on_hover_text(tip("#brows"));
                 ui.checkbox(&mut sim.skel, "Skeleton").on_hover_text(tip("#skel"));
+                ui.add_enabled_ui(sim.skel, |ui| {
+                    egui::ComboBox::from_id_salt("skel_style").width(80.0).selected_text(SKEL_STYLES[sim.skel_style as usize]).show_ui(ui, |ui| {
+                        for k in 0..3u8 {
+                            ui.selectable_value(&mut sim.skel_style, k, SKEL_STYLES[k as usize]);
+                        }
+                    }).response.on_hover_text("Lines: white bones, coloured joints. Muscles: solid red bones and yellow joints. Stick: all yellow.");
+                });
                 ui.checkbox(&mut sim.clean, "Clean view").on_hover_text(tip("#clean"));
             });
             });
@@ -7894,6 +8073,22 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 ui.add_enabled(sim.fire > 0, egui::Checkbox::new(&mut sim.real_fire, "Realistic")).on_hover_text("Rolling, glowing flames instead of voxels (cubes).");
                 ui.add_enabled(sim.fire > 0, egui::Checkbox::new(&mut sim.smoke, "Smoke"));
             });
+            let mut q = sim.water_q as f32;
+            if ui.add(egui::Slider::new(&mut q, 0.0..=4.0).step_by(1.0).text(gpu("Water", 1)).custom_formatter(|x, _| ["plain", "ripples", "ripples + refraction", "Extra High", "Max"][x as usize].into()))
+                .on_hover_text("Plain: a see-through blue, for a slow PC. Ripples: the breeze's and splashes' ripples catch the light.                                 Ripples + refraction: what's under the water bends and gets bluer the deeper it is. Extra High: the surface itself moves, finer ripples, caustics (sunlight focused by the ripples) on the pool's floor and walls, spray from splashes, a blue haze underwater. Max: finer caustics and three times the spray.").changed() {
+                sim.water_q = q as u8;
+            }
+            ui.add_enabled(sim.water_q >= 1, egui::Checkbox::new(&mut sim.voxel_water, "Voxel water (experimental)")).on_hover_text("The water's surface in blocks, splashes and all.");
+            ui.horizontal(|ui| {
+                let pouring = sim.flood.as_ref().is_some_and(|f| f.pouring);
+                if ui.add_enabled(sim.room.pool, egui::Button::new(if pouring { "Stop pouring" } else { "Flood (experimental)" }))
+                    .on_hover_text("Pours water into the pool till it spills over its sides and runs off across the floor.").clicked() {
+                    sim.flood_toggle();
+                }
+                if ui.add_enabled(sim.flood.is_some(), egui::Button::new("Drain")).on_hover_text("The pool back as it was, the floor dry.").clicked() {
+                    sim.flood = None;
+                }
+            });
             ui.add(egui::Slider::new(&mut sim.bloom, 0.0..=1.0).text(gpu("Bloom", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
                 .on_hover_text("A soft glow around bright things, like a camera lens.");
             ui.add(egui::Slider::new(&mut sim.dof, 0.0..=1.0).text(gpu("Depth of field", 2)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
@@ -7921,7 +8116,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     sim.sun_dir = SUN_DIR;
                 }
                 if ui.button("Reset tab").on_hover_text("Lights, shadows and effects back to how they start.").clicked() {
-                    reset_settings(&mut sim, &["shadows", "shadow_quality", "sun_size", "soft", "fill", "sun_r", "sun_g", "sun_b", "ssao", "ao_strength", "bloom", "dof", "contact", "contact_strength", "vignette", "lens", "chroma", "fire", "real_fire", "smoke"]);
+                    reset_settings(&mut sim, &["shadows", "shadow_quality", "sun_size", "soft", "fill", "sun_r", "sun_g", "sun_b", "ssao", "ao_strength", "bloom", "dof", "contact", "contact_strength", "vignette", "lens", "chroma", "fire", "real_fire", "smoke", "water_quality"]);
                     sim.sun_dir = SUN_DIR;
                 }
             });
@@ -7935,9 +8130,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let mut q = custom.unwrap_or(1) as f32;
             if ui.add(egui::Slider::new(&mut q, 0.0..=2.0).step_by(1.0).text("Graphics quality")
                 .custom_formatter(|x, _| if custom.is_none() { "custom".into() } else { ["Low", "Medium", "High"][x as usize].into() }))
-                .on_hover_text("Sets edge smoothing, shadow quality, the sun's size and fire together. Low: off, no shadows, wireframe fire. Medium: 4x, medium, a point sun, flames + light. High: 4x, high, a 1° sun, flames + light on Homer.").changed() {
-                let (m, s, soft, fire) = VIDEO_PRESETS[q as usize];
-                sim.fire = fire;
+                .on_hover_text("Sets edge smoothing, shadow quality, the sun's size, fire and water together. Low: off, no shadows, wireframe fire, plain water. Medium: 4x, medium, a point sun, flames + light, rippling water. High: 4x, high, a 1° sun, flames + light on Homer, ripples and refraction.").changed() {
+                let (m, s, soft, fire, water) = VIDEO_PRESETS[q as usize];
+                (sim.fire, sim.water_q) = (fire, water);
                 (sim.aa, sim.shadows, sim.shadow_q) = (if m == 1 { 0 } else { AA_MSAA }, s > 0, s.max(1));
                 sim.msaa = m.max(2);
                 sim.shadow = if soft { sim.shadow.max(1.0) } else { 0.0 };

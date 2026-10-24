@@ -73,6 +73,10 @@ pub struct DistanceFog {
 
     /// Determines which falloff mode to use, and its parameters.
     pub falloff: FogFalloff,
+
+    /// Delirium: the fog only below this height (a water's surface: under it, what's over it seen clear, only the way
+    /// under the water hazy). Everywhere when infinite (the default).
+    pub surface: f32,
 }
 
 /// Allows switching between different fog falloff modes, and configuring their parameters.
@@ -476,6 +480,7 @@ impl Default for DistanceFog {
             },
             directional_light_color: Color::NONE,
             directional_light_exponent: 8.0,
+            surface: f32::INFINITY,
         }
     }
 }

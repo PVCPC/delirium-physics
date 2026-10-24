@@ -52,6 +52,8 @@ struct Material {
     ior: f32,
     _padding: f32,
     reflectance: f32,
+    absorption: vec3<f32>,
+    _padding2: f32,
 }
 
 const TEXTURE_MAP_NONE = 0xFFFFFFFFu;
@@ -100,10 +102,29 @@ const LIGHT_NOT_PRESENT_THIS_FRAME = 0xFFFFFFFFu;
 @group(0) @binding(17) var environment_map_sampler: sampler;
 @group(0) @binding(18) var<storage> environment_map_light: EnvironmentMapLight;
 
+// Delirium: textures' mips by the ray's cone (ray cones). Its width at the ray's start and its spread (m a metre of
+// the way; zero: the top mip, Solari's own way), the way the ray goes, and how far it went to the hit being resolved
+// (-1: not a traced hit's); the mip its footprint there takes.
+var<private> ray_cone: vec2<f32>;
+var<private> ray_cone_dir: vec3<f32>;
+var<private> cone_t: f32 = -1.0;
+var<private> mip: f32;
+
 const RAY_T_MIN = 0.001f;
 const RAY_T_MAX = 100000.0f;
 
 const RAY_NO_CULL = 0xFFu;
+
+// Delirium: as `trace_ray`, but on through glass (water: ray-traced lighting's bounces don't bend through it).
+fn trace_ray_past_glass(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_min: f32, ray_t_max: f32) -> RayIntersection {
+    var t = ray_t_min;
+    var ray = trace_ray(ray_origin, ray_direction, t, ray_t_max, RAY_FLAG_NONE);
+    for (var i = 0u; i < 8u && ray.kind != RAY_QUERY_INTERSECTION_NONE && materials[material_ids[ray.instance_custom_data]].glass > 0.0; i++) {
+        t = ray.t + RAY_T_MIN;
+        ray = trace_ray(ray_origin, ray_direction, t, ray_t_max, RAY_FLAG_NONE);
+    }
+    return ray;
+}
 
 fn trace_ray(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_min: f32, ray_t_max: f32, ray_flag: u32) -> RayIntersection {
     let ray = RayDesc(ray_flag, RAY_NO_CULL, ray_t_min, ray_t_max, ray_origin, ray_direction);
@@ -131,13 +152,57 @@ fn glass_filter(hit: RayIntersection, ray_direction: vec3<f32>) -> vec3<f32> {
     let barycentrics = vec3(1.0 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics);
     let transform = affine3_to_square(transforms[instance_id]);
     let normal = mat3x3(transform[0].xyz, transform[1].xyz, transform[2].xyz) * (mat3x3(vertices[0].normal, vertices[1].normal, vertices[2].normal) * barycentrics);
-    if dot(normal, ray_direction) > 0.0 { return vec3(1.0); }
+    if dot(normal, ray_direction) > 0.0 {
+        // Delirium: up out of water: the caustics where the ray starts (water.rs's `Vol`).
+        if any(material.absorption > vec3(0.0)) && material.metallic_roughness_texture_id != TEXTURE_MAP_NONE {
+            return vec3(water_caustic(instance_id, hit.primitive_index, barycentrics, ray_direction, hit.t));
+        }
+        return vec3(1.0);
+    }
     var c = vec4(material.base_color, 1.0);
     if material.base_color_texture_id != TEXTURE_MAP_NONE {
         let uv = mat3x2(vertices[0].uv, vertices[1].uv, vertices[2].uv) * barycentrics;
         c *= textureSampleLevel(textures[material.base_color_texture_id], samplers[material.base_color_texture_id], uv, 0.0);
     }
     return mix(vec3(1.0), c.rgb, c.a);
+}
+
+// Delirium: the caustics' light (over flat water's) at the point `t` back along `to_light` from the water's surface,
+// from its layers through the water (water.rs's `Vol`). 1 on the pool's floor and walls: their own caustics' theirs.
+fn water_caustic(instance_id: u32, triangle_id: u32, barycentrics: vec3<f32>, to_light: vec3<f32>, t: f32) -> f32 {
+    let material = materials[material_ids[instance_id]];
+    let id = material.metallic_roughness_texture_id;
+    let vertices = load_vertices(geometry_ids[instance_id], triangle_id);
+    let w = transform_positions(affine3_to_square(transforms[instance_id]), vertices);
+    let uvs = mat3x2(vertices[0].uv, vertices[1].uv, vertices[2].uv);
+    // The surface's metres a whole uv, and the point's uv (straight down the layers' grid from where it'd be under).
+    let e1 = w[1] - w[0];
+    let e2 = w[2] - w[0];
+    let d1 = uvs[1] - uvs[0];
+    let d2 = uvs[2] - uvs[0];
+    let r = 1.0 / (d1.x * d2.y - d1.y * d2.x);
+    let dpdu = ((e1 * d2.y - e2 * d1.y) * r).xy;
+    let dpdv = ((e2 * d1.x - e1 * d2.x) * r).xy;
+    let back = -to_light.xy * t;
+    let k = 1.0 / (dpdu.x * dpdv.y - dpdu.y * dpdv.x);
+    let uv = uvs * barycentrics + vec2(dpdv.y * back.x - dpdv.x * back.y, dpdu.x * back.y - dpdu.y * back.x) * k;
+    let depth = t * to_light.z;
+    let size = vec2<f32>(textureDimensions(textures[id]));
+    let deep = textureSampleLevel(textures[id], samplers[id], vec2(0.5), 0.0).a * 255.0 * 0.02;
+    let edge = 0.03 / vec2(length(dpdu), length(dpdv));
+    if depth > deep - 0.03 || any(uv < edge) || any(uv > 1.0 - edge) { return 1.0; }
+    // (The layers each as tall as the pool's long over its wide.)
+    let layers = max(round(size.y / (size.x * length(dpdv) / length(dpdu))), 1.0);
+    let f = depth / deep * layers - 1.0;
+    let below = water_layer(id, uv, max(floor(f), 0.0), layers, size.y);
+    if f < 0.0 { return mix(1.0, below, depth / (deep / layers)); }
+    return mix(below, water_layer(id, uv, min(floor(f) + 1.0, layers - 1.0), layers, size.y), fract(f));
+}
+
+fn water_layer(id: u32, uv: vec2<f32>, k: f32, layers: f32, height: f32) -> f32 {
+    let half = 0.5 * layers / height;
+    let v = (k + clamp(uv.y, half, 1.0 - half)) / layers;
+    return textureSampleLevel(textures[id], samplers[id], vec2(uv.x, v), 0.0).r * 4.0;
 }
 
 // Delirium: what reaches the end of a shadow ray (this frame's scene or the last's): the glass on the way's tint, none past
@@ -163,7 +228,7 @@ fn trace_transmittance(ray_origin: vec3<f32>, ray_direction: vec3<f32>, ray_t_ma
 }
 
 fn sample_texture(id: u32, uv: vec2<f32>) -> vec3<f32> {
-    return textureSampleLevel(textures[id], samplers[id], uv, 0.0).rgb; // TODO: Mipmap
+    return textureSampleLevel(textures[id], samplers[id], uv, mip).rgb;
 }
 
 struct ResolvedMaterial {
@@ -177,6 +242,8 @@ struct ResolvedMaterial {
     glass: f32,
     ior: f32,
     alpha: f32,
+    // Delirium: glass that's a body (water): what a metre of it soaks up.
+    absorption: vec3<f32>,
 }
 
 struct ResolvedRayHitFull {
@@ -197,12 +264,13 @@ fn resolve_material(material: Material, uv: vec2<f32>) -> ResolvedMaterial {
     m.base_color = material.base_color.rgb;
     m.alpha = 1.0;
     if material.base_color_texture_id != TEXTURE_MAP_NONE {
-        let c = textureSampleLevel(textures[material.base_color_texture_id], samplers[material.base_color_texture_id], uv, 0.0);
+        let c = textureSampleLevel(textures[material.base_color_texture_id], samplers[material.base_color_texture_id], uv, mip);
         m.base_color *= c.rgb;
         m.alpha = c.a;
     }
     m.glass = material.glass;
     m.ior = material.ior;
+    m.absorption = material.absorption;
 
     m.emissive = material.emissive.rgb;
     if material.emissive_texture_id != TEXTURE_MAP_NONE {
@@ -226,7 +294,10 @@ fn resolve_material(material: Material, uv: vec2<f32>) -> ResolvedMaterial {
 
 fn resolve_ray_hit_full(ray_hit: RayIntersection) -> ResolvedRayHitFull {
     let barycentrics = vec3(1.0 - ray_hit.barycentrics.x - ray_hit.barycentrics.y, ray_hit.barycentrics);
-    return resolve_triangle_data_full(ray_hit.instance_custom_data, ray_hit.primitive_index, barycentrics);
+    cone_t = ray_hit.t;
+    let hit = resolve_triangle_data_full(ray_hit.instance_custom_data, ray_hit.primitive_index, barycentrics);
+    cone_t = -1.0;
+    return hit;
 }
 
 fn load_vertices(instance_geometry_ids: InstanceGeometryIds, triangle_id: u32) -> array<Vertex, 3> {
@@ -282,6 +353,20 @@ fn resolve_triangle_data_full(instance_id: u32, triangle_id: u32, barycentrics: 
     var world_normal = normalize(determinant_sign * (cofactor * local_normal));
 
     let geometric_world_normal = world_normal;
+    // Delirium: the mip the ray's cone's footprint takes: its width there squared, stretched by how slant it meets the
+    // triangle, in the colour texture's texels (the normal map's without one; the triangle's a square metre).
+    mip = 0.0;
+    let tex = select(material.base_color_texture_id, material.normal_map_texture_id, material.base_color_texture_id == TEXTURE_MAP_NONE);
+    if ray_cone.y > 0.0 && cone_t >= 0.0 && tex != TEXTURE_MAP_NONE {
+        let duv0 = vertices[1].uv - vertices[0].uv;
+        let duv1 = vertices[2].uv - vertices[0].uv;
+        let size = vec2<f32>(textureDimensions(textures[tex], 0));
+        let area = length(cross(world_vertices[1] - world_vertices[0], world_vertices[2] - world_vertices[0]));
+        let texels = abs(duv0.x * duv1.y - duv0.y * duv1.x) * size.x * size.y / max(area, 1e-10);
+        let width = ray_cone.x + ray_cone.y * cone_t;
+        let slant = max(abs(dot(ray_cone_dir, geometric_world_normal)), 0.05);
+        mip = max(0.5 * log2(width * width * texels / slant), 0.0);
+    }
     if material.normal_map_texture_id != TEXTURE_MAP_NONE {
         let TBN = calculate_tbn_mikktspace(world_normal, world_tangent);
         let T = TBN[0];

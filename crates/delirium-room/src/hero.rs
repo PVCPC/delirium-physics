@@ -11,6 +11,9 @@ const TURN: f32 = 10.0;
 const EYE: f32 = 1.6;
 const PELVIS: f32 = 1.0;
 const BOUND: f32 = 0.3;
+const SWIM_DEEP: f32 = 1.2;
+const SWIM_ROOT: f32 = 1.35;
+const SWIM_SPEEDS: [f32; 3] = [0.9, 1.4, 2.0];
 
 pub struct Hero {
     pub feet: Vec3,
@@ -41,6 +44,7 @@ pub struct Hero {
     #[cfg(feature = "portal")]
     pub fall: f32,
     pub foe: melee::Foe,
+    pub swimming: bool,
 }
 
 pub enum Hit {
@@ -57,7 +61,7 @@ impl Hero {
                            speeds: [speed(getup::WALK), speed(getup::WALK + 1), speed(getup::WALK + 2)],
                            caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
                            hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![], foe: Default::default(),
-                           #[cfg(feature = "portal")] chell: None, #[cfg(feature = "portal")] fall: 0.0 };
+                           #[cfg(feature = "portal")] chell: None, #[cfg(feature = "portal")] fall: 0.0, swimming: false };
         n.pose(clips);
         n
     }
@@ -112,7 +116,7 @@ impl Hero {
 
     #[allow(clippy::too_many_arguments)]
     pub fn update(&mut self, clips: &Clips, world: &delirium::collision::Collision, dt: f32, mv: Vec3, gait: usize, homer: Option<(Vec3, f32, f32, [Option<Vec3>; 5])>,
-                  weapon: &delirium_data::weapons::Weapon, held: Option<Held>, body: &[Capsule]) -> Option<Hit> {
+                  weapon: &delirium_data::weapons::Weapon, held: Option<Held>, body: &[Capsule], water: Option<f32>) -> Option<Hit> {
         if dt <= 0.0 {
             return None;
         }
@@ -150,20 +154,21 @@ impl Hero {
             let want = mv.y.atan2(mv.x);
             let d = (want - self.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
             self.yaw += d.clamp(-TURN * dt, TURN * dt);
-            let c = getup::WALK + gait.min(2);
-            if self.clip != c && !(getup::WALK..getup::WALK + 3).contains(&self.clip) {
+            let walk = self.swim(clips).map_or(getup::WALK, |s| s + 1);
+            let c = walk + gait.min(2);
+            if self.clip != c && !(walk..walk + 3).contains(&self.clip) {
                 self.phase = 0.0;
             }
             self.clip = c;
             self.phase = (self.phase + dt / clips.duration(c)).fract();
-            self.vel = self.facing() * self.speeds[gait.min(2)];
+            self.vel = self.facing() * if self.swim(clips).is_some() { SWIM_SPEEDS[gait.min(2)] } else { self.speeds[gait.min(2)] };
         } else if let Some((c, phase, at)) = self.hold {
             let to = (at - self.feet).with_z(0.0);
             let d = (to.y.atan2(to.x) - self.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
             self.yaw += d.clamp(-TURN * dt, TURN * dt);
             (self.clip, self.phase, self.vel) = (c, phase, Vec3::ZERO);
         } else {
-            let c = stance.unwrap_or(getup::IDLE);
+            let c = self.swim(clips).or(stance).unwrap_or(getup::IDLE);
             if self.clip != c {
                 self.phase = 0.0;
             }
@@ -172,7 +177,9 @@ impl Hero {
             self.vel = Vec3::ZERO;
         }
         self.feet += self.vel * dt;
-        let ground = world.ground(self.feet + Vec3::Z * 1.0, 3.0);
+        let ground = world.ground(self.feet.with_z(self.feet.z.max(water.unwrap_or(self.feet.z))) + Vec3::Z * 1.0, 3.5);
+        self.swimming = water.zip(ground).is_some_and(|(w, g)| w - g > SWIM_DEEP);
+        let ground = if self.swimming { water.map(|w| w - SWIM_ROOT + clips.mover(self.clip, 0.0).z) } else { ground };
         #[cfg(feature = "portal")]
         let ground = crate::portal::hero_fall(self, ground, dt);
         if let Some(z) = ground {
@@ -204,6 +211,10 @@ impl Hero {
             }
         }
         hit
+    }
+
+    fn swim(&self, clips: &Clips) -> Option<usize> {
+        clips.swim.filter(|_| self.swimming)
     }
 
     fn pose(&mut self, clips: &Clips) {

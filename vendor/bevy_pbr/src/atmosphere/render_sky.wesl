@@ -46,6 +46,10 @@ fn main(in: FullscreenVertexOutput) -> RenderSkyOutput {
 
     let sun_radiance = sample_sun_radiance(ray_dir_ws);
 
+    // Delirium: (drawn already.)
+    if depth == 0.0 && settings.sky_off != 0u {
+        discard;
+    }
     if depth == 0.0 {
         let ray_dir_as = direction_world_to_atmosphere(ray_dir_ws);
         transmittance = sample_transmittance_lut(r, mu);

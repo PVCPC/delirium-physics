@@ -1,6 +1,7 @@
 import package::realtime::gbuffer_utils::gpixel_resolve;
 import package::realtime::initial_path::generate_initial_path;
 import package::realtime::bindings::{screen, constants, depth_buffer, gbuffer, view, view_output};
+import package::realtime::water::{water_view, water_sky};
 import package::scene::bindings::RAY_T_MAX;
 import package::realtime::world_cache_query::{query_world_cache, WORLD_CACHE_CELL_LIFETIME};
 
@@ -14,7 +15,12 @@ fn initial_and_shade(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(gl
     var rng = pixel_index + constants.frame_rng;
 
     let depth = textureLoad(depth_buffer, screen(global_id.xy), 0);
-    if depth == 0.0 { return; }
+    if depth == 0.0 {
+        // Delirium: the sky through the water from under it.
+        let sky = water_sky(global_id.xy, &rng);
+        if sky.w > 0.0 { textureStore(view_output, screen(global_id.xy), sky); }
+        return;
+    }
 
     let surface = gpixel_resolve(textureLoad(gbuffer, screen(global_id.xy), 0), depth, global_id.xy, view.main_pass_viewport.zw, view.world_from_clip);
 
@@ -22,7 +28,7 @@ fn initial_and_shade(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(gl
 
     var pixel_color = path.radiance;
     pixel_color += surface.material.emissive;
-    pixel_color *= view.exposure;
+    pixel_color = water_view(pixel_color, surface.world_position, surface.material.base_color, &rng);
     textureStore(view_output, screen(global_id.xy), vec4(pixel_color, 1.0));
 
     @if(VISUALIZE_WORLD_CACHE)

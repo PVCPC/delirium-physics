@@ -7,6 +7,7 @@ import package::scene::brdf::{brdf_pdf, evaluate_brdf, F_AB};
 import package::realtime::gbuffer_utils::{gpixel_resolve, permute_pixel, pixel_dissimilar};
 import package::realtime::initial_path::{generate_initial_path, InitialSamplingResult};
 import package::realtime::bindings::{screen, depth_buffer, empty_reservoir, gbuffer, load_motion_vector, previous_depth_buffer, previous_gbuffer, previous_view, reservoirs_a, reservoirs_b, Reservoir, constants, view, view_output};
+import package::realtime::water::{water_view, water_sky};
 import package::scene::sampling::{balance_heuristic, calculate_resolved_light_contribution, isinf, isnan, LightSample, NULL_LIGHT_ID, power_heuristic, resolve_light_sample, ResolvedLightSample, trace_visibility, trace_visibility_color, trace_visibility_previous_frame};
 import package::scene::bindings::{light_sources, LIGHT_NOT_PRESENT_THIS_FRAME, previous_frame_light_id_translations, RAY_T_MAX, RAY_T_MIN, ResolvedMaterial};
 import package::realtime::world_cache_query::{query_world_cache, WORLD_CACHE_CELL_LIFETIME};
@@ -51,6 +52,9 @@ fn spatial_and_shade(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let depth = textureLoad(depth_buffer, screen(global_id.xy), 0);
     if depth == 0.0 {
         reservoirs_a[pixel_index] = empty_reservoir();
+        // Delirium: the sky through the water from under it.
+        let sky = water_sky(global_id.xy, &rng);
+        if sky.w > 0.0 { textureStore(view_output, screen(global_id.xy), sky); }
         return;
     }
     let surface = gpixel_resolve(textureLoad(gbuffer, screen(global_id.xy), 0), depth, global_id.xy, view.main_pass_viewport.zw, view.world_from_clip);
@@ -71,7 +75,7 @@ fn spatial_and_shade(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
     pixel_color += surface.material.emissive;
     pixel_color += textureLoad(view_output, global_id.xy).rgb;
-    pixel_color *= view.exposure;
+    pixel_color = water_view(pixel_color, surface.world_position, surface.material.base_color, &rng);
     textureStore(view_output, screen(global_id.xy), vec4(pixel_color, 1.0));
 
     @if(VISUALIZE_WORLD_CACHE)
@@ -158,7 +162,7 @@ struct NeighborInfo {
 }
 
 fn empty_material() -> ResolvedMaterial {
-    return ResolvedMaterial(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 1.5, 1.0);
+    return ResolvedMaterial(vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 1.5, 1.0, vec3(0.0));
 }
 
 fn jacobian(

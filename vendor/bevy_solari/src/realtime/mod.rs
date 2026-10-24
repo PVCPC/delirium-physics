@@ -54,6 +54,7 @@ impl Plugin for SolariLightingPlugin {
         embedded_asset!(app, "restir.wesl");
         embedded_asset!(app, "no_restir.wesl");
         load_shader_library!(app, "world_cache_query.wesl");
+        load_shader_library!(app, "water.wesl");
         embedded_asset!(app, "world_cache_compact.wesl");
         embedded_asset!(app, "world_cache_update.wesl");
 
@@ -215,6 +216,11 @@ pub struct SolariLighting {
     /// After setting this to true, it will automatically be toggled
     /// back to false at the end of the frame.
     pub reset: bool,
+
+    /// Delirium: under water, its haze (as `DistanceFog`'s atmospheric falloff, which this lighting draws without): what a
+    /// metre soaks up (xyz) and lets in (w), and the haze's colour. Off when w is 0.
+    pub water_fog: [f32; 4],
+    pub water_fog_color: [f32; 4],
 }
 
 impl Default for SolariLighting {
@@ -232,6 +238,8 @@ impl Default for SolariLighting {
             world_cache_position_base_cell_size: 0.15,
             world_cache_position_lod_scale: 15.0,
             reset: true, // No temporal history on the first frame
+            water_fog: [0.0; 4],
+            water_fog_color: [0.0; 4],
         }
     }
 }

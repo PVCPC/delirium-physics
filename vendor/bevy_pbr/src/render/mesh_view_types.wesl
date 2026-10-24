@@ -87,6 +87,16 @@ struct Lights {
 
 const AMBIENT_LIGHT_FLAGS_AFFECTS_LIGHTMAPPED_MESHES_BIT: u32           = 1u << 0u;
 
+// Delirium: render/fog.rs's `GpuWaterCaustics`.
+struct WaterCaustics {
+    min: vec2<f32>,
+    max: vec2<f32>,
+    surface: f32,
+    deep: f32,
+    layers: f32,
+    on: f32,
+}
+
 struct Fog {
     base_color: vec4<f32>,
     directional_light_color: vec4<f32>,
@@ -103,6 +113,8 @@ struct Fog {
     directional_light_exponent: f32,
     bi: vec3<f32>,
     mode: u32,
+    // Delirium: the fog only below this height.
+    surface: f32,
 }
 
 // Important: These must be kept in sync with `fog.rs`

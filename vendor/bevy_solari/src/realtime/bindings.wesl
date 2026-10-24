@@ -1,6 +1,7 @@
 import bevy_render::view::View;
 import bevy_pbr::prepass::bindings::PreviousViewUniforms;
-import package::scene::sampling::{LightSample, NULL_LIGHT_ID};
+import bevy_core_pipeline::tonemapping::tonemapping_luminance;
+import package::scene::sampling::{LightSample, NULL_LIGHT_ID, sample_environment_map_light};
 
 enable wgpu_ray_query;
 
@@ -60,6 +61,39 @@ struct SolariLightingSettings {
     world_cache_position_lod_scale: f32,
     frame_rng: u32,
     reset: u32,
+    water_fog: vec4<f32>,
+    water_fog_color: vec4<f32>,
+}
+
+// Delirium: how much of the way from `a` to `b` is under the water's surface (m).
+fn in_water(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    let s = constants.water_fog_color.w;
+    let lo = min(a.z, b.z);
+    let hi = max(a.z, b.z);
+    return distance(a, b) * select(clamp((s - lo) / (hi - lo), 0.0, 1.0), select(0.0, 1.0, lo < s), hi - lo < 1e-4);
+}
+
+// Delirium: what gets through the water on the way from `a` to `b`.
+fn water_through(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> {
+    return exp(-constants.water_fog.xyz * in_water(a, b));
+}
+
+// Delirium: water (`SolariLighting::water_fog`: what a metre soaks up xyz, w 1 with the eye under it; `water_fog_color.w` its
+// surface's height). As the path tracer: the light's way down through it to what's under it soaked up, and under it the
+// haze between the eye and what's seen.
+fn water_fog(color: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
+    let sigma = constants.water_fog.xyz;
+    if all(sigma == vec3(0.0)) { return color; }
+    let s = constants.water_fog_color.w;
+    // (Its way down slanted, ~1.3 times the depth.) ponytail: anything below the surface's height counts as in it; pass the
+    // pool's bounds if something outside it ever sits that low.
+    var c = color * exp(-sigma * max(s - world_position.z, 0.0) * 1.3);
+    if constants.water_fog.w == 0.0 { return c; }
+    let d = in_water(world_position, view.world_position);
+    // (Soaked up, and the sky's light scattered in from a few metres down.)
+    let through = exp(-d * sigma);
+    let glow = exp(-sigma * 5.0) * tonemapping_luminance(sample_environment_map_light(vec3(0.0, 0.0, 1.0))) * 0.3;
+    return c * through + (1.0 - through) * glow * view.exposure;
 }
 
 /// Don't adjust the size of this struct without also adjusting `prepare::RESOLVED_LIGHT_SAMPLE_STRUCT_SIZE`.

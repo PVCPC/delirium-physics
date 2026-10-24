@@ -16,6 +16,9 @@ const WORLD_CACHE_MAX_SEARCH_STEPS: u32 = 3u;
 /// Marker value for an empty cell
 const WORLD_CACHE_EMPTY_CELL: u32 = 0u;
 
+/// Delirium: where the last cell found had its light worked out (unchanged when none was).
+var<private> world_cache_found: vec3<f32>;
+
 @if(!WORLD_CACHE_NON_ATOMIC_LIFE_BUFFER)
 fn query_world_cache(world_position_in: vec3<f32>, world_normal: vec3<f32>, view_position: vec3<f32>, ray_t: f32, cell_lifetime: u32, rng: ptr<function, u32>) -> vec3<f32> {
     var world_position = world_position_in;
@@ -49,6 +52,7 @@ fn query_world_cache(world_position_in: vec3<f32>, world_normal: vec3<f32>, view
 
         if existing_checksum == checksum {
             // Cache entry already exists - get radiance
+            world_cache_found = world_cache.geometry_data[key].world_position;
             return world_cache.radiance[key].rgb;
         } else if existing_checksum == WORLD_CACHE_EMPTY_CELL && cas.exchanged {
             // Cell is empty - initialize it

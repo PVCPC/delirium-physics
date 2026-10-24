@@ -4,8 +4,9 @@ import bevy_render::view::View;
 import bevy_pbr::prepass::bindings::PreviousViewUniforms;
 import bevy_pbr::render::pbr_functions::{calculate_diffuse_color, calculate_F0};
 import package::scene::brdf::{evaluate_brdf, evaluate_and_sample_brdf, brdf_pdf, F_AB};
+import package::scene::water_beams::{water_beams, sun_disk};
 import package::scene::sampling::{sample_random_light, random_emissive_light_pdf, power_heuristic, sample_environment_map_light};
-import package::scene::bindings::{trace_ray, resolve_ray_hit_full, RAY_T_MIN, RAY_T_MAX, MIRROR_ROUGHNESS_THRESHOLD};
+import package::scene::bindings::{trace_ray, resolve_ray_hit_full, ray_cone, ray_cone_dir, RAY_T_MIN, RAY_T_MAX, MIRROR_ROUGHNESS_THRESHOLD};
 
 enable wgpu_ray_query;
 
@@ -58,10 +59,31 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var glass_hits = 0u;
     var first = true;
     var guided = false;
+    // Delirium: the body of glass (water) the ray's in: what a metre of it soaks up. The camera's under water when straight
+    // up it meets water's surface from below.
+    var medium = vec3(0.0);
+    let up = trace_ray(ray_origin, vec3(0.0, 0.0, 1.0), 0.0, RAY_T_MAX, RAY_FLAG_NONE);
+    if up.kind != RAY_QUERY_INTERSECTION_NONE {
+        let above = resolve_ray_hit_full(up);
+        if above.material.glass > 0.0 && above.geometric_world_normal.z > 0.0 {
+            medium = above.material.absorption;
+        }
+    }
+    // Delirium: the camera's rays' cone: a pixel's spread; kept through glass and mirrors, gone after a rough bounce.
+    ray_cone = vec2(0.0, 2.0 / (view.clip_from_view[1][1] * view.viewport.w));
     loop {
+        ray_cone_dir = ray_direction;
         let ray = trace_ray(ray_origin, ray_direction, ray_t_min, RAY_T_MAX, RAY_FLAG_NONE);
         if ray.kind != RAY_QUERY_INTERSECTION_NONE {
+            // In it, the light it scatters our way (the sky's, as much as the way soaks up) before what it lets through.
+            let through = exp(-medium * ray.t);
+            if any(medium > vec3(0.0)) {
+                radiance += throughput * water_beams(ray_origin, ray_direction, ray.t, medium, &rng);
+            }
+            radiance += throughput * (1.0 - through) * medium_glow(medium);
+            throughput *= through;
             let ray_hit = resolve_ray_hit_full(ray);
+            ray_cone.x += ray_cone.y * ray.t;
             @if(DLSS_RR) {
                 if first {
                     let clip = view.clip_from_world * vec4(ray_hit.world_position, 1.0);
@@ -85,9 +107,13 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
             if ray_hit.material.glass > 0.0 {
                 glass_hits += 1u;
                 if glass_hits > 16u { break; }
+                // Which side by the triangle's facing, the bend by its normal map's (water's ripples).
                 let outward = ray_hit.geometric_world_normal;
                 let entering = dot(ray_direction, outward) < 0.0;
-                let n = select(-outward, outward, entering);
+                var n = select(-ray_hit.world_normal, ray_hit.world_normal, entering);
+                if dot(ray_direction, n) >= 0.0 {
+                    n = select(-outward, outward, entering);
+                }
                 let eta = select(ray_hit.material.ior, 1.0 / ray_hit.material.ior, entering);
                 let refracted = refract(ray_direction, n, eta);
                 let f0 = pow((1.0 - eta) / (1.0 + eta), 2.0);
@@ -98,8 +124,12 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 } else {
                     ray_direction = refracted;
                     ray_origin = ray_hit.world_position - n * RAY_T_MIN;
-                    if entering {
+                    let body = any(ray_hit.material.absorption > vec3(0.0));
+                    if entering && !body {
                         throughput *= mix(vec3(1.0), ray_hit.material.base_color, ray_hit.material.alpha);
+                    }
+                    if body {
+                        medium = select(vec3(0.0), ray_hit.material.absorption, entering);
                     }
                 }
                 ray_t_min = RAY_T_MIN;
@@ -135,6 +165,8 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 radiance += mis_weight * throughput * direct_lighting.radiance * direct_lighting.inverse_pdf * direct_lighting_brdf;
             }
 
+            if !is_perfectly_specular { ray_cone = vec2(0.0); }
+
             // Sample new ray direction from the material BRDF for next bounce and apply BRDF
             let next_bounce = evaluate_and_sample_brdf(wo, ray_hit.world_normal, ray_hit.material, F_ab, &rng);
             if next_bounce.pdf == 0.0 { break; }
@@ -150,6 +182,8 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
             throughput /= rr;
         } else {
             radiance += throughput * sample_environment_map_light(ray_direction);
+            // Delirium: the sun's disk, straight or off glass and water (a bounce off anything else took its light).
+            if p_bounce == 0.0 { radiance += throughput * sun_disk(ray_direction); }
             @if(DLSS_RR) {
                 if first {
                     textureStore(dlss_rr_depth, global_id.xy, vec4(0.0));
@@ -178,6 +212,16 @@ fn pathtrace(@builtin(global_invocation_id) global_id: vec3<u32>) {
     textureStore(accumulation_texture, global_id.xy, vec4(new_color, old_color.a + 1.0));
     textureStore(view_output, global_id.xy + vec2<u32>(view.viewport.xy), vec4(new_color, 1.0));
 }
+
+/// Delirium: what a body of water glows with, lit from above: the sky's light through it, its colour that it soaks up least
+/// (the deep end's blue-green).
+fn medium_glow(medium: vec3<f32>) -> vec3<f32> {
+    if all(medium == vec3(0.0)) { return vec3(0.0); }
+    let tint = exp(-medium * 5.0);
+    return tint * luminance(sample_environment_map_light(vec3(0.0, 0.0, 1.0))) * MEDIUM_SCATTER;
+}
+
+const MEDIUM_SCATTER: f32 = 0.3;
 
 /// A still point's move on screen since last frame (UV offset, as the motion vector prepass writes them).
 fn motion_vector(world_position: vec3<f32>) -> vec2<f32> {
