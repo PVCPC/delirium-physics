@@ -3572,7 +3572,7 @@ fn main() {
         .add_systems(Update, systems)
         .add_systems(Update, skel_cams.after(smooth))
         .add_systems(Update, muscles.after(smooth))
-        .add_systems(Update, (sounds, blood_view, glow_view, planks, save_settings))
+        .add_systems(Update, (sounds, blood_view, glow_view, bulbs, planks, save_settings))
         .add_systems(EguiPrimaryContextPass, ui);
     sfx::plugin(&mut app);
     app.add_plugins((bevy::solari::SolariPlugins, bevy::solari::pathtracer::PathtracingPlugin))
@@ -4038,6 +4038,8 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
                                        metallic: 0.8, perceptual_roughness: 0.4, ..default() };
         commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(mats.add(fence)), Transform::from_xyz(3.0, -1.0, 1.0).with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2) * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
                         RenderLayers::layer(1), RoomScenery));
+        commands.spawn((PointLight { color: Color::srgb(1.0, 0.7, 0.4), intensity: 150_000.0, range: 10.0, shadow_maps_enabled: true, ..default() },
+                        Transform::from_xyz(1.5, 1.5, 0.4), RenderLayers::layer(1), RoomScenery));
         let (at, half, deep) = (SKY_POOL, Vec2::splat(1.5), 1.0);
         let pane = mats.add(StandardMaterial { base_color: Color::srgba(0.9, 0.97, 1.0, 0.2), alpha_mode: AlphaMode::Blend, specular_transmission: 1.0, ior: 1.5,
                                                perceptual_roughness: 0.02, ..default() });
@@ -4066,7 +4068,7 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
             commands.spawn((Mesh3d(panel.clone()), MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::BLACK, emissive: col * k, emissive_exposure_weight: 1.0, reflectance: 0.0, ..default() })),
                             Transform::from_translation(at), RenderLayers::layer(1), RoomScenery, bevy::light::NotShadowCaster));
             commands.spawn((PointLight { color: col.into(), intensity: 200_000.0, range: 12.0, ..default() }, Transform::from_translation(at + Vec3::Z * 0.3),
-                            RenderLayers::layer(1), RoomScenery));
+                            RenderLayers::layer(1), RoomScenery, StandIn));
         }
     }
     for &(c, h, row) in &sim.room.blocks {
@@ -5541,6 +5543,42 @@ fn splat_mesh(seed: u32, pool: bool) -> (Mesh, Image) {
                                TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
     image.sampler = bevy::image::ImageSampler::nearest();
     (mesh, image)
+}
+
+#[derive(Component)]
+struct StandIn;
+
+#[derive(Component)]
+struct Bulb(Entity);
+
+fn bulbs(mut commands: Commands, sim: NonSend<Sim>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
+         lights: Query<(Entity, &PointLight, &InheritedVisibility, Option<&Bulb>), (Without<Mesh3d>, Without<StandIn>)>, mut mesh: Local<Option<Handle<Mesh>>>) {
+    const R: f32 = 0.05;
+    for (e, light, shown, bulb) in &lights {
+        let want = sim.rt_now() > 0 && shown.get();
+        match (want, bulb) {
+            (true, None) => {
+                let m = mesh.get_or_insert_with(|| {
+                    let mut m = Sphere::new(R).mesh().ico(2).unwrap();
+                    let _ = m.generate_tangents();
+                    if let Some(bevy::mesh::Indices::U16(i)) = m.indices() {
+                        let i = i.iter().map(|&x| x as u32).collect();
+                        m.insert_indices(bevy::mesh::Indices::U32(i));
+                    }
+                    meshes.add(m)
+                }).clone();
+                let nits = light.intensity / (std::f32::consts::PI * 4.0 * std::f32::consts::PI * R * R);
+                let mat = mats.add(StandardMaterial { base_color: Color::BLACK, emissive: light.color.to_linear() * nits, ..default() });
+                let b = commands.spawn((bevy::solari::prelude::RaytracingMesh3d(m), MeshMaterial3d(mat), Transform::default(), ChildOf(e))).id();
+                commands.entity(e).insert(Bulb(b));
+            }
+            (false, Some(b)) => {
+                commands.entity(b.0).despawn();
+                commands.entity(e).remove::<Bulb>();
+            }
+            _ => {}
+        }
+    }
 }
 
 fn glow_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
