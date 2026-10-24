@@ -20,6 +20,8 @@ const FLAME_NITS: f32 = 3500.0;
 const SMOKE_NITS: f32 = 250.0;
 // Voxel fire's flames' light as a part of realistic's.
 const VOXEL_K: f32 = 0.5;
+// How much of what's behind a voxel it covers.
+const VOXEL_COVER: f32 = 0.45;
 
 fn hash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -92,7 +94,8 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     if (flame.k.y > 0.5 && kind < 0.6) {
         // A voxel: hottest young (an ember stays hot), cooling to red as it rises (smoke is as realistic's).
         let heat = select(1.1 * (1.0 - t), 1.0 - 0.5 * t, kind > 0.4);
-        out.color = vec4(palette(heat) * in.uv.x * k * VOXEL_K * light, k);
+        // See-through, glowing: its light more than it covers.
+        out.color = vec4(palette(heat) * in.uv.x * k * VOXEL_K * light, VOXEL_COVER * k);
         return out;
     }
     let uv = in.uv;

@@ -191,12 +191,13 @@ restir {}
 fire {}
 real_fire {}
 smoke {}
+fire_reaction {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke))
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react))
 }
 
 fn coin() -> bool {
@@ -255,6 +256,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "fire" => sim.fire = (x as u8).min(FIRE_HIGH),
             "real_fire" => sim.real_fire = on,
             "smoke" => sim.smoke = on,
+            "fire_reaction" => sim.fire_react = on,
             "upscaler" => sim.upscaler = (x as u8).min(UP_FSR1),
             "fps_limit" => sim.fps_limit = x.round().clamp(FPS_VSYNC, FPS_FREE),
             "eyes" => sim.eyes = on,
@@ -504,6 +506,12 @@ struct Glow(usize);
 const GLOW_MAX: usize = 12;
 const FIRE_LIGHT_OUT: f32 = 0.45;
 const FIRE_HIGH: u8 = 3;
+const CHAR_TIME: f32 = 12.0;
+const CHAR_PX: usize = 16;
+const SPILL_RATE: f32 = 3.0;
+const SPILL_LIFE: f32 = 3.0;
+const CHAR_MAX: f32 = 3.0;
+const EMBER_GLOW: LinearRgba = LinearRgba::rgb(3.0, 0.5, 0.05);
 const FIRE_GLOW: LinearRgba = LinearRgba::rgb(1.4, 0.32, 0.04);
 
 struct Sim {
@@ -572,6 +580,7 @@ struct Sim {
     reloading: Option<f32>,
     blast_task: Option<delirium::explosion::Explosion>,
     burning: f32,
+    charred: Vec<f32>,
     on_fire: Option<delirium::nm::OnFire>,
     god: bool,
     lean_stop: Option<f32>,
@@ -589,6 +598,7 @@ struct Sim {
     no_dodge: bool,
     dodge_gap: f32,
     extra: bool,
+    fire_react: bool,
     dive: bool,
     hang: Option<(Vec<String>, [bool; 2])>,
     was_fallen: bool,
@@ -830,6 +840,7 @@ impl Sim {
         self.homer = None;
         self.hero_doll = None;
         self.crowd.clear();
+        self.charred.clear();
         self.hurt = [0.0; 4];
         self.wounds.clear();
         self.say("ours  reset: pose held (pick a behaviour)".into());
@@ -2701,8 +2712,13 @@ impl Sim {
         let burning = self.burning > 0.0;
         if burning {
             self.health = if self.god { 200.0 } else { (self.health - BURN_DAMAGE * dt).max(0.0) };
+            let n = self.ours().parts.len();
+            self.charred.resize(n, 0.0);
+            for (k, c) in self.charred.iter_mut().enumerate() {
+                *c = (*c + dt / CHAR_TIME * (0.6 + 0.8 * ((k as f32 * 12.9898).sin() * 43758.545).rem_euclid(1.0))).min(CHAR_MAX);
+            }
         }
-        if burning && self.on_fire.is_none() {
+        if burning && self.on_fire.is_none() && self.fire_react {
             let mut f = delirium::nm::OnFire::new("*");
             f.start(&mut self.agent, &self.build, &self.world, &self.tp, &mut self.rand);
             self.on_fire = Some(f);
@@ -3297,7 +3313,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, charred: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
@@ -3925,6 +3941,38 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
     }
 }
 
+fn char_skin(k: usize, c: f32, body: [u8; 4]) -> (Image, Image) {
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    let hash = |i: usize, salt: f32| (((k * 977 + i) as f32 * 12.9898 + salt).sin() * 43758.545).rem_euclid(1.0);
+    let (mut base, mut glow) = (vec![], vec![]);
+    for i in 0..CHAR_PX * CHAR_PX {
+        let clump = hash(20000 + i / CHAR_PX / 4 * 8 + i % CHAR_PX / 4, 0.0);
+        let burnt = c * 1.25 > 0.6 * clump + 0.4 * hash(i, 0.0);
+        let r = hash(i, 7.3);
+        let dark = 1.0 - 0.5 * c.min(1.0);
+        let px = match () {
+            _ if !burnt => [body[0] as f32 * dark, body[1] as f32 * dark, body[2] as f32 * dark].map(|x| x as u8),
+            _ => match () {
+                _ if r < 0.22 => [20.0, 12.0, 12.0],
+                _ if r < 0.44 => [160.0, 14.0, 20.0],
+                _ if r < 0.6 => [105.0, 10.0, 16.0],
+                _ if r < 0.76 => [100.0, 32.0, 92.0],
+                _ if r < 0.9 => [140.0, 30.0, 75.0],
+                _ => [88.0, 76.0, 80.0],
+            }.map(|x: f32| (x * (1.0 - 0.85 * ((c - 1.0) / (CHAR_MAX - 1.0)).clamp(0.0, 1.0))) as u8),
+        };
+        base.extend([px[0], px[1], px[2], 255]);
+        glow.extend(if burnt && hash(i, 3.1) < 0.25 { [255; 4] } else { [0, 0, 0, 255] });
+    }
+    let image = |data| {
+        let mut i = Image::new(Extent3d { width: CHAR_PX as u32, height: CHAR_PX as u32, depth_or_array_layers: 1 }, TextureDimension::D2, data,
+                               TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
+        i.sampler = bevy::image::ImageSampler::nearest();
+        i
+    };
+    (image(base), image(glow))
+}
+
 fn part_mesh(meshes: &mut Assets<Mesh>, p: &delirium::ragdoll::PartDef) -> Handle<Mesh> {
     match p.boxed {
         Some(e) => meshes.add(Cuboid { half_size: e }),
@@ -3989,7 +4037,8 @@ struct HatMesh;
 
 fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<HeroMesh>>,
           mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
-          mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>, time: Res<Time>) {
+          mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>, time: Res<Time>,
+          mut images: ResMut<Assets<Image>>, mut skins: Local<Vec<Option<(u8, [u8; 4], Handle<Image>, Handle<Image>)>>>) {
     let doll: Option<Vec<Transform>> = sim.hero_doll.as_ref().map(|h| match h.rise.as_ref().zip(sim.getup.as_ref()).and_then(|(r, c)| c.frames(r)) {
         Some(f) => f.into_iter().enumerate().map(|(k, f)| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k))).collect(),
         None => h.agent.doll.capsules().collect(),
@@ -4037,10 +4086,47 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
         };
         let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""), sim.body_alpha);
         let col = if sim.clean { col.with_alpha(1.0) } else { col };
-        if mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col) {
+        let mut fresh = false;
+        let (col, skin) = match sim.charred.get(p.k).filter(|&&c| ped == 0 && p.watch.is_none() && c > 0.0) {
+            Some(&c) => {
+                let (level, px) = ((c * 16.0).ceil() as u8, col.to_srgba().to_u8_array());
+                if skins.len() <= p.k {
+                    skins.resize(p.k + 1, None);
+                }
+                let s = &mut skins[p.k];
+                if s.as_ref().is_none_or(|(l, x, _, _)| (*l, *x) != (level, px)) {
+                    let (base, glow) = char_skin(p.k, level as f32 / 16.0, px);
+                    match s {
+                        Some((l, x, b, g)) => {
+                            (*l, *x) = (level, px);
+                            images.get_mut(&*b).map(|mut i| *i = base);
+                            images.get_mut(&*g).map(|mut i| *i = glow);
+                        }
+                        None => *s = Some((level, px, images.add(base), images.add(glow))),
+                    }
+                    fresh = true;
+                }
+                (Color::WHITE.with_alpha(col.alpha()), s.as_ref().map(|(_, _, b, g)| (b.clone(), g.clone())))
+            }
+            None => (col, None),
+        };
+        let embers = sim.burning > 0.0 && skin.is_some();
+        let lit = if embers {
+            let t = time.elapsed_secs() * 7.0 + p.k as f32 * 1.3;
+            lit + EMBER_GLOW * ((sim.burning / 2.0).min(1.0) * (0.55 + 0.45 * t.sin() * (t * 0.37).cos()))
+        } else {
+            lit
+        };
+        let (base_tex, glow_tex) = match skin {
+            Some((b, g)) => (Some(b), embers.then_some(g)),
+            None => (None, None),
+        };
+        if fresh || mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col || x.base_color_texture != base_tex || x.emissive_texture != glow_tex) {
             if let Some(mut x) = mats.get_mut(&m.0) {
                 x.emissive = lit;
                 x.base_color = col;
+                x.base_color_texture = base_tex;
+                x.emissive_texture = glow_tex;
                 x.alpha_mode = if col.alpha() < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque };
             }
         }
@@ -4979,8 +5065,13 @@ fn glow_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Asset
 
 fn fire_view(sim: NonSend<Sim>, time: Res<Time>, cam: Query<&GlobalTransform, With<OursCam>>,
              mut q: Query<(&mut fire::Fire, &Mesh3d, &MeshMaterial3d<fire::FlameMaterial>, &mut Visibility)>, mut meshes: ResMut<Assets<Mesh>>,
-             mut mats: ResMut<Assets<fire::FlameMaterial>>) {
+             mut mats: ResMut<Assets<fire::FlameMaterial>>, mut warm: Local<u32>, mut spills: Local<(Vec<(Vec3, f32)>, f32, u32)>) {
     let (Ok(cam), Ok((mut f, m, mat, mut v))) = (cam.single(), q.single_mut()) else { return };
+    if *warm < 30 {
+        *warm += 1;
+        *v = Visibility::Inherited;
+        return;
+    }
     if sim.fire == 0 {
         if *v != Visibility::Hidden {
             *v = Visibility::Hidden;
@@ -4994,10 +5085,29 @@ fn fire_view(sim: NonSend<Sim>, time: Res<Time>, cam: Query<&GlobalTransform, Wi
         }
     }
     let mut burns: Vec<fire::Source> = sim.gun.fires.iter().map(|&(at, age)| fire::Source { at, r: FIRE_R * 0.8, k: ((FIRE_LIFE - age) / 2.0).clamp(0.0, 1.0) }).collect();
+    let dt = time.delta_secs();
+    let (spilt, due, n) = &mut *spills;
+    spilt.retain_mut(|(_, age)| {
+        *age += dt;
+        *age < SPILL_LIFE
+    });
     if sim.burning > 0.0 {
         let ours = sim.ours();
         burns.extend((0..ours.parts.len()).map(|k| fire::Source { at: ours.p(k), r: 0.12, k: 0.7 * (sim.burning / 2.0).min(1.0) }));
+        let floor = (0..ours.parts.len()).map(|k| ours.p(k).z).fold(f32::MAX, f32::min) - 0.05;
+        *due += dt * SPILL_RATE;
+        while *due >= 1.0 {
+            *due -= 1.0;
+            *n += 1;
+            let hash = |salt: f32| ((*n as f32 * 12.9898 + salt).sin() * 43758.545).rem_euclid(1.0);
+            let at = ours.p((hash(0.0) * ours.parts.len() as f32) as usize % ours.parts.len());
+            let a = hash(4.1) * std::f32::consts::TAU;
+            spilt.push((Vec3::new(at.x + a.cos() * 0.35 * hash(7.7), at.y + a.sin() * 0.35 * hash(7.7), floor), 0.0));
+        }
+    } else {
+        *due = 0.0;
     }
+    burns.extend(spilt.iter().map(|&(at, age)| fire::Source { at, r: 0.1, k: 0.6 * (1.0 - age / SPILL_LIFE) }));
     let Some(mut mesh) = meshes.get_mut(&m.0) else { return };
     let any = fire::step(&mut f, &mut mesh, &burns, time.delta_secs(), cam, !sim.real_fire, sim.smoke);
     let want = if any { Visibility::Inherited } else { Visibility::Hidden };
@@ -7060,6 +7170,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             });
             ui.checkbox(&mut sim.extra, "Additional experimental reactions")
                 .on_hover_text("Sometimes he windmills his arms as he loses his balance, sometimes curls up on the ground before getting up, curls up when shot at lying down.");
+            ui.checkbox(&mut sim.fire_react, "Fire reaction")
+                .on_hover_text("Set alight, he flails and tries to put himself out. Off: he burns (and chars, and gets hurt) without reacting.");
             ui.checkbox(&mut sim.dive, "Dive when shot at")
                 .on_hover_text("Shot at again soon after a near miss, he dives out of the line of fire (once a burst: he won't keep diving under automatic fire).");
             ui.add_enabled(sim.dive, egui::Slider::new(&mut sim.dodge_gap, 0.0..=10.0).text("Dive if shot at again within").custom_formatter(|x, _| if x <= 0.0 { "never".into() } else { format!("{x:.1} s") }))

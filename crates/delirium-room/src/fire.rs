@@ -89,7 +89,7 @@ fn rate(r: f32) -> f32 {
 const EMBERS: f32 = 0.1;
 const SMOKE: f32 = 0.12;
 const VOXEL: f32 = 0.07;
-const VOXEL_RATE: f32 = 3.0;
+const VOXEL_RATE: f32 = 5.0;
 const MAX: usize = 4000;
 
 pub fn step(fire: &mut Fire, mesh: &mut Mesh, sources: &[Source], dt: f32, cam: &GlobalTransform, voxel: bool, smoke: bool) -> bool {
@@ -190,7 +190,7 @@ fn voxels(fire: &Fire, mesh: &mut Mesh, cam: &GlobalTransform) -> bool {
     let mut cubes: Vec<(f32, Vec3, f32, [f32; 4])> = fire.ps.iter().filter_map(|p| {
         let t = p.age / p.life;
         let (size, kind) = match p.kind {
-            Kind::Flame => (snap(p.size * 0.45 * (1.0 - t).sqrt()), 0.0),
+            Kind::Flame => (snap(p.size * 0.8 * (1.0 - t)), 0.0),
             Kind::Ember => (VOXEL * 0.5, 0.5),
             Kind::Smoke | Kind::Sheet => return None,
         };
