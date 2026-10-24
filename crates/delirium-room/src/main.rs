@@ -310,9 +310,10 @@ fn save_settings(sim: NonSend<Sim>, mut last: Local<Option<Option<String>>>) {
 fn help_seen() -> bool {
     std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(HELP_SEEN))).is_some_and(|p| p.exists())
 }
-const WEAPONS: [(&str, &str, f32); 11] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
+const WEAPONS: [(&str, &str, f32); 13] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
                                          ("ak47", "AK47", 50.0), ("sniper", "SNIPERRIFLE", 50.0), ("shotgun", "SHOTGUN", 50.0), ("rpg", "RLAUNCHER", 50.0),
-                                          ("grenade", "GRENADE", 50.0), ("molotov", "MOLOTOV", 50.0), ("bat", "BASEBALLBAT", 50.0), ("knife", "KNIFE", 50.0)];
+                                          ("grenade", "GRENADE", 50.0), ("molotov", "MOLOTOV", 50.0), ("bat", "BASEBALLBAT", 50.0), ("knife", "KNIFE", 50.0),
+                                          ("taser", "TASER", 10.0), ("baton", "BASEBALLBAT", 50.0)];
 
 const LEAN_SECS: f32 = 1.5;
 
@@ -362,9 +363,10 @@ impl Gun {
     }
 }
 
-const KICK: [f32; 11] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8];
-const GUN_FALLBACK: [(f32, f32, f32); 11] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
-                                            (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (600.0, 0.0, 0.0), (400.0, 0.0, 0.0)];
+const KICK: [f32; 13] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8, 0.2, 1.2];
+const GUN_FALLBACK: [(f32, f32, f32); 13] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
+                                            (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (600.0, 0.0, 0.0), (400.0, 0.0, 0.0),
+                                            (1500.0, 0.0, 0.0), (600.0, 0.0, 0.0)];
 const TAXI_RADIUS: f32 = 0.303;
 const TAXI_AXLE: Vec2 = Vec2::new(0.73, 1.326);
 const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916, 2.466, 1.05)];
@@ -393,7 +395,7 @@ const CAB_HOLD: f32 = 6.0;
 const CAB_STOP: f32 = 14.0;
 const TAXIS: usize = 4;
 
-const CLIP_FALLBACK: [u32; 11] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1];
+const CLIP_FALLBACK: [u32; 13] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1, 1, 1];
 
 const ROCKET_SPEED: f32 = 30.0;
 const ROCKET_LIFE: f32 = 4.0;
@@ -404,7 +406,7 @@ const BLAST_DAMAGE: f32 = 250.0;
 const PELLETS: usize = 16;
 const PELLET_SPREAD: f32 = 0.4;
 
-const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 11] = [
+const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 13] = [
     (&[([0.03, 0.035, 0.19], [0.0, 0.02, -0.015], 0.0), ([0.028, 0.11, 0.045], [0.0, -0.045, 0.045], -0.25), ([0.006, 0.025, 0.04], [0.0, -0.01, -0.01], 0.0)], 0.11),
     (&[([0.035, 0.045, 0.27], [0.0, 0.025, -0.04], 0.0), ([0.032, 0.12, 0.05], [0.0, -0.05, 0.05], -0.2), ([0.006, 0.03, 0.045], [0.0, -0.01, -0.015], 0.0)], 0.175),
     (&[([0.045, 0.06, 0.36], [0.0, 0.02, -0.08], 0.0), ([0.02, 0.02, 0.1], [0.0, 0.02, -0.31], 0.0), ([0.05, 0.05, 0.14], [0.0, 0.005, -0.2], 0.0),
@@ -421,19 +423,27 @@ const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 11] = [
     (&[([0.075, 0.075, 0.17], [0.0, 0.0, -0.1], 0.0), ([0.03, 0.03, 0.09], [0.0, 0.0, -0.22], 0.0), ([0.02, 0.02, 0.05], [0.0, 0.0, -0.28], 0.0)], 0.3),
     (&[([0.035, 0.035, 0.3], [0.0, 0.0, -0.15], 0.0), ([0.06, 0.06, 0.51], [0.0, 0.0, -0.555], 0.0)], 0.81),
     (&[([0.025, 0.03, 0.11], [0.0, 0.0, -0.055], 0.0), ([0.004, 0.03, 0.22], [0.0, 0.0, -0.22], 0.0)], 0.33),
+    (&[([0.035, 0.045, 0.15], [0.0, 0.02, -0.01], 0.0), ([0.028, 0.1, 0.045], [0.0, -0.045, 0.045], -0.25)], 0.1),
+    (&[([0.035, 0.035, 0.25], [0.0, 0.0, -0.125], 0.0), ([0.04, 0.04, 0.4], [0.0, 0.0, -0.45], 0.0), ([0.008, 0.008, 0.05], [0.012, 0.0, -0.675], 0.0),
+       ([0.008, 0.008, 0.05], [-0.012, 0.0, -0.675], 0.0)], 0.7),
 ];
 
 fn kind(w: usize) -> u8 {
     match WEAPONS[w].0 {
         "grenade" | "molotov" => 1,
-        "bat" | "knife" => 2,
+        "bat" | "baton" | "knife" => 2,
         _ => 0,
     }
+}
+
+fn bat(w: usize) -> bool {
+    matches!(WEAPONS[w].0, "bat" | "baton")
 }
 
 fn held(w: usize) -> Option<hero::Held> {
     match WEAPONS[w].0 {
         "bat" => Some((0.09, 0.72, 0.4)),
+        "baton" => Some((0.09, 0.6, 0.35)),
         "knife" => Some((0.08, 0.25, 0.16)),
         _ => None,
     }
@@ -456,7 +466,7 @@ const BAT_BLOOD: usize = 3;
 const KNIFE_BLOOD: usize = 8;
 
 fn swing_len(w: usize) -> f32 {
-    if WEAPONS[w].0 == "bat" { BAT_SWING } else { SWING }
+    if bat(w) { BAT_SWING } else { SWING }
 }
 
 fn bat_swing(s: f32) -> (f32, f32) {
@@ -483,6 +493,14 @@ const BOUNCE: f32 = 0.35;
 const FIRE_R: f32 = 1.5;
 const FIRE_LIFE: f32 = 8.0;
 const BURN: f32 = 6.0;
+const SHOCK: f32 = 2.5;
+const SHOCK_HZ: f32 = 1.6;
+const SHOCK_XRAY: f32 = 0.75;
+const SHOCK_SHELL: Color = Color::BLACK;
+const BONE_GLOW: LinearRgba = LinearRgba::rgb(0.3, 0.4, 0.6);
+const BONE_BIAS: f32 = 1.0e6;
+const SKULL: f32 = 0.85;
+const AURA_GLOW: Color = Color::srgb(0.12, 0.4, 0.9);
 const BURN_DAMAGE: f32 = 25.0;
 
 #[derive(Component)]
@@ -511,6 +529,9 @@ const CHAR_PX: usize = 16;
 const SPILL_RATE: f32 = 3.0;
 const SPILL_LIFE: f32 = 3.0;
 const CHAR_MAX: f32 = 3.0;
+const VOX: f32 = 0.015;
+const VOX_HOLE: f32 = 0.03;
+const BONE_COLOR: Color = Color::srgb(0.9, 0.87, 0.78);
 const EMBER_GLOW: LinearRgba = LinearRgba::rgb(3.0, 0.5, 0.05);
 const FIRE_GLOW: LinearRgba = LinearRgba::rgb(1.4, 0.32, 0.04);
 
@@ -580,6 +601,7 @@ struct Sim {
     reloading: Option<f32>,
     blast_task: Option<delirium::explosion::Explosion>,
     burning: f32,
+    shock: f32,
     charred: Vec<f32>,
     on_fire: Option<delirium::nm::OnFire>,
     god: bool,
@@ -650,6 +672,8 @@ struct Sim {
     blood: Vec<(Vec3, Vec3, f32, u8, Vec3)>,
     pixel_blood: bool,
     gore: bool,
+    layers: bool,
+    voxels: Vec<Option<Voxels>>,
     wounds: Vec<(usize, Vec3, Vec3, f32)>,
     show_ripples: bool,
     infinite: bool,
@@ -841,6 +865,8 @@ impl Sim {
         self.hero_doll = None;
         self.crowd.clear();
         self.charred.clear();
+        self.voxels.clear();
+        self.shock = 0.0;
         self.hurt = [0.0; 4];
         self.wounds.clear();
         self.say("ours  reset: pose held (pick a behaviour)".into());
@@ -2038,13 +2064,14 @@ impl Sim {
             self.rings.push((ped, part, back * (at - f.translation), back * n, 0.0));
             if ped == 0 {
                 self.wound(part, back * (at - f.translation), back * n);
+                self.tear(part, at, n, 1.0);
             }
         }
     }
 
     fn cut(&mut self, part: usize, at: Vec3, n: Vec3, dmg: f32) {
         self.light(0, part, SHOT_GLOW);
-        self.bleed_some(at, n, if WEAPONS[self.weapon].0 == "bat" { BAT_BLOOD } else { KNIFE_BLOOD });
+        self.bleed_some(at, n, if bat(self.weapon) { BAT_BLOOD } else { KNIFE_BLOOD });
         self.pop(at, dmg);
         let frame = self.agent.doll.frames().nth(part).map(|f| (f.rotation.inverse(), f.translation));
         if let Some((back, from)) = frame {
@@ -2052,7 +2079,30 @@ impl Sim {
             if WEAPONS[self.weapon].0 == "knife" {
                 self.wound(part, back * (at - from), back * n);
             }
+            self.tear(part, at, n, if WEAPONS[self.weapon].0 == "knife" { 1.0 } else { 0.4 });
         }
+    }
+
+    fn zap(&mut self, part: usize) {
+        self.light(0, part, SHOT_GLOW);
+        if self.shock <= 0.0 {
+            self.send("electrocute start=true stunMag=0.4 largeMult=2");
+            self.say("room  Homer tased".into());
+        }
+        self.shock = SHOCK;
+    }
+
+    fn tear(&mut self, part: usize, at: Vec3, n: Vec3, by: f32) {
+        let (Some(def), Some(f)) = (self.build.parts.get(part), self.agent.doll.capsules().nth(part)) else { return };
+        if !self.layers {
+            return;
+        }
+        if self.voxels.len() <= part {
+            self.voxels.resize_with(part + 1, || None);
+        }
+        let name = delirium_data::nm_asset::PARTS.get(part).copied().unwrap_or("");
+        let back = f.rotation.inverse();
+        self.voxels[part].get_or_insert_with(|| Voxels::new(def, name)).dig(back * (at - f.translation), back * -n, VOX_HOLE * by.sqrt());
     }
 
     fn wound(&mut self, part: usize, at: Vec3, n: Vec3) {
@@ -2531,6 +2581,12 @@ impl Sim {
     }
 
     fn pellets(&mut self, from: Vec3, dir: Vec3, acc: f32, pellets: usize, fatal: bool) {
+        if WEAPONS[self.weapon].0 == "taser" {
+            if let Some((0, (part, _, _))) = self.bullet_any(from, dir) {
+                self.zap(part);
+            }
+            return;
+        }
         let (right, up) = dir.any_orthonormal_pair();
         let (mut hit, mut hurt, mut more) = (None, vec![], vec![]);
         for _ in 0..pellets {
@@ -2644,14 +2700,19 @@ impl Sim {
     fn swing_weapon(&mut self) {
         let w = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1).cloned();
         let dir = (self.gun.aim - self.gun.at).normalize_or(Vec3::X);
-        let Some((_, at, _)) = self.agent.doll.probe(&self.build, self.gun.at, self.gun.aim + dir * 0.3) else {
+        let Some((part, at, _)) = self.agent.doll.probe(&self.build, self.gun.at, self.gun.aim + dir * 0.3) else {
             self.sounds.push(sfx::Snd::Throw);
             return self.say(format!("room  {}: missed", WEAPONS[self.weapon].0));
         };
         let (dmg, push) = w.map_or((20.0, hero::MELEE_PUSH), |w| (w.damage, w.force.max(hero::MELEE_PUSH)));
-        let j = if WEAPONS[self.weapon].0 == "bat" { (dir * 0.7 - dir.cross(Vec3::Z).normalize_or(Vec3::X)).normalize() * push * BAT_PUSH } else { dir * push };
+        let j = if bat(self.weapon) { (dir * 0.7 - dir.cross(Vec3::Z).normalize_or(Vec3::X)).normalize() * push * BAT_PUSH } else { dir * push };
         let what = format!("room  {} lands", WEAPONS[self.weapon].0);
         self.land(hero::Hit::Swing(dmg, at, j), self.gun.at, &what);
+        if WEAPONS[self.weapon].0 == "baton" {
+            self.sounds.push(sfx::Snd::Shot(11));
+            self.shock = 0.0;
+            self.zap(part);
+        }
     }
 
     fn thrown_frame(&mut self, dt: f32) {
@@ -2693,6 +2754,12 @@ impl Sim {
     }
 
     fn fire_frame(&mut self, dt: f32) {
+        if self.shock > 0.0 {
+            self.shock -= dt;
+            if self.shock <= 0.0 {
+                self.send("electrocute start=false");
+            }
+        }
         for f in &mut self.gun.fires {
             f.1 += dt;
         }
@@ -2806,7 +2873,7 @@ impl Sim {
         if now - std::mem::replace(&mut self.near_last, now) >= self.dodge_gap {
             self.dived = false;
         }
-        if self.dead || !learn::standing(&self.agent.doll) {
+        if self.dead || !self.agent.balancing() && !learn::standing(&self.agent.doll) {
             if !self.dead && self.extra {
                 if !self.curled {
                     self.curled = true;
@@ -3313,9 +3380,9 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, charred: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 0, god_rays: false, restir: false, fire: 2, real_fire: false, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_guard: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, #[cfg(feature = "portal")] portal: portal::Portals::new(),
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: SHOT_EXIT, nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
-                        grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
+                        grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
@@ -3782,6 +3849,15 @@ fn face_view(sim: NonSend<Sim>, time: Res<Time>, mut q: Query<(&FacePart, &mut T
 }
 
 #[derive(Component)]
+struct BoneMesh;
+
+#[derive(Component)]
+struct VoxelOf(Handle<Mesh>, Handle<Mesh>);
+
+#[derive(Component)]
+struct AuraMesh;
+
+#[derive(Component)]
 struct PartMesh {
     k: usize,
     crowd: Option<usize>,
@@ -3915,14 +3991,36 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
     let sides = [(false, 1)];
     let homer = sides.into_iter().map(|(g, l)| (g, l, None, None)).chain((0..24).map(|c| (false, 1, Some(c), None)))
         .chain((0..learn::LIVE).map(|w| (false, 1, None, Some(w))));
+    let bone = mats.add(StandardMaterial { base_color: Color::srgb(0.95, 0.97, 1.0), emissive: BONE_GLOW, unlit: true, depth_bias: BONE_BIAS, ..default() });
+    let socket = mats.add(StandardMaterial { base_color: Color::BLACK, unlit: true, depth_bias: BONE_BIAS, ..default() });
+    let voxel = mats.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.7, ..default() });
+    let bone_in = mats.add(StandardMaterial { base_color: BONE_COLOR, perceptual_roughness: 0.6, ..default() });
+    let aura = mats.add(StandardMaterial { base_color: AURA_GLOW, unlit: true, alpha_mode: AlphaMode::Add,
+                                           cull_mode: Some(bevy::render::render_resource::Face::Front), ..default() });
     for (game, layer, crowd, watch) in homer {
-        let _ = game;
         for (k, p) in sim.build.parts.iter().enumerate() {
             let name = delirium_data::nm_asset::PARTS.get(k).copied().unwrap_or("");
             let c = part_color(0, name, BODY_ALPHA);
-            commands.spawn((Mesh3d(part_mesh(meshes, p)),
-                            MeshMaterial3d(mats.add(StandardMaterial { base_color: c, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.6, ..default() })),
-                            Transform::default(), Visibility::Hidden, RenderLayers::layer(layer), PartMesh { k,  crowd, watch }));
+            let mesh = part_mesh(meshes, p);
+            let e = commands.spawn((Mesh3d(mesh.clone()),
+                                    MeshMaterial3d(mats.add(StandardMaterial { base_color: c, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.6, ..default() })),
+                                    Transform::default(), Visibility::Hidden, RenderLayers::layer(layer), PartMesh { k,  crowd, watch })).id();
+            if !game && crowd.is_none() && watch.is_none() {
+                let (bones, sockets) = xray_bones(name, p);
+                commands.entity(e).with_child((Mesh3d(meshes.add(bones)), MeshMaterial3d(bone.clone()), Transform::default(), Visibility::Hidden,
+                                               RenderLayers::layer(layer), BoneMesh));
+                if let Some(m) = sockets {
+                    commands.entity(e).with_child((Mesh3d(meshes.add(m)), MeshMaterial3d(socket.clone()), Transform::default(), Visibility::Hidden,
+                                                   RenderLayers::layer(layer), BoneMesh));
+                }
+                let (flesh, inner) = (meshes.add(speck()), meshes.add(speck()));
+                commands.entity(e).insert(VoxelOf(flesh.clone(), inner.clone()))
+                    .with_child((Mesh3d(flesh), MeshMaterial3d(voxel.clone()), Transform::default(), RenderLayers::layer(layer),
+                                 bevy::light::NotShadowCaster))
+                    .with_child((Mesh3d(inner), MeshMaterial3d(bone_in.clone()), Transform::default(), RenderLayers::layer(layer)));
+                commands.entity(e).with_child((Mesh3d(part_mesh(meshes, p)), MeshMaterial3d(aura.clone()), Transform::from_scale(Vec3::splat(1.25)), Visibility::Hidden,
+                                               RenderLayers::layer(layer), BoneMesh, AuraMesh));
+            }
         }
     }
     let (white, black) = (mats.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() }),
@@ -3941,7 +4039,7 @@ fn spawn_world(commands: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut As
     }
 }
 
-fn char_skin(k: usize, c: f32, body: [u8; 4]) -> (Image, Image) {
+fn skin(k: usize, c: f32, body: [u8; 4]) -> (Image, Image) {
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
     let hash = |i: usize, salt: f32| (((k * 977 + i) as f32 * 12.9898 + salt).sin() * 43758.545).rem_euclid(1.0);
     let (mut base, mut glow) = (vec![], vec![]);
@@ -3949,9 +4047,10 @@ fn char_skin(k: usize, c: f32, body: [u8; 4]) -> (Image, Image) {
         let clump = hash(20000 + i / CHAR_PX / 4 * 8 + i % CHAR_PX / 4, 0.0);
         let burnt = c * 1.25 > 0.6 * clump + 0.4 * hash(i, 0.0);
         let r = hash(i, 7.3);
+        let under: [f32; 3] = body.map(|x| x as f32)[..3].try_into().unwrap();
         let dark = 1.0 - 0.5 * c.min(1.0);
         let px = match () {
-            _ if !burnt => [body[0] as f32 * dark, body[1] as f32 * dark, body[2] as f32 * dark].map(|x| x as u8),
+            _ if !burnt => under.map(|x| (x * dark) as u8),
             _ => match () {
                 _ if r < 0.22 => [20.0, 12.0, 12.0],
                 _ if r < 0.44 => [160.0, 14.0, 20.0],
@@ -3973,10 +4072,220 @@ fn char_skin(k: usize, c: f32, body: [u8; 4]) -> (Image, Image) {
     (image(base), image(glow))
 }
 
+fn xray_bones(name: &str, p: &delirium::ragdoll::PartDef) -> (Mesh, Option<Mesh>) {
+    let (r, h) = (p.radius, p.half);
+    let up = (p.bind.inverse() * Vec3::Z).normalize();
+    let fwd = -(p.bind.inverse() * Vec3::Y).normalize();
+    let side = up.cross(fwd).normalize();
+    let fwd = side.cross(up);
+    let ball = |c: Vec3, rad: f32| Mesh::from(Sphere::new(rad)).transformed_by(Transform::from_translation(c));
+    let rod = |a: Vec3, b: Vec3, rad: f32| Mesh::from(Cylinder::new(rad, (b - a).length()))
+        .transformed_by(Transform::from_translation((a + b) / 2.0).with_rotation(Quat::from_rotation_arc(Vec3::Y, (b - a).normalize())));
+    let ring = |c: Vec3, a: f32, b: f32| Mesh::from(Torus::new(0.9, 1.1))
+        .transformed_by(Transform { translation: c, rotation: Quat::from_mat3(&Mat3::from_cols(side, up, side.cross(up))), scale: Vec3::new(a, a.min(b), b) });
+    let long = |rad: f32| {
+        let k = rad * 1.7;
+        let mut v = vec![rod(-h * Vec3::Y, h * Vec3::Y, rad)];
+        for y in [-h, h] {
+            v.extend([ball(Vec3::new(k * 0.7, y, 0.0), k), ball(Vec3::new(-k * 0.7, y, 0.0), k)]);
+        }
+        v
+    };
+    let reach = |d: Vec3| match p.boxed {
+        Some(e) => (d * e).abs().element_sum(),
+        None => d.y.abs() * h + r,
+    };
+    let (lat, deep, tall) = (reach(side), reach(fwd), reach(up));
+    let spine = |ribs: &[f32]| {
+        let back = -fwd * deep * 0.55;
+        let mut v = vec![ball(back, r * 0.3), rod(back - up * tall * 0.6, back + up * tall * 0.6, r * 0.16)];
+        v.extend(ribs.iter().map(|&y| ring(up * tall * y - fwd * deep * 0.1, lat * 0.8, deep * 0.75)));
+        v
+    };
+    let mut sockets = None;
+    let parts = match name {
+        "Head" => {
+            let (d, w, t) = (deep * SKULL, lat * SKULL, tall * SKULL);
+            sockets = [ball(fwd * d * 0.82 + up * t * 0.15 + side * w * 0.38, w * 0.26),
+                       ball(fwd * d * 0.82 + up * t * 0.15 - side * w * 0.38, w * 0.26),
+                       ball(fwd * d * 0.92 - up * t * 0.2, w * 0.1)].into_iter().reduce(|mut a, b| {
+                a.merge(&b).unwrap();
+                a
+            });
+            vec![Mesh::from(Capsule3d::new(r, h * 2.0)).transformed_by(Transform::from_scale(Vec3::splat(SKULL)))]
+        }
+        "Neck" => vec![rod(-up * tall, up * tall, r * 0.25), ball(Vec3::ZERO, r * 0.35)],
+        "Spine0" => spine(&[]),
+        "Spine1" | "Spine2" | "Spine3" => spine(&[0.0]),
+        "Buttocks" => vec![ring(Vec3::ZERO, lat * 0.75, deep * 0.6), ball(side * lat * 0.6, r * 0.35), ball(-side * lat * 0.6, r * 0.35),
+                           ball(-fwd * deep * 0.5, r * 0.3)],
+        _ => match p.boxed {
+            Some(e) => {
+                let (l, w) = if e.x >= e.y.max(e.z) { (Vec3::X * e.x, if e.y > e.z { Vec3::Y * e.y } else { Vec3::Z * e.z }) }
+                             else if e.y >= e.z { (Vec3::Y * e.y, if e.x > e.z { Vec3::X * e.x } else { Vec3::Z * e.z }) }
+                             else { (Vec3::Z * e.z, if e.x > e.y { Vec3::X * e.x } else { Vec3::Y * e.y }) };
+                let rad = w.length() * 0.18;
+                let mut v: Vec<Mesh> = [-0.55, 0.0, 0.55].iter().map(|&o| rod(-l * 0.8 + w * o, l * 0.8 + w * o, rad)).collect();
+                v.extend([ball(l * 0.8, rad * 2.2), ball(-l * 0.8, rad * 2.2)]);
+                v
+            }
+            None if name.starts_with("Clavicle") => long(r * 0.12),
+            None if name.starts_with("Hand") => long(r * 0.25),
+            None => long(r * 0.2),
+        },
+    };
+    let bones = parts.into_iter().reduce(|mut a, b| {
+        a.merge(&b).unwrap();
+        a
+    }).unwrap();
+    (bones, sockets)
+}
+
 fn part_mesh(meshes: &mut Assets<Mesh>, p: &delirium::ragdoll::PartDef) -> Handle<Mesh> {
+    meshes.add(part_shape(p))
+}
+
+fn part_shape(p: &delirium::ragdoll::PartDef) -> Mesh {
     match p.boxed {
-        Some(e) => meshes.add(Cuboid { half_size: e }),
-        None => meshes.add(Capsule3d::new(p.radius, p.half * 2.0)),
+        Some(e) => Cuboid { half_size: e }.into(),
+        None => Capsule3d::new(p.radius, p.half * 2.0).into(),
+    }
+}
+
+fn speck() -> Mesh {
+    Sphere::new(1e-5).into()
+}
+
+struct Voxels {
+    n: [usize; 3],
+    lo: Vec3,
+    alive: Vec<bool>,
+    skin: Vec<bool>,
+    dug: Vec<bool>,
+    boxed: bool,
+    core: f32,
+    half: f32,
+    ver: u32,
+}
+
+impl Voxels {
+    fn new(p: &delirium::ragdoll::PartDef, name: &str) -> Self {
+        let ext = p.boxed.unwrap_or(Vec3::new(p.radius, p.half + p.radius, p.radius));
+        let n = ext.to_array().map(|e| ((e * 2.0 / VOX).ceil() as usize).max(1));
+        let lo = -Vec3::new(n[0] as f32, n[1] as f32, n[2] as f32) * VOX / 2.0;
+        let core = match name {
+            _ if p.boxed.is_some() => 0.0,
+            "Head" => p.radius * SKULL,
+            n if n.starts_with("Spine") || n == "Buttocks" => 0.0,
+            _ => p.radius * 0.25,
+        };
+        let inside = |x: Vec3| match p.boxed {
+            Some(e) => x.abs().cmple(e).all(),
+            None => x.distance(Vec3::Y * x.y.clamp(-p.half, p.half)) <= p.radius,
+        };
+        let mut v = Voxels { n, lo, alive: vec![], skin: vec![], dug: vec![false; n[0] * n[1] * n[2]], boxed: p.boxed.is_some(), core, half: p.half, ver: 1 };
+        let cells: Vec<Vec3> = (0..n[0] * n[1] * n[2]).map(|i| v.at(i)).collect();
+        v.alive = cells.iter().map(|&x| inside(x) && !v.in_core(x)).collect();
+        v.skin = cells.iter().map(|&x| [Vec3::X, Vec3::Y, Vec3::Z].iter().any(|&d| !inside(x + d * VOX) || !inside(x - d * VOX))).collect();
+        v
+    }
+
+    fn at(&self, i: usize) -> Vec3 {
+        let [nx, ny, _] = self.n;
+        self.lo + (Vec3::new((i % nx) as f32, (i / nx % ny) as f32, (i / nx / ny) as f32) + 0.5) * VOX
+    }
+
+    fn cell(&self, x: Vec3) -> Option<usize> {
+        let c = ((x - self.lo) / VOX).floor();
+        let [nx, ny, nz] = self.n;
+        (c.cmpge(Vec3::ZERO).all() && (c.x as usize) < nx && (c.y as usize) < ny && (c.z as usize) < nz)
+            .then(|| c.x as usize + nx * (c.y as usize + ny * c.z as usize))
+    }
+
+    fn in_core(&self, x: Vec3) -> bool {
+        self.core > 0.0 && x.distance(Vec3::Y * x.y.clamp(-self.half, self.half)) < self.core
+    }
+
+    fn dig(&mut self, at: Vec3, dir: Vec3, hole: f32) {
+        let reach = self.lo.length() * 2.0;
+        let mut t = -VOX;
+        while t < reach {
+            let x = at + dir * t;
+            if self.in_core(x) {
+                return;
+            }
+            if self.cell(x).is_some_and(|i| self.alive[i]) {
+                let r = (hole / VOX).ceil() as i32;
+                for dz in -r..=r {
+                    for dy in -r..=r {
+                        for dx in -r..=r {
+                            let y = x + Vec3::new(dx as f32, dy as f32, dz as f32) * VOX;
+                            if y.distance(x) <= hole {
+                                if let Some(i) = self.cell(y) {
+                                    self.alive[i] = false;
+                                    self.dug[i] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                self.ver += 1;
+                return;
+            }
+            t += VOX * 0.5;
+        }
+    }
+
+    fn surface(&self, p: &delirium::ragdoll::PartDef) -> Mesh {
+        let mut m = Capsule3d::new(p.radius, p.half * 2.0).mesh().rings(24).longitudes(48).latitudes(24).build();
+        let (Some(pos), Some(ix)) = (m.attribute(Mesh::ATTRIBUTE_POSITION).and_then(|a| a.as_float3()), m.indices()) else { return m };
+        let ix: Vec<u32> = ix.iter().map(|i| i as u32).collect();
+        let pos: Vec<Vec3> = pos.iter().map(|&x| Vec3::from(x)).collect();
+        let kept = ix.chunks_exact(3).filter(|t| {
+            let c = (pos[t[0] as usize] + pos[t[1] as usize] + pos[t[2] as usize]) / 3.0;
+            let inward = (Vec3::Y * c.y.clamp(-self.half, self.half) - c).normalize_or_zero() * VOX;
+            ![c, c + inward].iter().any(|&x| self.cell(x).is_some_and(|i| self.dug[i]))
+        }).flatten().copied().collect();
+        m.insert_indices(bevy::mesh::Indices::U32(kept));
+        m
+    }
+
+    fn mesh(&self, body: Color) -> Mesh {
+        let (mut pos, mut nor, mut col, mut idx) = (vec![], vec![], vec![], vec![]);
+        let skin = body.to_linear().to_f32_array();
+        let six = [Vec3::X, Vec3::NEG_X, Vec3::Y, Vec3::NEG_Y, Vec3::Z, Vec3::NEG_Z];
+        for i in (0..self.alive.len()).filter(|&i| self.alive[i]) {
+            let x = self.at(i);
+            if !self.boxed && !six.iter().any(|&d| self.cell(x + d * VOX).is_some_and(|j| self.dug[j])) {
+                continue;
+            }
+            let h = ((i as f32 * 12.9898).sin() * 43758.545).rem_euclid(1.0);
+            let c = match () {
+                _ if self.skin[i] => skin,
+                _ if h < 0.45 => Color::srgb(0.6, 0.07, 0.09).to_linear().to_f32_array(),
+                _ if h < 0.8 => Color::srgb(0.45, 0.04, 0.06).to_linear().to_f32_array(),
+                _ => Color::srgb(0.72, 0.22, 0.22).to_linear().to_f32_array(),
+            };
+            for d in [Vec3::X, Vec3::NEG_X, Vec3::Y, Vec3::NEG_Y, Vec3::Z, Vec3::NEG_Z] {
+                if self.cell(x + d * VOX).is_some_and(|j| self.alive[j]) {
+                    continue;
+                }
+                let (u, w) = (d.any_orthonormal_vector(), d.cross(d.any_orthonormal_vector()));
+                let base = pos.len() as u32;
+                for (a, b) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                    pos.push((x + (d + u * a + w * b) * VOX / 2.0).to_array());
+                    nor.push(d.to_array());
+                    col.push(c);
+                }
+                idx.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
+        let mut m = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+        m.insert_attribute(Mesh::ATTRIBUTE_NORMAL, nor);
+        m.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
+        m.insert_indices(bevy::mesh::Indices::U32(idx));
+        m
     }
 }
 
@@ -4035,10 +4344,12 @@ struct HeroMesh(usize);
 #[derive(Component)]
 struct HatMesh;
 
-fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<HeroMesh>>,
+fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>, &Mesh3d, Option<&VoxelOf>, Entity), Without<HeroMesh>>,
           mut hero: Query<(&HeroMesh, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), Without<PartMesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
           mut hat: Query<(&mut Transform, &mut Visibility), (With<HatMesh>, Without<PartMesh>, Without<HeroMesh>)>, time: Res<Time>,
-          mut images: ResMut<Assets<Image>>, mut skins: Local<Vec<Option<(u8, [u8; 4], Handle<Image>, Handle<Image>)>>>) {
+          mut bones: Query<(&mut Visibility, Has<AuraMesh>), (With<BoneMesh>, Without<PartMesh>, Without<HeroMesh>, Without<HatMesh>)>,
+          mut images: ResMut<Assets<Image>>, mut skins: Local<Vec<Option<(u8, [u8; 4], Handle<Image>, Handle<Image>)>>>,
+          mut meshes: ResMut<Assets<Mesh>>, mut carved: Local<std::collections::HashMap<Entity, u32>>) {
     let doll: Option<Vec<Transform>> = sim.hero_doll.as_ref().map(|h| match h.rise.as_ref().zip(sim.getup.as_ref()).and_then(|(r, c)| c.frames(r)) {
         Some(f) => f.into_iter().enumerate().map(|(k, f)| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k))).collect(),
         None => h.agent.doll.capsules().collect(),
@@ -4075,7 +4386,14 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
     }
     let crowd: Vec<Vec<Transform>> = sim.crowd.iter().map(|(a, _)| a.doll.capsules().collect()).collect();
     let link = |k: usize, f: Transform| f.with_rotation(f.rotation * delirium::nmdbm::rage_link(nm(), k));
-    for (p, mut t, mut v, m) in &mut q {
+    let xray = sim.shock > 0.0 && (time.elapsed_secs() * SHOCK_HZ).fract() < SHOCK_XRAY;
+    for (mut v, aura) in &mut bones {
+        let want = if xray || aura && sim.shock > 0.0 { Visibility::Inherited } else { Visibility::Hidden };
+        if *v != want {
+            *v = want;
+        }
+    }
+    for (p, mut t, mut v, m, shape, vox, e) in &mut q {
         let ped = p.crowd.map_or(0, |c| c + 1);
         let lit = sim.glow.get(ped).and_then(|g| g.get(p.k)).filter(|_| p.watch.is_none()).map_or(LinearRgba::BLACK, |&(g, (c, _))| c * g);
         let lit = if ped == 0 && p.watch.is_none() && sim.fire == FIRE_HIGH && sim.burning > 0.0 {
@@ -4087,15 +4405,42 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
         let col = part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or(""), sim.body_alpha);
         let col = if sim.clean { col.with_alpha(1.0) } else { col };
         let mut fresh = false;
-        let (col, skin) = match sim.charred.get(p.k).filter(|&&c| ped == 0 && p.watch.is_none() && c > 0.0) {
-            Some(&c) => {
+        let ours = ped == 0 && p.watch.is_none();
+        let c = sim.charred.get(p.k).copied().unwrap_or(0.0);
+        if let Some(vo) = vox.filter(|_| ours) {
+            let dug = sim.voxels.get(p.k).and_then(|v| v.as_ref());
+            if carved.get(&e).copied() != Some(dug.map_or(0, |v| v.ver)) {
+                carved.insert(e, dug.map_or(0, |v| v.ver));
+                let name = delirium_data::nm_asset::PARTS.get(p.k).copied().unwrap_or("");
+                if let Some(def) = sim.build.parts.get(p.k) {
+                    let (solid, flesh, bones) = match dug {
+                        Some(v) if v.boxed => (speck(), v.mesh(col), Some(xray_bones(name, def))),
+                        Some(v) => (v.surface(def), v.mesh(col), Some(xray_bones(name, def))),
+                        None => (part_shape(def), speck(), None),
+                    };
+                    let bones = bones.map_or_else(speck, |(mut b, sockets)| {
+                        if let Some(s) = sockets {
+                            let _ = b.merge(&s);
+                        }
+                        b
+                    });
+                    for (h, m) in [(&shape.0, solid), (&vo.0, flesh), (&vo.1, bones)] {
+                        if let Some(mut x) = meshes.get_mut(h) {
+                            *x = m;
+                        }
+                    }
+                }
+            }
+        }
+        let (col, skin) = match ours && c > 0.0 {
+            true => {
                 let (level, px) = ((c * 16.0).ceil() as u8, col.to_srgba().to_u8_array());
                 if skins.len() <= p.k {
                     skins.resize(p.k + 1, None);
                 }
                 let s = &mut skins[p.k];
                 if s.as_ref().is_none_or(|(l, x, _, _)| (*l, *x) != (level, px)) {
-                    let (base, glow) = char_skin(p.k, level as f32 / 16.0, px);
+                    let (base, glow) = skin(p.k, level as f32 / 16.0, px);
                     match s {
                         Some((l, x, b, g)) => {
                             (*l, *x) = (level, px);
@@ -4108,9 +4453,9 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
                 }
                 (Color::WHITE.with_alpha(col.alpha()), s.as_ref().map(|(_, _, b, g)| (b.clone(), g.clone())))
             }
-            None => (col, None),
+            false => (col, None),
         };
-        let embers = sim.burning > 0.0 && skin.is_some();
+        let embers = sim.burning > 0.0 && c > 0.0 && skin.is_some();
         let lit = if embers {
             let t = time.elapsed_secs() * 7.0 + p.k as f32 * 1.3;
             lit + EMBER_GLOW * ((sim.burning / 2.0).min(1.0) * (0.55 + 0.45 * t.sin() * (t * 0.37).cos()))
@@ -4121,8 +4466,14 @@ fn bodies(sim: NonSend<Sim>, mut q: Query<(&PartMesh, &mut Transform, &mut Visib
             Some((b, g)) => (Some(b), embers.then_some(g)),
             None => (None, None),
         };
-        if fresh || mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col || x.base_color_texture != base_tex || x.emissive_texture != glow_tex) {
+        let flash = ours && xray;
+        let (col, lit, base_tex, glow_tex) = match flash {
+            true => (SHOCK_SHELL, LinearRgba::BLACK, None, None),
+            false => (col, lit, base_tex, glow_tex),
+        };
+        if fresh || mats.get(&m.0).is_some_and(|x| x.emissive != lit || x.base_color != col || x.base_color_texture != base_tex || x.emissive_texture != glow_tex || x.unlit != flash) {
             if let Some(mut x) = mats.get_mut(&m.0) {
+                x.unlit = flash;
                 x.emissive = lit;
                 x.base_color = col;
                 x.base_color_texture = base_tex;
@@ -5187,7 +5538,7 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     let at = sim.gun.at - d * 0.05 * k;
     let mut shown = Quat::from_axis_angle(right, 0.35 * k) * d;
     let mut at = at;
-    let bat = sim.hero.is_none() && WEAPONS[sim.weapon].0 == "bat";
+    let bat = sim.hero.is_none() && bat(sim.weapon);
     if bat {
         let (th, lunge) = bat_swing(if sim.gun.swing > 0.0 { 1.0 - sim.gun.swing / BAT_SWING } else { 0.0 });
         shown = (Vec3::Z * 0.8 + right * 0.6).normalize() * th.cos() + d * th.sin();
@@ -6786,7 +7137,7 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
 }
 
 const RESET_TIP: &str = "Stand Homer back up (R)";
-const TIPS: [(&str, &str); 46] = [
+const TIPS: [(&str, &str); 47] = [
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
     ("car", "A taxi comes at Homer from his left at 8 m/s and hits him."),
@@ -6815,7 +7166,7 @@ const TIPS: [(&str, &str); 46] = [
     ("game tasks", "NM -> animation (the game's tasks).\nOn: when the game's task would end (a shot, a balance, a fall...), Homer goes back to his animation: standing, or getting up if he's lying.\nOff: he stays in Delirium; he only gets up after lying still a while."),
     ("get-up", "When he lies still: animation = the game's get-up clip; muscles = his muscles try the clip's poses (he can fail); off = he stays down; learned = the trained network."),
     ("#pops", "Numbers for the damage each hit does, rising from where it landed."), ("#help", "The first-start tips again."),
-    ("#sound", "8-bit sounds for shots, hits, explosions, punches and crashes."), ("#blood", "Little square blood pixels from each hit; they land and fade."), ("#gore", "Much more blood: big splats and pools that stay, wounds that keep spurting."),
+    ("#sound", "8-bit sounds for shots, hits, explosions, punches and crashes."), ("#layers", "Hits dig into him: through his skin to the red flesh, and on to his bones."), ("#blood", "Little square blood pixels from each hit; they land and fade."), ("#gore", "Much more blood: big splats and pools that stay, wounds that keep spurting."),
     ("watch training", "Shows the get-up training live: each generation's 8 tries side by side. Again: back to Homer."),
     ("watch walk training", "Shows eight live walk training attempts. The trainer holds WASD forward and learns muscle control over the existing balancer."),
     ("watch run training", "Shows eight live run training attempts, continuing from the walk network."),
@@ -7263,7 +7614,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 egui::Grid::new(("guns", k)).spacing([10.0, 8.0]).show(ui, |ui| {
                     for (j, (i, w)) in WEAPONS.iter().enumerate().filter(|(i, _)| kind(*i) == k).enumerate() {
                         let on = sim.weapon == i && !picked;
-                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", _ => w.0 }).selected(on));
+                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", "taser" => "Taser", "baton" => "Stun baton", _ => w.0 }).selected(on));
                         if b.clicked() { pressed = Some(format!("#weapon {i}")); }
                         if j % per == per - 1 {
                             ui.end_row();
@@ -7359,6 +7710,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 ("hero physics", sim.hero_physics, onoff("Hero physics", sim.hero_physics)), ("super punch", sim.super_punch, onoff("Super punch", sim.super_punch)),
                 ("even fight", sim.even, onoff("Even fight", sim.even)),
                 ("tackle high", sim.tackle.is_some(), "Hero: tackle high".into()), ("tackle low", sim.tackle.is_some(), "Hero: tackle low".into())]));
+            sub(ui, "Damage");
+            pressed = pressed.take().or(tiles(ui, "damage", &[("#blood", sim.pixel_blood, onoff("Pixel blood", sim.pixel_blood)),
+                ("#gore", sim.gore, onoff("Extra bloody", sim.gore)), ("#layers", sim.layers, onoff("Layered damage", sim.layers))]));
             sub(ui, "Jump");
             pressed = pressed.take().or(tiles(ui, "jump", &[("jump", false, "Jump".into()), ("jump dive", false, "Dive".into())]));
             sub(ui, "Sever");
@@ -7424,8 +7778,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.label(section_title("Graphics / Camera"));
             info(ui, "The camera, lighting, shadows and effects. (GPU: ...) is what a setting costs a slow graphics card.");
             pressed = pressed.take().or(tiles(ui, "view", &[("camera", sim.cam_locked, onoff("Follow camera", sim.cam_locked)),
-                ("#pops", sim.show_pops, onoff("Damage numbers", sim.show_pops)),
-                ("#blood", sim.pixel_blood, onoff("Pixel blood", sim.pixel_blood)), ("#gore", sim.gore, onoff("Extra bloody", sim.gore))]));
+                ("#pops", sim.show_pops, onoff("Damage numbers", sim.show_pops))]));
             slide(ui, "Mouse sensitivity", &mut sim.sens, 0.05, 2.0, "");
             if ui.button("Enter photo mode  ·  P").on_hover_text("Hide the interface and move the camera freely; P returns to the room.").clicked() {
                 sim.photo_pending = true;
@@ -7691,8 +8044,9 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
 
         });
     });
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(VIEW_RECT), root.available_rect_before_wrap()));
-    sim.over_ui = ctx.is_pointer_over_egui() || ctx.egui_wants_pointer_input();
+    let view_rect = root.available_rect_before_wrap();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(VIEW_RECT), view_rect));
+    sim.over_ui = ctx.is_pointer_over_egui() || ctx.egui_wants_pointer_input() || ctx.pointer_hover_pos().is_some_and(|p| !view_rect.contains(p));
     if let Some((c, s)) = sim.hover.clone() {
         egui::Area::new("hover".into()).fixed_pos([c.x + 14.0, c.y + 4.0]).interactable(false).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(mono(s)));
@@ -7760,6 +8114,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 sim.blood.clear();
             }
             (Some("#gore"), _) => sim.gore = !sim.gore,
+            (Some("#layers"), _) => {
+                sim.layers = !sim.layers;
+                sim.voxels.clear();
+            }
             (Some("#slower"), _) => sim.speed = (sim.speed * 0.5).max(SPEEDS.0),
             (Some("#faster"), _) => sim.speed = (sim.speed * 2.0).min(SPEEDS.1),
             _ => sim.button(&p),
