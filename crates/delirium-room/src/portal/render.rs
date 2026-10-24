@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use bevy::camera::visibility::RenderLayers;
+use bevy::camera::visibility::{NoFrustumCulling, RenderLayers};
 use bevy::camera::{CameraProjection, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
@@ -24,7 +24,7 @@ const STATIC_FADE: f32 = 1.0;
 const STANDOFF: f32 = 0.004;
 const CAP_DEPTH: f32 = 0.35;
 const CAP_MARGIN: f32 = 0.02;
-const CLIP_BEHIND_EXIT: f32 = 0.0254;
+const CLIP_BEHIND_EXIT: f32 = 0.005;
 const COLOR_SCALE: f32 = 4.0;
 
 pub fn node_layer(code: u32) -> usize {
@@ -356,6 +356,12 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
         }
     }
     commands.insert_resource(parts);
+    let every = RenderLayers::from_layers(&(1..=NODES as u32).map(node_layer).collect::<Vec<_>>());
+    for blend in [false, true] {
+        let m = mats.add(PortalSurface { blend, ..mk(if blend { FLAG_BLEND } else { 0 }, false) });
+        commands.spawn((Mesh3d(quad.clone()), MeshMaterial3d(m), Transform::from_scale(Vec3::splat(1e-4)), NoFrustumCulling, every.clone(),
+            NotShadowCaster, NotShadowReceiver));
+    }
     cams.dummy = images.add(Image::new_target_texture(1, 1, TextureFormat::Rgba16Float, None));
     for code in 2..(1u32 << (DEPTH + 2)) {
         let level = node_level(code);
@@ -372,6 +378,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
             RenderLayers::layer(0),
             Transform::default(),
             NodeCam(code),
+            crate::SkyCam,
         )).id();
         cams.cameras.insert(code, e);
     }

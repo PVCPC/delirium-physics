@@ -3825,6 +3825,9 @@ impl Sim {
 
 #[derive(Component)]
 struct OursCam;
+
+#[derive(Component)]
+pub struct SkyCam;
 #[derive(Component)]
 struct ScaledView;
 const UP_BASIC: u8 = 0;
@@ -4975,7 +4978,7 @@ fn ray_tracing(mut commands: Commands, mut sim: NonSendMut<Sim>, device: Option<
 }
 
 fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Image>>, assets: Res<AssetServer>,
-       mut media: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>, mut cam: Query<(Entity, &mut Camera), Or<(With<OursCam>, With<water::Mirror>)>>,
+       mut media: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>, mut cam: Query<(Entity, &mut Camera), Or<(With<OursCam>, With<water::Mirror>, With<SkyCam>)>>, new: Query<(), Added<SkyCam>>,
        planet: Query<Entity, With<bevy::light::Atmosphere>>, mut last: Local<Option<(u8, u8, [f32; 3], f32)>>) {
     use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, GeneratedEnvironmentMapLight, Skybox};
     let now = match sim.sky {
@@ -4983,7 +4986,7 @@ fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Imag
         1 => (1, 0, [0.0; 3], sim.sun_dir[0]),
         k => (k, 0, [0.0; 3], 0.0),
     };
-    if *last == Some(now) || cam.is_empty() {
+    if *last == Some(now) && new.is_empty() || cam.is_empty() {
         return;
     }
     *last = Some(now);

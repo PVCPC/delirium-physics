@@ -140,7 +140,7 @@ impl Sim {
         if let Some(old) = self.portal.ends[i] {
             self.portal.fx.push(fx::Event::Burst { name: "portal_close", pos: old.at, basis: Mat3::from_quat(old.rot), kind: i });
         }
-        self.portal.fx.push(fx::Event::Burst { name: "portal_success", pos: f.at, basis: Mat3::from_quat(f.rot), kind: i });
+        self.portal.fx.push(fx::Event::Burst { name: "portal_success", pos: f.at + f.normal() * 0.01, basis: Mat3::from_quat(f.rot), kind: i });
         self.portal.ends[i] = Some(f);
         self.portal.fx.push(fx::Event::Rim { kind: i });
         (self.portal.placed[i], self.portal.stat) = (f32::NAN, 1.0);

@@ -58,7 +58,11 @@ impl Plugin for PathtracingPlugin {
             .add_systems(
                 Core3d,
                 pathtracer
-                    .after(Core3dSystems::MainPass)
+                    // Delirium: between the opaque and blended passes, so blended things (portals, particles) draw over its picture.
+                    .after(bevy_core_pipeline::core_3d::main_opaque_pass_3d)
+                    // (and after Bevy's sky, which would be blended over its sky)
+                    .after(bevy_pbr::RenderSky)
+                    .before(bevy_core_pipeline::core_3d::main_transparent_pass_3d)
                     // Delirium: before DLSS's Ray Reconstruction, which cleans up its picture.
                     .before(Core3dSystems::EarlyPostProcess)
                     .before(tonemapping),

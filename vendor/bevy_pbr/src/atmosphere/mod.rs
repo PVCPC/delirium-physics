@@ -79,6 +79,10 @@ use environment::{
     prepare_atmosphere_probe_bind_groups, prepare_probe_textures, AtmosphereEnvironmentMap,
 };
 use node::{atmosphere_luts, render_sky};
+
+/// Delirium: the sky drawn over the opaque pass (the path tracer runs after it).
+#[derive(bevy_ecs::schedule::SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RenderSky;
 use resources::{
     prepare_atmosphere_transforms, prepare_atmosphere_uniforms, queue_render_sky_pipelines,
     AtmosphereTransforms, GpuAtmosphere, RenderSkyBindGroupLayouts,
@@ -195,6 +199,7 @@ impl Plugin for AtmospherePlugin {
                         .after(Core3dSystems::Prepass)
                         .before(Core3dSystems::MainPass),
                     render_sky
+                        .in_set(RenderSky)
                         .after(main_opaque_pass_3d)
                         .before(main_transparent_pass_3d),
                 ),
