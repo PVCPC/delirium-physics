@@ -1,0 +1,9 @@
+skate-core, skate-data and skate-host are vendored from the Skate 3 Rust Engine
+(github.com/SK8-ENGINE/skate-3-rust-engine), as carried by chasmlol's 2010-rust-rewrite-mashup
+(engine commit cb7968930f14dad38457e98720d1a274e469eec2).
+Copyright (c) 2026 dumbad and the Skate 3 Rust Engine contributors. GPL-3.0-only.
+
+Delirium's changes: trimmed to what Skate 3 mode needs (no network, no zstd maps, no skater mesh check);
+Pose carries the trick name, the board's bodies and its spin; hex addresses in comments and constants
+scrubbed for the public copy.
+No Skate 3 game files are included: they are converted from the user's own disc image at setup.

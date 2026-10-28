@@ -1,0 +1,7 @@
+{
+  "name": "com.delirium_physics.bridge",
+  "version": "0.1.0",
+  "displayName": "delirium_physics (NM / Delirium port) bridge",
+  "description": "Drives a humanoid with the NM port (delirium_physics.dll): LEAD (NM's physics poses it) or FOLLOW (Unity's rigidbodies, driven by NM's forces and torques), and its 28 messages.",
+  "unity": "2022.3"
+}

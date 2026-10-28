@@ -1,0 +1,18 @@
+[package]
+name = "delirium"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+bevy = ["dep:bevy_ecs"]
+# Portal mode: portals' holes in the world.
+portal = []
+
+[dependencies]
+delirium-data = { path = "../delirium-data" }
+bevy_math = { version = "=0.20.0", default-features = false, features = ["std"] }
+bevy_transform = { version = "=0.20.0", default-features = false, features = ["std"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+bevy_ecs = { version = "=0.20.0", optional = true }

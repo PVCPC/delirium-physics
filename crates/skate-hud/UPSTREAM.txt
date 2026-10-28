@@ -1,0 +1,11 @@
+The apt_* modules (Skate 3's APT movie player: the ActionScript VM, display list, text and geometry) are vendored
+from the Skate 3 Rust Engine (github.com/SK8-ENGINE/skate-3-rust-engine, crates/skate-game/src).
+Copyright (c) 2026 dumbad and the Skate 3 Rust Engine contributors. GPL-3.0-only.
+
+Delirium's changes: its own host for the Hall of Meat screen (hom.rs). No Skate 3 game files are included: the screen
+is read from the user's own disc.
+
+The screen's runtime file is made at setup by the room's skate_hud_files.rs (from the user's own disc), ported
+from the engine's tools/prepare_hud.py (GPL-3.0-only) and the UI extractor it vendors, tools/vendor/skate3_ui
+(apt, actions, geo, rw4, xenos, bitmap_font, language, scene_graph, project), MIT License,
+Copyright (c) 2026 Skate 3 Custom Engine Layer contributors (its licence: public/CREDITS.md).

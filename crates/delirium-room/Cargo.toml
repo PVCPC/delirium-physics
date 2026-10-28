@@ -1,0 +1,50 @@
+[package]
+name = "delirium-room"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+mimalloc = { version = "0.1", default-features = false }
+delirium = { path = "../delirium", features = ["bevy"] }
+delirium-data = { path = "../delirium-data" }
+# Only the engine parts the room uses (no animation, sprites, UI, picking or text): a smaller, quicker build.
+bevy = { version = "=0.20.0", default-features = false, features = [
+    "default_app", "std", "bevy_sprite", "bevy_sprite_render", "multi_threaded", "bevy_winit", "x11", "wayland", "bevy_gilrs",
+    "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_anti_alias", "bevy_pbr", "bevy_light", "bevy_gizmos_render",
+    "bevy_camera", "bevy_color", "bevy_gizmos", "bevy_image", "bevy_mesh", "bevy_shader", "bevy_mikktspace",
+    "hdr", "png", "jpeg", "ktx2", "zstd_rust", "tonemapping_luts", "smaa_luts", "bevy_gltf", "scene", "bevy_audio", "experimental_pbr_pcss", "bevy_solari", "zlib",
+] }
+# The cards there are (Video → Graphics card); bevy's own wgpu.
+wgpu = { version = "=30.0.1", default-features = false }
+bevy_egui = { version = "=0.43.1", default-features = false, features = ["manage_clipboard", "default_fonts", "render"] }
+# bevy_egui reads the clipboard through arboard, which only talks to X11 unless this is on: without it, pasting on a Wayland session (most Linux desktops) finds nothing.
+arboard = { version = "3.2", features = ["wayland-data-control"] }
+rapier3d = "0.36.1"
+anyhow = "1"
+texpresso = "2.0.2"
+# Skate 3 mode (J): the Skate 3 Rust engine's skating, with the user's own Skate 3 (skate.rs, skate_files.rs).
+skate-host = { path = "../skate-host" }
+skate-hud = { path = "../skate-hud" }
+skate-data = { path = "../skate-data" }
+skate-core = { path = "../skate-core" }
+serde_json = "1"
+miniz_oxide = "0.8"
+# The release's number table locked to the player's game (kv_lock.rs; the public data crate's kv.rs).
+blake3 = "1"
+
+# FSR 3 and XeSS (upscale.rs): AMD's and Intel's DLLs, on Vulkan; XeSS's device extension.
+[target.'cfg(windows)'.dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["raw_vulkan_init"] }
+ash = "0.38"
+libloading = "0.8"
+# The window's icon from the exe's own (bevy's winit, its version).
+winit = { version = "0.30", default-features = false }
+
+[features]
+# Portal mode: Portal 2's portal gun, with your own Portal 2 install (none of its files are included). On by default.
+default = ["portal"]
+portal = ["delirium/portal"]
+# NVIDIA DLSS / DLAA (Video → Upscaler): needs DLSS_SDK, VULKAN_SDK and LIBCLANG_PATH to build, nvngx_dlss.dll beside the exe.
+dlss = ["bevy/dlss"]
