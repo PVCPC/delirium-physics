@@ -10,6 +10,9 @@
   <img src="docs/moves.gif" alt="Moves: ice, drunk, flinch, electrocute, stagger, windmill" width="260">
   <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="260">
 </p>
+<p align="center">
+  <img src="docs/skate.gif" alt="Homer skating, bailing into a portal" width="560">
+</p>
 
 # Delirium Physics
 
