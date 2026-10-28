@@ -93,7 +93,7 @@ fn damping<const N: usize>(v: [f32; N], [c, l, q]: [[f32; N]; 3], dt: f32) -> [f
 
 pub fn player_pedals(accel: f32, brake: f32, speed: f32, last_throttle: f32) -> (f32, f32) {
     let d = accel - brake;
-    if accel > delirium_data::kv!(110) && brake > delirium_data::kv!(110) {
+    if accel > delirium_data::kv!(114) && brake > delirium_data::kv!(114) {
         (accel, brake)
     } else if speed.abs() < 0.5 {
         (d, 0.0)
@@ -132,6 +132,8 @@ pub struct Car {
     hull: [Vec3; 2],
     prev: Option<(Vec3, Quat)>,
     random: tyre::Random,
+    crt: delirium_data::rng::Rand,
+    frames: u32,
     tune: Tune,
     gearbox: Transmission,
     clock: f64,
@@ -149,7 +151,7 @@ impl Car {
     pub fn new(tune: Tune, ground: Vec3, heading: f32, radius: f32, axle: Vec2, hull: [Vec3; 2], world: &Collision) -> Self {
         let h = &tune.handling;
         let com = Vec3::from(h.centre_of_mass);
-        let lean = (com.y / axle.y).clamp(-delirium_data::kv!(108), delirium_data::kv!(108));
+        let lean = (com.y / axle.y).clamp(-delirium_data::kv!(112), delirium_data::kv!(112));
         let springs = CORNERS.map(|(_, y)| {
             let front = y > 0.0;
             Spring::new(h, front, delirium_data::kv!(17) * (1.0 + if front { lean } else { -lean }), radius)
@@ -175,7 +177,9 @@ impl Car {
             axle,
             hull,
             prev: None,
-            random: tyre::Random::new(delirium_data::kv!(973 int) ^ ground.x.to_bits() ^ ground.y.to_bits().rotate_left(delirium_data::kv!(51 int))),
+            random: tyre::Random::new(delirium_data::kv!(982 int) ^ ground.x.to_bits() ^ ground.y.to_bits().rotate_left(delirium_data::kv!(51 int))),
+            crt: delirium_data::rng::Rand::default(),
+            frames: 0,
             tune,
             gearbox: Transmission::default(),
             clock: 0.0,
@@ -203,7 +207,7 @@ impl Car {
         let pitch = f32::atan2((fl + fr - rl - rr) * 0.5, 2.0 * self.axle.y);
         let roll = f32::atan2((fl + rl - fr - rr) * 0.5, 2.0 * self.axle.x);
         self.rot = flat * Quat::from_rotation_x(pitch) * Quat::from_rotation_y(roll);
-        self.pos = self.pos.with_z(z.iter().sum::<f32>() / delirium_data::kv!(104)) + self.rot * Vec3::Z * (self.radius - self.hub_z);
+        self.pos = self.pos.with_z(z.iter().sum::<f32>() / delirium_data::kv!(108)) + self.rot * Vec3::Z * (self.radius - self.hub_z);
         self.safe = (self.pos, heading);
     }
 
@@ -263,11 +267,11 @@ impl Car {
             let mut drive = if powered[axle] { force * h.drive_bias[axle] } else { 0.0 };
             let mut wheel_brake = brake * h.brake_force * h.brake_bias[axle];
             let tyre = &mut self.tyres[i];
-            let burnout = powered[axle] && brake * h.brake_force > delirium_data::kv!(73) && pedal > delirium_data::kv!(108) && (axle == 1 || h.drive_bias[1] < delirium_data::kv!(73));
+            let burnout = powered[axle] && brake * h.brake_force > delirium_data::kv!(73) && pedal > delirium_data::kv!(112) && (axle == 1 || h.drive_bias[1] < delirium_data::kv!(73));
             if burnout {
                 wheel_brake = 0.0;
             }
-            let held = burnout && (self.vel.length_squared() < delirium_data::kv!(104) || tyre.flags & tyre::flags::BURNOUT() != 0);
+            let held = burnout && (self.vel.length_squared() < delirium_data::kv!(108) || tyre.flags & tyre::flags::BURNOUT() != 0);
             tyre.flags = if held { tyre.flags | tyre::flags::BURNOUT() } else { tyre.flags & !tyre::flags::BURNOUT() };
             if handbrake && axle == 1 {
                 (wheel_brake, drive) = (wheel_brake + h.handbrake, 0.0);
@@ -329,18 +333,24 @@ impl Car {
         for i in 0..delirium_data::kv!(1 int) {
             let (drive, brake) = demand[i];
             self.treads[i].no_brake = wheels[i].timer;
-            let v_long = wheelstep::hold(h, &calls.mass, &calls.struts[i], &mut self.treads[i], &mut calls.axes[i], AXLE, end.vel, end.ang, dt);
+            let held = wheelstep::hold(h, &calls.mass, &calls.struts[i], &mut self.treads[i], &mut calls.axes[i], AXLE, end.vel, end.ang, dt);
+            let v_roll = wheelstep::roll_speed(&calls.mass, &calls.struts[i], &calls.axes[i], body.vel, body.ang);
             let tyre = &mut self.tyres[i];
             let grounded = probes[i].is_some();
             if grounded {
                 (tyre.slip, tyre.skid, tyre.flags) = (end.slip[i], last[i].skid, last[i].flags);
             }
-            if tyre::spin(tyre, &Contact { v_long, drive, brake }, grounded, mass, self.radius, limit, dir, dt) {
+            if tyre::spin(tyre, &Contact { v_long: held.along, v_roll, drive, brake, frame: self.frames }, grounded, mass, self.radius, limit, dir, dt,
+                          &mut self.crt) {
                 self.treads[i].no_brake = delirium_data::kv!(73);
             }
+            if grounded {
+                tyre::contact(tyre, &held, self.radius, h);
+            }
         }
+        self.frames = self.frames.wrapping_add(1);
         for tyre in self.tyres.iter_mut() {
-            tyre::burst(tyre, self.random.next(), dt);
+            delirium_data::tyrefx::burst(&mut tyre.surface, &mut tyre.fire, tyre.temp, self.health.tyres_proof, false, dt, || self.random.next());
         }
 
         let inv = self.rot.inverse();
@@ -380,10 +390,10 @@ impl Car {
         }
         self.pos += push;
         self.speed = self.vel.dot(self.forward());
-        if planted && up.z > delirium_data::kv!(108) {
+        if planted && up.z > delirium_data::kv!(112) {
             self.safe = (self.pos, self.heading());
         }
-        if self.pos.z < self.safe.0.z - delirium_data::kv!(132) {
+        if self.pos.z < self.safe.0.z - delirium_data::kv!(136) {
             (self.pos, self.rot) = (self.safe.0 + Vec3::Z * delirium_data::kv!(24), Quat::from_rotation_z(self.safe.1));
             (self.vel, self.ang, self.speed, self.steer, self.steer_input) = (Vec3::ZERO, Vec3::ZERO, 0.0, 0.0, 0.0);
         }
@@ -423,13 +433,13 @@ impl Car {
 
     pub fn cabin(&self, id: i32, top: f32) -> delirium::ragdoll::Obstacle {
         let [lo, hi] = self.hull;
-        self.obstacle_box(id, [Vec3::new(lo.x + delirium_data::kv!(73), -delirium_data::kv!(74), top), Vec3::new(hi.x - delirium_data::kv!(73), delirium_data::kv!(110), hi.z)])
+        self.obstacle_box(id, [Vec3::new(lo.x + delirium_data::kv!(73), -delirium_data::kv!(74), top), Vec3::new(hi.x - delirium_data::kv!(73), delirium_data::kv!(114), hi.z)])
     }
 
     fn obstacle_box(&self, id: i32, [lo, hi]: [Vec3; 2]) -> delirium::ragdoll::Obstacle {
         let (vel, spin) = if self.asleep { (Vec3::ZERO, Vec3::ZERO) } else { (self.vel, self.ang) };
         delirium::ragdoll::Obstacle { id, at: self.pos, rot: self.rot, centre: self.pos + self.rot * ((lo + hi) / 2.0), half: (hi - lo) / 2.0,
-                                     vel, spin, com: self.pos + self.rot * self.com, parts: &[], last: self.prev }
+                                     vel, spin, com: self.pos + self.rot * self.com, parts: &[], last: self.prev, entity: 2, first: false, inv_mass: 0.0, force: Vec3::ZERO }
     }
 
     pub fn scan(&self) -> delirium_data::carscan::Vehicle {

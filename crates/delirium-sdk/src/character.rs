@@ -148,7 +148,7 @@ impl Character {
                 JointLimit::Locked => Limit::Locked,
             },
             lower: p.lower, reach: p.reach, name: p.name.clone(), bind: q(p.bind), boxed: p.boxed.map(Vec3::from_array),
-            inertia: Vec3::from_array(p.inertia), size: 1.0, heft: 1.0, grown: 1.0,
+            inertia: Vec3::from_array(p.inertia), size: 1.0, heft: 1.0, grown: 1.0, length: 0.0,
         }).collect();
         let mut build = Build { parts, nm: delirium::nmrs::HOMER };
         delirium::nmrs::asset_layout(&mut build, &mut frames);

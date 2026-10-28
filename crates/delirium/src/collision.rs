@@ -59,6 +59,14 @@ pub struct Face {
     pub rank: u32,
     pub mesh: Option<(Arc<crate::bvh::Tree>, u32)>,
     pub place: Option<(Quat, Vec3)>,
+    pub frame: Option<Placed>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placed {
+    pub turn: Mat3,
+    pub at: Vec3,
+    pub tri: [Vec3; 3],
 }
 
 impl Face {
@@ -67,7 +75,7 @@ impl Face {
         (0..m.triangles.len()).map(|k| {
             let across = m.neighbours.get(k)?.map(|j| m.normals.get(j as usize).map(|&v| Vec3::from(v)));
             let raw = m.corners.get(k).filter(|&&c| c != m.triangles[k]).map(|c| c.map(|i| Vec3::from(m.positions[i as usize])));
-            Some(Face { n: Vec3::from(*m.normals.get(k)?), across, raw, half: m.halves.get(k).copied().unwrap_or(0), rank: m.order.get(k).copied().unwrap_or(k as u32), mesh: tree.clone().map(|t| (t, k as u32)), place: None })
+            Some(Face { n: Vec3::from(*m.normals.get(k)?), across, raw, half: m.halves.get(k).copied().unwrap_or(0), rank: m.order.get(k).copied().unwrap_or(k as u32), mesh: tree.clone().map(|t| (t, k as u32)), place: None, frame: None })
         }).collect()
     }
 
@@ -82,6 +90,7 @@ pub struct Poly {
     pub first: (u32, u32),
     pub n: Vec3,
     pub edges: [Option<(Vec3, Vec3, Vec3)>; 4],
+    pub frame: Option<Placed>,
 }
 
 impl Poly {
@@ -389,7 +398,7 @@ impl Collision {
                 [sides(tri(a), fa, 0), sides(tri(a), fa, 1), sides(tri(b), fb, 1), sides(tri(b), fb, 2)]
             } else {
                 [sides(t, across, 0), sides(t, across, 1), sides(t, across, 2), None]
-            } };
+            }, frame: chunk(e).faces[e.1 as usize].as_ref().and_then(|f| f.frame) };
             (t, chunk(e).materials[e.1 as usize], [n, edges[0].unwrap_or(n), edges[1].unwrap_or(n), edges[2].unwrap_or(n)], mask, e.0, poly)
         }).collect()
     }
@@ -427,6 +436,12 @@ impl Collision {
 
     pub fn contact(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3, u8)> {
         self.hit(from, dir, len, false).map(|(t, n, (slot, id))| (t, n, self.chunks[slot as usize].as_ref().map_or(0, |c| c.materials[id as usize])))
+    }
+
+    pub fn contact_chunk(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3, u8, u64)> {
+        let (t, n, (slot, id)) = self.hit(from, dir, len, false)?;
+        let chunk = self.chunks[slot as usize].as_ref()?;
+        Some((t, n, chunk.materials[id as usize], self.slot_key(slot)?))
     }
 
     pub fn blocked(&self, from: Vec3, dir: Vec3, len: f32) -> bool {

@@ -34,10 +34,10 @@ pub struct Writhe {
 
 impl Writhe {
     pub fn new(ch: &mut Character) -> Writhe {
-        Writhe { arm_stiffness: delirium_data::kv!(187), back_stiffness: delirium_data::kv!(187), leg_stiffness: delirium_data::kv!(187), arm_damping: 0.5, back_damping: 0.5,
+        Writhe { arm_stiffness: delirium_data::kv!(190), back_stiffness: delirium_data::kv!(190), leg_stiffness: delirium_data::kv!(190), arm_damping: 0.5, back_damping: 0.5,
                  leg_damping: 0.5, arm_period: 1.0, back_period: 1.0, leg_period: 1.0, arm_amplitude: 1.0, back_amplitude: 1.0,
                  leg_amplitude: 1.0, elbow_amplitude: 1.0, knee_amplitude: 1.0, roll_over: false, mask: "fb", t: 0.0, t_noise: 0.0,
-                 noise_at: delirium_data::kv!(236) * ch.random(), roll_rate: delirium_data::kv!(12), roll_force: 1.0, roll_timer: delirium_data::kv!(12), active: false }
+                 noise_at: delirium_data::kv!(239) * ch.random(), roll_rate: delirium_data::kv!(12), roll_force: 1.0, roll_timer: delirium_data::kv!(12), active: false }
     }
 
     fn stiffness(&self, ch: &mut Character) {
@@ -57,7 +57,7 @@ impl Writhe {
     }
 
     fn start(&mut self, ch: &mut Character) {
-        self.t_noise = delirium_data::kv!(236) * ch.random();
+        self.t_noise = delirium_data::kv!(239) * ch.random();
         for j in Character::mask("fb") {
             ch.eff[j].reset(&ch.joints[j]);
             ch.eff[j].desired = [0.0; 3];
@@ -83,7 +83,7 @@ impl Writhe {
         self.writhe(c, dt);
         c.ch.unlock(self.mask, keep);
         self.t_noise = dt.fma(delirium_data::kv!(70), self.t_noise);
-        self.t += (noise01(self.t_noise, self.noise_at, delirium_data::kv!(129)) + delirium_data::kv!(18)) * dt;
+        self.t += (noise01(self.t_noise, self.noise_at, delirium_data::kv!(133)) + delirium_data::kv!(18)) * dt;
     }
 
     fn writhe(&mut self, c: &mut Ctx, dt: f32) {
@@ -120,30 +120,30 @@ impl Writhe {
             ch.set_relative(j, 2, sn * k);
         }
         let b = self.t / self.back_period * TAU;
-        let back = [self.back_amplitude * sin((b + p23) * delirium_data::kv!(20)) * delirium_data::kv!(17), p24 * delirium_data::kv!(9), self.back_amplitude * sin(b + p16) * delirium_data::kv!(237 f32)];
+        let back = [self.back_amplitude * sin((b + p23) * delirium_data::kv!(20)) * delirium_data::kv!(17), p24 * delirium_data::kv!(9), self.back_amplitude * sin(b + p16) * delirium_data::kv!(240 f32)];
         for j in (*SPINE()) {
             ch.eff[j].desired = back.map(|x| x * delirium_data::kv!(17));
         }
-        let g = self.t / self.leg_period * delirium_data::kv!(238);
+        let g = self.t / self.leg_period * delirium_data::kv!(241);
         let la = self.leg_amplitude;
         let (l, r) = (limb(2), limb(delirium_data::kv!(0 int)));
         ch.eff[l.e[1]].desired[0] = sin(g + p22 + 2.0) * la * 0.5;
-        ch.eff[l.e[2]].desired[0] = (self.knee_amplitude * cos(g + p15)).fma(delirium_data::kv!(108), -0.5);
-        ch.eff[l.e[1]].desired[1] = (-(sin(g * delirium_data::kv!(110)) * la)).fma(delirium_data::kv!(57), -delirium_data::kv!(73));
-        ch.eff[l.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(239), 1.0)) * la * delirium_data::kv!(24);
+        ch.eff[l.e[2]].desired[0] = (self.knee_amplitude * cos(g + p15)).fma(delirium_data::kv!(112), -0.5);
+        ch.eff[l.e[1]].desired[1] = (-(sin(g * delirium_data::kv!(114)) * la)).fma(delirium_data::kv!(57), -delirium_data::kv!(73));
+        ch.eff[l.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(242), 1.0)) * la * delirium_data::kv!(24);
         ch.eff[r.e[1]].desired[0] = cos(g + p23) * la * -0.5;
-        ch.eff[r.e[2]].desired[0] = (-(self.knee_amplitude * sin(g + p24))).fma(delirium_data::kv!(108), -0.5);
-        ch.eff[r.e[1]].desired[1] = (-(cos(g * delirium_data::kv!(110)) * la)).fma(delirium_data::kv!(57), -delirium_data::kv!(73));
-        ch.eff[r.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(240), -1.0)) * la * delirium_data::kv!(24);
+        ch.eff[r.e[2]].desired[0] = (-(self.knee_amplitude * sin(g + p24))).fma(delirium_data::kv!(112), -0.5);
+        ch.eff[r.e[1]].desired[1] = (-(cos(g * delirium_data::kv!(114)) * la)).fma(delirium_data::kv!(57), -delirium_data::kv!(73));
+        ch.eff[r.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(243), -1.0)) * la * delirium_data::kv!(24);
         if !self.roll_over {
             return;
         }
         let up = (c.b.joint_pos((*SPINE())[delirium_data::kv!(0 int)]) - c.b.joint_pos((*SPINE())[0])).normalize_or_zero();
         let k = ((self.roll_rate * self.t).sin() + 1.0) * 0.5 - delirium_data::kv!(70);
-        let f = up * (k.clamp(0.0, 1.0) * self.roll_force * delirium_data::kv!(241));
-        let down = c.b.doll.collided(&[r.p[delirium_data::kv!(0 int)], l.p[delirium_data::kv!(0 int)], delirium_data::kv!(93 int), 0]);
-        if crate::nmdbm::slen(c.angvel, b"yxz") < delirium_data::kv!(132) && down {
-            for k in [delirium_data::kv!(77 int), delirium_data::kv!(93 int), delirium_data::kv!(23 int), delirium_data::kv!(22 int)] {
+        let f = up * (k.clamp(0.0, 1.0) * self.roll_force * delirium_data::kv!(244));
+        let down = c.b.doll.collided(&[r.p[delirium_data::kv!(0 int)], l.p[delirium_data::kv!(0 int)], delirium_data::kv!(97 int), 0]);
+        if crate::nmdbm::slen(c.angvel, b"yxz") < delirium_data::kv!(136) && down {
+            for k in [delirium_data::kv!(77 int), delirium_data::kv!(97 int), delirium_data::kv!(23 int), delirium_data::kv!(22 int)] {
                 c.out.force(k, f);
             }
         }

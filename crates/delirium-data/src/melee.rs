@@ -2,7 +2,7 @@ use crate::actiontable::{Action, ActionTable, Impulse, ResultDef};
 use crate::controls::{index, pick as pair_pick, Controls, IoValue, AXIS_PAIRS};
 
 fn back(at: u8, i: u8) -> usize {
-    (if i <= at { at - i } else { at.wrapping_sub(i.min(crate::kv!(250 int))).wrapping_add(crate::kv!(251 int)) }) as usize
+    (if i <= at { at - i } else { at.wrapping_sub(i.min(crate::kv!(253 int))).wrapping_add(crate::kv!(254 int)) }) as usize
 }
 
 fn since(v: &IoValue, h: &[(u8, u32)], ms: u32) -> u32 {
@@ -29,7 +29,7 @@ pub fn held_up(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
 fn all_since(v: &IoValue, ms: u32, ok: impl Fn(u8) -> bool) -> bool {
     let h = hist(v);
     let t = since(v, h, ms);
-    for i in 0..crate::kv!(251 int) {
+    for i in 0..crate::kv!(254 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
             return true;
@@ -54,7 +54,7 @@ pub fn released_and_held(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
 fn first_since(v: &IoValue, ms: u32, hit: impl Fn(u8) -> bool) -> bool {
     let h = hist(v);
     let t = since(v, h, ms);
-    for i in 1..crate::kv!(251 int) {
+    for i in 1..crate::kv!(254 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
             return false;
@@ -77,7 +77,7 @@ pub fn released(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
 fn edge_since(v: &IoValue, ms: u32, edge: impl Fn(u8, u8) -> bool) -> bool {
     let h = hist(v);
     let t = since(v, h, ms);
-    for i in 1..crate::kv!(251 int) {
+    for i in 1..crate::kv!(254 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
             return false;
@@ -101,12 +101,12 @@ impl Impulse {
         let v = |off: u32| &c.values[index(off)];
         let axis = |n: usize| v(pair_pick((*AXIS_PAIRS())[n], v((*AXIS_PAIRS())[n].0)));
         let (a, b) = match self.impulse {
-            1 => (v(crate::kv!(661 int)), None),
-            2 => (v(crate::kv!(662 int)), None),
-            3 => (v(crate::kv!(663 int)), None),
-            4 => (v(crate::kv!(664 int)), None),
-            5 => (v(crate::kv!(665 int)), None),
-            6 => (v(crate::kv!(666 int)), None),
+            1 => (v(crate::kv!(667 int)), None),
+            2 => (v(crate::kv!(668 int)), None),
+            3 => (v(crate::kv!(669 int)), None),
+            4 => (v(crate::kv!(670 int)), None),
+            5 => (v(crate::kv!(671 int)), None),
+            6 => (v(crate::kv!(672 int)), None),
             7 => (axis(0), None),
             8 => (axis(1), None),
             9 => (axis(0), Some(axis(1))),
@@ -115,10 +115,10 @@ impl Impulse {
         let ms = (self.interval * crate::kv!(78)) as i64 as u32;
         let [r0, r1] = self.range;
         let (lo, hi) = match self.impulse {
-            7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(717)), byte((r1 + 1.0) * 0.5 * crate::kv!(717))),
-            9 => (byte(r0.abs() * crate::kv!(831)), byte(r1.abs() * crate::kv!(831))),
-            3 if setting == 0 => (byte(r0 * crate::kv!(717)), byte(r1 * crate::kv!(717))),
-            _ => (crate::kv!(249 int), crate::kv!(386 int)),
+            7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(723)), byte((r1 + 1.0) * 0.5 * crate::kv!(723))),
+            9 => (byte(r0.abs() * crate::kv!(837)), byte(r1.abs() * crate::kv!(837))),
+            3 if setting == 0 => (byte(r0 * crate::kv!(723)), byte(r1 * crate::kv!(723))),
+            _ => (crate::kv!(252 int), crate::kv!(390 int)),
         };
         let q: fn(&IoValue, u32, u8, u8) -> bool = match self.state {
             0 => return true,
@@ -133,7 +133,7 @@ impl Impulse {
         match b {
             None => q(a, ms, lo, hi),
             Some(b) => {
-                let (p, n) = ((lo.wrapping_add(crate::kv!(249 int)), hi.wrapping_add(crate::kv!(249 int))), (0x7Fu8.wrapping_sub(hi), 0x7Fu8.wrapping_sub(lo)));
+                let (p, n) = ((lo.wrapping_add(crate::kv!(252 int)), hi.wrapping_add(crate::kv!(252 int))), (0x7Fu8.wrapping_sub(hi), 0x7Fu8.wrapping_sub(lo)));
                 q(a, ms, p.0, p.1) || q(a, ms, n.0, n.1) || q(b, ms, p.0, p.1) || q(b, ms, n.0, n.1)
             }
         }
@@ -215,14 +215,14 @@ pub fn ped_takes(a: &Action, f: &Fighter, receiving_hit: bool, blocking: bool, j
     let one_handed = bit(crate::kv!(2 int)) && !bit(crate::kv!(52 int));
     let mg = bit(crate::kv!(2 int)) && w.between_shots < crate::kv!(85 int);
     match class {
-        c if c == h("object") => w.kind == crate::kv!(347 int),
+        c if c == h("object") => w.kind == crate::kv!(351 int),
         c if c == h("knife") => bit(crate::kv!(77 int)),
-        c if c == h("club") => bit(crate::kv!(93 int)),
+        c if c == h("club") => bit(crate::kv!(97 int)),
         c if c == h("oneHandedGun") => one_handed,
         c if c == h("oneHandedMG") => one_handed && mg,
         c if c == h("pistol") => one_handed && !mg,
         c if c == h("rifle") => bit(crate::kv!(2 int)) && bit(crate::kv!(52 int)),
-        c => w.kind == WEAPON_TYPES.iter().position(|t| h(t) == c).map_or(crate::kv!(346 int), |i| i as u32),
+        c => w.kind == WEAPON_TYPES.iter().position(|t| h(t) == c).map_or(crate::kv!(350 int), |i| i as u32),
     }
 }
 
@@ -502,7 +502,7 @@ pub fn pick<'t>(mut hits: Vec<&'t Action>, rand: impl FnOnce() -> u32) -> Option
         return Some(hits[0]);
     }
     let sum = hits.iter().fold(0.0f32, |s, a| a.bias + s);
-    let r = rand() as f32 * crate::kv!(519 f32) * sum;
+    let r = rand() as f32 * crate::kv!(521 f32) * sum;
     let mut i = 0;
     if r > 0.0 {
         let mut acc = 0.0f32;
@@ -538,7 +538,7 @@ pub fn hit_reaction<'t>(t: &'t ActionTable, ask: &Ask, gate: bool, tasks: [bool;
     let action = choose(t, &ask, rand);
     let result = action.filter(|a| a.move_ != 0).and_then(|a| t.results.iter().rfind(|r| r.name == a.move_));
     let special = result.is_some_and(|r| r.special_result != crate::actiontable::none());
-    let low = ask.fighter.health < crate::kv!(766);
+    let low = ask.fighter.health < crate::kv!(772);
     let ragdoll = gate
         && (action.is_some_and(|a| a.prefer_ragdoll) || if tasks[0] && !tasks[1] { low } else { !special || low });
     Reaction { action, result, ragdoll }

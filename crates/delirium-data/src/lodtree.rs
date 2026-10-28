@@ -98,7 +98,7 @@ impl LodGroups {
     }
 
     pub fn add(&mut self, g: LodGroup) {
-        let tree = self.tree.get_or_insert_with(|| QuadTree::new([-crate::kv!(729), crate::kv!(729), crate::kv!(729), -crate::kv!(729)], crate::kv!(2 int)));
+        let tree = self.tree.get_or_insert_with(|| QuadTree::new([-crate::kv!(735), crate::kv!(735), crate::kv!(735), -crate::kv!(735)], crate::kv!(2 int)));
         let i = self.groups.len();
         let middle = [(g.min[0] + g.max[0]) * 0.5, (g.min[1] + g.max[1]) * 0.5];
         let same = tree.find(middle).into_iter().find(|&e| e != i && self.groups[e].min == g.min && self.groups[e].max == g.max);

@@ -55,6 +55,17 @@ pub fn read(d: &[u8], at: usize) -> Result<Curved, String> {
     Ok(c)
 }
 
+pub fn from_blobs(b: &[u8], v: &[u8], f: &[u8]) -> Result<Curved, String> {
+    let (vo, fo) = (b.len().max(delirium_data::kv!(92 int)), b.len().max(delirium_data::kv!(92 int)) + v.len());
+    let mut d = vec![0u8; fo + f.len()];
+    d[..b.len()].copy_from_slice(b);
+    d[vo..fo].copy_from_slice(v);
+    d[fo..].copy_from_slice(f);
+    d[delirium_data::kv!(87 int)..delirium_data::kv!(93 int)].copy_from_slice(&(delirium_data::kv!(94 int) | vo as u32).to_be_bytes());
+    d[delirium_data::kv!(88 int)..delirium_data::kv!(95 int)].copy_from_slice(&(delirium_data::kv!(94 int) | fo as u32).to_be_bytes());
+    read(&d, 0)
+}
+
 impl Curved {
     pub fn support(&self, d: Vec3) -> Vec3 {
         let dd = d.vd(d);
@@ -73,7 +84,7 @@ impl Curved {
         for f in &self.faces {
             let perp = f.axis.vx(u).vx(f.axis);
             let len2 = perp.vd(perp);
-            if len2 > delirium_data::kv!(92 f32) {
+            if len2 > delirium_data::kv!(96 f32) {
                 let est = vrsqrtefp(len2);
                 let est = if est == f32::INFINITY { 0.0 } else { est };
                 let n = Fma::fma(Fma::fma(-len2, est * est, 1.0), 0.5 * est, est);

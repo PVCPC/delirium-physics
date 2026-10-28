@@ -21,7 +21,7 @@ pub struct Windmill {
 
 impl Default for Windmill {
     fn default() -> Windmill {
-        Windmill { body_stiffness: delirium_data::kv!(107), arm_stiffness: delirium_data::kv!(188), period: 1.0, amplitude: delirium_data::kv!(110), phase: 0.0, disable_on_impact: true,
+        Windmill { body_stiffness: delirium_data::kv!(111), arm_stiffness: delirium_data::kv!(191), period: 1.0, amplitude: delirium_data::kv!(114), phase: 0.0, disable_on_impact: true,
                    t: 0.0, elbow: [(0.0, 0.0, 0.0, 0.0); 2], active: false, hit: [false; 2], going: [false; 2] }
     }
 }
@@ -37,10 +37,10 @@ impl Windmill {
             return;
         }
         self.active = true;
-        self.t = delirium_data::kv!(210) * ch.random();
+        self.t = delirium_data::kv!(213) * ch.random();
         for i in 0..2 {
             let l = ch.limits(limb(i).e[2]);
-            self.elbow[i] = (l[0], l[1], delirium_data::kv!(211), delirium_data::kv!(26));
+            self.elbow[i] = (l[0], l[1], delirium_data::kv!(214), delirium_data::kv!(26));
         }
         (self.hit, self.going) = ([false; 2], [true; 2]);
         self.stiffness(ch);
@@ -67,7 +67,7 @@ impl Windmill {
         let ch = &mut *c.ch;
         if !self.going[0] && !self.going[1] {
             for e in ch.eff.iter_mut() {
-                (e.strength, e.damping) = (e.strength * delirium_data::kv!(212), e.damping * delirium_data::kv!(212));
+                (e.strength, e.damping) = (e.strength * delirium_data::kv!(215), e.damping * delirium_data::kv!(215));
             }
             return;
         }
@@ -94,7 +94,7 @@ impl Windmill {
         }
         let sin = (x as f64).sin() as f32;
         for j in (*SPINE()) {
-            ch.eff[j].desired = [0.0, 0.0, sin * delirium_data::kv!(106) * delirium_data::kv!(17)];
+            ch.eff[j].desired = [0.0, 0.0, sin * delirium_data::kv!(110) * delirium_data::kv!(17)];
         }
         ch.eff[(*NECK())[0]].desired[2] = sin * -delirium_data::kv!(24);
     }

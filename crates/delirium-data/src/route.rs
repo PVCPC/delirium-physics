@@ -10,7 +10,7 @@ pub fn MAX_POINTS() -> usize { crate::kv!(23 int) }
 pub const LEG_END: u32 = 1302;
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX_BUMPS() -> i32 { crate::kv!(274 int) }
+pub fn MAX_BUMPS() -> i32 { crate::kv!(277 int) }
 pub const ARRIVE: f32 = 0.5;
 #[allow(non_snake_case)]
 #[inline]
@@ -112,7 +112,7 @@ fn unit_len(d: Point) -> (Point, f32) {
 const CORNER_ANGLE: f32 = std::f32::consts::FRAC_PI_8;
 #[allow(non_snake_case)]
 #[inline]
-fn CORNER_FLOOR() -> f32 { crate::kv!(128) }
+fn CORNER_FLOOR() -> f32 { crate::kv!(132) }
 
 fn clamp01(v: f32) -> f32 {
     let v = if v >= 0.0 { v } else { 0.0 };
@@ -123,7 +123,7 @@ pub fn corner_pace(asked: f32, ped: Point, target: Point, next: Point, held: boo
     if held || !(asked > 1.0) {
         return asked;
     }
-    let (base, limit) = if asked > 2.0 { (2.0, crate::kv!(104)) } else { (crate::kv!(12), crate::kv!(5)) };
+    let (base, limit) = if asked > 2.0 { (2.0, crate::kv!(108)) } else { (crate::kv!(12), crate::kv!(5)) };
     let (ahead, dist) = unit_len([target[0] - ped[0], target[1] - ped[1], 0.0]);
     if !(dist < limit) {
         return asked;
@@ -222,7 +222,7 @@ impl Arrive {
     }
 
     pub fn set_state(&mut self, sides: u32, prev: Point) {
-        (self.sides, self.prev) = (sides & crate::kv!(191 int), prev);
+        (self.sides, self.prev) = (sides & crate::kv!(194 int), prev);
     }
 
     pub fn state(&self) -> (u32, Point) {
@@ -240,7 +240,7 @@ impl Arrive {
         } else if pos[1] > target[1] {
             self.sides |= crate::kv!(23 int);
         }
-        (pos[2] - target[2]).abs() < self.tolerance && self.sides == crate::kv!(191 int)
+        (pos[2] - target[2]).abs() < self.tolerance && self.sides == crate::kv!(194 int)
     }
 
     pub fn test(&mut self, look: &Look, target: Point) -> bool {
@@ -255,7 +255,7 @@ impl Arrive {
         let to = sub(target, self.prev);
         let passed = to[1].mul_add(d[1], to[0] * d[0]) < 0.0;
         self.prev = pos;
-        let tol = if look.floor && !(self.tolerance - crate::kv!(104) >= 0.0) { crate::kv!(104) } else { self.tolerance };
+        let tol = if look.floor && !(self.tolerance - crate::kv!(108) >= 0.0) { crate::kv!(108) } else { self.tolerance };
         if within && !self.held && dz < tol && (!self.past || passed) && !look.blocked {
             return true;
         }
@@ -635,7 +635,7 @@ impl FollowPointRoute {
 
 #[allow(non_snake_case)]
 #[inline]
-fn STAND_MS() -> i32 { crate::kv!(876 int) }
+fn STAND_MS() -> i32 { crate::kv!(882 int) }
 
 impl<P: Walker> Task<P> for FollowPointRoute {
     fn kind(&self) -> u32 {

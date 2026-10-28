@@ -100,7 +100,7 @@ impl OnFire {
     fn start(&mut self, p: &Ped, set: &Set, rand: &mut Rand, now: u32, m: &mut Vec<Msg>) {
         m.push(("bodyBalance", vec![("start", Value::Bool(true))]));
         let mut w = vec![("start", Value::Bool(true))];
-        w.extend(WRITHE[..delirium_data::kv!(93 int)].iter().zip(&set.f[1..delirium_data::kv!(77 int)]).map(|(k, x)| (*k, Value::Float(*x))));
+        w.extend(WRITHE[..delirium_data::kv!(97 int)].iter().zip(&set.f[1..delirium_data::kv!(77 int)]).map(|(k, x)| (*k, Value::Float(*x))));
         w.push(("mask", text("ub")));
         m.push(("bodyWrithe", w));
         self.flags |= 1;
@@ -116,7 +116,7 @@ impl OnFire {
             self.flags &= !delirium_data::kv!(0 int);
             m.push(("bodyBalance", vec![("start", B(false))]));
             let mut w = vec![("start", B(true))];
-            w.extend(WRITHE.iter().zip(&set.f[delirium_data::kv!(77 int)..delirium_data::kv!(96 int)]).map(|(k, x)| (*k, F(*x))));
+            w.extend(WRITHE.iter().zip(&set.f[delirium_data::kv!(77 int)..delirium_data::kv!(100 int)]).map(|(k, x)| (*k, F(*x))));
             w.push(("mask", text("fb")));
             w.push(("rollOverFlag", B(rand.next() & delirium_data::kv!(0 int) != 0)));
             m.push(("bodyWrithe", w));
@@ -144,7 +144,7 @@ impl OnFire {
         if past_min && v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)) < delirium_data::kv!(57 f32) * delirium_data::kv!(57) && !p.no_lie {
             if self.flags == 1 {
                 (self.flags, self.lying) = (delirium_data::kv!(0 int), true);
-            } else if !p.burning || p.health < delirium_data::kv!(132) {
+            } else if !p.burning || p.health < delirium_data::kv!(136) {
                 return relax;
             }
         }
@@ -157,7 +157,7 @@ impl OnFire {
         }
         if self.free && self.rethink != 0 && self.flags & 1 != 0 && now > self.rethink {
             self.rethink = set.rethink.wrapping_add(now);
-            let half = set.variance * delirium_data::kv!(560) * 0.5;
+            let half = set.variance * delirium_data::kv!(562) * 0.5;
             let d = heading(p);
             let a = rand.float_in_range(0.0 - half, half);
             let (sin, cos) = ((a as f64).sin() as f32, (a as f64).cos() as f32);
@@ -165,10 +165,10 @@ impl OnFire {
             m.push(("leanInDirection", vec![("dir", Value::Vec3(self.dir))]));
         }
         if self.roll == 0 {
-            if self.lying && rand.int_in_range(0, delirium_data::kv!(561 int)) < delirium_data::kv!(37 int) {
-                self.roll = (rand.int_in_range(delirium_data::kv!(37 int), delirium_data::kv!(207 int)) as u32).wrapping_add(now);
+            if self.lying && rand.int_in_range(0, delirium_data::kv!(563 int)) < delirium_data::kv!(37 int) {
+                self.roll = (rand.int_in_range(delirium_data::kv!(37 int), delirium_data::kv!(210 int)) as u32).wrapping_add(now);
                 m.push(("bodyWrithe", vec![("mask", text("lb"))]));
-                m.push(("bodyRollUp", vec![("start", B(true)), ("mask", text("ub")), ("stiffness", F(delirium_data::kv!(187))), ("armReachAmount", F(delirium_data::kv!(12))),
+                m.push(("bodyRollUp", vec![("start", B(true)), ("mask", text("ub")), ("stiffness", F(delirium_data::kv!(190))), ("armReachAmount", F(delirium_data::kv!(12))),
                                            ("useArmToSlowDown", F(0.0))]));
             }
         } else if now > self.roll {

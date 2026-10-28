@@ -23,7 +23,7 @@ impl LocomotionDrive {
         self.weight.is_finite()&&(0.0..=1.0).contains(&self.weight)
             &&self.gain_weight.is_finite()&&(0.0..=self.weight).contains(&self.gain_weight)
             &&self.targets.iter().flatten().all(|x|x.is_finite())
-            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(32)..=delirium_data::kv!(209)).contains(x))
+            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(32)..=delirium_data::kv!(212)).contains(x))
             &&self.response.iter().all(|x|x.is_finite()&&(0.5..=2.0).contains(x))
     }
 }
@@ -117,7 +117,7 @@ pub(super) fn stabilise_on(body:&crate::nmdbm::Body,k:f32,dt:f32,stance:[bool;2]
     let fv=body.doll.motion(foot).0;
     let s=((com-mid).normalize_or_zero().dot(up).max(0.).powi(4)*k).powi(2);
     let f=(com+vel*delirium_data::kv!(73)-mid)*s+(vel-fv)*(delirium_data::kv!(57)*s);
-    let f=(f-up*f.dot(up))*(dt*delirium_data::kv!(193));
+    let f=(f-up*f.dot(up))*(dt*delirium_data::kv!(196));
     out[foot]+=f;out[body.ch.joints[(*HIP())[0]].parent]-=f;out
 }
 

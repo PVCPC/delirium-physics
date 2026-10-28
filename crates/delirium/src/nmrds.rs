@@ -35,9 +35,9 @@ pub struct RollDownStairs {
 
 impl Default for RollDownStairs {
     fn default() -> RollDownStairs {
-        RollDownStairs { stiffness: delirium_data::kv!(107), damping: delirium_data::kv!(170), forcemag: delirium_data::kv!(123), asymmetry: 0.0, asymmetrical_legs: 0.0,
-                         use_arm_to_slow_down: -delirium_data::kv!(178), arm_reach_amount: delirium_data::kv!(170), use_zero_pose: false, spin_when_in_air: false,
-                         leg_push: 1.0, arm_reach_length: delirium_data::kv!(106), stiffness_decay_time: -1.0, stiffness_decay_target: delirium_data::kv!(127),
+        RollDownStairs { stiffness: delirium_data::kv!(111), damping: delirium_data::kv!(174), forcemag: delirium_data::kv!(127), asymmetry: 0.0, asymmetrical_legs: 0.0,
+                         use_arm_to_slow_down: -delirium_data::kv!(181), arm_reach_amount: delirium_data::kv!(174), use_zero_pose: false, spin_when_in_air: false,
+                         leg_push: 1.0, arm_reach_length: delirium_data::kv!(110), stiffness_decay_time: -1.0, stiffness_decay_target: delirium_data::kv!(131),
                          use_custom_roll_dir: false, z_axis_spin_reduction: 0.0, custom_roll_dir: Vec3::ZERO, helper_only: false, mass: -1.0,
                          dir: Vec3::ZERO, sum: Vec3::ZERO, t: 0.0, slope: 0.0, active: false }
     }
@@ -108,7 +108,7 @@ impl RollDownStairs {
         let (w, up) = (c.angvel, c.up);
         let (spin, speed) = (crate::nmdbm::slen(w, b"yxz"), crate::nmdbm::slen(c.vel, b"yxz"));
         let fwd = (-spin).mul_add(delirium_data::kv!(63), speed).clamp(-1.0, 1.0);
-        let axis = if self.slope.abs() > delirium_data::kv!(170) && !self.use_custom_roll_dir {
+        let axis = if self.slope.abs() > delirium_data::kv!(174) && !self.use_custom_roll_dir {
             if spin > 0.5 { -safe_normalize(w - up * up.vd(w)) } else { c.m.a }
         } else {
             safe_normalize(self.dir.vx(up))
@@ -120,8 +120,8 @@ impl RollDownStairs {
         }
         let k = (fwd.abs() * (1.0 / self.mass) * f).clamp(-2.0, 2.0);
         if fwd > 0.0 && speed > 0.5 && touching {
-            for p in [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(93 int), delirium_data::kv!(77 int)] {
-                c.out.force(p, axis * (c.b.build.parts[p].mass * k * delirium_data::kv!(27)));
+            for p in [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(97 int), delirium_data::kv!(77 int)] {
+                c.out.torque(p, axis * (c.b.doll.part_mass(p) * k * delirium_data::kv!(27)));
             }
             if self.z_axis_spin_reduction > 0.0 {
                 crate::nmcf::spin_reduction(c, self.z_axis_spin_reduction);

@@ -6,156 +6,146 @@ pub mod kind {
     pub fn PLAYER_ON_FOOT() -> u32 { crate::kv!(1 int) }
     pub const PAUSE: u32 = 202;
     pub const STAND_STILL: u32 = 203;
+    pub const SIMPLE_DIE: u32 = 212;
+    pub const DIE: u32 = 217;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SIMPLE_DIE() -> u32 { crate::kv!(389 int) }
+    pub fn DEAD() -> u32 { crate::kv!(434 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn DIE() -> u32 { crate::kv!(377 int) }
+    pub fn INJURED_ON_GROUND() -> u32 { crate::kv!(893 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn DEAD() -> u32 { crate::kv!(431 int) }
+    pub fn PLAY_RANDOM_AMBIENTS() -> u32 { crate::kv!(894 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INJURED_ON_GROUND() -> u32 { crate::kv!(887 int) }
+    pub fn RUN_NAMED_ANIM() -> u32 { crate::kv!(895 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn PLAY_RANDOM_AMBIENTS() -> u32 { crate::kv!(888 int) }
+    pub fn HIT_WALL() -> u32 { crate::kv!(883 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn RUN_NAMED_ANIM() -> u32 { crate::kv!(889 int) }
+    pub fn SEQUENCE() -> u32 { crate::kv!(353 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn HIT_WALL() -> u32 { crate::kv!(877 int) }
+    pub fn USE_SEQUENCE() -> u32 { crate::kv!(896 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SEQUENCE() -> u32 { crate::kv!(349 int) }
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn USE_SEQUENCE() -> u32 { crate::kv!(890 int) }
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn DO_NOTHING() -> u32 { crate::kv!(891 int) }
+    pub fn DO_NOTHING() -> u32 { crate::kv!(897 int) }
     pub const MOVE_STAND_STILL: u32 = 282;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_DO_NOTHING() -> u32 { crate::kv!(892 int) }
+    pub fn MOVE_DO_NOTHING() -> u32 { crate::kv!(898 int) }
     pub const MOVE_NONE: u32 = 284;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_PATHFIND_PROBLEM() -> u32 { crate::kv!(893 int) }
+    pub fn MOVE_PATHFIND_PROBLEM() -> u32 { crate::kv!(899 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn CONTROL_MOVEMENT() -> u32 { crate::kv!(894 int) }
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn MOVE_SWIM() -> u32 { crate::kv!(895 int) }
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn USE_MOBILE_PHONE() -> u32 { crate::kv!(896 int) }
+    pub fn CONTROL_MOVEMENT() -> u32 { crate::kv!(900 int) }
+    pub const MOVE_SWIM: u32 = 1304;
+    pub const USE_MOBILE_PHONE: u32 = 1600;
     pub const CAR_DRIVE_MISSION: u32 = 724;
     pub const MOVE_GO_TO_POINT: u32 = 900;
     pub const MOVE_ACHIEVE_HEADING: u32 = 902;
     pub const MOVE_GO_TO_POINT_AND_STAND_STILL: u32 = 903;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FOLLOW_POINT_ROUTE() -> u32 { crate::kv!(897 int) }
+    pub fn FOLLOW_POINT_ROUTE() -> u32 { crate::kv!(901 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SMART_FLEE_POINT() -> u32 { crate::kv!(898 int) }
+    pub fn SMART_FLEE_POINT() -> u32 { crate::kv!(902 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SMART_FLEE_ENTITY() -> u32 { crate::kv!(899 int) }
+    pub fn SMART_FLEE_ENTITY() -> u32 { crate::kv!(903 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn WANDER() -> u32 { crate::kv!(616 int) }
+    pub fn WANDER() -> u32 { crate::kv!(622 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FOLLOW_LEADER_IN_FORMATION() -> u32 { crate::kv!(900 int) }
+    pub fn FOLLOW_LEADER_IN_FORMATION() -> u32 { crate::kv!(904 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FOLLOW_LEADER_ANY_MEANS() -> u32 { crate::kv!(901 int) }
+    pub fn FOLLOW_LEADER_ANY_MEANS() -> u32 { crate::kv!(905 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FLEE_ANY_MEANS() -> u32 { crate::kv!(902 int) }
+    pub fn FLEE_ANY_MEANS() -> u32 { crate::kv!(906 int) }
     pub const MOVE_FOLLOW_NAV_MESH_ROUTE: u32 = 942;
     pub const MOVE_GO_TO_POINT_ON_ROUTE: u32 = 943;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_WANDER() -> u32 { crate::kv!(903 int) }
+    pub fn MOVE_WANDER() -> u32 { crate::kv!(907 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_BE_IN_FORMATION() -> u32 { crate::kv!(904 int) }
+    pub fn MOVE_BE_IN_FORMATION() -> u32 { crate::kv!(908 int) }
     pub const MOVE_CROWD_AROUND_LOCATION: u32 = 951;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn GUN() -> u32 { crate::kv!(905 int) }
+    pub fn GUN() -> u32 { crate::kv!(909 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn AIM_GUN() -> u32 { crate::kv!(906 int) }
+    pub fn AIM_GUN() -> u32 { crate::kv!(910 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FIRE_GUN() -> u32 { crate::kv!(907 int) }
+    pub fn FIRE_GUN() -> u32 { crate::kv!(911 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn RELOAD_GUN() -> u32 { crate::kv!(908 int) }
+    pub fn RELOAD_GUN() -> u32 { crate::kv!(912 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn DUCK() -> u32 { crate::kv!(909 int) }
+    pub fn DUCK() -> u32 { crate::kv!(913 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SAY_AUDIO() -> u32 { crate::kv!(910 int) }
+    pub fn SAY_AUDIO() -> u32 { crate::kv!(914 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn GANG_HASSLE_PED() -> u32 { crate::kv!(911 int) }
+    pub fn GANG_HASSLE_PED() -> u32 { crate::kv!(915 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn COMBAT() -> u32 { crate::kv!(912 int) }
+    pub fn COMBAT() -> u32 { crate::kv!(916 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_RELAX() -> u32 { crate::kv!(913 int) }
+    pub fn NM_RELAX() -> u32 { crate::kv!(917 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_SHOT() -> u32 { crate::kv!(914 int) }
+    pub fn NM_SHOT() -> u32 { crate::kv!(918 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_BALANCE() -> u32 { crate::kv!(765 int) }
+    pub fn NM_BALANCE() -> u32 { crate::kv!(771 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_EXPLOSION() -> u32 { crate::kv!(915 int) }
+    pub fn NM_EXPLOSION() -> u32 { crate::kv!(919 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_ON_FIRE() -> u32 { crate::kv!(916 int) }
+    pub fn NM_ON_FIRE() -> u32 { crate::kv!(920 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_BRACE() -> u32 { crate::kv!(917 int) }
+    pub fn NM_BRACE() -> u32 { crate::kv!(921 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_HIGH_FALL() -> u32 { crate::kv!(918 int) }
+    pub fn NM_HIGH_FALL() -> u32 { crate::kv!(922 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_FLINCH() -> u32 { crate::kv!(919 int) }
+    pub fn NM_FLINCH() -> u32 { crate::kv!(923 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_FALL_DOWN() -> u32 { crate::kv!(920 int) }
+    pub fn NM_FALL_DOWN() -> u32 { crate::kv!(924 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_SCRIPT_CONTROL() -> u32 { crate::kv!(538 int) }
+    pub fn NM_SCRIPT_CONTROL() -> u32 { crate::kv!(540 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn COMPLEX_NM() -> u32 { crate::kv!(921 int) }
+    pub fn COMPLEX_NM() -> u32 { crate::kv!(925 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_POSE() -> u32 { crate::kv!(518 int) }
+    pub fn NM_POSE() -> u32 { crate::kv!(520 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_SIT() -> u32 { crate::kv!(559 int) }
+    pub fn NM_SIT() -> u32 { crate::kv!(561 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn REACT() -> u32 { crate::kv!(922 int) }
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn ON_FIRE() -> u32 { crate::kv!(36 int) }
+    pub fn REACT() -> u32 { crate::kv!(926 int) }
+    pub const ON_FIRE: u32 = 250;
     pub const END: u32 = u32::MAX;
 }
 
@@ -254,11 +244,11 @@ pub struct NewTask {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NEW_TASK_EVENT() -> u32 { crate::kv!(297 int) }
+pub fn NEW_TASK_EVENT() -> u32 { crate::kv!(301 int) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SWITCH_PRIORITY() -> usize { crate::kv!(323 int) }
+pub fn SWITCH_PRIORITY() -> usize { crate::kv!(327 int) }
 
 pub trait TaskClone<P> {
     fn clone_task(&self) -> Box<dyn Task<P>>;
@@ -281,12 +271,19 @@ pub(crate) struct Node<P> {
     pub(crate) abortable: bool,
     pub(crate) ran: bool,
     pub(crate) tag: u64,
+    pub(crate) id: u32,
 }
 
 pub(crate) type Chain<P> = Vec<Node<P>>;
 
 pub(crate) fn node<P>(task: Box<dyn Task<P>>) -> Node<P> {
-    Node { task, abortable: false, ran: false, tag: 0 }
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    let id = match NEXT.fetch_add(1, Relaxed) {
+        0 => NEXT.fetch_add(1, Relaxed),
+        n => n,
+    };
+    Node { task, abortable: false, ran: false, tag: 0, id }
 }
 
 impl<P> Node<P> {
@@ -605,6 +602,14 @@ impl<P> Manager<P> {
 
     pub fn secondary_tag(&self, slot: usize) -> u64 {
         self.secondary[slot].first().map_or(0, |n| n.tag)
+    }
+
+    pub fn root_id(&self, priority: usize) -> u32 {
+        self.primary[priority].first().map_or(0, |n| n.id)
+    }
+
+    pub fn secondary_id(&self, slot: usize) -> u32 {
+        self.secondary[slot].first().map_or(0, |n| n.id)
     }
 
     pub fn tag_root(&mut self, priority: usize, tag: u64) {

@@ -5,41 +5,41 @@ fn fsel(test: f64, a: f64, b: f64) -> f64 {
 pub fn floor(x: f64) -> f64 {
     let whole = (x as i64) as f64;
     let r = fsel(x - whole, whole, whole - 1.0);
-    let r = fsel(crate::kv!(794) - x.abs(), r, x);
+    let r = fsel(crate::kv!(800) - x.abs(), r, x);
     fsel(-x.abs(), x, r)
 }
 
 pub fn ceil(x: f64) -> f64 {
     let whole = (x as i64) as f64;
     let r = fsel(whole - x, whole, whole + 1.0);
-    let r = fsel(crate::kv!(794) - x.abs(), r, x);
+    let r = fsel(crate::kv!(800) - x.abs(), r, x);
     fsel(-x.abs(), x, r)
 }
 
 #[allow(non_snake_case)]
 #[inline]
-fn INV_PI() -> f64 { crate::kv!(795 f64) }
+fn INV_PI() -> f64 { crate::kv!(801 f64) }
 #[allow(non_snake_case)]
 #[inline]
-fn PI_HIGH() -> f64 { crate::kv!(796 f64) }
+fn PI_HIGH() -> f64 { crate::kv!(802 f64) }
 #[allow(non_snake_case)]
 #[inline]
-fn PI_LOW() -> f64 { crate::kv!(797 f64) }
+fn PI_LOW() -> f64 { crate::kv!(803 f64) }
 #[allow(non_snake_case)]
 #[inline]
-fn LIMIT() -> f64 { crate::kv!(798) }
+fn LIMIT() -> f64 { crate::kv!(804) }
 const NAN: f64 = f64::from_bits(0xFFF8_0000_0000_0000);
 #[allow(non_snake_case)]
 #[inline]
 fn SERIES() -> &'static [f64; 8] { static V: std::sync::OnceLock<[f64; 8]> = std::sync::OnceLock::new(); let f = || [
-    crate::kv!(799 f64),
-    crate::kv!(800 f64),
-    crate::kv!(801 f64),
-    crate::kv!(802 f64),
-    crate::kv!(803 f64),
-    crate::kv!(804 f64),
     crate::kv!(805 f64),
     crate::kv!(806 f64),
+    crate::kv!(807 f64),
+    crate::kv!(808 f64),
+    crate::kv!(809 f64),
+    crate::kv!(810 f64),
+    crate::kv!(811 f64),
+    crate::kv!(812 f64),
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn series(r: f64) -> f64 {
@@ -87,62 +87,62 @@ pub fn cos(x: f64) -> f64 {
 pub fn atan2(y: f64, x: f64) -> f64 {
     #[allow(non_snake_case)]
     #[inline]
-    fn PI() -> f64 { crate::kv!(807) }
+    fn PI() -> f64 { crate::kv!(813) }
     let r;
     if x == 0.0 {
         if y == 0.0 {
-            if x.to_bits() >> crate::kv!(250 int) == 0 {
+            if x.to_bits() >> crate::kv!(253 int) == 0 {
                 return y;
             }
-            return if y.to_bits() >> crate::kv!(250 int) == 0 { PI() } else { -PI() };
+            return if y.to_bits() >> crate::kv!(253 int) == 0 { PI() } else { -PI() };
         }
-        r = crate::kv!(808);
+        r = crate::kv!(814);
     } else {
         let (mut num, mut den, mut quadrant) = (y.abs(), x.abs(), 0usize);
         if num > den {
             (num, den, quadrant) = (den, num, 2);
         }
         let mut t = num / den;
-        if t > crate::kv!(809) {
+        if t > crate::kv!(815) {
             quadrant += 1;
-            let sqrt3: f64 = crate::kv!(810);
+            let sqrt3: f64 = crate::kv!(816);
             t = sqrt3.mul_add(t, -1.0) / (sqrt3 + t);
         }
         let z = t * t;
-        let mut p = (-crate::kv!(811 f64)).mul_add(z, -crate::kv!(812));
-        let mut q = crate::kv!(813) + z;
-        q = q.mul_add(z, crate::kv!(814));
-        p = p.mul_add(z, -crate::kv!(815));
-        q = q.mul_add(z, crate::kv!(816));
-        p = p.mul_add(z, -crate::kv!(817));
-        q = q.mul_add(z, crate::kv!(818));
+        let mut p = (-crate::kv!(817 f64)).mul_add(z, -crate::kv!(818));
+        let mut q = crate::kv!(819) + z;
+        q = q.mul_add(z, crate::kv!(820));
+        p = p.mul_add(z, -crate::kv!(821));
+        q = q.mul_add(z, crate::kv!(822));
+        p = p.mul_add(z, -crate::kv!(823));
+        q = q.mul_add(z, crate::kv!(824));
         let mut v = p * z * t / q + t;
         if quadrant > 1 {
             v = -v;
         }
-        r = [0.0, crate::kv!(819), crate::kv!(808), crate::kv!(820)][quadrant] + v;
+        r = [0.0, crate::kv!(825), crate::kv!(814), crate::kv!(826)][quadrant] + v;
     }
     let v = fsel(x, r, PI() - r);
-    if y.to_bits() >> crate::kv!(250 int) == 0 { v } else { -v }
+    if y.to_bits() >> crate::kv!(253 int) == 0 { v } else { -v }
 }
 
 pub fn acos(x: f64) -> f64 {
     let (r, small) = arc(x.abs());
-    let (lo, hi) = if small { (HALF_PI(), HALF_PI()) } else { (0.0, crate::kv!(807)) };
+    let (lo, hi) = if small { (HALF_PI(), HALF_PI()) } else { (0.0, crate::kv!(813)) };
     if x >= 0.0 { lo - r } else { hi + r }
 }
 
 #[allow(non_snake_case)]
 #[inline]
-fn HALF_PI() -> f64 { crate::kv!(808) }
+fn HALF_PI() -> f64 { crate::kv!(814) }
 
 fn arc(a: f64) -> (f64, bool) {
     #[allow(non_snake_case)]
     #[inline]
-    fn P() -> &'static [f64; 5] { static V: std::sync::OnceLock<[f64; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(821 f64), crate::kv!(822 f64), crate::kv!(823 f64), crate::kv!(824 f64), crate::kv!(825 f64)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn P() -> &'static [f64; 5] { static V: std::sync::OnceLock<[f64; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(827 f64), crate::kv!(828 f64), crate::kv!(829 f64), crate::kv!(830 f64), crate::kv!(831 f64)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     #[allow(non_snake_case)]
     #[inline]
-    fn Q() -> &'static [f64; 5] { static V: std::sync::OnceLock<[f64; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(826 f64), crate::kv!(827 f64), crate::kv!(828 f64), crate::kv!(829 f64), crate::kv!(830 f64)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn Q() -> &'static [f64; 5] { static V: std::sync::OnceLock<[f64; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(832 f64), crate::kv!(833 f64), crate::kv!(834 f64), crate::kv!(835 f64), crate::kv!(836 f64)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     let (p, q) = ((*P()), (*Q()));
     let (z, s, small) = if !(a > 0.5) { (a * a, a, true) } else {
         let z = (1.0 - a) * 0.5;

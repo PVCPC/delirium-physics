@@ -71,7 +71,7 @@ impl Data {
     pub fn ped_clip_keys(&self) -> Vec<String> {
         let mut named = std::collections::HashSet::new();
         for l in String::from_utf8_lossy(&self.personality).lines().filter(|l| !l.starts_with('#')) {
-            named.extend(l.split(',').skip(delirium_data::kv!(102 int)).take(delirium_data::kv!(22 int)).map(|g| g.trim().to_ascii_lowercase()));
+            named.extend(l.split(',').skip(delirium_data::kv!(106 int)).take(delirium_data::kv!(22 int)).map(|g| g.trim().to_ascii_lowercase()));
         }
         let ids: Vec<i32> = self.groups.iter().enumerate().filter(|g| named.contains(&String::from_utf8_lossy(&g.1 .0).to_ascii_lowercase())).map(|g| g.0 as i32).chain(self.weapon_groups()).collect();
         let mut keys: Vec<String> = self.table.results.iter().filter(|r| ids.contains(&r.anim_group)).filter_map(|r| self.clip(r)).collect();
@@ -99,10 +99,10 @@ impl Data {
     pub fn stance_keys(&self) -> Vec<String> {
         let mut named = std::collections::HashSet::new();
         for l in String::from_utf8_lossy(&self.personality).lines().filter(|l| !l.starts_with('#')) {
-            named.extend(l.split(',').nth(delirium_data::kv!(206 int)).map(|g| g.trim().to_ascii_lowercase()));
+            named.extend(l.split(',').nth(delirium_data::kv!(209 int)).map(|g| g.trim().to_ascii_lowercase()));
         }
         let groups = named.iter().filter_map(|n| self.groups.iter().position(|g| g.0.eq_ignore_ascii_case(n.as_bytes()))).map(|g| g as i32);
-        (*STANCE_IDS()).iter().filter_map(|&id| self.stance_key(-1, id)).chain(groups.filter_map(|g| self.stance_key(g, delirium_data::kv!(191 int)))).collect()
+        (*STANCE_IDS()).iter().filter_map(|&id| self.stance_key(-1, id)).chain(groups.filter_map(|g| self.stance_key(g, delirium_data::kv!(194 int)))).collect()
     }
 
     pub fn result_of(&self, a: &Action) -> Option<usize> {
@@ -125,8 +125,8 @@ impl Pad {
         }
         let p = &mut self.input.pads[0];
         p.buttons = buttons;
-        p.sticks = [stick[0], stick[1], delirium_data::kv!(465 int), delirium_data::kv!(465 int)];
-        (p.pressure[delirium_data::kv!(77 int)], p.pressure[delirium_data::kv!(102 int)]) = (triggers[0], triggers[1]);
+        p.sticks = [stick[0], stick[1], delirium_data::kv!(468 int), delirium_data::kv!(468 int)];
+        (p.pressure[delirium_data::kv!(77 int)], p.pressure[delirium_data::kv!(106 int)]) = (triggers[0], triggers[1]);
         let sticks = self.controls.stick_values();
         self.controls.update(sticks, &mut self.input, now, false);
     }
@@ -137,16 +137,16 @@ impl Pad {
 
     pub fn pressed(&self, c: u32) -> bool {
         let v = &self.controls.values[index(c)];
-        v.get() >= delirium_data::kv!(249 int) && v.last ^ v.invert < delirium_data::kv!(249 int)
+        v.get() >= delirium_data::kv!(252 int) && v.last ^ v.invert < delirium_data::kv!(252 int)
     }
 }
 
 #[allow(non_snake_case)]
 #[inline]
-fn MELEE_BUTTONS() -> &'static [u32; 4] { static V: std::sync::OnceLock<[u32; 4]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(661 int), delirium_data::kv!(662 int), delirium_data::kv!(666 int), delirium_data::kv!(665 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn MELEE_BUTTONS() -> &'static [u32; 4] { static V: std::sync::OnceLock<[u32; 4]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(667 int), delirium_data::kv!(668 int), delirium_data::kv!(672 int), delirium_data::kv!(671 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn ATTACK() -> u32 { delirium_data::kv!(661 int) }
+fn ATTACK() -> u32 { delirium_data::kv!(667 int) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn ATTACK_BIT() -> u32 { delirium_data::kv!(7 int) }
@@ -158,7 +158,7 @@ fn QUIT() -> f32 { delirium_data::kv!(12) }
 fn TOO_CLOSE() -> f32 { delirium_data::kv!(8) }
 #[allow(non_snake_case)]
 #[inline]
-fn PUSH_RATE() -> f32 { delirium_data::kv!(132) }
+fn PUSH_RATE() -> f32 { delirium_data::kv!(136) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Home {
@@ -194,7 +194,7 @@ impl Home {
 
 #[allow(non_snake_case)]
 #[inline]
-fn HAND_SHORT() -> f32 { delirium_data::kv!(136) }
+fn HAND_SHORT() -> f32 { delirium_data::kv!(140) }
 #[allow(non_snake_case)]
 #[inline]
 fn SPACING() -> f32 { delirium_data::kv!(70) }
@@ -243,7 +243,7 @@ pub fn play_result(slot: &mut Option<MeleeMove>, d: &Data, a: &Action, player: b
         return;
     };
     let r = &d.table.results[ri];
-    if let Some(m) = slot.as_mut().filter(|m| m.result == ri && m.key.is_some() && m.clip_t < m.dur * delirium_data::kv!(261)) {
+    if let Some(m) = slot.as_mut().filter(|m| m.result == ri && m.key.is_some() && m.clip_t < m.dur * delirium_data::kv!(264)) {
         (m.action, m.struck, m.first, m.window, m.live, m.was) = (a.name, false, true, true, [false; 2], [false; 2]);
         m.forced = r.force_immediate_reaction;
         m.hits.clear();
@@ -265,7 +265,7 @@ pub fn play_result(slot: &mut Option<MeleeMove>, d: &Data, a: &Action, player: b
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn POINT_BONES() -> &'static [u16; 5] { static V: std::sync::OnceLock<[u16; 5]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(747 int), delirium_data::kv!(197 int), delirium_data::kv!(201 int), delirium_data::kv!(583 int), delirium_data::kv!(586 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn POINT_BONES() -> &'static [u16; 5] { static V: std::sync::OnceLock<[u16; 5]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(753 int), delirium_data::kv!(200 int), delirium_data::kv!(204 int), delirium_data::kv!(589 int), delirium_data::kv!(592 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Foe {
@@ -294,7 +294,7 @@ impl Foe {
             1 | 3 => {
                 let f = Vec3::from(from);
                 let flat = (f - self.feet).with_z(0.0).normalize_or_zero();
-                self.feet.with_z(f.z.clamp(self.feet.z, self.feet.z + delirium_data::kv!(195))) + flat * delirium_data::kv!(24)
+                self.feet.with_z(f.z.clamp(self.feet.z, self.feet.z + delirium_data::kv!(198))) + flat * delirium_data::kv!(24)
             }
             2 => bone(0),
             4..=7 => bone(kind as usize - delirium_data::kv!(0 int)),
@@ -306,11 +306,11 @@ impl Foe {
 
 #[allow(non_snake_case)]
 #[inline]
-fn BARE() -> &'static Me { static V: std::sync::OnceLock<Me> = std::sync::OnceLock::new(); let f = || Me { attack: delirium_data::kv!(20), defend: delirium_data::kv!(190), martial: delirium_data::kv!(76), groups: [-1; 7], go: false, moves: -1 }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn BARE() -> &'static Me { static V: std::sync::OnceLock<Me> = std::sync::OnceLock::new(); let f = || Me { attack: delirium_data::kv!(20), defend: delirium_data::kv!(193), martial: delirium_data::kv!(76), groups: [-1; 7], go: false, moves: -1 }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn STANCE_IDS() -> &'static [u32; 9] { static V: std::sync::OnceLock<[u32; 9]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(191 int), delirium_data::kv!(81 int), delirium_data::kv!(301 int), delirium_data::kv!(250 int), delirium_data::kv!(482 int), delirium_data::kv!(91 int), delirium_data::kv!(352 int), delirium_data::kv!(480 int), delirium_data::kv!(251 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn STANCE_IDS() -> &'static [u32; 9] { static V: std::sync::OnceLock<[u32; 9]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(194 int), delirium_data::kv!(81 int), delirium_data::kv!(305 int), delirium_data::kv!(253 int), delirium_data::kv!(485 int), delirium_data::kv!(91 int), delirium_data::kv!(356 int), delirium_data::kv!(483 int), delirium_data::kv!(254 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Me {
@@ -334,10 +334,10 @@ pub struct Ctx<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn LOCK_LT() -> u32 { delirium_data::kv!(638 int) }
+pub fn LOCK_LT() -> u32 { delirium_data::kv!(644 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LOCK_FULL() -> u8 { delirium_data::kv!(438 int) }
+pub fn LOCK_FULL() -> u8 { delirium_data::kv!(441 int) }
 
 pub fn pick_score(from: Vec3, look: Vec3, at: Vec3, threat: f32) -> f32 {
     let d = from.distance(at);
@@ -347,7 +347,7 @@ pub fn pick_score(from: Vec3, look: Vec3, at: Vec3, threat: f32) -> f32 {
 
 pub fn held(w: &delirium_data::weapons::Weapon) -> Held {
     let kind = melee::WEAPON_TYPES.iter().position(|t| *t == w.name).unwrap_or(0) as u32;
-    let flags = [(delirium_data::kv!(2 int), "GUN"), (delirium_data::kv!(93 int), "MELEE_CLUB"), (delirium_data::kv!(77 int), "MELEE_BLADE"), (delirium_data::kv!(52 int), "2HANDED")].iter().filter(|f| w.has(f.1)).fold(0, |b, f| b | 1 << f.0);
+    let flags = [(delirium_data::kv!(2 int), "GUN"), (delirium_data::kv!(97 int), "MELEE_CLUB"), (delirium_data::kv!(77 int), "MELEE_BLADE"), (delirium_data::kv!(52 int), "2HANDED")].iter().filter(|f| w.has(f.1)).fold(0, |b, f| b | 1 << f.0);
     Held { kind, flags, between_shots: w.between_shots as i32 }
 }
 
@@ -450,7 +450,7 @@ impl Melee {
         let Some(m) = self.mv.as_mut() else { return };
         let r = &d.table.results[m.result];
         let paired = |bit| m.key.as_deref().and_then(clip).is_some_and(|a| !a.events.is_empty() && a.count_between(bit, 0.0, 1.0) == 2);
-        let (a, b) = (paired(delirium_data::kv!(174 int)), paired(delirium_data::kv!(175 int)));
+        let (a, b) = (paired(delirium_data::kv!(177 int)), paired(delirium_data::kv!(178 int)));
         if m.clip_t > r.stop_time || r.stop_on_crit_frame && m.events & delirium_data::kv!(51 int) != 0
             || (a || b) && (m.struck || a && m.was[0] || b && m.was[1]) {
             m.window = false;
@@ -489,7 +489,7 @@ impl Melee {
             m.special = true;
             self.stop_foe_homing = r.special_result == h("SetOpponentStopMovesHoming");
         }
-        self.disarm_foe = r.disarm_opponent && (m.key.is_none() || m.events & delirium_data::kv!(174 int) != 0);
+        self.disarm_foe = r.disarm_opponent && (m.key.is_none() || m.events & delirium_data::kv!(177 int) != 0);
         if m.key.is_none() {
             self.mv = None;
             return;
@@ -508,7 +508,7 @@ impl Melee {
         let ev = m.key.as_deref().and_then(clip).map_or(0, |a| a.advance(from, m.phase(), false, false).0);
         m.events = ev;
         if !r.is_an_idle && !r.is_a_block {
-            for (n, bit) in [delirium_data::kv!(174 int), delirium_data::kv!(175 int)].into_iter().enumerate() {
+            for (n, bit) in [delirium_data::kv!(177 int), delirium_data::kv!(178 int)].into_iter().enumerate() {
                 if ev & bit != 0 {
                     m.live[n] = !m.live[n];
                     m.was[n] |= m.live[n];
@@ -628,15 +628,15 @@ pub fn part(tag: u32, at: &dyn Fn(u16) -> Option<Vec3>) -> Option<(Vec3, Vec3, f
     #[allow(non_snake_case)]
     #[inline]
     fn LINES() -> &'static [(u16, u16, bool, f32); 13] { static V: std::sync::OnceLock<[(u16, u16, bool, f32); 13]> = std::sync::OnceLock::new(); let f = || [
-        (delirium_data::kv!(580 int), delirium_data::kv!(581 int), false, delirium_data::kv!(101)), (delirium_data::kv!(581 int), delirium_data::kv!(56 int), false, delirium_data::kv!(136)), (delirium_data::kv!(56 int), delirium_data::kv!(581 int), true, delirium_data::kv!(64)),
-        (delirium_data::kv!(578 int), delirium_data::kv!(579 int), false, delirium_data::kv!(101)), (delirium_data::kv!(579 int), delirium_data::kv!(55 int), false, delirium_data::kv!(136)), (delirium_data::kv!(55 int), delirium_data::kv!(579 int), true, delirium_data::kv!(64)),
-        (delirium_data::kv!(582 int), delirium_data::kv!(583 int), false, delirium_data::kv!(185)), (delirium_data::kv!(583 int), delirium_data::kv!(584 int), false, delirium_data::kv!(101)), (delirium_data::kv!(584 int), delirium_data::kv!(583 int), true, delirium_data::kv!(136)),
-        (delirium_data::kv!(585 int), delirium_data::kv!(586 int), false, delirium_data::kv!(185)), (delirium_data::kv!(586 int), delirium_data::kv!(587 int), false, delirium_data::kv!(101)), (delirium_data::kv!(587 int), delirium_data::kv!(586 int), true, delirium_data::kv!(136)),
-        (delirium_data::kv!(197 int), delirium_data::kv!(198 int), true, delirium_data::kv!(116)),
+        (delirium_data::kv!(586 int), delirium_data::kv!(587 int), false, delirium_data::kv!(105)), (delirium_data::kv!(587 int), delirium_data::kv!(56 int), false, delirium_data::kv!(140)), (delirium_data::kv!(56 int), delirium_data::kv!(587 int), true, delirium_data::kv!(64)),
+        (delirium_data::kv!(584 int), delirium_data::kv!(585 int), false, delirium_data::kv!(105)), (delirium_data::kv!(585 int), delirium_data::kv!(55 int), false, delirium_data::kv!(140)), (delirium_data::kv!(55 int), delirium_data::kv!(585 int), true, delirium_data::kv!(64)),
+        (delirium_data::kv!(588 int), delirium_data::kv!(589 int), false, delirium_data::kv!(188)), (delirium_data::kv!(589 int), delirium_data::kv!(590 int), false, delirium_data::kv!(105)), (delirium_data::kv!(590 int), delirium_data::kv!(589 int), true, delirium_data::kv!(140)),
+        (delirium_data::kv!(591 int), delirium_data::kv!(592 int), false, delirium_data::kv!(188)), (delirium_data::kv!(592 int), delirium_data::kv!(593 int), false, delirium_data::kv!(105)), (delirium_data::kv!(593 int), delirium_data::kv!(592 int), true, delirium_data::kv!(140)),
+        (delirium_data::kv!(200 int), delirium_data::kv!(201 int), true, delirium_data::kv!(120)),
     ]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     let &(bone, other, before, radius) = (*LINES()).iter().find(|l| l.0 as u32 == tag)?;
     let (a, o) = (at(bone)?, at(other)?);
-    Some((a, if before { a + (a - o).normalize_or_zero() * delirium_data::kv!(131) } else { o }, radius))
+    Some((a, if before { a + (a - o).normalize_or_zero() * delirium_data::kv!(135) } else { o }, radius))
 }
 
 pub struct Blow {

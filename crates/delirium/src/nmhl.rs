@@ -74,7 +74,7 @@ impl HeadLook {
         let (nl, hl) = (ch.limits(neck), ch.limits(head));
         let sp = b.pmat(SPINE3());
         let m = sp.m;
-        let q = q_scaled(m.b * -delirium_data::kv!(515));
+        let q = q_scaled(m.b * -delirium_data::kv!(517));
         let (a, c) = (qrot(q, m.a, false), qrot(q, m.c, false));
         let h = a.mul_add(Vec3::splat(self.len), b.at(SPINE3()));
         let t = (((self.pos - m.d).vx(sp.w) - sp.v) + self.vel).mul_add(Vec3::splat(damping / strength), self.pos);
@@ -101,7 +101,7 @@ impl HeadLook {
         let ua = sdot(up, a, b"zyx");
         let s = if ua * ua <= delirium_data::kv!(17) && !self.always_eyes_horizontal {
             a.vx(n)
-        } else if sdot(up, n, b"zyx").abs() < delirium_data::kv!(108) {
+        } else if sdot(up, n, b"zyx").abs() < delirium_data::kv!(112) {
             up.vx(n)
         } else {
             (Vec3::ONE - up) * b.pmat(HEAD()).m.a
@@ -119,13 +119,13 @@ impl HeadLook {
         let (s2, s3) = ((*SPINE())[2], (*SPINE())[delirium_data::kv!(0 int)]);
         let (l2, l3) = (ch.limits(s2), ch.limits(s3));
         let x3 = over.fma(delirium_data::kv!(8), ch.eff[s3].desired[2]);
-        ch.eff[s3].desired[2] = x3.max(l3[delirium_data::kv!(1 int)] * delirium_data::kv!(516)).min(l3[delirium_data::kv!(2 int)] * delirium_data::kv!(516));
+        ch.eff[s3].desired[2] = x3.max(l3[delirium_data::kv!(1 int)] * delirium_data::kv!(518)).min(l3[delirium_data::kv!(2 int)] * delirium_data::kv!(518));
         let x2 = over.fma(delirium_data::kv!(63), ch.eff[s2].desired[2]);
-        ch.eff[s2].desired[2] = x2.max(l2[delirium_data::kv!(1 int)] * delirium_data::kv!(516)).min(l2[delirium_data::kv!(2 int)] * delirium_data::kv!(516));
+        ch.eff[s2].desired[2] = x2.max(l2[delirium_data::kv!(1 int)] * delirium_data::kv!(518)).min(l2[delirium_data::kv!(2 int)] * delirium_data::kv!(518));
         for (n, x, lo, hi) in [(2, twist, delirium_data::kv!(1 int), delirium_data::kv!(2 int)), (0, lean1, 0, 1), (1, lean2, 2, delirium_data::kv!(0 int))] {
             let (xn, xh) = split(x, nl[lo], nl[hi], hl[lo], hl[hi]);
-            ch.eff[neck].desired[n] = xn.clamp(-delirium_data::kv!(127), delirium_data::kv!(127));
-            ch.eff[head].desired[n] = xh.clamp(-delirium_data::kv!(127), delirium_data::kv!(127));
+            ch.eff[neck].desired[n] = xn.clamp(-delirium_data::kv!(131), delirium_data::kv!(131));
+            ch.eff[head].desired[n] = xh.clamp(-delirium_data::kv!(131), delirium_data::kv!(131));
         }
     }
 }

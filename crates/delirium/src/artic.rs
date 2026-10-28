@@ -13,7 +13,7 @@ pub fn parts(v: V6) -> (DVec3, DVec3) {
     (DVec3::new(v[0], v[1], v[2]), DVec3::new(v[delirium_data::kv!(0 int)], v[delirium_data::kv!(1 int)], v[delirium_data::kv!(2 int)]))
 }
 
-type M3 = [Vec3; 3];
+pub(crate) type M3 = [Vec3; 3];
 pub type P2 = (Vec3, Vec3);
 
 const E: M3 = [Vec3::X, Vec3::Y, Vec3::Z];
@@ -69,6 +69,13 @@ impl Sym {
 
     fn answer(&self, (f, t): P2) -> P2 {
         (dcols(&self.b, f) + ldot(&self.a, t), ldot(&self.b, t) + ldot(&self.d, f))
+    }
+
+    fn point(&self, r: Vec3) -> M3 {
+        let c = E.map(|e| vx(e, r));
+        let n = rows_mul(&cols(&c), &rows_mul(&self.a, &c));
+        let p = rows_mul(&self.b, &c);
+        add3(&add3(&add3(&n, &p), &cols(&p)), &self.d)
     }
 
     fn momentum(&self, (w, v): P2) -> P2 {
@@ -141,7 +148,7 @@ fn fsel(x: f32, a: f32, b: f32) -> f32 {
     if x >= 0.0 { a } else { b }
 }
 
-fn ldl_inverse(m: &M3) -> M3 {
+pub(crate) fn ldl_inverse(m: &M3) -> M3 {
     let (a00, a10, a11, a20, a21, a22) = (m[0].x, m[1].x, m[1].y, m[2].x, m[2].y, m[2].z);
     let eps = ((a11 + a22) + a00) * delirium_data::kv!(4 f32);
     let d0 = fsel(eps - a00, eps, a00);
@@ -527,5 +534,110 @@ impl Artic {
         let o2 = c.child_add(np, cx);
         o2.0 - (np.0 + o1.0)
     }
+
+    pub fn forces(&self, acc: &[P2], dt: f32) -> Vec<P2> {
+        self.solve_f(&acc.iter().map(|a| (a.0.mul_add(Vec3::splat(dt), Vec3::ZERO), a.1.mul_add(Vec3::splat(dt), Vec3::ZERO))).collect::<Vec<_>>())
+    }
+
+    pub fn point_k(&self, k: usize, r: Vec3) -> M3 {
+        self.y[k].point(r)
+    }
+}
+
+pub struct Lazy<'a> {
+    a: &'a Artic,
+    base: Vec<P2>,
+    d: Vec<P2>,
+    pend: Vec<P2>,
+    seen: Vec<P2>,
+    flag: Vec<u8>,
+    cur: Option<usize>,
+}
+
+impl<'a> Lazy<'a> {
+    pub fn new(a: &'a Artic, base: Vec<P2>) -> Lazy<'a> {
+        let n = base.len();
+        Lazy { a, base, d: vec![ZERO2; n], pend: vec![ZERO2; n], seen: vec![ZERO2; n], flag: vec![0; n], cur: None }
+    }
+
+    fn up(&mut self, c: usize) {
+        let p = self.a.parent[c].unwrap();
+        if self.flag[c] & 1 == 0 {
+            return;
+        }
+        let out = self.a.joint[c].as_ref().unwrap().rest(self.pend[c]);
+        self.seen[c] = padd(self.seen[c], out);
+        self.d[p] = padd(self.d[p], out);
+        self.pend[p] = padd(self.pend[p], out);
+        self.pend[c] = ZERO2;
+        self.flag[c] &= !1;
+        self.flag[p] |= delirium_data::kv!(0 int);
+    }
+
+    fn down(&mut self, c: usize) {
+        let p = self.a.parent[c].unwrap();
+        let bits = |x: P2| [x.0.x, x.0.y, x.0.z, x.1.x, x.1.y, x.1.z].map(f32::to_bits);
+        if self.flag[p] & 2 == 0 || bits(self.d[p]) == bits(self.seen[c]) {
+            return;
+        }
+        let out = self.a.joint[c].as_ref().unwrap().child((self.d[p].0 - self.seen[c].0, self.d[p].1 - self.seen[c].1));
+        self.d[c] = padd(self.d[c], out);
+        self.seen[c] = self.d[p];
+        self.flag[c] |= 2;
+    }
+
+    fn walk(&mut self, mut t: usize) -> Option<usize> {
+        let mut c = self.cur?;
+        let mut stack = vec![];
+        while c != t {
+            if c > t {
+                self.up(c);
+                c = self.a.parent[c].unwrap();
+            } else {
+                stack.push(t);
+                t = self.a.parent[t].unwrap();
+            }
+        }
+        while let Some(x) = stack.pop() {
+            self.down(x);
+        }
+        Some(c)
+    }
+
+    pub fn push(&mut self, k: usize, x: P2) {
+        let ans = self.a.y[k].answer(x);
+        if self.cur.is_some() {
+            self.walk(k);
+        }
+        self.d[k] = padd(self.d[k], ans);
+        self.pend[k] = padd(self.pend[k], ans);
+        self.flag[k] |= delirium_data::kv!(0 int);
+        self.cur = Some(k);
+    }
+
+    pub fn at(&mut self, k: usize, r: Vec3) -> Vec3 {
+        self.cur = self.walk(k);
+        let (w, v) = padd(self.d[k], self.base[k]);
+        vx(w, r) + v
+    }
+
+    pub fn spins(&mut self, c: usize) -> (Vec3, Vec3) {
+        self.cur = self.walk(c);
+        let p = self.a.parent[c].unwrap();
+        if self.flag[c] & 1 != 0 {
+            self.up(c);
+            self.cur = Some(p);
+        }
+        (self.d[c].0, self.d[p].0)
+    }
+}
+
+pub fn at_point((w, l): P2, r: Vec3) -> Vec3 {
+    nms(yzx(r), zxy(w), zxy(r).mul_add(yzx(w), l))
+}
+
+pub fn frame_k(kp: &M3, f: &M3) -> M3 {
+    let g = rows_mul(f, &cols(kp));
+    f.map(|fa| Vec3::new(g[0].vd(fa), g[1].vd(fa), g[2].vd(fa)))
 }
 

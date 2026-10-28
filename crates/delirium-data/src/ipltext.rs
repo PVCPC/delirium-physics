@@ -68,7 +68,7 @@ pub struct OccluderLists {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn OCCLUDER_NEAR() -> f32 { crate::kv!(779) }
+pub fn OCCLUDER_NEAR() -> f32 { crate::kv!(785) }
 
 impl OccluderLists {
     pub fn new(count: usize) -> OccluderLists {
@@ -76,8 +76,8 @@ impl OccluderLists {
     }
 
     fn key(o: &Occluder, cam: [f32; 3]) -> f32 {
-        let (dx, dy) = (cam[0] - o.pos[0] as f32 / crate::kv!(104), cam[1] - o.pos[1] as f32 / crate::kv!(104));
-        dx * dx + dy * dy - o.radius as f32 / crate::kv!(104)
+        let (dx, dy) = (cam[0] - o.pos[0] as f32 / crate::kv!(108), cam[1] - o.pos[1] as f32 / crate::kv!(108));
+        dx * dx + dy * dy - o.radius as f32 / crate::kv!(108)
     }
 
     pub fn update(&mut self, occluders: &[Occluder], cam: [f32; 3], frame: u32) {
@@ -103,7 +103,7 @@ impl OccluderLists {
                 }
                 walked += 1;
                 cur = next;
-                if walked >= crate::kv!(189 int) || next == -1 {
+                if walked >= crate::kv!(192 int) || next == -1 {
                     break;
                 }
             }
@@ -129,8 +129,8 @@ impl OccluderLists {
             }
             cur = next;
         }
-        if frame & crate::kv!(22 int) == 2 && near.len() > crate::kv!(251 int) {
-            let mid = near.len().min(crate::kv!(189 int));
+        if frame & crate::kv!(22 int) == 2 && near.len() > crate::kv!(254 int) {
+            let mid = near.len().min(crate::kv!(192 int));
             partial_sort(&mut near, mid);
             self.near = near[0].1;
             for w in near.windows(2) {
@@ -308,7 +308,7 @@ pub struct TextIpls {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX_OCCLUDERS() -> usize { crate::kv!(767 int) }
+pub fn MAX_OCCLUDERS() -> usize { crate::kv!(773 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IplLine {
@@ -398,25 +398,25 @@ pub fn ipl_calls(file: &[u8]) -> Vec<IplCall> {
         match kind {
             IplLine::Inst => {
                 let s = sscanf(memory, b"%s %d %f %f %f %f %f %f %f %d %d %f");
-                if s.count != crate::kv!(52 int) && s.count != crate::kv!(102 int) {
+                if s.count != crate::kv!(52 int) && s.count != crate::kv!(106 int) {
                     return;
                 }
                 let name = text(&s, 0);
-                let last = if s.count == crate::kv!(52 int) { b(&s, crate::kv!(102 int)) } else { (-1.0f32).to_bits() };
+                let last = if s.count == crate::kv!(52 int) { b(&s, crate::kv!(106 int)) } else { (-1.0f32).to_bits() };
                 let record = [b(&s, 2), b(&s, crate::kv!(0 int)), b(&s, crate::kv!(1 int)), b(&s, crate::kv!(2 int)), b(&s, crate::kv!(6 int)), b(&s, crate::kv!(22 int)), b(&s, crate::kv!(23 int)), crate::map::hash_bytes(&name, 0),
-                              int(&s, 1), int(&s, crate::kv!(93 int)), s.int(crate::kv!(77 int)).map_or(u32::MAX, |v| v as u32), last];
+                              int(&s, 1), int(&s, crate::kv!(97 int)), s.int(crate::kv!(77 int)).map_or(u32::MAX, |v| v as u32), last];
                 out.push(IplCall::Instance { name, record });
             }
             IplLine::Zone => {
                 let s = sscanf(memory, b"%s %d %f %f %f %f %f %f %d %s");
                 if s.count == crate::kv!(77 int) {
-                    out.push(IplCall::Zone { name: text(&s, 0), corners: std::array::from_fn(|k| f(&s, 2 + k)), label: text(&s, crate::kv!(93 int)) });
+                    out.push(IplCall::Zone { name: text(&s, 0), corners: std::array::from_fn(|k| f(&s, 2 + k)), label: text(&s, crate::kv!(97 int)) });
                 }
             }
             IplLine::Grge => {
                 let s = sscanf(memory, b"%f %f %f %f %f %f %f %f %d %d %s");
-                if s.count == crate::kv!(102 int) {
-                    out.push(IplCall::Garage { floats: std::array::from_fn(|k| f(&s, k)), a: int(&s, crate::kv!(93 int)), name: text(&s, crate::kv!(77 int)), b: int(&s, crate::kv!(23 int)) });
+                if s.count == crate::kv!(106 int) {
+                    out.push(IplCall::Garage { floats: std::array::from_fn(|k| f(&s, k)), a: int(&s, crate::kv!(97 int)), name: text(&s, crate::kv!(77 int)), b: int(&s, crate::kv!(23 int)) });
                 }
             }
             IplLine::Cars => {
@@ -434,7 +434,7 @@ pub fn ipl_calls(file: &[u8]) -> Vec<IplCall> {
                     a: f(&s, crate::kv!(6 int)),
                     b: f(&s, crate::kv!(22 int)),
                     c: int(&s, crate::kv!(23 int)),
-                    d: int(&s, crate::kv!(93 int)),
+                    d: int(&s, crate::kv!(97 int)),
                 });
             }
             IplLine::Lodm => {
@@ -443,12 +443,12 @@ pub fn ipl_calls(file: &[u8]) -> Vec<IplCall> {
                     return;
                 }
                 let head = int(&s, crate::kv!(6 int));
-                let n = ((head & crate::kv!(191 int)) as usize).min(crate::kv!(77 int));
+                let n = ((head & crate::kv!(194 int)) as usize).min(crate::kv!(77 int));
                 out.push(IplCall::LodGroup {
                     min: [f(&s, 0), f(&s, 1), f(&s, 2)],
                     max: [f(&s, crate::kv!(0 int)), f(&s, crate::kv!(1 int)), f(&s, crate::kv!(2 int))],
                     instances: (0..n).map(|k| int(&s, crate::kv!(22 int) + k)).collect(),
-                    byte: head >> crate::kv!(96 int),
+                    byte: head >> crate::kv!(100 int),
                 });
             }
             IplLine::Slow => {
@@ -457,8 +457,8 @@ pub fn ipl_calls(file: &[u8]) -> Vec<IplCall> {
             }
             IplLine::MloPlus => {
                 let s = sscanf(memory, b"%s %d %d %d %f %f %f %f %f %f %f %d %d");
-                let record = [b(&s, crate::kv!(1 int)), b(&s, crate::kv!(2 int)), b(&s, crate::kv!(6 int)), b(&s, crate::kv!(22 int)), b(&s, crate::kv!(23 int)), b(&s, crate::kv!(93 int)), b(&s, crate::kv!(77 int)),
-                              crate::map::hash_bytes(&text(&s, 0), 0), int(&s, 1), int(&s, crate::kv!(102 int)),
+                let record = [b(&s, crate::kv!(1 int)), b(&s, crate::kv!(2 int)), b(&s, crate::kv!(6 int)), b(&s, crate::kv!(22 int)), b(&s, crate::kv!(23 int)), b(&s, crate::kv!(97 int)), b(&s, crate::kv!(77 int)),
+                              crate::map::hash_bytes(&text(&s, 0), 0), int(&s, 1), int(&s, crate::kv!(106 int)),
                               s.int(crate::kv!(52 int)).map_or(u32::MAX, |v| v as u32), (-1.0f32).to_bits()];
                 out.push(IplCall::MloInstance { instance: int(&s, 2), record, d: int(&s, crate::kv!(0 int)) });
             }
@@ -487,7 +487,7 @@ impl TextIpls {
         let mut v = [0f32; 6];
         let [a, b, c, d, e, f] = &mut v;
         let n = scan_after(l, &["%s"], &mut [Field::D(&mut kind), Field::F(a), Field::F(b), Field::F(c), Field::F(d), Field::F(e), Field::F(f), Field::D(&mut area)]);
-        if n == crate::kv!(93 int) {
+        if n == crate::kv!(97 int) {
             self.map_zones.add([v[0], v[1], v[2]], [v[crate::kv!(0 int)], v[crate::kv!(1 int)], v[crate::kv!(2 int)]], area);
         }
     }
@@ -515,16 +515,16 @@ impl TextIpls {
         if self.occluders.len() >= MAX_OCCLUDERS() {
             return;
         }
-        let at_least_one = |v: f32| short(v * crate::kv!(104)).max(1);
-        let angle = rot_degrees * crate::kv!(560);
+        let at_least_one = |v: f32| short(v * crate::kv!(108)).max(1);
+        let angle = rot_degrees * crate::kv!(562);
         self.occluders.push(Occluder {
-            pos: [short(pos[0] * crate::kv!(104)), short(pos[1] * crate::kv!(104)), short(pos[2] * crate::kv!(104))],
+            pos: [short(pos[0] * crate::kv!(108)), short(pos[1] * crate::kv!(108)), short(pos[2] * crate::kv!(108))],
             radius: at_least_one((w * w + l * l + h * h).sqrt()),
             length: at_least_one(l),
             width: at_least_one(w),
             height: at_least_one(h),
-            cos: short((angle as f64).cos() as f32 * crate::kv!(780)),
-            sin: short((angle as f64).sin() as f32 * crate::kv!(780)),
+            cos: short((angle as f64).cos() as f32 * crate::kv!(786)),
+            sin: short((angle as f64).sin() as f32 * crate::kv!(786)),
             flag,
         });
     }
@@ -548,7 +548,7 @@ impl TextIpls {
             });
             return;
         }
-        let flags = (flags as u32 & crate::kv!(50 int)) as u16 & crate::kv!(781 int);
+        let flags = (flags as u32 & crate::kv!(50 int)) as u16 & crate::kv!(787 int);
         if flags != 0 {
             self.cull_zones.push(CullZone { corner, axis_a, axis_b, z_low: short(zl), z_high: short(zh), flags });
         }

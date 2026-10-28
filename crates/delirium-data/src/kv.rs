@@ -3,7 +3,7 @@
 //! number it stands for; all 0 until `unlock`.
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 
-const N: usize = 992;
+const N: usize = 1001;
 static K64: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 static K32: [AtomicU32; N] = [const { AtomicU32::new(0) }; N];
 static OPEN: AtomicBool = AtomicBool::new(false);

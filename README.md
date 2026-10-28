@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **You need your own GTA IV for Xbox 360, PS3 or PC (not included).** This requirement is for the Playroom. It reads the character, animations and settings from your own copy. Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it). A PS3 disc image straight off the disc is fine: its key is looked up online (or put its .dkey file beside it). On PS3 everything works except the animations for now: get-ups and the Hero's moves don't play yet, so Xbox 360 or PC is best. No game files come with it, and the Playroom won't run without them. For integrating the engine into another game, see [For developers](#for-developers).
+> **You need your own GTA IV for Xbox 360, PS3 or PC (not included).** Both the Playroom and the SDK need it: the engine's numbers, the character, animations and settings are read from your own copy. Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it). A PS3 disc image straight off the disc is fine: its key is looked up online (or put its .dkey file beside it). On PS3 everything works except the animations for now: get-ups and the Hero's moves don't play yet, so Xbox 360 or PC is best. No game files come with it, and neither the Playroom nor the SDK runs without them. For integrating the engine into another game, see [For developers](#for-developers).
 
 <p align="center">
   <img src="docs/montage.gif" alt="Taser, skeleton, damage, Homers on fire, splash, coloured light, 50 Homers" width="480">
@@ -15,7 +15,7 @@
 
 A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
 
-Delirium is a character physics engine written in Rust. It comes with an SDK (C, C++, C#, Unity, Python) and the room you see here.
+Delirium is a reverse-engineered port of Euphoria, NaturalMotion's ragdoll and character physics engine, as it runs in GTA IV: rewritten in Rust from the game's own program code and checked against the running game. It comes with an SDK (C, C++, C#, Unity, Python) and the room you see here. It was written with AI coding tools (Claude). It isn't affiliated with or endorsed by Rockstar Games, Take-Two Interactive or NaturalMotion. An earlier version of this README said the behaviours were written from scratch by separate people; that was wrong, and it has been removed.
 
 <p align="center">
   <img src="docs/playroom.png" alt="The Playroom: Homer on the left panel's Character tab, his skeleton and joints shown" width="800">
@@ -85,7 +85,7 @@ Choose reactions under **Reactions** in the left dock. **Scene** contains locati
 
 ## For developers
 
-The Playroom is one application built on Delirium. For a mod or another game, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project.
+The Playroom is one application built on Delirium. For a mod or another game, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project. The SDK needs the player's own GTA IV too: call `nm_unlock` (or `nm_init`) with the game's character file before creating a character; until then `nm_agent_create` fails.
 
 - `crates/delirium`: the engine
 - `crates/delirium-sdk`: the C API (`include/delirium_physics.h`) and bindings for C++, C#, Unity and Python, with examples

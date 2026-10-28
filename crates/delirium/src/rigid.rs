@@ -116,7 +116,7 @@ pub(crate) fn join(j: &JointConst, p: &Link, c: &mut Link, hinge: bool) {
         let ap = ldot(&p.r, col(&j.pm, 2));
         c.r = rows_mul(&arc(ldot(&c.r, col(&j.cm, 2)), ap), &c.r);
         let along = |w: Vec3| w.x.fma(ap.x, w.z.fma(ap.z, w.y * ap.y));
-        c.w = ap * (along(c.w) - along(p.w)) + p.w;
+        c.w = ap.mul_add(Vec3::splat(along(c.w) - along(p.w)), p.w);
     }
     let at = ldot(&c.r, j.ca);
     let pivot = ldot(&p.r, j.pa) + p.d;
@@ -180,9 +180,9 @@ pub(crate) fn swing3(j: &JointConst, p: &Link, c: &Link) -> Swing {
     let bis = b * (k * 0.5);
     let across = s.vx(bis);
     let (ub, uq) = (sdot(bis, u, b"zyx"), sdot(across, u, b"zyx"));
-    let (cs, sn) = ((theta as f64).cos() as f32, (theta as f64).sin() as f32);
-    let u = bis * (sn.fma(uq, cs * ub) - ub) + u;
-    let u = across * (cs.fma(uq, -(sn * ub)) - uq) + u;
+    let (cs, sn) = (delirium_data::mathrt::cos(theta as f64) as f32, delirium_data::mathrt::sin(theta as f64) as f32);
+    let u = bis.mul_add(Vec3::splat(sn.fma(uq, cs * ub) - ub), u);
+    let u = across.mul_add(Vec3::splat(cs.fma(uq, -(sn * ub)) - uq), u);
     let (x, y) = (u.vd(col(&pr, 0)), u.vd(col(&pr, 1)));
     Swing { pr, s, theta, bis, across, k, twist: if x == 0.0 && y == 0.0 { 0.0 } else { atan2(y, x) } }
 }
@@ -258,7 +258,7 @@ pub(crate) fn inv3([a, b, c]: [Vec3; 3]) -> [Vec3; 3] {
 }
 
 fn singular([a, b, c]: [Vec3; 3], det: f32) -> bool {
-    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(574)
+    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(580)
 }
 
 pub(crate) fn inv34([a, b, c, d]: [Vec3; 4]) -> Option<[Vec3; 4]> {
@@ -310,24 +310,24 @@ pub fn part_set_other(kind: u32, m: [Vec3; 4], centroid: Option<Vec3>, commit: b
                 let t = Vec3::new(col(&r, 0).vd(c), col(&r, 1).vd(c), col(&r, 2).vd(c));
                 i[delirium_data::kv!(0 int)] = m[delirium_data::kv!(0 int)] + (Vec3::ZERO - t);
             }
-            PartSetOther { obj: vec![(delirium_data::kv!(361 int), m), (delirium_data::kv!(7 int), m), (delirium_data::kv!(282 int), m)], inst: Some(i), part: commit.then_some(m) }
+            PartSetOther { obj: vec![(delirium_data::kv!(365 int), m), (delirium_data::kv!(7 int), m), (delirium_data::kv!(286 int), m)], inst: Some(i), part: commit.then_some(m) }
         }
         _ => PartSetOther::default(),
     }
 }
 
 pub fn part_bound(part: u32, rd: impl Fn(u32) -> u32) -> u32 {
-    let obj = rd(part + delirium_data::kv!(575 int));
+    let obj = rd(part + delirium_data::kv!(581 int));
     if obj == 0 {
         return 0;
     }
     let bound = |inst: u32| rd(rd(inst + delirium_data::kv!(1 int)) + delirium_data::kv!(52 int));
-    match rd(part + delirium_data::kv!(293 int)) {
+    match rd(part + delirium_data::kv!(297 int)) {
         1 => bound(rd(obj + delirium_data::kv!(51 int))),
         2 => bound(obj),
         3 => {
-            let comp = bound(rd(rd(rd(part + delirium_data::kv!(576 int)) + delirium_data::kv!(189 int)) + delirium_data::kv!(51 int)));
-            rd(rd(comp + delirium_data::kv!(249 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(349 int)))
+            let comp = bound(rd(rd(rd(part + delirium_data::kv!(582 int)) + delirium_data::kv!(192 int)) + delirium_data::kv!(51 int)));
+            rd(rd(comp + delirium_data::kv!(252 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(353 int)))
         }
         _ => 0,
     }
@@ -339,7 +339,7 @@ pub fn grip_local(inst: [Vec3; 4], comp: Option<[Vec3; 4]>, p: Vec3) -> Vec3 {
 }
 
 pub fn contact_pass(b165: u8, b164: u8, on: bool) -> u8 {
-    if b164 == 0 && !on { b165 & delirium_data::kv!(465 int) } else { b165 }
+    if b164 == 0 && !on { b165 & delirium_data::kv!(468 int) } else { b165 }
 }
 
 pub type GripSide = (u16, [Vec3; 4], Option<[Vec3; 4]>, Vec3);

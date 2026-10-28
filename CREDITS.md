@@ -27,7 +27,8 @@
   networks and the three motion clips they follow were made from Ubisoft La Forge's
   [LAFAN1](https://github.com/ubisoft/ubisoft-laforge-animation-dataset) motion capture (walk1_subject1,
   run1_subject2), licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/): non-commercial
-  use only. Changed: retargeted to Homer's body. A preview for this release only. Not affiliated with or endorsed by
+  use only. Changed: retargeted to Homer's body. Its files (`learned-preview/`) are no longer in this repository or the downloads:
+  the licence doesn't allow sharing modified versions. Without them the walk is off. Not affiliated with or endorsed by
   Ubisoft.
 - **FSR 1 upscaler** (`crates/delirium-room/src/fsr1.wgsl`): EASU and RCAS ported from AMD FidelityFX Super Resolution 1
   ([FidelityFX-FSR](https://github.com/GPUOpen-Effects/FidelityFX-FSR)), Copyright (c) 2021 Advanced Micro Devices, Inc.,

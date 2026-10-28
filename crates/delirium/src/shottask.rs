@@ -53,7 +53,7 @@ impl ShotTask {
         };
         let (msgs, fire) = self.control(hit, now);
         let v = hit.vel;
-        let max = if v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)) < delirium_data::kv!(104) || hit.pos.z < 0.0 { delirium_data::kv!(58 int) } else { delirium_data::kv!(139 int) };
+        let max = if v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)) < delirium_data::kv!(108) || hit.pos.z < 0.0 { delirium_data::kv!(58 int) } else { delirium_data::kv!(143 int) };
         Step { msgs, fire, done: now > t0.wrapping_add(max) }
     }
 
@@ -66,12 +66,12 @@ impl ShotTask {
             self.balance = true;
             let m = |n: &str, or: f32| tp.get("NMShot_IsMoving", "*", n, or);
             return vec![
-                ("bodyBalance", vec![("start", B(true)), ("bodyStiffness", F(m("balanceBodyStiffness", delirium_data::kv!(21)))), ("damping", F(m("balanceBodyDamping", delirium_data::kv!(108)))),
+                ("bodyBalance", vec![("start", B(true)), ("bodyStiffness", F(m("balanceBodyStiffness", delirium_data::kv!(21)))), ("damping", F(m("balanceBodyDamping", delirium_data::kv!(112)))),
                                      ("elbow", F(m("balanceElbow", delirium_data::kv!(12)))), ("shoulder", F(m("balanceShoulder", delirium_data::kv!(12)))),
                                      ("maxSteps", I(m("balanceMaxSteps", delirium_data::kv!(5)) as i32))]),
                 ("configureBalance", vec![("balanceAbortThreshold", F(m("balanceAbortThreshold", 1.0)))]),
                 ("leanInDirection", vec![("start", B(true)), ("applyAsForce", B(m("balanceLeanDirApplyAsForce", 0.0) != 0.0)),
-                                         ("dir", V(flat(v, hit.fwd))), ("leanAmount", F(m("balanceLeanAmount", delirium_data::kv!(106))))]),
+                                         ("dir", V(flat(v, hit.fwd))), ("leanAmount", F(m("balanceLeanAmount", delirium_data::kv!(110))))]),
             ];
         }
         let st = |n: &str, or: f32| tp.get("NMShot_Standing", &self.set, n, or);
@@ -89,7 +89,7 @@ impl ShotTask {
         }
         p.extend([("crouching", B(false)), ("reachForWound", B(!melee)), ("fling", B(false)), ("chickenArms", B(false)),
                   ("maxSteps", I(if hit.few_steps { delirium_data::kv!(1 int) } else { st("shotMaxSteps", delirium_data::kv!(32)) as i32 })), ("loosenessAmount", F(st("shotLooseness", 1.0))),
-                  ("bodyStiffness", F(st("shotBodyStiffness", delirium_data::kv!(196)))), ("stableHandsAndNeck", B(st("shotStablizeHandsAndNeck", 0.0) != 0.0))]);
+                  ("bodyStiffness", F(st("shotBodyStiffness", delirium_data::kv!(199)))), ("stableHandsAndNeck", B(st("shotStablizeHandsAndNeck", 0.0) != 0.0))]);
         let mut lh = |n: &str, l: f32, h: f32| rand.float_in_range(st(&format!("{n}L"), l), st(&format!("{n}H"), h));
         p.push(("timeBeforeReachForWound", F(lh("shotTimeBeforeReachForWound", delirium_data::kv!(73), delirium_data::kv!(57)))));
         p.push(("timeBeforeCollapseWoundLeg", F(st("shotTimeBeforeCollapseWoundLeg", 1.0))));
@@ -102,7 +102,7 @@ impl ShotTask {
                   ("randomizeShockSpinDirection", B(st("randomizeShockSpinDirection", 0.0) != 0.0)),
                   ("alwaysAddShockSpin", B(st("alwaysAddShockSpin", 0.0) != 0.0)), ("shockSpinMin", F(st("shockSpinMin", delirium_data::kv!(11)))),
                   ("shockSpinMax", F(st("shockSpinMax", delirium_data::kv!(59)))), ("shockSpinLiftForceMult", F(st("shockSpinLiftForceMult", -1.0))),
-                  ("shockSpinDecayMult", F(st("shockSpinDecayMult", delirium_data::kv!(104)))), ("shockSpinScalePerComponent", F(st("shockSpinScalePerComponent", 0.5)))]);
+                  ("shockSpinDecayMult", F(st("shockSpinDecayMult", delirium_data::kv!(108)))), ("shockSpinScalePerComponent", F(st("shockSpinScalePerComponent", 0.5)))]);
         let mut out = vec![("shot", p)];
         if hit.health >= delirium_data::kv!(28) {
             out.push(("stayUpright", vec![("start", B(true)), ("stiffness", F(st("shotUprightStiffness", delirium_data::kv!(5))))]));
@@ -111,14 +111,14 @@ impl ShotTask {
             out.push(("shotRelax", vec![("relaxPeriod", F(st(if fatal { "shotRelaxPeriod_FatallyInjured" } else { "shotRelaxPeriod_Injured" },
                                                                  if fatal { 0.5 } else { delirium_data::kv!(12) })))]));
         }
-        if hit.gun && ((st("shotBlindFireProbability", delirium_data::kv!(73)) * delirium_data::kv!(28)) as i32) >= (rand.next() & delirium_data::kv!(189 int)) as i32 {
+        if hit.gun && ((st("shotBlindFireProbability", delirium_data::kv!(73)) * delirium_data::kv!(28)) as i32) >= (rand.next() & delirium_data::kv!(192 int)) as i32 {
             let ms = rand.int_in_range(st("shotMaxBlindFireTimeL", delirium_data::kv!(45)) as i32, st("shotMaxBlindFireTimeH", delirium_data::kv!(78)) as i32);
             (self.blind_until, self.blind_next) = ((ms as u32).wrapping_add(now), now);
         }
         let mut amount = st("shotLeanAmount", delirium_data::kv!(24));
         if amount > 0.0 {
             let d = flat(Vec3::ZERO - self.normal, hit.fwd);
-            let ms = rand.int_in_range(st("shotMaxTimeToStopLeanL", delirium_data::kv!(167)) as i32, st("shotMaxTimeToStopLeanH", delirium_data::kv!(577)) as i32);
+            let ms = rand.int_in_range(st("shotMaxTimeToStopLeanL", delirium_data::kv!(171)) as i32, st("shotMaxTimeToStopLeanH", delirium_data::kv!(583)) as i32);
             self.lean_until = (ms as u32).wrapping_add(now);
             if hit.running {
                 self.lean_until = self.lean_until.wrapping_add(st("additionalLeanTimeWhenRunning", delirium_data::kv!(78)) as i32 as u32);

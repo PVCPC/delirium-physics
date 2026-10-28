@@ -2,7 +2,7 @@ use crate::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KIND() -> u32 { crate::kv!(832 int) }
+pub fn KIND() -> u32 { crate::kv!(838 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -14,10 +14,10 @@ pub enum Step {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_BEYOND() -> f32 { crate::kv!(498) }
+pub fn SEEK_BEYOND() -> f32 { crate::kv!(500) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_NEAR() -> f32 { crate::kv!(833) }
+pub fn SEEK_NEAR() -> f32 { crate::kv!(839) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn ROUTE_WITHIN() -> f32 { crate::kv!(12) }
@@ -39,7 +39,7 @@ pub fn step(target_in_vehicle: bool, target_boarding: bool, dist: f32, moving: b
 
 #[allow(non_snake_case)]
 #[inline]
-fn NEAR() -> f32 { crate::kv!(115) }
+fn NEAR() -> f32 { crate::kv!(119) }
 #[allow(non_snake_case)]
 #[inline]
 fn FAR() -> f32 { crate::kv!(5) }
@@ -54,10 +54,10 @@ fn FLOOR() -> f32 { crate::kv!(48) }
 fn TOP() -> f32 { crate::kv!(18) }
 #[allow(non_snake_case)]
 #[inline]
-fn PLAYING() -> f32 { crate::kv!(186) }
+fn PLAYING() -> f32 { crate::kv!(189) }
 #[allow(non_snake_case)]
 #[inline]
-fn WAIT_MS() -> (i32, i32) { (crate::kv!(40 int), crate::kv!(834 int)) }
+fn WAIT_MS() -> (i32, i32) { (crate::kv!(40 int), crate::kv!(840 int)) }
 
 pub fn chance(dist: f32, playing: bool) -> f32 {
     if playing {
@@ -77,16 +77,16 @@ pub fn wait(rng: &mut Rand) -> f32 {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP() -> f32 { crate::kv!(218) }
+pub fn KEEP() -> f32 { crate::kv!(221) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DEAD() -> f32 { crate::kv!(110) }
+pub fn DEAD() -> f32 { crate::kv!(114) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn KEEP_FAR() -> f32 { crate::kv!(30) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn TURN_SPEED() -> f32 { crate::kv!(835) }
+pub fn TURN_SPEED() -> f32 { crate::kv!(841) }
 const CLOSE_POW: f32 = 1.0;
 const FAR_POW: f32 = 2.0;
 #[allow(non_snake_case)]

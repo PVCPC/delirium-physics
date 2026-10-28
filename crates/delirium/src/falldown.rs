@@ -73,7 +73,7 @@ impl FallDown {
         };
         let mut s = Step::default();
         self.control(p, now, t0, &mut s);
-        (s.done, s.next) = finish(p, now, t0, if matches!(self.stage, 4 | 5) { delirium_data::kv!(93 int) } else { delirium_data::kv!(23 int) });
+        (s.done, s.next) = finish(p, now, t0, if matches!(self.stage, 4 | 5) { delirium_data::kv!(97 int) } else { delirium_data::kv!(23 int) });
         s.health_one |= s.done && self.state > delirium_data::kv!(0 int);
         s
     }
@@ -83,14 +83,14 @@ impl FallDown {
         let (roll, wall) = (matches!(self.state, 2 | 6), matches!(self.state, 1 | 5));
         let f = facing(p, self.dir);
         s.msgs.push(("bodyBalance", vec![("start", B(true)), ("maxSteps", I(if roll { delirium_data::kv!(2 int) } else { delirium_data::kv!(77 int) }))]));
-        s.msgs.push(("configureBalance", vec![("start", B(true)), ("balanceAbortThreshold", F(if roll { delirium_data::kv!(70) } else { delirium_data::kv!(123) })),
-                                              ("stepClampScale", F(delirium_data::kv!(110)))]));
+        s.msgs.push(("configureBalance", vec![("start", B(true)), ("balanceAbortThreshold", F(if roll { delirium_data::kv!(70) } else { delirium_data::kv!(127) })),
+                                              ("stepClampScale", F(delirium_data::kv!(114)))]));
         let lean = (if wall { delirium_data::kv!(17 f32) } else { delirium_data::kv!(10) }).fma(f, (1.0 - f) * delirium_data::kv!(17));
         s.msgs.push(("leanInDirection", vec![("start", B(true)), ("dir", V(self.dir)), ("leanAmount", F(lean)), ("applyAsForce", B(false))]));
         if wall {
             s.msgs.push(("fallOverWall", vec![("start", B(true)), ("magOfForce", F(delirium_data::kv!(9))), ("maxDistanceFromPelToHitPoint", F(delirium_data::kv!(17)))]));
         }
-        let k = p.mass * (((1.0 - f) + f) * delirium_data::kv!(110));
+        let k = p.mass * (((1.0 - f) + f) * delirium_data::kv!(114));
         s.pushes.push(Push { part: delirium_data::kv!(77 int), v: self.dir * k, at: p.b10 - p.pos, impulse: true });
         (self.spine_z, self.pushed, self.stage) = (p.spine[delirium_data::kv!(0 int)].z, 0, 1);
     }
@@ -99,7 +99,7 @@ impl FallDown {
         use Value::{Bool as B, Float as F, Vec3 as V};
         let ledge = self.stage == delirium_data::kv!(1 int) && p.pos.z < self.height + 1.0;
         if self.stage == 2 || ledge {
-            s.msgs.push(("bodyRelax", vec![("start", B(true)), ("relaxation", F(delirium_data::kv!(137)))]));
+            s.msgs.push(("bodyRelax", vec![("start", B(true)), ("relaxation", F(delirium_data::kv!(141)))]));
             s.health_one = self.state > delirium_data::kv!(0 int);
             self.stage = delirium_data::kv!(2 int);
         } else if self.stage == 1 {
@@ -110,7 +110,7 @@ impl FallDown {
                 1 | 5 => dropped || self.pushed != 0 && now > self.pushed.wrapping_add(delirium_data::kv!(39 int)),
                 2 | 6 => self.pushed > 0,
                 _ => false,
-            } || now > t0.wrapping_add(delirium_data::kv!(138 int));
+            } || now > t0.wrapping_add(delirium_data::kv!(142 int));
             let d = self.dir;
             if go {
                 self.pushed = now;
@@ -120,13 +120,13 @@ impl FallDown {
                 } else {
                     s.msgs.push(("catchFall", vec![("start", B(true)), ("armsStiffness", F(delirium_data::kv!(27))), ("torsoStiffness", F(delirium_data::kv!(29)))]));
                     s.msgs.push(("pedalLegs", vec![("start", B(true)), ("legStiffness", F(delirium_data::kv!(29)))]));
-                    let v = d * (p.mass * (1.0 - f).fma(delirium_data::kv!(57), f * delirium_data::kv!(110)));
+                    let v = d * (p.mass * (1.0 - f).fma(delirium_data::kv!(57), f * delirium_data::kv!(114)));
                     s.pushes.push(Push { part: delirium_data::kv!(52 int), v, at: p.b12 - p.pos, impulse: true });
                     s.pushes.push(Push { part: delirium_data::kv!(6 int), v: Vec3::ZERO - v, at: p.b6 - p.pos, impulse: true });
                 }
                 self.stage = delirium_data::kv!(1 int);
             } else {
-                s.pushes.push(Push { part: delirium_data::kv!(77 int), v: d * (p.mass * (1.0 - f).fma(delirium_data::kv!(24), f * delirium_data::kv!(108))), at: p.b10 - p.pos, impulse: false });
+                s.pushes.push(Push { part: delirium_data::kv!(77 int), v: d * (p.mass * (1.0 - f).fma(delirium_data::kv!(24), f * delirium_data::kv!(112))), at: p.b10 - p.pos, impulse: false });
             }
         }
         s.sink = self.state > delirium_data::kv!(0 int) && self.stage < delirium_data::kv!(2 int);
@@ -139,7 +139,7 @@ fn finish(p: &Ped, now: u32, t0: u32, flags: u32) -> (bool, Option<Next>) {
     if flags & 1 != 0 && now > t0.wrapping_add(delirium_data::kv!(40 int)) && v2 < delirium_data::kv!(57 f32) * delirium_data::kv!(57) {
         return (true, Some(if p.health < delirium_data::kv!(43) && flags & delirium_data::kv!(23 int) != 0 { Next::Relax } else { Next::Blend }));
     }
-    let max = if v2 < delirium_data::kv!(104) || p.pos.z < 0.0 { delirium_data::kv!(58 int) } else { delirium_data::kv!(139 int) };
+    let max = if v2 < delirium_data::kv!(108) || p.pos.z < 0.0 { delirium_data::kv!(58 int) } else { delirium_data::kv!(143 int) };
     if now > t0.wrapping_add(max) {
         return (true, Some(Next::Blend));
     }

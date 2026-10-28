@@ -5,10 +5,10 @@ use crate::tasks::{ABORT_IMMEDIATE, ABORT_LEAVE};
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIT_WALL_KIND() -> u32 { crate::kv!(877 int) }
+pub fn HIT_WALL_KIND() -> u32 { crate::kv!(883 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn COWER_KIND() -> u32 { crate::kv!(878 int) }
+pub fn COWER_KIND() -> u32 { crate::kv!(884 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Row {
@@ -22,25 +22,25 @@ pub struct Row {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIT_WALL() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: 1, dict: "ped", clip: "hit_wall", flags: crate::kv!(879 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn HIT_WALL() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: 1, dict: "ped", clip: "hit_wall", flags: crate::kv!(885 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn DUCK_COWER() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: crate::kv!(0 int), dict: "ped", clip: "duck_cower", flags: crate::kv!(880 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn DUCK_COWER() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: crate::kv!(0 int), dict: "ped", clip: "duck_cower", flags: crate::kv!(886 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn AVOIDS() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(281 int), "avoids", crate::kv!(881 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn AVOIDS() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(285 int), "avoids", crate::kv!(887 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn EV_DIVES() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(282 int), "ev_dives", crate::kv!(882 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn EV_DIVES() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(286 int), "ev_dives", crate::kv!(888 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn avoid(group: i32, dict: &'static str, flags: u32) -> [Row; 8] {
     const CLIPS: [&str; 8] = ["avoid_fl", "avoid_fr", "avoid_bl", "avoid_br", "avoid_lf", "avoid_lb", "avoid_rf", "avoid_rb"];
     let mut rows = [Row { group, id: 0, dict, clip: "", flags, layer: crate::kv!(0 int) }; 8];
     let mut k = 0;
     while k < crate::kv!(23 int) {
-        (rows[k].id, rows[k].clip) = (crate::kv!(322 int) + k as i32, CLIPS[k]);
+        (rows[k].id, rows[k].clip) = (crate::kv!(326 int) + k as i32, CLIPS[k]);
         k += 1;
     }
     rows
@@ -48,7 +48,7 @@ fn avoid(group: i32, dict: &'static str, flags: u32) -> [Row; 8] {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn RUN_ANIM_KIND() -> u32 { crate::kv!(883 int) }
+pub fn RUN_ANIM_KIND() -> u32 { crate::kv!(889 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Clip {
@@ -186,14 +186,14 @@ impl Anims {
 }
 
 fn set_flags(p: &mut Player, flags: u32) {
-    p.mask = (flags & crate::kv!(191 int)) as u8;
+    p.mask = (flags & crate::kv!(194 int)) as u8;
     p.active = true;
     p.loops = flags & crate::kv!(7 int) != 0;
-    p.synced = flags & crate::kv!(172 int) != 0;
-    p.blend_out_at_end = flags & crate::kv!(683 int) != 0;
-    p.remove_blended_out = flags & crate::kv!(647 int) != 0;
-    p.own_channel = flags & crate::kv!(620 int) != 0;
-    p.skip_weight = flags & crate::kv!(788 int) != 0;
+    p.synced = flags & crate::kv!(92 int) != 0;
+    p.blend_out_at_end = flags & crate::kv!(689 int) != 0;
+    p.remove_blended_out = flags & crate::kv!(653 int) != 0;
+    p.own_channel = flags & crate::kv!(626 int) != 0;
+    p.skip_weight = flags & crate::kv!(794 int) != 0;
 }
 
 pub fn mover_delta(clip: &Animation, flags: u32, from: f32, to: f32) -> [f32; 3] {
@@ -205,7 +205,7 @@ pub fn mover_delta(clip: &Animation, flags: u32, from: f32, to: f32) -> [f32; 3]
         [0, 1, 2].map(|k| a[k] + (b[k] - a[k]) * f)
     };
     let (a, b) = (at(from), at(to));
-    let bit = [crate::kv!(174 int), crate::kv!(175 int), crate::kv!(693 int)];
+    let bit = [crate::kv!(177 int), crate::kv!(178 int), crate::kv!(699 int)];
     [0, 1, 2].map(|k| if flags & bit[k] != 0 { b[k] - a[k] } else { 0.0 })
 }
 
@@ -223,11 +223,11 @@ pub struct RunAnim {
 
 impl RunAnim {
     pub fn hit_wall() -> RunAnim {
-        RunAnim { row: &(*HIT_WALL()), blend: crate::kv!(104), speed: 1.0, start: 0.0, kind: HIT_WALL_KIND(), leave_nicely: false, done: false, started: false }
+        RunAnim { row: &(*HIT_WALL()), blend: crate::kv!(108), speed: 1.0, start: 0.0, kind: HIT_WALL_KIND(), leave_nicely: false, done: false, started: false }
     }
 
     pub fn cower() -> RunAnim {
-        RunAnim { row: &(*DUCK_COWER()), blend: crate::kv!(104), speed: 1.0, start: 0.0, kind: COWER_KIND(), leave_nicely: false, done: false, started: false }
+        RunAnim { row: &(*DUCK_COWER()), blend: crate::kv!(108), speed: 1.0, start: 0.0, kind: COWER_KIND(), leave_nicely: false, done: false, started: false }
     }
 
     pub fn plain(row: &'static Row, blend: f32, speed: f32) -> RunAnim {
@@ -287,7 +287,7 @@ impl RunAnim {
             if let Some(p) = anims.mine_mut() {
                 p.player.own_channel = false;
                 p.player.remove_blended_out = true;
-                p.player.set_blend(if urgency == ABORT_IMMEDIATE { -crate::kv!(78) } else { -crate::kv!(104) });
+                p.player.set_blend(if urgency == ABORT_IMMEDIATE { -crate::kv!(78) } else { -crate::kv!(108) });
                 p.mine = false;
             }
             (self.started, self.done) = (false, true);
@@ -302,7 +302,7 @@ impl RunAnim {
         if let Some(p) = anims.mine_mut() {
             p.player.remove_blended_out = true;
             if !self.leave_nicely && p.player.weight > 0.0 && p.player.signed_blend_rate() >= 0.0 {
-                p.player.set_blend(-crate::kv!(104));
+                p.player.set_blend(-crate::kv!(108));
             }
             p.mine = false;
         }

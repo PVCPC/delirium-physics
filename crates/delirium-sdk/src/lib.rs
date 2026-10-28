@@ -198,7 +198,7 @@ pub unsafe extern "C" fn nm_world_set_boxes(w: *mut NmWorld, boxes: *const f32, 
     w.1 = f.chunks(13).enumerate().map(|(k, b)| {
         let c = Vec3::new(b[0], b[1], b[2]);
         let (rot, half, vel) = (Quat::from_xyzw(b[3], b[4], b[5], b[6]).normalize(), Vec3::new(b[7], b[8], b[9]), Vec3::new(b[10], b[11], b[12]));
-        Obstacle { id: k as i32, at: c, rot, centre: c, half, vel, spin: Vec3::ZERO, com: c, parts: &[], last: None }
+        Obstacle { id: k as i32, at: c, rot, centre: c, half, vel, spin: Vec3::ZERO, com: c, parts: &[], last: None, entity: 0, first: false, inv_mass: 0.0, force: Vec3::ZERO }
     }).collect();
     0
 }
@@ -364,6 +364,10 @@ pub unsafe extern "C" fn nm_agent_create(b: *const NmBuild, pos: *const f32, yaw
         fail(NM_E_ARG, "null build");
         return std::ptr::null_mut();
     };
+    if !delirium_data::kv::open() {
+        fail(NM_E_STATE, "nm_agent_create: call nm_unlock (or nm_init) with the game's fred.xrt first");
+        return std::ptr::null_mut();
+    }
     let pos = if pos.is_null() { Vec3::ZERO } else { unsafe { v3(pos) } };
     let frames = placed(b, pos, yaw);
     let agent = Agent::new(&b.build, Ragdoll::new(&b.build, &frames, Vec3::ZERO), Quat::from_rotation_z(yaw), seed);

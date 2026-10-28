@@ -70,6 +70,7 @@ NM_API NmBuild* nm_build_fit(const NmBuild* build, const float* joints);
 /* Part `i`'s frame in the build's pose (world, as dumped). */
 NM_API int32_t nm_build_part_frame(const NmBuild* b, int32_t i, float* pos, float* rot);
 /* An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. */
+/* Needs the numbers opened from the player's own game first (nm_init or nm_unlock), else NULL and NM_E_STATE. */
 NM_API NmAgent* nm_agent_create(const NmBuild* b, const float* pos, float yaw, float seed);
 NM_API void nm_agent_destroy(NmAgent* a);
 /* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. */

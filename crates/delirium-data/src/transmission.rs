@@ -57,7 +57,7 @@ impl Transmission {
     fn gear_change(&mut self, h: &Handling, c: Controls, s1: f32, s2: f32, drive_wheels: usize, grounded: usize,
                    dt: f32, now_ms: u32) {
         let thr = c.throttle;
-        let load = c.brake.abs().mul_add(crate::kv!(108), thr.abs());
+        let load = c.brake.abs().mul_add(crate::kv!(112), thr.abs());
         let f = sel(1.0 - load, load, 1.0).mul_add(crate::kv!(24), crate::kv!(70));
         if thr.abs() < crate::kv!(70) {
             self.flags &= !crate::kv!(1 int);
@@ -69,7 +69,7 @@ impl Transmission {
         let d = s1 - s2;
         let (slow, fast) = if s1 > 0.0 { (sel(d, s2, s1), sel(d, s1, s2)) } else { (sel(d, s1, s2), sel(d, s2, s1)) };
         if self.clutch < 1.0 {
-            let rate: f32 = if h.drive_inertia < 1.0 { crate::kv!(110) } else { crate::kv!(190) };
+            let rate: f32 = if h.drive_inertia < 1.0 { crate::kv!(114) } else { crate::kv!(193) };
             self.clutch = rate.mul_add(dt, self.clutch);
             if self.clutch > 1.0 {
                 self.clutch = 1.0;
@@ -92,7 +92,7 @@ impl Transmission {
         }
         let per = 1.0 / mfv;
         let g = self.gear;
-        let (to, flags) = if self.ratio(h, g) * per * slow > f * crate::kv!(958) {
+        let (to, flags) = if self.ratio(h, g) * per * slow > f * crate::kv!(962) {
             if g >= h.gears as i16 || thr <= 0.0 || grounded != drive_wheels || !can_up {
                 return;
             }
@@ -115,7 +115,7 @@ impl Transmission {
             self.throttle = 0.0;
             return 0.0;
         }
-        if !c.handbrake && self.clutch < crate::kv!(110) && self.gear > 1 {
+        if !c.handbrake && self.clutch < crate::kv!(114) && self.gear > 1 {
             (self.throttle, thr) = (0.0, 0.0);
         }
         let clutch = if c.handbrake {
@@ -153,8 +153,8 @@ impl Transmission {
             return pushed;
         }
         if self.revs > 1.0 {
-            (self.throttle, self.revs) = (self.throttle * 0.0, crate::kv!(108));
-            thr *= crate::kv!(959);
+            (self.throttle, self.revs) = (self.throttle * 0.0, crate::kv!(112));
+            thr *= crate::kv!(963);
         } else if ratio / h.max_flat_velocity * s2 > 1.0 {
             thr = 0.0;
         }
@@ -165,9 +165,9 @@ impl Transmission {
         }
         let k = clutch * 2.0;
         let force = thr.abs() * ratio * sel(1.0 - k, k, 1.0) * h.drive_force * (self.revs / target) / drive_wheels as f32;
-        if c.flags_f80 & crate::kv!(960 int) != 0 {
+        if c.flags_f80 & crate::kv!(964 int) != 0 {
             force * crate::kv!(12)
-        } else if c.flags_f80 & crate::kv!(961 int) != 0 {
+        } else if c.flags_f80 & crate::kv!(965 int) != 0 {
             force * crate::kv!(74)
         } else {
             force

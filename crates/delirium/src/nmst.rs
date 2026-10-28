@@ -34,7 +34,7 @@ impl SpineTwist {
         (self.active, self.twist, self.twisting) = (true, 0.0, true);
         for (k, j) in (*SPINE()).into_iter().enumerate() {
             let l = ch.limits(j);
-            let f = if k == 0 { delirium_data::kv!(516) } else { delirium_data::kv!(63 f32) + 1.0 };
+            let f = if k == 0 { delirium_data::kv!(518) } else { delirium_data::kv!(63 f32) + 1.0 };
             self.range[k] = (l[delirium_data::kv!(1 int)] * f, l[delirium_data::kv!(2 int)] * f);
         }
         let r = &self.range;
@@ -57,7 +57,7 @@ impl SpineTwist {
         let t = (self.vel - p.v).mul_add(Vec3::splat(delirium_data::kv!(73)), self.pos);
         let n = crate::rigid::nrm(t - p.m.d);
         self.twist = crate::nmdbm::atan2(p.m.b.vd(n), -p.m.c.vd(n));
-        let lim = delirium_data::kv!(252);
+        let lim = delirium_data::kv!(255);
         if !(self.twist < lim && self.twist > -lim) && !self.always {
             self.twisting = false;
             return;
