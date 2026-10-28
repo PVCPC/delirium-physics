@@ -85,7 +85,7 @@ Choose reactions under **Reactions** in the left dock. **Scene** contains locati
 
 ## For developers
 
-The Playroom is one application built on Delirium. For a mod or another game, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project. The SDK needs the player's own GTA IV too: call `nm_unlock` (or `nm_init`) with the game's character file before creating a character; until then `nm_agent_create` fails.
+The Playroom is one application built on Delirium. For a mod, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project. The SDK needs the player's own GTA IV too: call `nm_unlock` (or `nm_init`) with the game's character file before creating a character; until then `nm_agent_create` fails.
 
 - `crates/delirium`: the engine
 - `crates/delirium-sdk`: the C API (`include/delirium_physics.h`) and bindings for C++, C#, Unity and Python, with examples
