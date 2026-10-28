@@ -11,7 +11,8 @@
   <img src="docs/weapons.gif" alt="Weapons: pistol to knife" width="260">
 </p>
 <p align="center">
-  <img src="docs/skate.gif" alt="Homer skating, bailing into a portal" width="560">
+  <img src="docs/grab.gif" alt="Grabbing Homer by different parts with the mouse and dragging him around" width="400">
+  <img src="docs/skate.gif" alt="Homer skating, bailing into a portal" width="400">
 </p>
 
 # Delirium Physics
