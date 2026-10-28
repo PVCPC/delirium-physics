@@ -24,7 +24,7 @@ Delirium is a reverse-engineered port of Euphoria, NaturalMotion's ragdoll and c
 ## Releases and source code
 
 - **Want to try it?** The files in [Releases](../../releases) provide the compiled **Delirium Playroom**, a playable demonstration of the engine. The Windows release launcher downloads the ready-built room; you don't need to compile the repository.
-- **Want to use it in a mod?** This repository contains the engine source, SDK, language bindings, examples and Playroom source needed to build your own integration. Delirium is meant for mods, and every player needs their own GTA IV: the engine reads its numbers from it. You still need to connect it to the target game's character, animation, collision and update systems; it isn't a drop-in mod for every game.
+- **Want to use it in a mod?** This repository contains the engine source, SDK, language bindings, examples and Playroom source needed to build your own integration. Delirium is meant for mods, and every player needs their own GTA IV: the engine reads its numbers from it. **A mod built with Delirium has the same requirement: each of its players must point it at their own GTA IV.** Don't ship GTA IV's files, or numbers taken out of them, with your mod. You still need to connect it to the target game's character, animation, collision and update systems; it isn't a drop-in mod for every game.
 
 ## What's in it
 
