@@ -1,10 +1,12 @@
-// A ped stands, then is shot. usage: Example <fred.xrt> <build.txt> [taskparams.txt], delirium_physics.dll beside it or on PATH.
+// A ped stands, then is shot. usage: Example <fred.xrt> <build.txt> [taskparams.txt], delirium_physics.dll beside it or on PATH,
+// GTAIV_EXE your PC GTAIV.exe (the numbers are read from it).
 using System;
 using Delirium;
 using static Delirium.Native;
 
 static void Check(int r) { if (r < 0) throw new Exception($"delirium_physics {r}: {LastError()}"); }
 
+if (Environment.GetEnvironmentVariable("GTAIV_EXE") is string exe) Check(nm_unlock(exe));
 Check(nm_init(args[0]));
 if (args.Length > 2) Check(nm_load_task_params(args[2]));
 IntPtr build = nm_build_load(args[1]);

@@ -15,6 +15,8 @@ namespace Delirium
     {
         public enum Mode { Lead, Follow }
 
+        [Tooltip("The player's own PC game's GTAIV.exe, or its folder (absolute): the numbers are read from it.")]
+        public string gameExePath = "";
         [Tooltip("the game's naturalmotion/fred.xrt (absolute, or under StreamingAssets).")]
         public string xrtPath = "fred.xrt";
         [Tooltip("A character build dump (the viewer's NM_DUMP).")]
@@ -66,6 +68,7 @@ namespace Delirium
 
         void Start()
         {
+            if (!string.IsNullOrEmpty(gameExePath)) Check(nm_unlock(Find(gameExePath)));
             Check(nm_init(Find(xrtPath)));
             if (taskParamsPath != "") Check(nm_load_task_params(Find(taskParamsPath)));
             build = nm_build_load(Find(buildPath));

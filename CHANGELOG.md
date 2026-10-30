@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.6
+
+### Changed
+- The engine's numbers are now read straight from your own game's program: the PC version's GTAIV.exe (Steam) or
+  default.xex on the Xbox 360 disc (its key is fetched from the internet the first time). The repo holds none of them,
+  and the physics is unchanged, bit for bit, on both.
+- The SDK's `nm_unlock` takes that GTAIV.exe or default.xex (or the folder either is in); call it first.
+- The PS3 version isn't supported for now.
+
 ## 0.2.5
 
 ### Changed

@@ -40,8 +40,8 @@ NM_API int32_t nm_last_error(char* buf, int32_t len);
 NM_API int32_t nm_init_memory(const uint8_t* xrt, int32_t len);
 /* nm_init_memory from a file (the game's `naturalmotion/fred.xrt`). */
 NM_API int32_t nm_init(const char* xrt_path);
-/* Opens the numbers (they unlock from the game's `naturalmotion/fred.xrt`) without loading it as the character: call before nm_init_character. nm_init does this itself. */
-NM_API int32_t nm_unlock(const char* xrt_path);
+/* Opens the numbers: they're read from the player's own PC game, `exe_path` its GTAIV.exe (or the folder it's in). Call first, before nm_init or nm_init_character. */
+NM_API int32_t nm_unlock(const char* exe_path);
 /* The tasks' tuning (the game's `taskparams.txt`); without it, NM's defaults. */
 NM_API int32_t nm_load_task_params(const char* path);
 /* NM's 21 parts' names, in part order (Buttocks .. Hand_Right). */
@@ -70,7 +70,6 @@ NM_API NmBuild* nm_build_fit(const NmBuild* build, const float* joints);
 /* Part `i`'s frame in the build's pose (world, as dumped). */
 NM_API int32_t nm_build_part_frame(const NmBuild* b, int32_t i, float* pos, float* rot);
 /* An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. */
-/* Needs the numbers opened from the player's own game first (nm_init or nm_unlock), else NULL and NM_E_STATE. */
 NM_API NmAgent* nm_agent_create(const NmBuild* b, const float* pos, float yaw, float seed);
 NM_API void nm_agent_destroy(NmAgent* a);
 /* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. */

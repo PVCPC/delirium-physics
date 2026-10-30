@@ -30,7 +30,7 @@ pub fn load(nm: usize, d: &[u8]) {
 }
 
 pub fn set(nm: usize, joints: Vec<nm_asset::Joint>, parts: Vec<[[f32; 3]; 4]>, masses: Vec<f32>, pairs: Vec<(usize, usize)>) {
-    assert!(delirium_data::kv::unlock(&joints), "this game copy's NM character file isn't one the numbers unlock from");
+    assert!(delirium_data::kv::open(), "the numbers aren't open: they're read from your own game's program first (kv::unlock)");
     let _ = ASSET[nm].set(joints);
     let _ = PARTS[nm].set(parts);
     let _ = MASSES[nm].set(masses);

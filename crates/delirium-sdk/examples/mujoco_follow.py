@@ -2,7 +2,7 @@
 60 Hz step and returns per-part forces and torques, which MuJoCo applies while it steps. The ped stands under
 bodyBalance, then takes a chest hit.
 
-usage: DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python mujoco_follow.py <fred.xrt> <build.txt> [taskparams.txt] [--view]
+usage: GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python mujoco_follow.py <fred.xrt> <build.txt> [taskparams.txt] [--view]
 """
 import ctypes, math, os, sys
 import numpy as np
@@ -15,6 +15,7 @@ F3, F4 = ctypes.c_float * 3, ctypes.c_float * 4
 SUB = 4  # MuJoCo steps per NM step (1/240 s each)
 
 args = [a for a in sys.argv[1:] if not a.startswith('--')]
+if os.environ.get('GTAIV_EXE'): check(lib.nm_unlock(os.environ['GTAIV_EXE'].encode()))
 check(lib.nm_init(args[0].encode()))
 if len(args) > 2:
     check(lib.nm_load_task_params(args[2].encode()))

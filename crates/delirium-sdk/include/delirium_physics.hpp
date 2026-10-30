@@ -37,6 +37,7 @@ template <class F> std::string text(F f) {
     return s;
 }
 
+inline void unlock(const std::string& game_exe) { check(nm_unlock(game_exe.c_str())); }
 inline void init(const std::string& xrt) { check(nm_init(xrt.c_str())); }
 inline void load_task_params(const std::string& path) { check(nm_load_task_params(path.c_str())); }
 /// Surface row `material` (a mesh triangle's byte) takes this friction and elasticity for every agent; ice ~0.05.

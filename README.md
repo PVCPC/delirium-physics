@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **You need your own GTA IV for Xbox 360, PS3 or PC (not included).** Both the Playroom and the SDK need it: the engine's numbers, the character, animations and settings are read from your own copy. Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it). A PS3 disc image straight off the disc is fine: its key is looked up online (or put its .dkey file beside it). On PS3 everything works except the animations for now: get-ups and the Hero's moves don't play yet, so Xbox 360 or PC is best. No game files come with it, and neither the Playroom nor the SDK runs without them. For integrating the engine into another game, see [For developers](#for-developers).
+> **You need your own GTA IV for PC (Steam) or Xbox 360 (not included).** Both the Playroom and the SDK need it: the engine's numbers are read from your own copy's program (the PC version's GTAIV.exe, or default.xex on the Xbox 360 disc), and the character, animations and settings from your own game files. Use the Xbox 360 disc image (.iso) or the PC game folder (the one with GTAIV.exe in it); the disc's key is fetched from the internet the first time. The PS3 version isn't supported for now. No game files or game numbers come with it, and neither the Playroom nor the SDK runs without them. For integrating the engine into another game, see [For developers](#for-developers).
 
 <p align="center">
   <img src="docs/montage.gif" alt="Taser, skeleton, damage, Homers on fire, splash, coloured light, 50 Homers" width="480">
@@ -45,16 +45,16 @@ You need your own copy of the game: Delirium reads the character, animations and
 
 **Windows**
 1. Download `delirium-room.bat` from the latest [release](../../releases).
-2. Drag your disc image (`.iso`) onto it. Or just double-click it, then drop the `.iso` or your game folder on the window when the room asks.
+2. Drag your Xbox 360 disc image (`.iso`) or PC game folder (the one with `GTAIV.exe` in it) onto it. Or just double-click it, then drop it on the window when the room asks.
 3. The first run downloads the ready-built room (no install, no build) into a folder beside it. After that it starts in seconds, and it remembers your game.
 
-**Safe Mode**: if the room is slow, won't start, or crashes, use `delirium-room-safe.bat` instead (same folder, same way: drag your `.iso` onto it). It starts with every graphics setting at its lowest and leaves your saved settings alone until you change one in the menu. On macOS and Linux, `delirium-room-safe.command` (or run `delirium-room --safe`).
+**Safe Mode**: if the room is slow, won't start, or crashes, use `delirium-room-safe.bat` instead (same folder, same way: drag your game onto it). It starts with every graphics setting at its lowest and leaves your saved settings alone until you change one in the menu. On macOS and Linux, `delirium-room-safe.command` (or run `delirium-room --safe`).
 
 Building it yourself: download this repo and run its `delirium-room.bat`. That offers to install Rust and Microsoft's C++ build tools (free, a few GB) and builds the room in a few minutes.
 
 **Portal mode (optional bonus)**: install Portal 2, then open **Interact → Portal 2 · bonus** inside the running room. Paste your Portal 2 installation folder and click **Link folder**, or click **Find Steam install**. The section shows the linked folder and lets you turn the bonus on or off. The portal gun is then in the weapons: left click shoots blue, right click shoots orange. Portal 2 isn't part of startup setup and isn't needed for the base room. No Portal 2 files are included; they're read from your install. The portal maths comes from **Stink-O**'s [Portal 2 Rust Engine](https://github.com/Stink-O/Portal2-rust-engine) (MIT; see [CREDITS](CREDITS.md)).
 
-**macOS / Linux**: download `delirium-room-<version>-macos-arm64.zip` (Apple Silicon) or `delirium-room-<version>-linux-x86_64.tar.gz` from [Releases](https://github.com/PVCPC/delirium-physics/releases/latest), unpack it and run `delirium-room` with your game's .iso or folder. On a Mac it isn't signed: run `xattr -dr com.apple.quarantine .` in its folder first. Or build it yourself: run `delirium-room.command` (install Rust first from [rustup.rs](https://rustup.rs)).
+**macOS / Linux**: download `delirium-room-<version>-macos-arm64.zip` (Apple Silicon) or `delirium-room-<version>-linux-x86_64.tar.gz` from [Releases](https://github.com/PVCPC/delirium-physics/releases/latest), unpack it and run `delirium-room` with your Xbox 360 `.iso` or PC GTA IV game folder. On a Mac it isn't signed: run `xattr -dr com.apple.quarantine .` in its folder first. Or build it yourself: run `delirium-room.command` (install Rust first from [rustup.rs](https://rustup.rs)).
 
 ## Controls
 
@@ -89,7 +89,7 @@ Choose reactions under **Reactions** in the left dock. **Scene** contains locati
 
 ## For developers
 
-The Playroom is one application built on Delirium. For a mod, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project. The SDK needs the player's own GTA IV too: call `nm_unlock` (or `nm_init`) with the game's character file before creating a character; until then `nm_agent_create` fails.
+The Playroom is one application built on Delirium. For a mod, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project. The SDK needs the player's own PC GTA IV too: call `nm_unlock` with their `GTAIV.exe` or the Xbox 360 disc's `default.xex` (or the folder either is in) first; until then `nm_init` and `nm_agent_create` fail. The examples read it from the `GTAIV_EXE` environment variable.
 
 - `crates/delirium`: the engine
 - `crates/delirium-sdk`: the C API (`include/delirium_physics.h`) and bindings for C++, C#, Unity and Python, with examples

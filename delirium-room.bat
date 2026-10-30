@@ -1,5 +1,5 @@
 @echo off
-rem Delirium room. Drag your game's disc image (.iso) onto this file, or pick the game folder when the room asks.
+rem Delirium room. Drag your game's disc image (.iso) or its PC game folder (the one with GTAIV.exe) onto this file, or pick it when the room asks.
 setlocal
 cd /d "%~dp0"
 rem On its own (downloaded from the release page): fetch this version's ready-built room beside it, no build needed.

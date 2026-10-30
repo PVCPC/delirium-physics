@@ -35,9 +35,9 @@ namespace Delirium
         /// <summary>nm_init_memory from a file (the game's `naturalmotion/fred.xrt`).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_init([MarshalAs(UnmanagedType.LPUTF8Str)] string xrt_path);
-        /// <summary>Opens the numbers (they unlock from the game's `naturalmotion/fred.xrt`) without loading it as the character: call before nm_init_character. nm_init does this itself.</summary>
+        /// <summary>Opens the numbers: they're read from the player's own PC game, `exe_path` its GTAIV.exe (or the folder it's in). Call first, before nm_init or nm_init_character.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int nm_unlock([MarshalAs(UnmanagedType.LPUTF8Str)] string xrt_path);
+        public static extern int nm_unlock([MarshalAs(UnmanagedType.LPUTF8Str)] string exe_path);
         /// <summary>The tasks' tuning (the game's `taskparams.txt`); without it, NM's defaults.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_load_task_params([MarshalAs(UnmanagedType.LPUTF8Str)] string path);

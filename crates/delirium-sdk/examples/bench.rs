@@ -6,6 +6,9 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     let c = |s: &str| CString::new(s).unwrap();
     unsafe {
+        if let Ok(e) = std::env::var("GTAIV_EXE") {
+            assert_eq!(nm_unlock(c(&e).as_ptr()), 0);
+        }
         assert!(nm_init(c(&a[1]).as_ptr()) >= 0);
         if let Some(tp) = a.get(3) {
             nm_load_task_params(c(tp).as_ptr());

@@ -5,6 +5,36 @@ const FILE_FORMAT_INFO: u32 = 0x0000_03ff;
 const IMAGE_BASE_ADDRESS: u32 = 0x0001_0201;
 const DELTA_PATCH_DESCRIPTOR: u32 = 0x0000_05ff;
 
+const KEY_SRC: &str = "https://raw.githubusercontent.com/xenia-project/xenia/95a5c3ee250f80c3b9d139658649d9ffb6db3eec/src/xenia/cpu/xex_module.cc";
+
+pub fn config_dir() -> std::path::PathBuf {
+    std::env::var_os("APPDATA").map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))).unwrap_or_default().join("delirium")
+}
+
+pub fn fetched_key() -> Result<[u8; 16], String> {
+    let dir = config_dir();
+    if let Some(k) = std::fs::read(dir.join("xex.key")).ok().and_then(|b| <[u8; 16]>::try_from(b).ok()) {
+        return Ok(k);
+    }
+    let fail = "couldn't get the key that opens default.xex (it's fetched from the internet the first time: check the connection)";
+    let out = std::process::Command::new("curl").args(["-sSfL", KEY_SRC]).output().map_err(|_| fail)?;
+    let src = String::from_utf8_lossy(&out.stdout);
+    let list = src.split("xe_xex2_retail_key[16] = {").nth(1).and_then(|s| s.split('}').next()).ok_or(fail)?;
+    let k: [u8; 16] = list.split(',').filter_map(|h| u8::from_str_radix(h.trim().trim_start_matches("0x").trim_start_matches("0X"), 16).ok())
+        .collect::<Vec<_>>().try_into().map_err(|_| fail)?;
+    let _ = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join("xex.key"), k));
+    Ok(k)
+}
+
+pub fn program(path: &std::path::Path) -> Result<Vec<u8>, String> {
+    let b = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if !b.starts_with(b"XEX2") {
+        return Ok(b);
+    }
+    XexImage::parse_with_key(&b, &fetched_key()?).map(|x| x.image).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 #[derive(Debug)]
 pub struct XexImage {
     pub base_address: u32,

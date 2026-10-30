@@ -160,7 +160,7 @@ impl Character {
 pub unsafe extern "C" fn nm_init_character(json: *const c_char) -> i32 {
     let Some(t) = (unsafe { text(json) }) else { return fail(NM_E_ARG, "nm_init_character: no text") };
     if !delirium_data::kv::open() {
-        return fail(NM_E_STATE, "nm_init_character: call nm_unlock with the game's fred.xrt first");
+        return fail(NM_E_STATE, "nm_init_character: call nm_unlock with your own GTAIV.exe first (the PC game's)");
     }
     let c = match Character::parse(t) {
         Ok(c) => c,

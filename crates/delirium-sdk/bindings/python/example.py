@@ -1,10 +1,11 @@
 """A ped stands, is shot in the chest, staggers. usage:
-   DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python example.py <fred.xrt> <build.txt> [taskparams.txt]"""
-import ctypes, sys
+   GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python example.py <fred.xrt> <build.txt> [taskparams.txt]"""
+import ctypes, os, sys
 from delirium_physics import lib, vec, text, check, NM_MODE_LEAD
 from ctypes import c_float
 
 xrt, build_path = sys.argv[1], sys.argv[2]
+if os.environ.get('GTAIV_EXE'): check(lib.nm_unlock(os.environ['GTAIV_EXE'].encode()))
 check(lib.nm_init(xrt.encode()))
 if len(sys.argv) > 3:
     check(lib.nm_load_task_params(sys.argv[3].encode()))

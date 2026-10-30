@@ -94,8 +94,8 @@ pub unsafe extern "C" fn nm_init_memory(xrt: *const u8, len: i32) -> i32 {
     let Ok(asset) = std::panic::catch_unwind(|| delirium_data::nm_asset::read(d)) else {
         return fail(NM_E_PARSE, "nm_init: not an NM character file");
     };
-    if !delirium_data::kv::unlock(&asset) {
-        return fail(NM_E_STATE, "nm_init: this fred.xrt isn't one the numbers unlock from");
+    if !delirium_data::kv::open() {
+        return fail(NM_E_STATE, "nm_init: call nm_unlock with your own GTAIV.exe first (the PC game's)");
     }
     let fresh = delirium::nmrs::ASSET[delirium::nmrs::HOMER].get().is_none();
     drop(asset);
@@ -113,24 +113,24 @@ pub unsafe extern "C" fn nm_init(xrt_path: *const c_char) -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn nm_unlock(xrt_path: *const c_char) -> i32 {
-    let Some(p) = (unsafe { text(xrt_path) }) else { return fail(NM_E_ARG, "nm_unlock: no path") };
-    let d = match std::fs::read(p) {
-        Ok(d) => d,
-        Err(e) => return fail(NM_E_IO, format!("nm_unlock: {p}: {e}")),
+pub unsafe extern "C" fn nm_unlock(exe_path: *const c_char) -> i32 {
+    let Some(p) = (unsafe { text(exe_path) }) else { return fail(NM_E_ARG, "nm_unlock: no path") };
+    let path = std::path::Path::new(p);
+    let file = if !path.is_dir() { path.into() } else {
+        ["GTAIV.exe", "default.xex"].iter().map(|f| path.join(f)).find(|f| f.is_file()).unwrap_or_else(|| path.join("GTAIV.exe"))
     };
-    match std::panic::catch_unwind(|| delirium_data::nm_asset::read(&d)) {
-        Ok(j) if delirium_data::kv::unlock(&j) => 0,
-        Ok(_) => fail(NM_E_STATE, format!("nm_unlock: {p} isn't one the numbers unlock from")),
-        Err(_) => fail(NM_E_PARSE, format!("nm_unlock: {p}: not an NM character file")),
-    }
+    let d = match delirium_data::xex::program(&file) {
+        Ok(d) => d,
+        Err(e) => return fail(NM_E_IO, format!("nm_unlock: {e}")),
+    };
+    if delirium_data::kv::unlock(&d) { 0 } else { fail(NM_E_STATE, format!("nm_unlock: {p} isn't a version the numbers are read from (the Steam GTAIV.exe or the disc's default.xex)")) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_load_task_params(path: *const c_char) -> i32 {
     let Some(p) = (unsafe { text(path) }) else { return fail(NM_E_ARG, "nm_load_task_params: no path") };
     if !delirium_data::kv::open() {
-        return fail(NM_E_STATE, "nm_load_task_params: call nm_init (or nm_unlock) first: the numbers unlock from the game's fred.xrt");
+        return fail(NM_E_STATE, "nm_load_task_params: call nm_unlock with your own GTAIV.exe first (the PC game's)");
     }
     match std::fs::read_to_string(p) {
         Ok(t) => {
@@ -365,7 +365,7 @@ pub unsafe extern "C" fn nm_agent_create(b: *const NmBuild, pos: *const f32, yaw
         return std::ptr::null_mut();
     };
     if !delirium_data::kv::open() {
-        fail(NM_E_STATE, "nm_agent_create: call nm_unlock (or nm_init) with the game's fred.xrt first");
+        fail(NM_E_STATE, "nm_agent_create: call nm_unlock with your own GTAIV.exe first (the PC game's)");
         return std::ptr::null_mut();
     }
     let pos = if pos.is_null() { Vec3::ZERO } else { unsafe { v3(pos) } };

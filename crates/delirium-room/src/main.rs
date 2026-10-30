@@ -4584,9 +4584,13 @@ fn main() {
         save_game(&f);
         f
     }).or_else(saved_game);
-    if let Some(d) = game_dir.as_deref().and_then(|g| archive(g, "xbox360.rpf", &["data/naturalmotion/fred.xrt"]).pop().flatten()) {
-        delirium_data::kv::unlock(&delirium_data::nm_asset::read(&d));
-    }
+    let game_dir = game_dir.filter(|g| {
+        !delirium_data::kv::FROM_GAME || numbers(g) || {
+            eprintln!("{g}: this copy isn't a version Delirium reads its numbers from (a disc's key is fetched from the internet \
+                the first time). You need your own GTA IV for PC (Steam) or Xbox 360 (not included)");
+            false
+        }
+    });
     if let (Some(g), true) = (game_dir.as_deref(), a.iter().any(|x| x == "--find-stairs")) {
         let meshes = map::load(g, Vec2::ZERO, 0.0).unwrap_or_else(|e| panic!("map: {e}"));
         for (c, n, lo, hi) in map::stairs(&meshes).iter().take(60) {
@@ -4739,8 +4743,17 @@ fn saved_game() -> Option<String> {
 
 fn is_game(dir: &str) -> bool {
     let d = std::path::Path::new(dir);
+    if delirium_data::kv::FROM_GAME {
+        return (d.join("pc").is_dir() || d.join("default.xex").is_file()) && numbers(dir);
+    }
     d.join("default.xex").is_file() || d.join("ps3.rpf").is_file() && (d.join("eboot.elf").is_file() || d.join("EBOOT.BIN").is_file())
         || d.join("GTAIV.exe").is_file() && d.join("pc").is_dir()
+}
+
+fn numbers(dir: &str) -> bool {
+    let d = std::path::Path::new(dir);
+    ["GTAIV.exe", "default.xex"].iter().map(|f| d.join(f)).find(|p| p.is_file())
+        .and_then(|p| delirium_data::xex::program(&p).ok()).is_some_and(|b| delirium_data::kv::unlock(&b))
 }
 
 fn is_iso(path: &str) -> bool {
@@ -4921,6 +4934,13 @@ fn pick_game(args: &[String]) -> ! {
                     ui.vertical_centered(|ui| {
                         let big = if pick.hover { "Let go to use it" } else { "Drag your game here" };
                         ui.label(egui::RichText::new(big).size(28.0).strong().color(line));
+                        if delirium_data::kv::FROM_GAME {
+                            ui.label(egui::RichText::new("You need your own GTA IV for PC (Steam) or Xbox 360 (not included)").strong());
+                            ui.label("Use its disc image (.iso), or the PC game folder (the one with GTAIV.exe in it).");
+                            ui.label(egui::RichText::new("The physics numbers are read from it; a disc's key is fetched from the internet the first time. \
+                                The PS3 version isn't supported for now.").small());
+                            return;
+                        }
                         ui.label(egui::RichText::new("You need your own GTA IV for Xbox 360, PS3 or PC (not included)").strong());
                         ui.label("Use the Xbox 360 or PS3 disc image (.iso), or the PC game folder (the one with GTAIV.exe in it).");
                         ui.label(egui::RichText::new("A PS3 disc image straight off the disc is fine: its key is looked up online.").small());
@@ -4957,11 +4977,19 @@ fn pick_game(args: &[String]) -> ! {
                 let _ = PICKED.set(g);
                 exit.write(AppExit::Success);
             } else {
-                pick.err = format!("That isn't it: {g}\nDrag your game .iso file (or its game folder).");
+                pick.err = if delirium_data::kv::FROM_GAME && ["GTAIV.exe", "default.xex"].iter().any(|f| std::path::Path::new(&g).join(f).is_file()) {
+                    format!("That copy isn't a version Delirium reads its numbers from: {g}\nYou need your own GTA IV for PC (Steam) or Xbox 360 (not included)")
+                } else {
+                    format!("That isn't it: {g}\nDrag your game .iso file (or its game folder).")
+                };
             }
         }
         let done = pick.copy.as_ref().and_then(|c| c.lock().unwrap().1.take());
         match done {
+            Some(Ok(f)) if !is_game(&f) => {
+                pick.copy = None;
+                pick.err = "That disc isn't a version Delirium reads its numbers from (its key is fetched from the internet the first time).\nYou need your own GTA IV for PC (Steam) or Xbox 360 (not included)".into();
+            }
             Some(Ok(f)) => {
                 save_game(&f);
                 let _ = PICKED.set(f);

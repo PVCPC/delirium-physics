@@ -67,27 +67,7 @@ fn ps3_program(dir: &Path) -> Result<Vec<u8>, String> {
     Ok(elf)
 }
 
-const XEX_KEY_SRC: &str = "https://raw.githubusercontent.com/xenia-project/xenia/95a5c3ee250f80c3b9d139658649d9ffb6db3eec/src/xenia/cpu/xex_module.cc";
-
-pub fn config_dir() -> std::path::PathBuf {
-    std::env::var_os("APPDATA").map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))).unwrap_or_default().join("delirium")
-}
-
-fn xex_key() -> Result<[u8; 16], String> {
-    let dir = config_dir();
-    if let Some(k) = std::fs::read(dir.join("xex.key")).ok().and_then(|b| <[u8; 16]>::try_from(b).ok()) {
-        return Ok(k);
-    }
-    let fail = "couldn't get the key that opens default.xex (it's fetched from the internet the first time: check the connection)";
-    let out = std::process::Command::new("curl").args(["-sSfL", XEX_KEY_SRC]).output().map_err(|_| fail)?;
-    let src = String::from_utf8_lossy(&out.stdout);
-    let list = src.split("xe_xex2_retail_key[16] = {").nth(1).and_then(|s| s.split('}').next()).ok_or(fail)?;
-    let k: [u8; 16] = list.split(',').filter_map(|h| u8::from_str_radix(h.trim().trim_start_matches("0x").trim_start_matches("0X"), delirium_data::kv!(51 int)).ok())
-        .collect::<Vec<_>>().try_into().map_err(|_| fail)?;
-    let _ = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join("xex.key"), k));
-    Ok(k)
-}
+pub use delirium_data::xex::{config_dir, fetched_key as xex_key};
 
 static PS3: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
