@@ -8,7 +8,25 @@ use crate::nmrs::{HIP, KNEE, NECK, SPINE};
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 4] = [
+pub static MESSAGES: [Message; 5] = [
+    Message { name: "meleeReact", params: &[
+        Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "where the blow landed, world (zero)" },
+        Param { name: "hitNormal", kind: Kind::Vec3, used: true, doc: "the body's surface normal there, outwards; the blow pushes against it (zero: no push or snap)" },
+        Param { name: "hitPart", kind: Kind::Int, used: true, doc: "the part hit, 0..20 (-1: none)" },
+        Param { name: "csLooseness", kind: Kind::Float, used: true, doc: "how loose the upper body goes, 0..1 (0.5)" },
+        Param { name: "csPeriod", kind: Kind::Float, used: true, doc: "s it stays loose (0.3)" },
+        Param { name: "Lean", kind: Kind::Float, used: true, doc: "push leaning him away from the blow, N (80)" },
+        Param { name: "leanPeriod", kind: Kind::Float, used: true, doc: "s of that push (0.25)" },
+        Param { name: "Flinch", kind: Kind::Bool, used: true, doc: "flinch: a small forward hunch (true)" },
+        Param { name: "flinchPeriod", kind: Kind::Float, used: true, doc: "s of the flinch (0.6)" },
+        Param { name: "armsType", kind: Kind::Int, used: true, doc: "0: arms as they are, 1: hands up to guard the face while flinching (1)" },
+        Param { name: "snap", kind: Kind::Bool, used: true, doc: "snap the hit part's joints along the blow (true)" },
+        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "that snap's size, as shotSnap's (0.3)" },
+        Param { name: "rfw", kind: Kind::Bool, used: true, doc: "reach for the spot hit afterwards (true)" },
+        Param { name: "rfwDelay", kind: Kind::Float, used: true, doc: "s before reaching (0.3)" },
+        Param { name: "rfwPeriod", kind: Kind::Float, used: true, doc: "s of reaching (1)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "upper body stiffness (10)" },
+    ] },
     Message { name: "shotFallToKnees", params: &[
         Param { name: "ftkBalanceTime", kind: Kind::Float, used: true, doc: "s he keeps balancing before sinking (0.1)" },
         Param { name: "ftkBendRate", kind: Kind::Float, used: true, doc: "how fast knees and hips bend, rad/s (3)" },
@@ -88,6 +106,7 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "shotSnap" => Some(Snap::new(p).map(|e| Box::new(e) as _)),
         "shotSpin" => Some(Spin::new(p).map(|e| Box::new(e) as _)),
         "shotFallToKnees" => Some(Knees::new(p).map(|e| Box::new(e) as _)),
+        "meleeReact" => Some(Melee::new(p).map(|e| Box::new(e) as _)),
         _ => None,
     }
 }
@@ -526,5 +545,101 @@ impl Extra for Knees {
 
     fn done(&self) -> bool {
         self.phase == 3 && self.since > 1.0
+    }
+}
+
+impl Snap {
+    /// A snap at a hit part along `dir`, with Delirium's other defaults (used by meleeReact).
+    fn at(mag: f32, part: i32, dir: Vec3) -> Snap {
+        Snap { mag, delay: 0.0, duration: 0.0, interval: 0.05, ratio: 0.5, random: 0.25, mult: [1.0; 3], moving: 1.0,
+               use_dir: true, dir, part, hip: 0, limbs: [false, false, false, false, true, true], phased: true,
+               t: 0.0, axis: None, kicked: 0.0, countered: 0.0 }
+    }
+}
+
+/// RDR2's melee reaction, built like its shot from smaller pieces: the upper body goes loose for csPeriod (by
+/// csLooseness), a push leans him away from the blow for leanPeriod, he flinches (a small forward hunch, and with
+/// armsType 1 both hands come up in front of his face) for flinchPeriod, the hit part's joints snap along the blow,
+/// and after rfwDelay one hand reaches for the spot hit for rfwPeriod.
+pub struct Melee {
+    point: Vec3, push: Vec3, part: i32, loose: f32, loose_time: f32, lean: f32, lean_time: f32, flinch: bool,
+    flinch_time: f32, guard: bool, rfw: bool, rfw_delay: f32, rfw_time: f32, stiffness: f32,
+    snap: Option<Snap>, t: f32, offset: Option<Vec3>,
+}
+
+impl Melee {
+    fn new(p: &mut P) -> Result<Melee, Error> {
+        let point = p.v("hitPoint", Vec3::ZERO)?;
+        let normal = p.v("hitNormal", Vec3::ZERO)?;
+        let part = p.i("hitPart", -1)?;
+        let (snap, snap_mag) = (p.b("snap", true)?, p.f("snapMag", 0.3)?);
+        let push = -normal.normalize_or_zero();
+        Ok(Melee {
+            point, push, part, loose: p.f("csLooseness", 0.5)?.clamp(0.0, 1.0), loose_time: p.f("csPeriod", 0.3)?.max(0.0),
+            lean: p.f("Lean", 80.0)?, lean_time: p.f("leanPeriod", 0.25)?.max(0.0),
+            flinch: p.b("Flinch", true)?, flinch_time: p.f("flinchPeriod", 0.6)?.max(0.0), guard: p.i("armsType", 1)? == 1,
+            rfw: p.b("rfw", true)?, rfw_delay: p.f("rfwDelay", 0.3)?.max(0.0), rfw_time: p.f("rfwPeriod", 1.0)?.max(0.0),
+            stiffness: p.f("stiffness", 10.0)?,
+            snap: (snap && push != Vec3::ZERO).then(|| Snap::at(snap_mag, part, push)), t: 0.0, offset: None,
+        })
+    }
+}
+
+impl Extra for Melee {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+        let fwd = up.cross(side).normalize_or(Vec3::Y);
+        // the spot hit, carried along with the part it is on
+        let part = (0..21).contains(&self.part).then_some(self.part as usize);
+        let (point, part_pos) = (self.point, part.map(|k| c.b.part(k).m.d));
+        let offset = *self.offset.get_or_insert_with(|| part_pos.map_or(Vec3::ZERO, |q| point - q));
+        let wound = part_pos.map(|q| q + offset);
+        if let Some(s) = self.snap.as_mut() {
+            if !s.done() {
+                s.tick(c, dt);
+            }
+        }
+        if self.t < self.loose_time {
+            c.ch.set_stiffness(self.stiffness * (1.0 - self.loose), 1.0, "ub", None);
+        }
+        if self.t < self.lean_time && self.push != Vec3::ZERO {
+            let push = (self.push - up * self.push.dot(up)).normalize_or_zero() * self.lean;
+            c.out.force(10, push * 0.7);
+            c.out.force(0, push * 0.3);
+        }
+        let flinching = self.flinch && self.t < self.flinch_time;
+        if flinching {
+            for &j in &*SPINE() {
+                let d = &mut c.ch.eff[j].desired[0];
+                *d += (-0.08 - *d) * 0.2;
+            }
+        }
+        for i in 0..2 {
+            let l = crate::nmshot::limb(i);
+            let to = if flinching && self.guard {
+                // guard: hands up in front of the face, a little either side
+                let head = c.b.part(12).m.d;
+                Some(head + fwd * 0.28 - up * 0.08 + side * if i == 0 { 0.1 } else { -0.1 })
+            } else if self.rfw && self.t > self.rfw_delay && self.t < self.rfw_delay + self.rfw_time {
+                // reach for the wound: the hand on the far side for an arm hit, else the near one
+                let k = part.unwrap_or(10);
+                let hand = if (13..17).contains(&k) { 1 } else if (17..21).contains(&k) { 0 } else if (point - c.com).dot(side) > 0.0 { 0 } else { 1 };
+                wound.filter(|_| hand == i && part.is_some())
+            } else {
+                None
+            };
+            if let Some(to) = to {
+                let s = if flinching && self.guard { self.stiffness * 1.5 } else { self.stiffness };
+                c.ch.set_stiffness(s, 1.0, ["ul", "ur"][i], None);
+                crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], to, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        let end = self.loose_time.max(self.lean_time).max(self.flinch_time).max(if self.rfw { self.rfw_delay + self.rfw_time } else { 0.0 });
+        self.t > end && self.snap.as_ref().is_none_or(Snap::done)
     }
 }

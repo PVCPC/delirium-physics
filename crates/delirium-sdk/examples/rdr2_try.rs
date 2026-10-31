@@ -54,6 +54,10 @@ fn main() {
                 println!("t {:.2}  pelvis z {:.3}  chest y {:+.3} z {:.3}  head x {:+.3} y {:+.3} z {:.3}  facing {:+6.1}  balancing {}",
                          (k + 1) as f32 / 60.0, pel[2], chest[1] - pel[1], chest[2], head[0] - pel[0], head[1] - pel[1], head[2],
                          yaw, nm_agent_is_balancing(g));
+                if std::env::var("HANDS").is_ok() {
+                    let (lh, rh) = (get(16), get(20));
+                    println!("      hands  L x {:+.2} y {:+.2} z {:.2}   R x {:+.2} y {:+.2} z {:.2}", lh[0] - pel[0], lh[1] - pel[1], lh[2], rh[0] - pel[0], rh[1] - pel[1], rh[2]);
+                }
             }
         }
     }
