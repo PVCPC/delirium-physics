@@ -3,7 +3,7 @@ use crate::nmshot::Ctx;
 use bevy_transform::components::Transform;
 
 pub fn messages() -> impl Iterator<Item = &'static Message> {
-    MESSAGES.iter().chain(&crate::extras_fall::MESSAGES).chain(&crate::extras_held::MESSAGES)
+    MESSAGES.iter().chain(&crate::extras_fall::MESSAGES).chain(&crate::extras_held::MESSAGES).chain(&crate::extras_rdr2::MESSAGES)
 }
 
 pub static MESSAGES: [Message; 3] = [
@@ -123,7 +123,10 @@ impl Extras {
             "electrocute" => Electrocute::new(&mut p).map(|e| Box::new(e) as _),
             _ => match crate::extras_fall::build(name, &mut p) {
                 Some(e) => e,
-                None => crate::extras_held::build(name, &mut p).expect("every extra's message builds"),
+                None => match crate::extras_rdr2::build(name, &mut p) {
+                    Some(e) => e,
+                    None => crate::extras_held::build(name, &mut p).expect("every extra's message builds"),
+                },
             },
         };
         Some(e.and_then(|e| p.done().map(|()| self.on.push((name, e)))).map(|()| 0))

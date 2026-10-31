@@ -382,6 +382,19 @@ Vectors are `x,y,z`. "mask" is a body-part string (see
 | `armHang` | Hang by the arms. | `constraintPosition`, `targetPosition`, `instanceIndex`, `boundIndex` |
 | `crushReaction` | React to a crushing object. | `effectorMask` ("ub"), `stiffness`, `obstacleID`, `flinchMode` (0 cover head, 1 brace), `obstaclePosition` |
 
+### Extra messages: from Red Dead Redemption 2
+
+Written from how RDR2's Euphoria behaves (none of its code or numbers). Like every extra they do nothing until sent
+with `start=true`, so the existing behaviours are unchanged. Defaults are Delirium's own; send your own RDR2 values
+as parameters.
+
+| Message | What it does | Key parameters |
+|---|---|---|
+| `duck` | Short flinch away: after `timeBeforeDuck` the spine and neck bend into a random share of their remaining range, each at its own rate, and the legs crouch through the balancer, for `duckTime`; it fades out over `blendTime`. | `magMin`, `magMax`, `lsRate`, `usRate`, `headRate`, `spineTwistRate`, `neckTwistRate`, `duckTime`, `blendTime`, `bendForward`, `duckLeft`, `leanTwistStart`, `crouch` |
+
+RDR2 bodies: `nm_character_from_rdr2` turns one of RDR2's naturalmotion XML files (fred.xml, wilma.xml and the
+size variants, from your own copy) into an `nm-character-1` body on top of a base body.
+
 Parameters marked unused in the listing are accepted (and counted in the return
 value of `nm_msg_send`) but do not change anything.
 

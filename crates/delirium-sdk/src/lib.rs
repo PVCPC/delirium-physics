@@ -1,6 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 pub mod character;
+pub mod rdr2;
 
 use delirium_data::taskparams::TaskParams;
 use delirium::collision::Collision;

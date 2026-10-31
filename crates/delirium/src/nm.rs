@@ -1713,6 +1713,16 @@ impl Agent {
                 self.nm_head.tick(c.ch, &body);
             }
             self.nm_pa.tick(&mut c);
+            // an extra (RDR2's duck) may ask the balancer to crouch; nothing else here sets these, so they're None
+            // unless one does
+            if let Some(d) = self.balance.as_mut().and_then(|b| b.dbm.as_mut()) {
+                if let Some(x) = out.dbm_leg_offset {
+                    d.leg_offset = x;
+                }
+                if let Some(x) = out.dbm_knee_scale {
+                    d.knee_scale = x;
+                }
+            }
             for o in [brace_out, out] {
                 for (k, &t) in o.torque.iter().enumerate() {
                     shot_out.torque(k, t);

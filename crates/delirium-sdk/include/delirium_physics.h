@@ -172,6 +172,8 @@ NM_API int32_t nm_init_character_file(const char* path);
 NM_API NmBuild* nm_build_from_character(const char* json);
 /* A character file from a the game fred.xrt (and a build dump, or NULL for none), into `buf` as usual. Load fred.xrt (nm_init) first when a build is given: the build is laid out on it. */
 NM_API int32_t nm_character_from_xrt(const char* xrt_path, const char* build_path, char* buf, int32_t len);
+/* An RDR2 body (one of the player's own RDR2 naturalmotion XML files: fred.xml, wilma.xml or a size variant) as `nm-character-1` JSON on top of `base_json` (a base body, e.g. from nm_character_from_xrt): RDR2's part frames, joint limits, motor flips, muscles and force caps; the base's joint offsets, masses and self-collision. With `build_path` (the base's build dump) it carries a build fitted to RDR2's proportions. Into `buf` as usual. */
+NM_API int32_t nm_character_from_rdr2(const char* xml_path, const char* base_json, const char* build_path, char* buf, int32_t len);
 
 #ifdef __cplusplus
 }
