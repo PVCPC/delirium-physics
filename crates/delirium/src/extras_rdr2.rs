@@ -6,8 +6,9 @@ use crate::extras::{Extra, P};
 use crate::msg::{Error, Kind, Message, Param};
 use crate::nmrs::{NECK, SPINE};
 use crate::nmshot::Ctx;
+use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 1] = [
+pub static MESSAGES: [Message; 2] = [
     Message { name: "duck", params: &[
         Param { name: "magMin", kind: Kind::Float, used: true, doc: "least share of each joint's remaining range the duck bends into, 0..1 (0.25)" },
         Param { name: "magMax", kind: Kind::Float, used: true, doc: "most share (1); the share is random between the two" },
@@ -25,11 +26,36 @@ pub static MESSAGES: [Message; 1] = [
         Param { name: "crouch", kind: Kind::Float, used: true, doc: "how much the balancer bends the legs while ducking (0.05; 0: no crouch)" },
         Param { name: "stiffness", kind: Kind::Float, used: true, doc: "spine and neck stiffness while ducking (10)" },
     ] },
+    Message { name: "shotSnap", params: &[
+        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "the kick's size; negative kicks the other way (0.5)" },
+        Param { name: "snapDelay", kind: Kind::Float, used: true, doc: "s before the kick (0)" },
+        Param { name: "snapDuration", kind: Kind::Float, used: true, doc: "s the kick is spread over; 0: all at once (0)" },
+        Param { name: "unSnapInterval", kind: Kind::Float, used: true, doc: "s after the kick before the counter-kick (0.05)" },
+        Param { name: "unSnapRatio", kind: Kind::Float, used: true, doc: "the counter-kick's size against the kick's, back the other way; 0: none (0.5)" },
+        Param { name: "snapDirectionRandomness", kind: Kind::Float, used: true, doc: "0: about the axis across the bullet, 1: a random axis (0.25)" },
+        Param { name: "snapMovingMult", kind: Kind::Float, used: true, doc: "kick times this when moving on his feet (1)" },
+        Param { name: "snapBalancingMult", kind: Kind::Float, used: true, doc: "when standing still on his feet (1)" },
+        Param { name: "snapAirborneMult", kind: Kind::Float, used: true, doc: "when nothing touches the ground (1)" },
+        Param { name: "snapMovingThresh", kind: Kind::Float, used: true, doc: "m/s above which he is moving (1)" },
+        Param { name: "snapUseBulletDir", kind: Kind::Bool, used: true, doc: "kick about the axis across the bullet (true); false: about his own side axis" },
+        Param { name: "bulletDir", kind: Kind::Vec3, used: true, doc: "the bullet's direction (zero: coming from in front)" },
+        Param { name: "snapHitPart", kind: Kind::Bool, used: true, doc: "also kick the joints either side of the part hit (true)" },
+        Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part hit, 0..20 (-1: none)" },
+        Param { name: "snapHipType", kind: Kind::Int, used: true, doc: "legs: 0 no kick, 1 about the kick's axis, 2 about the bullet's direction (0)" },
+        Param { name: "snapLeftLeg", kind: Kind::Bool, used: true, doc: "(false)" },
+        Param { name: "snapRightLeg", kind: Kind::Bool, used: true, doc: "(false)" },
+        Param { name: "snapLeftArm", kind: Kind::Bool, used: true, doc: "(false)" },
+        Param { name: "snapRightArm", kind: Kind::Bool, used: true, doc: "(false)" },
+        Param { name: "snapSpine", kind: Kind::Bool, used: true, doc: "(true)" },
+        Param { name: "snapNeck", kind: Kind::Bool, used: true, doc: "(true)" },
+        Param { name: "snapPhasedLegs", kind: Kind::Bool, used: true, doc: "the right leg kicks the other way (true)" },
+    ] },
 ];
 
 pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
     match name {
         "duck" => Some(Duck::new(p).map(|e| Box::new(e) as _)),
+        "shotSnap" => Some(Snap::new(p).map(|e| Box::new(e) as _)),
         _ => None,
     }
 }
@@ -124,5 +150,137 @@ impl Extra for Duck {
         if self.crouch > 0.0 {
             c.out.dbm_leg_offset = Some(0.0);
         }
+    }
+}
+
+/// Each Delirium part's parent part (joint j joins part j + 1 to this).
+const PARENT: [usize; 21] = [0, 0, 1, 2, 0, 4, 5, 0, 7, 8, 9, 10, 11, 10, 13, 14, 15, 10, 17, 18, 19];
+/// Delirium's own scale: a kick of size 1 turns a part by about this much angular velocity per kg of the part.
+const KICK: f32 = 0.3;
+
+/// RDR2's shot snap: a sharp kick across chosen joints at the hit, then a smaller counter-kick back. The kick turns
+/// each joint about one axis (across the bullet's direction, or his side axis), sized by his state (moving,
+/// standing, airborne) and by joint (spine hardest, neck lightest), spread over snapDuration (0: a single step).
+pub struct Snap {
+    mag: f32, delay: f32, duration: f32, interval: f32, ratio: f32, random: f32, mult: [f32; 3], moving: f32,
+    use_dir: bool, dir: Vec3, part: i32, hip: i32, limbs: [bool; 6], phased: bool,
+    t: f32, axis: Option<Vec3>, kicked: f32, countered: f32,
+}
+
+impl Snap {
+    fn new(p: &mut P) -> Result<Snap, Error> {
+        let mag = p.f("snapMag", 0.5)?;
+        let (delay, duration) = (p.f("snapDelay", 0.0)?.max(0.0), p.f("snapDuration", 0.0)?.max(0.0));
+        let (interval, ratio) = (p.f("unSnapInterval", 0.05)?.max(0.0), p.f("unSnapRatio", 0.5)?);
+        let random = p.f("snapDirectionRandomness", 0.25)?.clamp(0.0, 1.0);
+        let mult = [p.f("snapMovingMult", 1.0)?, p.f("snapBalancingMult", 1.0)?, p.f("snapAirborneMult", 1.0)?];
+        let moving = p.f("snapMovingThresh", 1.0)?;
+        let (use_dir, dir) = (p.b("snapUseBulletDir", true)?, p.v("bulletDir", Vec3::ZERO)?);
+        let hit = p.b("snapHitPart", true)?;
+        let part = p.i("bodyPart", -1)?;
+        let hip = p.i("snapHipType", 0)?;
+        let limbs = [p.b("snapLeftLeg", false)?, p.b("snapRightLeg", false)?, p.b("snapLeftArm", false)?,
+                     p.b("snapRightArm", false)?, p.b("snapSpine", true)?, p.b("snapNeck", true)?];
+        Ok(Snap { mag, delay, duration, interval, ratio, random, mult, moving, use_dir, dir, part: if hit { part } else { -1 },
+                  hip, limbs, phased: p.b("snapPhasedLegs", true)?, t: 0.0, axis: None, kicked: 0.0, countered: 0.0 })
+    }
+
+    /// The share of a kick (spread over the duration) that falls in this step; all of it when the duration is 0.
+    fn share(&self, since: f32, dt: f32, done: f32) -> f32 {
+        if self.duration <= 0.0 {
+            return 1.0 - done;
+        }
+        (((since + dt).min(self.duration) - since.max(0.0)) / self.duration).clamp(0.0, 1.0 - done)
+    }
+
+    /// Kicks joint `j` (the one driving part j + 1) about `axis` by `amount`: equal and opposite on its two parts.
+    fn kick(c: &mut Ctx, j: usize, axis: Vec3, amount: f32, dt: f32) {
+        let (child, parent) = (j + 1, PARENT[j + 1]);
+        let t = axis * (amount * KICK * c.b.doll.part_mass(child) / dt);
+        c.out.torque(child, t);
+        c.out.torque(parent, -t);
+    }
+
+    fn apply(&mut self, c: &mut Ctx, m: f32, dt: f32) {
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+        let forward = side.cross(up).normalize_or(Vec3::Y);
+        let dir = if self.dir == Vec3::ZERO { -forward } else { self.dir.normalize_or(-forward) };
+        let (use_dir, random) = (self.use_dir, self.random);
+        let r = Vec3::new(c.ch.random(), c.ch.random(), c.ch.random()) * 2.0 - 1.0;
+        let axis = *self.axis.get_or_insert_with(|| {
+            let a = if use_dir { up.cross(dir).normalize_or(side) } else { side };
+            a.lerp(r.normalize_or(a), random).normalize_or(a)
+        });
+        // his state: nothing touching (airborne), only the feet (moving or standing), more than the feet (as it is)
+        let feet = c.b.doll.collided(&[3, 6]);
+        let other = c.b.doll.collided(&[0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+        let horizontal = (c.vel - up * c.vel.dot(up)).length();
+        let m = if !feet && !other {
+            m * self.mult[2]
+        } else if !other {
+            m * self.mult[if horizontal > self.moving { 0 } else { 1 }]
+        } else {
+            m
+        };
+        let (s, n) = (*SPINE(), *NECK());
+        if (0..21).contains(&self.part) {
+            let k = self.part as usize;
+            for j in [k.checked_sub(1), (k < 20).then_some(k)].into_iter().flatten() {
+                Self::kick(c, j, axis, m * 15.0, dt);
+            }
+        }
+        if self.limbs[4] {
+            for (i, &j) in s.iter().enumerate() {
+                Self::kick(c, j, axis, m * if i == 3 { 8.0 } else { 15.0 }, dt);
+            }
+        }
+        if self.limbs[5] {
+            for &j in &n {
+                Self::kick(c, j, axis, m, dt);
+            }
+        }
+        let mix = (up + dir).normalize_or(up);
+        for (on, sign, clavicle, shoulder) in [(self.limbs[2], 1.0, 12, 13), (self.limbs[3], -1.0, 16, 17)] {
+            if on {
+                Self::kick(c, shoulder, mix, m * 4.0 * sign, dt);
+                Self::kick(c, clavicle, up, m * 4.0 * sign, dt);
+            }
+        }
+        if self.hip > 0 {
+            let leg_axis = if self.hip >= 2 { dir } else { axis };
+            for (on, hip, sign) in [(self.limbs[0], 0, 1.0), (self.limbs[1], 3, if self.phased { -1.0 } else { 1.0 })] {
+                if on {
+                    Self::kick(c, hip, leg_axis, m * 15.0 * sign, dt);
+                }
+            }
+        }
+    }
+}
+
+impl Extra for Snap {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        let since = self.t - self.delay;
+        self.t += dt;
+        if since + dt <= 0.0 {
+            return;
+        }
+        let k = self.share(since, dt, self.kicked);
+        if k > 0.0 {
+            self.kicked += k;
+            self.apply(c, self.mag * k, dt);
+        }
+        let back = since - self.duration - self.interval;
+        if self.ratio != 0.0 && back + dt > 0.0 {
+            let k = self.share(back, dt, self.countered);
+            if k > 0.0 {
+                self.countered += k;
+                self.apply(c, -self.ratio * self.mag * k, dt);
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.kicked >= 0.999 && (self.ratio == 0.0 || self.countered >= 0.999)
     }
 }

@@ -1,5 +1,6 @@
 //! Tries the RDR2 extra messages on a standing body and prints what they do over time.
 //! Usage: GTAIV_EXE=<GTAIV.exe> cargo run --release -p delirium-sdk --example rdr2_try -- <Fred.art|fred.xrt> <build.txt> <message> [name=value...]
+//! Values: true/false, x,y,z (a vector), a whole number (an int) or a decimal with a point (a float). Message "none" sends nothing.
 use delirium_physics::*;
 use std::ffi::CString;
 
@@ -26,13 +27,18 @@ fn main() {
         nm_msg_send(g, w);
         let get = |p: i32| { let mut v = [0.0f32; 3]; nm_agent_get_part_transform(g, p, v.as_mut_ptr(), std::ptr::null_mut()); v };
         for k in 0..150 {
-            if k == 60 {
+            if k == 60 && a[3] != "none" {
                 nm_msg_begin(g, c(&a[3]).as_ptr());
                 nm_msg_set_bool(g, c("start").as_ptr(), 1);
                 for kv in &a[4..] {
                     let (n, v) = kv.split_once('=').unwrap();
                     match v {
                         "true" | "false" => { nm_msg_set_bool(g, c(n).as_ptr(), (v == "true") as i32); }
+                        _ if v.contains(',') => {
+                            let f: Vec<f32> = v.split(',').map(|x| x.parse().unwrap()).collect();
+                            nm_msg_set_vec3(g, c(n).as_ptr(), f.as_ptr());
+                        }
+                        _ if !v.contains('.') => { nm_msg_set_int(g, c(n).as_ptr(), v.parse().unwrap()); }
                         _ => { nm_msg_set_float(g, c(n).as_ptr(), v.parse().unwrap()); }
                     }
                 }

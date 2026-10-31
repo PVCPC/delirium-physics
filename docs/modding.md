@@ -391,6 +391,7 @@ as parameters.
 | Message | What it does | Key parameters |
 |---|---|---|
 | `duck` | Short flinch away: after `timeBeforeDuck` the spine and neck bend into a random share of their remaining range, each at its own rate, and the legs crouch through the balancer, for `duckTime`; it fades out over `blendTime`. | `magMin`, `magMax`, `lsRate`, `usRate`, `headRate`, `spineTwistRate`, `neckTwistRate`, `duckTime`, `blendTime`, `bendForward`, `duckLeft`, `leanTwistStart`, `crouch` |
+| `shotSnap` | A sharp kick across the chosen joints along the bullet's path, then a smaller counter-kick back (send it with `shot`). Sized by his state (moving, standing, airborne) and per joint; the hit part's joints get their own kick. | `snapMag`, `snapDuration`, `unSnapInterval`, `unSnapRatio`, `bulletDir`, `bodyPart`, `snapHitPart`, `snapSpine`, `snapNeck`, `snapLeftArm`, `snapRightArm`, `snapLeftLeg`, `snapRightLeg`, `snapHipType`, `snapPhasedLegs`, `snapMovingMult`, `snapBalancingMult`, `snapAirborneMult` |
 
 RDR2 bodies: `nm_character_from_rdr2` turns one of RDR2's naturalmotion XML files (fred.xml, wilma.xml and the
 size variants, from your own copy) into an `nm-character-1` body on top of a base body.
