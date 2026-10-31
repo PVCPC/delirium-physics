@@ -8,7 +8,24 @@ use crate::nmrs::{NECK, SPINE};
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 2] = [
+pub static MESSAGES: [Message; 3] = [
+    Message { name: "shotSpin", params: &[
+        Param { name: "spin", kind: Kind::Float, used: true, doc: "the hit's spin, m (none: from hitPoint and bulletDir: the lever arm about his centre across the bullet)" },
+        Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "where the bullet hit, world (zero)" },
+        Param { name: "bulletDir", kind: Kind::Vec3, used: true, doc: "the bullet's direction (zero)" },
+        Param { name: "shotSpinMin", kind: Kind::Float, used: true, doc: "spins smaller than this (m) do nothing (0.01)" },
+        Param { name: "shotSpinTime", kind: Kind::Float, used: true, doc: "s the heading swings round over, with the yaw torque on (0.4)" },
+        Param { name: "shotSpinSettle", kind: Kind::Float, used: true, doc: "s it then holds the new heading; the feet stay planted, so he eases part way back after (0.8)" },
+        Param { name: "shotSpinTwistMult", kind: Kind::Float, used: true, doc: "rad of turn per m of spin (10)" },
+        Param { name: "shotSpinTwist", kind: Kind::Float, used: true, doc: "most turn, rad; stops once he has turned this far (1.5)" },
+        Param { name: "shotSpinTwistVel", kind: Kind::Float, used: true, doc: "stops while he already turns faster than this, rad/s (6)" },
+        Param { name: "shotSpinTorque", kind: Kind::Float, used: true, doc: "yaw torque on pelvis and trunk per rad off the heading, N m (150)" },
+        Param { name: "shotSpinTorqueMax", kind: Kind::Float, used: true, doc: "most yaw torque, N m (300)" },
+        Param { name: "stepTurnType", kind: Kind::Int, used: true, doc: "after the spin: 0 nothing, 1 step round to face attackerPos (0)" },
+        Param { name: "stepTurnWait", kind: Kind::Float, used: true, doc: "s after the spin before the step turn (0.3)" },
+        Param { name: "stepTurnTime", kind: Kind::Float, used: true, doc: "s the step turn may take (2)" },
+        Param { name: "attackerPos", kind: Kind::Vec3, used: true, doc: "where the shooter is, world (zero)" },
+    ] },
     Message { name: "duck", params: &[
         Param { name: "magMin", kind: Kind::Float, used: true, doc: "least share of each joint's remaining range the duck bends into, 0..1 (0.25)" },
         Param { name: "magMax", kind: Kind::Float, used: true, doc: "most share (1); the share is random between the two" },
@@ -56,6 +73,7 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
     match name {
         "duck" => Some(Duck::new(p).map(|e| Box::new(e) as _)),
         "shotSnap" => Some(Snap::new(p).map(|e| Box::new(e) as _)),
+        "shotSpin" => Some(Spin::new(p).map(|e| Box::new(e) as _)),
         _ => None,
     }
 }
@@ -282,5 +300,86 @@ impl Extra for Snap {
 
     fn done(&self) -> bool {
         self.kicked >= 0.999 && (self.ratio == 0.0 || self.countered >= 0.999)
+    }
+}
+
+/// RDR2's shot spin and step turn. A hit off the body's centre spins him round: the balancer is turned towards a
+/// heading that swings round by the hit's spin (its lever arm about his centre, across the bullet, times
+/// shotSpinTwistMult, at most shotSpinTwist), and a damped yaw torque on the pelvis and trunk pulls him onto it and
+/// holds him there while it settles; it stops early when he's already turning faster than shotSpinTwistVel. Then, with stepTurnType 1, after stepTurnWait he steps
+/// round to face attackerPos.
+pub struct Spin {
+    spin: Option<f32>, hit: Vec3, dir: Vec3, min: f32, time: f32, settle: f32, mult: f32, max_twist: f32,
+    max_vel: f32, torque: f32, torque_max: f32, step_type: i32, step_wait: f32, step_time: f32, attacker: Vec3,
+    t: f32, heading: Option<(Vec3, f32)>, turned: f32,
+}
+
+impl Spin {
+    fn new(p: &mut P) -> Result<Spin, Error> {
+        let spin = p.f("spin", f32::NAN)?;
+        Ok(Spin {
+            spin: (!spin.is_nan()).then_some(spin), hit: p.v("hitPoint", Vec3::ZERO)?, dir: p.v("bulletDir", Vec3::ZERO)?,
+            min: p.f("shotSpinMin", 0.01)?.max(0.0), time: p.f("shotSpinTime", 0.4)?.max(0.0), settle: p.f("shotSpinSettle", 0.8)?.max(0.0),
+            mult: p.f("shotSpinTwistMult", 10.0)?, max_twist: p.f("shotSpinTwist", 1.5)?.abs(), max_vel: p.f("shotSpinTwistVel", 6.0)?.abs(),
+            torque: p.f("shotSpinTorque", 150.0)?, torque_max: p.f("shotSpinTorqueMax", 300.0)?.abs(),
+            step_type: p.i("stepTurnType", 0)?, step_wait: p.f("stepTurnWait", 0.3)?.max(0.0), step_time: p.f("stepTurnTime", 2.0)?.max(0.0),
+            attacker: p.v("attackerPos", Vec3::ZERO)?, t: 0.0, heading: None, turned: 0.0,
+        })
+    }
+
+    fn facing(c: &Ctx, up: Vec3) -> Vec3 {
+        let side = c.b.part(13).m.d - c.b.part(17).m.d;
+        let f = side.cross(up);
+        (f - up * f.dot(up)).normalize_or(Vec3::Y)
+    }
+}
+
+impl Extra for Spin {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let yaw_rate = c.angvel.dot(up);
+        self.turned += yaw_rate * dt;
+        let (spin, hit, dir, mult, max_twist) = (self.spin, self.hit, self.dir, self.mult, self.max_twist);
+        let (start, total) = *self.heading.get_or_insert_with(|| {
+            // the spin: the hit's lever arm about his centre, across the bullet, about up
+            let s = spin.unwrap_or_else(|| (hit - c.com).cross(dir.normalize_or_zero()).dot(up));
+            (Self::facing(c, up), (s * mult).clamp(-max_twist, max_twist))
+        });
+        let spinning = self.t <= self.time + self.settle;
+        if spinning && total.abs() > self.min * mult && self.turned.abs() <= max_twist + 0.5 && yaw_rate.abs() < self.max_vel {
+            // the heading swings round to start + total over shotSpinTime, then holds while it settles: a yaw torque
+            // on pelvis and trunk towards it (shotSpinTorque per rad off), damped by his turn rate so the planted
+            // feet don't spring him back, and the balancer told to face it
+            let a = total * (self.t / self.time.max(dt)).min(1.0);
+            let heading = bevy_math::Quat::from_axis_angle(up, a) * start;
+            let now = Self::facing(c, up);
+            let off = now.cross(heading).dot(up).atan2(now.dot(heading));
+            let tq = (self.torque * off - self.torque * 0.3 * yaw_rate).clamp(-self.torque_max, self.torque_max);
+            for k in [0, 7, 8] {
+                c.out.torque(k, up * tq / 3.0);
+            }
+            c.out.dbm_turn = Some(heading * 0.5);
+            return;
+        }
+        let step_from = self.time + self.settle + self.step_wait;
+        if self.step_type > 0 && self.t > step_from && self.t <= step_from + self.step_time {
+            let to = self.attacker - c.com;
+            let to = (to - up * to.dot(up)).normalize_or_zero();
+            if to != Vec3::ZERO && Self::facing(c, up).dot(to) < 0.98 {
+                c.out.dbm_turn = Some(to * 0.5);
+                return;
+            }
+        }
+        c.out.dbm_turn = Some(Vec3::ZERO);
+    }
+
+    fn done(&self) -> bool {
+        let end = self.time + self.settle + if self.step_type > 0 { self.step_wait + self.step_time } else { 0.0 };
+        self.t > end
+    }
+
+    fn stop(&mut self, c: &mut Ctx) {
+        c.out.dbm_turn = Some(Vec3::ZERO);
     }
 }

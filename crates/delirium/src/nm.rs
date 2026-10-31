@@ -1722,6 +1722,10 @@ impl Agent {
                 if let Some(x) = out.dbm_knee_scale {
                     d.knee_scale = x;
                 }
+                // a turn asked for by an extra (RDR2's shot spin and step turn): face along this
+                if let Some(v) = out.dbm_turn {
+                    (d.pv.fixed_vel, d.pv.vel) = (v != Vec3::ZERO, v);
+                }
             }
             for o in [brace_out, out] {
                 for (k, &t) in o.torque.iter().enumerate() {

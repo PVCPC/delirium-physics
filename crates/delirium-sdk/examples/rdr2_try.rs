@@ -26,7 +26,7 @@ fn main() {
         nm_msg_set_bool(g, c("start").as_ptr(), 1);
         nm_msg_send(g, w);
         let get = |p: i32| { let mut v = [0.0f32; 3]; nm_agent_get_part_transform(g, p, v.as_mut_ptr(), std::ptr::null_mut()); v };
-        for k in 0..150 {
+        for k in 0..240 {
             if k == 60 && a[3] != "none" {
                 nm_msg_begin(g, c(&a[3]).as_ptr());
                 nm_msg_set_bool(g, c("start").as_ptr(), 1);
@@ -48,9 +48,12 @@ fn main() {
             nm_agent_step(g, w, 1.0 / 60.0);
             if k % 6 == 5 {
                 let (pel, chest, head) = (get(0), get(10), get(12));
-                println!("t {:.2}  pelvis z {:.3}  chest y {:+.3} z {:.3}  head x {:+.3} y {:+.3} z {:.3}  balancing {}",
+                // facing: across the shoulders (left clavicle minus right), turned a quarter about up
+                let (l, r) = (get(13), get(17));
+                let yaw = (-(l[0] - r[0])).atan2(l[1] - r[1]).to_degrees();
+                println!("t {:.2}  pelvis z {:.3}  chest y {:+.3} z {:.3}  head x {:+.3} y {:+.3} z {:.3}  facing {:+6.1}  balancing {}",
                          (k + 1) as f32 / 60.0, pel[2], chest[1] - pel[1], chest[2], head[0] - pel[0], head[1] - pel[1], head[2],
-                         nm_agent_is_balancing(g));
+                         yaw, nm_agent_is_balancing(g));
             }
         }
     }
