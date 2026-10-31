@@ -4,11 +4,24 @@
 //! RDR2 values can be sent as parameters.
 use crate::extras::{Extra, P};
 use crate::msg::{Error, Kind, Message, Param};
-use crate::nmrs::{NECK, SPINE};
+use crate::nmrs::{HIP, KNEE, NECK, SPINE};
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 3] = [
+pub static MESSAGES: [Message; 4] = [
+    Message { name: "shotFallToKnees", params: &[
+        Param { name: "ftkBalanceTime", kind: Kind::Float, used: true, doc: "s he keeps balancing before sinking (0.1)" },
+        Param { name: "ftkBendRate", kind: Kind::Float, used: true, doc: "how fast knees and hips bend, rad/s (3)" },
+        Param { name: "ftkHelperForce", kind: Kind::Float, used: true, doc: "forward push on the pelvis while sinking, N (0)" },
+        Param { name: "ftkSpineBend", kind: Kind::Float, used: true, doc: "forward bend of the whole spine while sinking, rad (0.1)" },
+        Param { name: "ftkStiffness", kind: Kind::Float, used: true, doc: "legs and spine stiffness (9)" },
+        Param { name: "ftkKneelTime", kind: Kind::Float, used: true, doc: "s he stays on his knees (2)" },
+        Param { name: "ftkKneelHip", kind: Kind::Float, used: true, doc: "hip bend while kneeling, rad; more leans him forwards (0.3)" },
+        Param { name: "ftkLeanHelp", kind: Kind::Float, used: true, doc: "pull of his centre over his knees while kneeling, N per m, damped (1500)" },
+        Param { name: "ftkOnKneesArmType", kind: Kind::Int, used: true, doc: "0: arms as they are, 1: arms hang (1)" },
+        Param { name: "ftkPitchForwards", kind: Kind::Bool, used: true, doc: "topple forwards (true) or back (false) at the end" },
+        Param { name: "ftkPitchForce", kind: Kind::Float, used: true, doc: "push on the chest that tips him over, N (300)" },
+    ] },
     Message { name: "shotSpin", params: &[
         Param { name: "spin", kind: Kind::Float, used: true, doc: "the hit's spin, m (none: from hitPoint and bulletDir: the lever arm about his centre across the bullet)" },
         Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "where the bullet hit, world (zero)" },
@@ -74,6 +87,7 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "duck" => Some(Duck::new(p).map(|e| Box::new(e) as _)),
         "shotSnap" => Some(Snap::new(p).map(|e| Box::new(e) as _)),
         "shotSpin" => Some(Spin::new(p).map(|e| Box::new(e) as _)),
+        "shotFallToKnees" => Some(Knees::new(p).map(|e| Box::new(e) as _)),
         _ => None,
     }
 }
@@ -222,7 +236,8 @@ impl Snap {
     fn apply(&mut self, c: &mut Ctx, m: f32, dt: f32) {
         let up = c.ch.up.normalize_or(Vec3::Z);
         let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
-        let forward = side.cross(up).normalize_or(Vec3::Y);
+        // left shoulder minus right, crossed this way round, points the way he faces
+        let forward = up.cross(side).normalize_or(Vec3::Y);
         let dir = if self.dir == Vec3::ZERO { -forward } else { self.dir.normalize_or(-forward) };
         let (use_dir, random) = (self.use_dir, self.random);
         let r = Vec3::new(c.ch.random(), c.ch.random(), c.ch.random()) * 2.0 - 1.0;
@@ -381,5 +396,135 @@ impl Extra for Spin {
 
     fn stop(&mut self, c: &mut Ctx) {
         c.out.dbm_turn = Some(Vec3::ZERO);
+    }
+}
+
+/// RDR2's fall to knees (a shot module there): after balancing for ftkBalanceTime the balancer lets go and he sinks:
+/// knees bend at ftkBendRate, hips flex, the spine bends forward by ftkSpineBend and a helper push on the pelvis
+/// tips him forwards over his feet. When both shins touch the ground he is kneeling: thighs come upright under him and
+/// a lean help keeps his centre over his knees for ftkKneelTime; then he topples forwards (or back) and goes limp.
+pub struct Knees {
+    balance: f32, bend_rate: f32, helper: f32, spine_bend: f32, stiffness: f32, kneel_time: f32, lean_help: f32,
+    forwards: bool, pitch: f32, arms_down: bool, kneel_hip: f32,
+    t: f32, phase: u8, since: f32, knee: [f32; 2], hip: [f32; 2],
+}
+
+impl Knees {
+    fn new(p: &mut P) -> Result<Knees, Error> {
+        Ok(Knees {
+            balance: p.f("ftkBalanceTime", 0.1)?.max(0.0), bend_rate: p.f("ftkBendRate", 3.0)?.abs(),
+            helper: p.f("ftkHelperForce", 0.0)?, spine_bend: p.f("ftkSpineBend", 0.1)?, stiffness: p.f("ftkStiffness", 9.0)?,
+            kneel_time: p.f("ftkKneelTime", 2.0)?.max(0.0), lean_help: p.f("ftkLeanHelp", 1500.0)?,
+            forwards: p.b("ftkPitchForwards", true)?, pitch: p.f("ftkPitchForce", 300.0)?, arms_down: p.i("ftkOnKneesArmType", 1)? == 1, kneel_hip: p.f("ftkKneelHip", 0.3)?,
+            t: 0.0, phase: 0, since: 0.0, knee: [0.0; 2], hip: [0.0; 2],
+        })
+    }
+
+    fn forward(c: &Ctx, up: Vec3) -> Vec3 {
+        let f = up.cross(c.b.part(13).m.d - c.b.part(17).m.d);
+        (f - up * f.dot(up)).normalize_or(Vec3::Y)
+    }
+
+    /// Moves joint j's axis-k target towards `to` by at most `step`, from where it is now the first time.
+    fn ease(c: &mut Ctx, j: usize, k: usize, to: f32, step: f32) {
+        let now = c.ch.eff[j].desired[k];
+        c.ch.eff[j].desired[k] = now + (to - now).clamp(-step, step);
+    }
+}
+
+impl Extra for Knees {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        self.since += dt;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let fwd = Self::forward(c, up);
+        let (knees, hips, spine) = (*KNEE(), *HIP(), *SPINE());
+        match self.phase {
+            0 => {
+                if self.t >= self.balance {
+                    // let go of the balancer; start from the legs' current angles
+                    c.out.dbm = Some(false);
+                    for s in 0..2 {
+                        self.knee[s] = c.ch.actual(knees[s], c.b.frames)[0];
+                        self.hip[s] = c.ch.actual(hips[s], c.b.frames)[0];
+                        c.ch.eff[knees[s]].desired[0] = self.knee[s];
+                        c.ch.eff[hips[s]].desired[0] = self.hip[s];
+                    }
+                    (self.phase, self.since) = (1, 0.0);
+                }
+            }
+            1 => {
+                // sinking: knees towards their deepest bend, hips flexing, spine forwards, a push over the feet
+                let step = self.bend_rate * dt;
+                c.ch.set_stiffness(self.stiffness, 1.0, "lb", None);
+                c.ch.set_stiffness(self.stiffness, 1.0, "us", None);
+                for s in 0..2 {
+                    let kl = c.ch.limits(knees[s]);
+                    let deep = if kl[0].abs() > kl[1].abs() { kl[0] } else { kl[1] } * 0.9;
+                    Self::ease(c, knees[s], 0, deep, step);
+                    let hl = c.ch.limits(hips[s]);
+                    Self::ease(c, hips[s], 0, (hl[1] * 0.2).min(0.4), step);
+                }
+                for &j in &spine {
+                    Self::ease(c, j, 0, -self.spine_bend / 4.0, step);
+                }
+                c.out.force(0, fwd * self.helper);
+                // on his knees once they are near the ground (measured from his feet; shin contacts are too patchy)
+                let ground = c.b.part(3).m.d.dot(up).min(c.b.part(6).m.d.dot(up)) - 0.05;
+                let knee = |t: usize, s: usize| (c.b.part(t).m.d + c.b.part(s).m.d).dot(up) * 0.5 - ground;
+                let down = knee(1, 2) < 0.2 && knee(4, 5) < 0.2;
+                // as the knees come down, start holding his centre over them so he doesn't pitch on
+                if knee(1, 2).max(knee(4, 5)) < 0.35 {
+                    let knees_at = (c.b.part(1).m.d + c.b.part(2).m.d + c.b.part(4).m.d + c.b.part(5).m.d) * 0.25;
+                    let off = knees_at - c.com;
+                    let vel = c.vel - up * c.vel.dot(up);
+                    let pull = (off - up * off.dot(up)) * self.lean_help - vel * self.lean_help * 0.2;
+                    c.out.force(0, pull * 0.5);
+                    c.out.force(10, pull * 0.5);
+                }
+                if down || self.since > 1.5 {
+                    (self.phase, self.since) = (2, 0.0);
+                }
+            }
+            2 => {
+                // kneeling: thighs upright under him, spine straight, his centre held over the knees
+                let step = self.bend_rate * dt;
+                c.ch.set_stiffness(self.stiffness, 1.0, "lb", None);
+                c.ch.set_stiffness(self.stiffness, 1.0, "us", None);
+                // hips held a little flexed and stiffer, so the trunk stays up over the knees
+                for s in 0..2 {
+                    Self::ease(c, hips[s], 0, self.kneel_hip, step);
+                    c.ch.eff[hips[s]].set_stiffness(self.stiffness * 2.5, 1.0, None);
+                }
+                for &j in &spine {
+                    Self::ease(c, j, 0, 0.0, step);
+                    c.ch.eff[j].set_stiffness(self.stiffness * 1.5, 1.0, None);
+                }
+                if self.arms_down {
+                    c.ch.set_stiffness(self.stiffness * 0.5, 1.0, "ua", None);
+                }
+                // the knees: between each thigh and shin; hold his centre over them
+                let knees_at = (c.b.part(1).m.d + c.b.part(2).m.d + c.b.part(4).m.d + c.b.part(5).m.d) * 0.25;
+                let off = knees_at - c.com;
+                let vel = c.vel - up * c.vel.dot(up);
+                let pull = (off - up * off.dot(up)) * self.lean_help - vel * self.lean_help * 0.2;
+                c.out.force(0, pull * 0.5);
+                c.out.force(10, pull * 0.5);
+                if self.since > self.kneel_time {
+                    (self.phase, self.since) = (3, 0.0);
+                }
+            }
+            _ => {
+                // topple: go loose and tip forwards (or back)
+                c.ch.set_stiffness(self.stiffness * 0.3, 1.0, "fb", None);
+                if self.since < 0.3 {
+                    c.out.force(10, if self.forwards { fwd } else { -fwd } * self.pitch);
+                }
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.phase == 3 && self.since > 1.0
     }
 }

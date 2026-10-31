@@ -26,7 +26,7 @@ fn main() {
         nm_msg_set_bool(g, c("start").as_ptr(), 1);
         nm_msg_send(g, w);
         let get = |p: i32| { let mut v = [0.0f32; 3]; nm_agent_get_part_transform(g, p, v.as_mut_ptr(), std::ptr::null_mut()); v };
-        for k in 0..240 {
+        for k in 0..std::env::var("STEPS").ok().and_then(|s| s.parse().ok()).unwrap_or(240) {
             if k == 60 && a[3] != "none" {
                 nm_msg_begin(g, c(&a[3]).as_ptr());
                 nm_msg_set_bool(g, c("start").as_ptr(), 1);

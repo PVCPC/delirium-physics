@@ -1727,6 +1727,8 @@ impl Agent {
                     (d.pv.fixed_vel, d.pv.vel) = (v != Vec3::ZERO, v);
                 }
             }
+            // an extra (RDR2's fall to knees) may switch the balancer off
+            stop_dbm |= out.dbm == Some(false);
             for o in [brace_out, out] {
                 for (k, &t) in o.torque.iter().enumerate() {
                     shot_out.torque(k, t);
