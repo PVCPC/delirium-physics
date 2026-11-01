@@ -759,24 +759,19 @@ impl Extra for Melee {
     }
 }
 
-/// A set of joint-axis bends laid over whatever the balancer or shot wants, scaled by a weight each tick. If
-/// something else rewrote the target since the last tick, the bend goes on top of that; otherwise the previous
-/// bend is taken off first, so it never builds up.
-struct Bends { ch: Vec<(usize, usize, f32)>, last: Vec<f32>, wrote: Vec<f32> }
+/// A set of joint-axis bends laid over whatever the balancer, the shot or another behaviour wants, scaled by a
+/// weight each tick: they go into the joints' offsets (added where the joints are driven, cleared every tick), so
+/// they stack with anything else and never build up.
+struct Bends { ch: Vec<(usize, usize, f32)> }
 
 impl Bends {
     fn new(ch: Vec<(usize, usize, f32)>) -> Bends {
-        let n = ch.len();
-        Bends { ch, last: vec![0.0; n], wrote: vec![f32::NAN; n] }
+        Bends { ch }
     }
 
     fn apply(&mut self, c: &mut Ctx, w: f32, stiffness: f32) {
-        for (i, &(j, k, amt)) in self.ch.iter().enumerate() {
-            let d = c.ch.eff[j].desired[k];
-            let base = if (d - self.wrote[i]).abs() < 1e-6 { d - self.last[i] } else { d };
-            let add = amt * w;
-            c.ch.eff[j].desired[k] = base + add;
-            (self.last[i], self.wrote[i]) = (add, base + add);
+        for &(j, k, amt) in &self.ch {
+            c.ch.eff[j].offset[k] += amt * w;
             if w > 0.0 && k == 0 && stiffness > 0.0 {
                 c.ch.eff[j].set_stiffness(stiffness, 1.0, None);
             }
@@ -1170,8 +1165,9 @@ impl ReachForWound {
             [k[0], k[1], a[0], a[1], a[2], e[0]]
         });
         let (mut x, mut miss) = arm_solve(c, l, t2, start);
-        if self.arm[i].is_none() || miss > 0.08 {
-            // the search only finds the nearest pose, so also try from the arm raised forwards and across
+        if self.arm[i].is_none() && miss > 0.08 {
+            // the search only finds the nearest pose, so the first time also try from the arm raised forwards and
+            // across (once: after that it follows on from where it got to)
             for (sl1, stw) in [(0.6, 0.0), (1.2, -0.6), (0.9, 0.4)] {
                 let (y, m) = arm_solve(c, l, t2, [start[0], start[1], sl1, start[3], stw, 1.5]);
                 if m + 0.02 < miss {
@@ -1310,7 +1306,7 @@ impl WallCollision {
         let on = sh - n * (sh - at).dot(n) - up * 0.15;
         let target = on + n * 0.04;
         let start = self.arm[i].unwrap_or_else(|| {
-            let [k, a, e] = [0, 1, 2].map(|j| c.ch.actual(l.e[j], c.b.frames));
+            let [k, a] = [0, 1].map(|j| c.ch.actual(l.e[j], c.b.frames));
             [k[0], k[1], 0.9, a[1], a[2], 0.4]
         });
         let (x, _) = arm_solve(c, l, target, start);
@@ -1498,7 +1494,7 @@ impl FallingReaction {
             let out = sh + (sh - mid) * 0.6;
             let below = out - up * ((out.dot(up) - ground) - 0.04) + fwd * 0.08;
             let start = self.arm[i].unwrap_or_else(|| {
-                let [kk, a, e] = [0, 1, 2].map(|j| c.ch.actual(l.e[j], c.b.frames));
+                let [kk, a] = [0, 1].map(|j| c.ch.actual(l.e[j], c.b.frames));
                 [kk[0], kk[1], 0.6, a[1], a[2], 0.2]
             });
             let (x, _) = arm_solve(c, l, below, start);

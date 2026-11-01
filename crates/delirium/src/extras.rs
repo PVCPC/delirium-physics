@@ -133,6 +133,9 @@ impl Extras {
     }
 
     pub fn tick(&mut self, c: &mut Ctx, obs: &[crate::ragdoll::Obstacle], dt: f32) {
+        for e in c.ch.eff.iter_mut() {
+            e.offset = [0.0; 3];
+        }
         for (joints, amount) in self.injure.drain(..) {
             for j in joints {
                 c.ch.eff[j].injury = amount;

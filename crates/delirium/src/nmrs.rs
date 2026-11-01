@@ -454,11 +454,19 @@ pub struct Effector {
     pub one: bool,
     pub soft: [SoftLimit; 3],
     pub injury: f32,
+    /// Added to `desired` where the joint is driven, not stored in it: extra behaviours lay bends over whatever
+    /// else sets the target (cleared before they tick, so it never builds up). Zero unless one uses it.
+    pub offset: [f32; 3],
 }
 
 impl Effector {
     pub(crate) fn new(j: &JointDef, now: [f32; 3]) -> Effector {
-        Effector { desired: [0.0; 3], zero: now, strength: j.strength, damping: j.damping, muscle_stiffness: j.muscle_stiffness, oppose_gravity: 0.0, one: !j.three, soft: Default::default(), injury: 0.0 }
+        Effector { desired: [0.0; 3], zero: now, strength: j.strength, damping: j.damping, muscle_stiffness: j.muscle_stiffness, oppose_gravity: 0.0, one: !j.three, soft: Default::default(), injury: 0.0, offset: [0.0; 3] }
+    }
+
+    /// The target the joint is driven to: `desired`, plus `offset` when there is one (exactly `desired` otherwise).
+    pub fn aim(&self, k: usize) -> f32 {
+        if self.offset[k] == 0.0 { self.desired[k] } else { self.desired[k] + self.offset[k] }
     }
 
     pub fn set_stiffness(&mut self, s: f32, d: f32, ms: Option<f32>) {
@@ -516,7 +524,7 @@ fn targets(j: &JointDef, e: &Effector) -> [f32; 3] {
     let half = |k: usize| (j.limits[k].1 - j.limits[k].0) * 0.5;
     let k = delirium_data::kv!(136) / (e.strength + delirium_data::kv!(251)) + 1.0;
     let flip = |n: usize, x: f32| if j.flip[n] { -x } else { x };
-    let (mut d1, mut d2, d3) = (flip(0, e.desired[0]), flip(1, e.desired[1]), flip(2, e.desired[2]));
+    let (mut d1, mut d2, d3) = (flip(0, e.aim(0)), flip(1, e.aim(1)), flip(2, e.aim(2)));
     let (u, v) = ((d1 - mid(0)) / half(0), (d2 - mid(1)) / half(1));
     let r2 = v.fma(v, u * u);
     if r2 > k {
@@ -687,8 +695,8 @@ impl Character {
                 let [l1, l2, tw] = targets(j, e);
                 rotation([tw, l1, l2])
             } else {
-                let d = e.desired[0].clamp((-half(0)).fma(delirium_data::kv!(487), mid(0)), half(0).fma(delirium_data::kv!(487), mid(0)));
-                e.desired[0] = d;
+                let d = e.aim(0).clamp((-half(0)).fma(delirium_data::kv!(487), mid(0)), half(0).fma(delirium_data::kv!(487), mid(0)));
+                e.desired[0] = if e.offset[0] == 0.0 { d } else { d - e.offset[0] };
                 rotation([d, 0.0, 0.0])
             };
             let s = e.strength.max(0.0).sqrt();
@@ -706,13 +714,13 @@ impl Character {
             let (strength, damping) = (e.strength * well * k, (e.damping * well * k).max(MIN_DAMPING()));
             let x = damping.fma(delirium_data::kv!(61), strength) * e.muscle_stiffness * dt * 0.5;
             let blend = (delirium_data::kv!(32) * dt).max(x / (x + 1.0)).clamp(0.0, 1.0);
-            let target = if j.three { targets(j, e) } else { [e.desired[0], 0.0, 0.0] };
+            let target = if j.three { targets(j, e) } else { [e.aim(0), 0.0, 0.0] };
             let soft = std::array::from_fn(|k| {
                 let (l, f) = (e.soft[k], j.three && j.flip[k]);
                 let mid = if j.three { (j.limits[k].0 + j.limits[k].1) * 0.5 } else { 0.0 };
                 SoftLimit { angle: if f { -l.angle } else { l.angle } - mid, dir: if f { -l.dir } else { l.dir }, ..l }
             });
-            out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: loose(i, j.limits), max: j.max_torque.map(|m| m * k * most), blend, hinge: !j.three, desired: e.desired[0], jc: j.rigid,
+            out[i + 1] = Rigid { frame: j.rage_parent, child: j.rage_child, limits: loose(i, j.limits), max: j.max_torque.map(|m| m * k * most), blend, hinge: !j.three, desired: e.aim(0), jc: j.rigid,
                                 target, gain: [strength, damping], soft };
         }
         out
