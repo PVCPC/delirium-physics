@@ -1,7 +1,8 @@
 //! Behaviours from Red Dead Redemption 2's Euphoria, written from descriptions of how they behave (see the RDR2
-//! Euphoria notes); none of RDR2's code or numbers. They are extra messages: nothing here runs unless one is sent with
-//! start=true, so every existing behaviour is unchanged. Defaults are Delirium's own round values; a player's own
-//! RDR2 values can be sent as parameters.
+//! Euphoria notes); none of RDR2's code. The parameter names are RDR2's, and some defaults are RDR2's own default
+//! values (rdr2Balance's, shotFromBehind's sfbPeriod, shotInjuredArm's injuredArmTime, several of wallCollision's and
+//! reachForWound's, among others); the rest are Delirium's own. Any of them can be sent as parameters. They are extra
+//! messages: nothing here runs unless one is sent with start=true, so every existing behaviour is unchanged.
 use crate::extras::{Extra, P};
 use crate::msg::{Error, Kind, Message, Param};
 use crate::nmrs::{HIP, KNEE, NECK, SPINE};

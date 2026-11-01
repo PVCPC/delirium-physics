@@ -385,9 +385,9 @@ Vectors are `x,y,z`. "mask" is a body-part string (see
 
 ### Extra messages: from Red Dead Redemption 2
 
-Written from how RDR2's Euphoria behaves (none of its code or numbers). Like every extra they do nothing until sent
-with `start=true`, so the existing behaviours are unchanged. Defaults are Delirium's own; send your own RDR2 values
-as parameters.
+Written from how RDR2's Euphoria behaves (none of its code). The parameter names are RDR2's, and some defaults are
+RDR2's own default values; the rest are Delirium's own, and any of them can be sent as parameters. Like every extra
+they do nothing until sent with `start=true`, so the existing behaviours are unchanged.
 
 | Message | What it does | Key parameters |
 |---|---|---|
