@@ -24,6 +24,7 @@ pub struct Bvh {
     pub nodes: Vec<u8>,
 }
 
+pub const PAST: u32 = u32::MAX - 1;
 const COMPOSITE: u8 = 12;
 const BVH: u8 = 10;
 const GEOMETRY: u8 = 4;
@@ -65,6 +66,27 @@ pub fn fragment(r: &Resource, prims: bool) -> Result<(Vec<CollisionMesh>, usize)
     Ok((out, skipped))
 }
 
+pub fn fragment_children(r: &Resource, prims: bool) -> Result<Vec<usize>, String> {
+    let d = &r.data;
+    let bound = ptr(be32(d, ptr(be32(d, 0xE4)?)? + 0x0C)?)?;
+    let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]];
+    if *d.get(bound + 4).ok_or("Truncated bound")? != COMPOSITE {
+        let (mut out, mut skipped) = (vec![], 0);
+        read_bound(d, bound, identity, &mut out, &mut skipped, 0, true, prims)?;
+        return Ok(vec![0; out.len()]);
+    }
+    let (kids, mats, count) = (ptr(be32(d, bound + 0x80)?)?, ptr(be32(d, bound + 0x84)?)?, be16(d, bound + 0x90)? as usize);
+    let mut children = vec![];
+    for i in 0..count {
+        let row = |k: usize| vec3(d, mats + i * 64 + k * 16);
+        let local = [row(0)?, row(1)?, row(2)?, row(3)?];
+        let (mut out, mut skipped) = (vec![], 0);
+        read_bound(d, ptr(be32(d, kids + i * 4)?)?, local, &mut out, &mut skipped, 1, true, prims)?;
+        children.extend(std::iter::repeat_n(i, out.len()));
+    }
+    Ok(children)
+}
+
 #[derive(Clone, Debug)]
 pub struct Part {
     pub kind: u8,
@@ -74,6 +96,15 @@ pub struct Part {
     pub hi: [f32; 3],
     pub margin: f32,
     pub hull: Vec<[f32; 3]>,
+}
+
+pub fn composite_margin(r: &Resource) -> Result<[f32; 3], String> {
+    let d = &r.data;
+    let at = ptr(be32(d, ptr(be32(d, 0xE4)?)? + 0x0C)?)?;
+    if d.get(at + 4) != Some(&COMPOSITE) {
+        return Err("Fragment bound not a composite".into());
+    }
+    vec3(d, at + 0x70)
 }
 
 pub fn parts(r: &Resource) -> Result<Vec<Part>, String> {
@@ -148,6 +179,59 @@ fn read_box(d: &[u8], at: usize, m: &[[f32; 3]; 4]) -> Result<CollisionMesh, Str
     Ok(mesh)
 }
 
+pub fn volume(d: &[u8], at: usize) -> Result<f32, String> {
+    let cached = f32::from_bits(be32(d, at + 0x6C)?);
+    if cached != f32::MIN && cached != -1.0 {
+        return Ok(cached);
+    }
+    match d.get(at + 4) {
+        Some(4) => {}
+        Some(3) => {
+            let (hi, lo) = (vec3(d, at + 0x10)?, vec3(d, at + 0x20)?);
+            return Ok((hi[2] - lo[2]) * (hi[1] - lo[1]) * (hi[0] - lo[0]));
+        }
+        Some(12) => {
+            let kids = be32(d, at + 0x80)?;
+            let mut v = 0.0f32;
+            for i in 0..be16(d, at + 0x92)? as usize {
+                let k = be32(d, ptr(kids)? + i * 4)?;
+                if k != 0 {
+                    v += volume(d, ptr(k)?)?;
+                }
+            }
+            return Ok(v);
+        }
+        t => return Err(format!("no volume for bound type {t:?}")),
+    }
+    let (polys, verts) = (ptr(be32(d, at + 0x8C)?)?, ptr(be32(d, at + 0xB0)?)?);
+    let (scale, offset) = (vec3(d, at + 0x90)?, vec3(d, at + 0xA0)?);
+    let mut v = 0.0f32;
+    for i in 0..be32(d, at + 0xCC)? as usize {
+        let p = polys + i * 32;
+        let k = be16(d, p + 0x10)? as usize;
+        let q = |j: usize| be16(d, verts + k * 6 + j * 2).map(|x| (x as i16 as f32).mul_add(scale[j], offset[j]));
+        let (a, n) = ([q(0)?, q(1)?, q(2)?], vec3(d, p)?);
+        let t = n[1].mul_add(a[1], n[0].mul_add(a[0], n[2] * a[2]));
+        v = t.mul_add(f32::from_bits(be32(d, p + 0xC)?), v);
+    }
+    Ok(v * (1.0 / 3.0))
+}
+
+pub fn material(d: &[u8], at: usize) -> Option<u8> {
+    fn go(d: &[u8], at: usize, depth: u32) -> Option<u8> {
+        let p = |a: usize| be32(d, a).ok().and_then(|v| ptr(v).ok());
+        match *d.get(at + 4)? {
+            12 if depth < 4 && be16(d, at + 0x92).ok()? > 0 => go(d, p(p(at + 0x80)?)?, depth + 1),
+            3 => Some(be32(d, at + 0x220).ok()? as u8),
+            SPHERE => Some(be32(d, at + 0x90).ok()? as u8),
+            CAPSULE => Some(be32(d, at + 0xD0).ok()? as u8),
+            10 | 4 => Some(be32(d, p(at + 0xD0)?).ok()? as u8),
+            _ => None,
+        }
+    }
+    go(d, at, 0)
+}
+
 fn read_polygons(d: &[u8], at: usize, m: &[[f32; 3]; 4]) -> Result<CollisionMesh, String> {
     let (polys, verts) = (ptr(be32(d, at + 0x8C)?)?, ptr(be32(d, at + 0xB0)?)?);
     let (scale, offset) = (vec3(d, at + 0x90)?, vec3(d, at + 0xA0)?);
@@ -178,7 +262,7 @@ fn read_polygons(d: &[u8], at: usize, m: &[[f32; 3]; 4]) -> Result<CollisionMesh
         if v.iter().any(|&v| v as usize >= vertex_count) {
             return Err(format!("Polygon {i} indexes past {vertex_count} vertices"));
         }
-        let nb = |k: usize| be16(d, p + 24 + k * 2).map(|q| if q == 0xFFFF { u32::MAX } else { first.get(q as usize).copied().unwrap_or(u32::MAX) });
+        let nb = |k: usize| be16(d, p + 24 + k * 2).map(|q| if q == 0xFFFF { u32::MAX } else { first.get(q as usize).copied().unwrap_or(PAST) });
         let n = turn(vec3(d, p)?);
         mesh.normals.push(n);
         if v[3] == 0 {

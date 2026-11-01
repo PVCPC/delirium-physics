@@ -231,7 +231,8 @@ namespace Delirium
                 bodies[k].AddForce(ToUnity(drives[i], drives[i + 1], drives[i + 2]), ForceMode.Force);
                 bodies[k].AddTorque(SpinToUnity(drives[i + 3], drives[i + 4], drives[i + 5]), ForceMode.Force);
                 // the original engine's joint armature (its effector stiffness), as extra inertia on the part: Unity's joints have
-                // none. ponytail: added on the body's principal axes, not the joint's; ArticulationBody would be exact.
+                // none. a x identity is the same on any axes; unlike a joint's armature it also weighs on the parent
+                // joints' motion (Unity has no joint-space armature).
                 nm_agent_get_joint(agent, k, out int _, null, null, null, arm);
                 if (arm[0] > 0 && arm[0] < 1e3f) bodies[k].inertiaTensor = baseInertia[k] + Vector3.one * arm[0];
             }

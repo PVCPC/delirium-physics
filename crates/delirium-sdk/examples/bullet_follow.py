@@ -9,7 +9,7 @@ floor in ~1 s (with them as per-part external torques, or 4 substeps, it blows u
 
 usage: GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python bullet_follow.py <fred.xrt> <build.txt> [taskparams.txt] [--view]
 """
-import ctypes, os, sys
+import ctypes, math, os, sys
 import pybullet as pb
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'bindings', 'python'))
@@ -57,8 +57,9 @@ for i in range(n):
 
 
 def inertia(m, r, h):
-    # ponytail: a solid capsule's principal moments (axis Y), the hemispheres' offset approximated.
-    vc, vs = 3.14159 * r * r * 2 * h, 4 / 3 * 3.14159 * r ** 3
+    # A solid capsule's principal moments (axis Y, cylinder 2h long): each hemisphere's own 83/320 m r^2 moved out
+    # to its centroid h + 3r/8 gives the 2r^2/5 + h^2 + 3hr/4 below.
+    vc, vs = math.pi * r * r * 2 * h, 4 / 3 * math.pi * r ** 3
     mc, ms = m * vc / (vc + vs), m * vs / (vc + vs)
     ax = mc * r * r / 2 + ms * 2 * r * r / 5
     tr = mc * ((2 * h) ** 2 / 12 + r * r / 4) + ms * (2 * r * r / 5 + h * h + 3 * h * r / 4)
@@ -110,7 +111,7 @@ for c in order:
     if part[c]['kind'] == 2:
         pb.setJointMotorControl2(body, link[c], pb.VELOCITY_CONTROL, force=0)
         pb.changeDynamics(body, link[c], jointLowerLimit=part[c]['lim'][0], jointUpperLimit=part[c]['lim'][1])
-    else:  # ponytail: Bullet's spherical joints take no limits; NM's drives keep them in range
+    else:  # pybullet's spherical joints take no limits (changeDynamics and a URDF <limit> leave them free); NM's drives keep them in range
         pb.setJointMotorControlMultiDof(body, link[c], pb.POSITION_CONTROL, [0, 0, 0, 1], targetVelocity=[0, 0, 0], force=[0, 0, 0])
 
 check(lib.nm_agent_set_mode(agent, NM_MODE_FOLLOW))

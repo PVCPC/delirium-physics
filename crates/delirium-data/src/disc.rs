@@ -296,6 +296,11 @@ impl Update {
         Ok(Update::new(path, files))
     }
 
+    pub fn from_xexp(path: &Path) -> Result<Update, String> {
+        let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(Update::new(path, HashMap::from([("default.xexp".to_string(), data)])))
+    }
+
     fn new(path: &Path, files: HashMap<String, Vec<u8>>) -> Update {
         let named = files.keys().map(|k| (k.clone(), format!("update:/{k}"))).collect();
         Update { source: path.to_path_buf(), files, named }

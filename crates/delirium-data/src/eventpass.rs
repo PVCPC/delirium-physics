@@ -18,10 +18,13 @@ struct Pass<'a, P> {
     script: &'a mut ScriptTask,
     built: Response<P>,
     slot2: bool,
+    other: &'a mut Option<Box<dyn Task<P>>>,
     roots: [u32; 5],
 }
 
 type Item<P> = RefCell<Event<P>>;
+
+const MOVEMENT: u32 = u32::MAX;
 
 impl<P: Pedlike> evqueue::Asks<Item<P>> for Pass<'_, P> {
     fn ready(&mut self, e: &mut Ev<Item<P>>) -> bool {
@@ -54,25 +57,33 @@ impl<P: Pedlike> evqueue::Handler<Item<P>, Event<P>> for Pass<'_, P> {
             Some(s) => Response { main: s.task.clone(), secondary: None },
             None => self.handler.respond(self.ped, &*self.tasks, &d),
         };
+        if d.script.is_none() {
+            if let Some(t) = self.handler.respond_other(self.ped, &*self.tasks, &d) {
+                *self.other = Some(t);
+            }
+        }
         self.slot2 = *slot2;
         Reply { main: self.built.main.is_some(), secondary: self.built.secondary.is_some() }
     }
     fn other(&mut self) -> bool {
-        false
+        self.other.is_some()
     }
     fn other_tree(&mut self) -> u32 {
-        0
+        if self.ped.moving() { MOVEMENT } else { 0 }
     }
     fn ask(&mut self, task: u32, urgency: u32, e: &mut Ev<Item<P>>) -> bool {
+        if task == MOVEMENT {
+            return self.ped.ask_movement([ABORT_LEAVE, ABORT_URGENT, ABORT_IMMEDIATE][urgency as usize]);
+        }
         let p = self.roots.iter().position(|&r| r == task).expect("the pass asks a primary root");
         let d = e.data.get_mut();
         let ev = NewTask {
-            secondary: self.built.secondary.is_some(),
+            secondary: self.built.secondary.as_ref().map(|t| t.kind()),
             drop_main: Default::default(),
             kind: self.built.main.as_ref().map(|t| t.kind()),
             priority: d.priority().max(0) as usize,
             event: d.kind,
-            flag: d.switch.as_ref().is_some_and(|s| s.flag),
+            flag: d.switch.as_ref().is_some_and(|s| s.flag) || d.damage.as_ref().is_some_and(|x| x.nm),
             switched: d.switch.as_ref().map(|s| s.task.kind()),
         };
         let urgency = [ABORT_LEAVE, ABORT_URGENT, ABORT_IMMEDIATE][urgency as usize];
@@ -86,7 +97,9 @@ impl<P: Pedlike> evqueue::Handler<Item<P>, Event<P>> for Pass<'_, P> {
         let nm_leaf = self.tasks.leaf().is_some_and(|l| (task::NM_RELAX()..=task::NM_FALL_DOWN()).contains(&l.kind()) || l.kind() == task::DEAD());
         self.ped.on_ragdoll() && e.data.borrow().takes_ragdoll() && !nm_leaf
     }
-    fn other_stop(&mut self) {}
+    fn other_stop(&mut self) {
+        *self.other = None;
+    }
     fn note(&mut self, recs: &mut Records<Event<P>>, e: &Ev<Item<P>>, slot2: bool) {
         let d = e.data.borrow();
         if self.built.main.is_none() || d.kind == kind::SCRIPT_COMMAND {
@@ -101,7 +114,9 @@ impl<P: Pedlike> evqueue::Handler<Item<P>, Event<P>> for Pass<'_, P> {
             (recs.nontemp, recs.pending, recs.temp) = (Some(d.record()), None, None);
         }
     }
-    fn note_other(&mut self, _: &mut Records<Event<P>>, _: &Ev<Item<P>>) {}
+    fn note_other(&mut self, recs: &mut Records<Event<P>>, e: &Ev<Item<P>>) {
+        recs.other = Some(e.data.borrow().record());
+    }
     fn give(&mut self, e: &Ev<Item<P>>) {
         let d = e.data.borrow();
         let r = std::mem::take(&mut self.built);
@@ -118,6 +133,11 @@ impl<P: Pedlike> evqueue::Handler<Item<P>, Event<P>> for Pass<'_, P> {
             }
             None => give(r, d.temporary() && !self.slot2, self.ped, self.tasks),
         }
+        if d.script.is_none() {
+            if let Some(t) = self.other.take() {
+                self.ped.give_movement(t);
+            }
+        }
     }
     fn clear(&mut self) {
         self.built = Response::default();
@@ -128,7 +148,7 @@ pub(super) fn handle<P: Pedlike>(evs: &mut Events<P>, ped: &mut P, tasks: &mut M
     let tree = Tree { slots: std::array::from_fn(|p| tasks.root_id(p)), secondary: tasks.secondary_id(0) };
     let ev = |e: Event<P>| Ev { kind: e.kind, priority: e.priority(), lifetime: 0, age: e.age as i32, keep: e.keep, data: RefCell::new(e) };
     let mut q = Queue { evs: evs.queue.drain(..).map(ev).collect() };
-    let mut pass = Pass { ped, tasks, handler, script: &mut evs.script, built: Response::default(), slot2: false, roots: tree.slots };
+    let mut pass = Pass { ped, tasks, handler, script: &mut evs.script, built: Response::default(), slot2: false, other: &mut evs.other, roots: tree.slots };
     q.handle(&mut evs.recs, &tree, &mut evs.slot2, &mut pass);
     evs.queue = q.evs.into_iter().map(|e| {
         let mut d = e.data.into_inner();

@@ -29,6 +29,12 @@ pub struct Joint {
     pub damping: f32,
     pub strength: f32,
     pub max_torque: [f32; 2],
+    #[serde(default = "centred")]
+    pub centred: bool,
+}
+
+fn centred() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -88,7 +94,7 @@ impl Character {
         let joints = nm_asset::read(d).into_iter().map(|j| Joint {
             name: j.name, index: j.index, three: j.three, pos: j.pos, twist_axis: j.twist_axis, lean_axis: j.lean_axis,
             limits: j.limits.map(|(a, b)| [a, b]), flip: j.flip, muscle_stiffness: j.muscle_stiffness, damping: j.damping,
-            strength: j.strength, max_torque: j.max_torque,
+            strength: j.strength, max_torque: j.max_torque, centred: j.centred,
         }).collect();
         let parts = nm_asset::parts(d).into_iter().zip(nm_asset::masses(d)).zip(nm_asset::PARTS)
             .map(|((frame, mass), name)| Part { name: name.into(), frame, mass }).collect();
@@ -126,7 +132,7 @@ impl Character {
         let mut joints: Vec<nm_asset::Joint> = self.joints.iter().map(|j| nm_asset::Joint {
             name: j.name.clone(), index: j.index, three: j.three, pos: j.pos, twist_axis: j.twist_axis, lean_axis: j.lean_axis,
             limits: j.limits.map(|[a, b]| (a, b)), flip: j.flip, muscle_stiffness: j.muscle_stiffness, damping: j.damping,
-            strength: j.strength, max_torque: j.max_torque,
+            strength: j.strength, max_torque: j.max_torque, centred: j.centred,
         }).collect();
         joints.sort_by_key(|j| j.index);
         (joints, self.parts.iter().map(|p| p.frame).collect(), self.parts.iter().map(|p| p.mass).collect(),
@@ -150,7 +156,7 @@ impl Character {
             lower: p.lower, reach: p.reach, name: p.name.clone(), bind: q(p.bind), boxed: p.boxed.map(Vec3::from_array),
             inertia: Vec3::from_array(p.inertia), size: 1.0, heft: 1.0, grown: 1.0, length: 0.0,
         }).collect();
-        let mut build = Build { parts, nm: delirium::nmrs::HOMER };
+        let mut build = Build { parts, nm: delirium::nmrs::HOMER, links: delirium::nmdbm::asset_links(delirium::nmrs::HOMER) };
         delirium::nmrs::asset_layout(&mut build, &mut frames);
         Some((build, frames))
     }

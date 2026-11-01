@@ -123,6 +123,7 @@ pub struct Slot {
     pub described: u32,
     pub said: [bool; 4],
     pub on_foot: bool,
+    pub follow: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -283,7 +284,69 @@ impl Default for Scanner {
     }
 }
 
+pub fn platform_gate(in_area_2: bool, inside: bool, open_room: bool, at: [f32; 3]) -> bool {
+    if !in_area_2 {
+        return !inside;
+    }
+    if inside {
+        return open_room;
+    }
+    let d = [at[0] - -368.0, at[1] - 1414.0, at[2] - 28.0];
+    d[0].mul_add(d[0], d[1].mul_add(d[1], d[2] * d[2])) < 4900.0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlatformStation {
+    pub at: [f32; 3],
+    pub name: Option<u32>,
+}
+
 impl Scanner {
+    pub fn train_slot(&mut self) -> &mut Slot {
+        if self.next == self.playing {
+            self.next += 1;
+        }
+        let k = self.next as usize % self.slots.len().max(1);
+        self.next = (self.next + 1) & 31;
+        let old = std::mem::take(&mut self.slots[k]);
+        self.slots[k] = Slot {
+            priority: 4, kind: 8, queued: true, category: crate::audioconfig::name_hash("GENERAL_TRAIN_ANNOUNCER"),
+            noise: crate::audioconfig::name_hash("NULL_SOUND"), vehicle: old.vehicle, described: old.described, said: old.said,
+            on_foot: old.on_foot, ..Slot::default()
+        };
+        &mut self.slots[k]
+    }
+
+    pub fn platform(&mut self, gate: bool, tracks: [&[PlatformStation]; 2], at: [f32; 3], now: u32, rng: &mut AudioRand) -> bool {
+        if !gate {
+            return false;
+        }
+        let mut best: (u32, Option<&PlatformStation>) = (u32::MAX, None);
+        for list in tracks {
+            for st in list {
+                let d = [at[0] - st.at[0], at[1] - st.at[1], at[2] - st.at[2]];
+                let d2 = d[1].mul_add(d[1], d[2].mul_add(d[2], d[0] * d[0]));
+                let n = d2 as i64 as u32;
+                if n < best.0 {
+                    best = (n, Some(st));
+                }
+            }
+        }
+        let (Some(st), true) = (best.1, best.0 < 10000) else { return false };
+        let st = *st;
+        let warning = st.name.is_none() || rng.chance(0.7);
+        let phrases = match st.name.filter(|_| !warning) {
+            Some(name) => vec![Phrase { sound: crate::audioconfig::name_hash("ANNOUNCE_ARRIVED"), gap: 0, bank: 2 }, Phrase { sound: name, gap: 0, bank: 1 }],
+            None => {
+                let n = rng.int_in_range(1, 15);
+                vec![Phrase { sound: crate::audioconfig::name_hash(&format!("POLICE_SCANNER_WARNINGS_SUBWAY_WARNING_{n:02}")), gap: 0, bank: 0 }]
+            }
+        };
+        let slot = self.train_slot();
+        (slot.phrases, slot.place, slot.echo, slot.group, slot.time) = (phrases, Some([st.at[0], st.at[1], st.at[2] + 1.5]), 100, 0, now);
+        true
+    }
+
     pub fn speaking(&self) -> bool {
         self.state == 2
     }

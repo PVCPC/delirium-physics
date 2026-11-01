@@ -887,7 +887,7 @@ impl Controller {
               if turn_joints::enabled(){turn_joints::apply(a,&self.filtered[90..104],turn_joints::gate(turning,gait_time));}
               if self.tracking==17 && engine_drive::configured() {
                   let ch=a.character().expect("native effectors required");
-                  let rows=delirium::nmrs::incoming_rows(a.doll.nm,&a.incoming);
+                  let rows=delirium::nmrs::incoming_rows(&a.doll.links,&a.incoming);
                   let targets=std::array::from_fn(|i|if cut_support>0. {ch.eff[i].desired}else{ch.incoming_angle(i,&rows)});
                   let strength=std::array::from_fn(|i|ch.eff[(*delirium::nmrs::HIP())[i]].strength.sqrt().clamp(6.,24.));
                   let mut planned=target.clone();let bounds:Vec<_>=a.doll.capsules().collect();

@@ -120,8 +120,14 @@ fn img_open(path: &Path, key: &ArchiveKey) -> Result<(Vec<img::Entry>, std::fs::
     let name = path.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
     let mut f = std::fs::File::open(path).map_err(|e| format!("{name}: {e}"))?;
     let mut head = vec![];
-    (&mut f).take(delirium_data::kv!(1 int) << delirium_data::kv!(122 int)).read_to_end(&mut head).map_err(|e| e.to_string())?;
+    (&mut f).take(delirium_data::kv!(1 int) << delirium_data::kv!(127 int)).read_to_end(&mut head).map_err(|e| e.to_string())?;
     Ok((img::read_table(&head, Some(key))?, f))
+}
+
+pub fn vehicle_xft(game: &str, name: &str) -> Result<resource::Resource, String> {
+    let dir = Path::new(game);
+    let (table, mut f) = img_open(&dir.join("xbox360/models/cdimages/vehicles.img"), &key(dir)?)?;
+    img_read(&table, &mut f, &format!("{name}.xft"))
 }
 
 fn img_read(table: &[img::Entry], f: &mut std::fs::File, name: &str) -> Result<resource::Resource, String> {
@@ -129,27 +135,36 @@ fn img_read(table: &[img::Entry], f: &mut std::fs::File, name: &str) -> Result<r
     let e = table.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or(format!("{name} not found"))?;
     let mut raw = vec![];
     f.seek(SeekFrom::Start(e.offset)).map_err(|e| e.to_string())?;
-    f.take(e.used_blocks as u64 * delirium_data::kv!(699 int)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
+    f.take(e.used_blocks as u64 * delirium_data::kv!(708 int)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
     resource::parse(&raw)
 }
 
+static LINKS: [std::sync::OnceLock<Vec<Quat>>; 2] = [const { std::sync::OnceLock::new() }; 2];
+
+pub fn links(nm: usize) -> &'static [Quat] {
+    LINKS[nm].get().map_or(&[], |l| l.as_slice())
+}
+
 pub fn homer(game: &str, model: &str, nm: usize) -> Result<Build, String> {
-    let b = homer_build(game, model, nm)?;
-    if (nm == delirium::nmrs::HOMER && delirium::nmdbm::logged_links().is_some()) || delirium::nmdbm::DERIVED_LINKS[nm].get().is_some() {
+    let b = homer_links(game, model, nm)?;
+    let _ = LINKS[nm].set(b.links.clone());
+    Ok(b)
+}
+
+fn homer_links(game: &str, model: &str, nm: usize) -> Result<Build, String> {
+    let b = homer_build(game, model, nm, LINKS[nm].get().cloned().unwrap_or_else(|| delirium::nmdbm::asset_links(nm)))?;
+    if !b.links.is_empty() {
         return Ok(b);
     }
     let clips = Clips::load(game, &b)?;
     let idle: Vec<Quat> = clips.place(&clips.pose(IDLE, 0.0), Transform::from_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2))).iter().map(|f| f.rotation).collect();
     match delirium::nmrs::derive_links(&b, &idle) {
-        Some(l) => {
-            let _ = delirium::nmdbm::DERIVED_LINKS[nm].set(l);
-            homer_build(game, model, nm)
-        }
+        Some(l) => homer_build(game, model, nm, l),
         None => Ok(b),
     }
 }
 
-fn homer_build(game: &str, model: &str, nm: usize) -> Result<Build, String> {
+fn homer_build(game: &str, model: &str, nm: usize, links: Vec<Quat>) -> Result<Build, String> {
     let dir = Path::new(game);
     let (table, mut f) = img_open(&dir.join("xbox360/models/cdimages/componentpeds.img"), &key(dir)?)?;
     let frag = img_read(&table, &mut f, &format!("{model}.xft"))?;
@@ -157,7 +172,7 @@ fn homer_build(game: &str, model: &str, nm: usize) -> Result<Build, String> {
     let parts = delirium_data::ragdoll::read(&frag)?;
     let parents: Vec<Option<usize>> = bones.iter().map(|b| b.parent).collect();
     let bind: Vec<(Vec3, Quat)> = bones.iter().map(|b| (Vec3::from(b.translation), Quat::from_array(b.rotation).normalize())).collect();
-    delirium::ragdoll::Rig::new(&parts, &parents, &bind, &bones, nm).map(|r| r.build).ok_or(format!("{model}.xft: no ragdoll"))
+    delirium::ragdoll::Rig::linked(&parts, &parents, &bind, &bones, nm, links).map(|r| r.build).ok_or(format!("{model}.xft: no ragdoll"))
 }
 
 impl Clips {
@@ -207,11 +222,18 @@ impl Clips {
             let f = |p: &str| if pc() { rd(&format!("common/{p}")) } else {
                 toc.iter().find(|e| e.path.eq_ignore_ascii_case(p)).and_then(|e| rpf::read(&c, e).ok()).ok_or(format!("no {p} in common.rpf"))
             };
-            Ok(crate::melee::load(&f("data/meleeanims.dat")?, &f("data/action_table.csv")?, &f("data/pedpersonality.dat")?))
+            match delirium_data::decision::Store::load(|n| f(&format!("data/decision/{n}")).ok().and_then(|b| String::from_utf8(b).ok())) {
+                Ok(s) => drop(crate::DECISIONS.set(s)),
+                Err(e) => eprintln!("decisions: {e}"),
+            }
+            Ok(crate::melee::load(&f("data/meleeanims.dat")?, &f("data/action_table.csv")?, &f("data/pedpersonality.dat")?,
+                &f("data/animgrp.dat")?, &f("data/ambient.dat")?, (0, &[])))
         })().map_err(|e| eprintln!("fights: {e}")).ok().map(|d| {
             let (mut at, mut dicts) = (std::collections::HashMap::new(), std::collections::HashMap::<String, Vec<anim::Animation>>::new());
             let stance: Vec<String> = (*crate::melee::STANCE_IDS()).iter().filter_map(|&id| d.stance_key(-1, id)).collect();
-            for (n, k) in stance.iter().cloned().chain(d.clip_keys()).enumerate() {
+            let homer = d.ped(crate::HOMER_MODEL).groups;
+            let his = d.table.results.iter().filter(|r| homer.contains(&r.anim_group)).filter_map(|r| d.clip(r));
+            for (n, k) in stance.iter().cloned().chain(d.clip_keys()).chain(his).enumerate() {
                 if n == stance.len() {
                     fight_from = clips.len();
                 }
@@ -242,21 +264,10 @@ impl Clips {
 
     pub fn pose(&self, c: usize, phase: f32) -> Vec<(Vec3, Quat)> {
         let (a, map) = &self.clips[c];
-        let x = phase.clamp(0.0, 1.0) * (a.frames - 1) as f32;
-        let (i, f) = (x.floor() as usize, x.fract());
-        let q = |v: &[f32]| Quat::from_xyzw(v[0], v[1], v[2], v[delirium_data::kv!(0 int)]).normalize();
-        let mut out = self.bind.clone();
-        out[0] = (Vec3::ZERO, Quat::IDENTITY);
-        for (t, bone) in a.tracks.iter().zip(map) {
-            let (va, vb) = (t.sample(i), t.sample(i + 1));
-            match (t.kind, bone, t.bone) {
-                (anim::BONE_ROTATION, Some(b), _) => out[*b].1 = q(&va).slerp(q(&vb), f),
-                (anim::BONE_TRANSLATION, Some(b), _) => out[*b].0 = Vec3::from_slice(&va).lerp(Vec3::from_slice(&vb), f),
-                (anim::BONE_ROTATION, None, 0) => out[0].1 = q(&va).slerp(q(&vb), f),
-                (anim::BONE_TRANSLATION | anim::MOVER_TRANSLATION, None, 0) => out[0].0 += Vec3::from_slice(&va).lerp(Vec3::from_slice(&vb), f),
-                _ => {}
-            }
-        }
+        let mut bind = self.bind.clone();
+        bind[0] = (Vec3::ZERO, Quat::IDENTITY);
+        let mut out = delirium::ragdoll::sample(&bind, a, map, phase);
+        out[0] = delirium::ragdoll::root(a, phase);
         out
     }
 
@@ -271,7 +282,7 @@ impl Clips {
         let q = |v: &[f32]| Quat::from_xyzw(v[0], v[1], v[2], v[delirium_data::kv!(0 int)]).normalize();
         let roots: Vec<&anim::Track> = a.tracks.iter().filter(|t| t.bone == 0).collect();
         let identity = |t: &anim::Track| t.kind == anim::BONE_ROTATION
-            && (0..a.frames).all(|k| { let v = t.sample(k); v[0].abs() < delirium_data::kv!(129) && v[1].abs() < delirium_data::kv!(129) && v[2].abs() < delirium_data::kv!(129) });
+            && (0..a.frames).all(|k| { let v = t.sample(k); v[0].abs() < delirium_data::kv!(134) && v[1].abs() < delirium_data::kv!(134) && v[2].abs() < delirium_data::kv!(134) });
         out[0] = self.bind[0];
         if !roots.iter().any(|t| identity(t)) {
             for t in roots {
@@ -302,7 +313,7 @@ impl Clips {
         let start = a.tracks.iter().find(|t| t.kind == anim::MOVER_TRANSLATION).map_or(Vec3::ZERO, |t| Vec3::from_slice(&t.sample(0)));
         let start_turn = a.mover_rotation.as_ref().map_or(Quat::IDENTITY, |t| q(&t.sample(0)));
         let turn = start_turn * turn;
-        out[0] = if turn.xyz().length() > delirium_data::kv!(129) { (start + start_turn * at, turn) } else { self.bind[0] };
+        out[0] = if turn.xyz().length() > delirium_data::kv!(134) { (start + start_turn * at, turn) } else { self.bind[0] };
         out
     }
 
@@ -411,11 +422,18 @@ impl Clips {
         Rise { clip, hold: false, t: 0.0, body, lay }
     }
 
-    pub fn stand(&self, lay: Vec<Transform>) -> Rise {
+    pub fn stand(&self, lay: Vec<Transform>, world: &delirium::collision::Collision) -> Rise {
         let yaw = |q: Quat| { let a = q * Vec3::Y; a.y.atan2(a.x) };
         let first = self.place(&self.pose(IDLE, 0.0), Transform::IDENTITY);
         let turn = Quat::from_rotation_z(yaw(lay[0].rotation) - yaw(first[0].rotation));
-        let body = Transform::from_translation(lay[0].translation - turn * first[0].translation).with_rotation(turn);
+        let mut body = Transform::from_translation(lay[0].translation - turn * first[0].translation).with_rotation(turn);
+        let at = lay[0].translation;
+        if let Some((h, _)) = world.segment(at, at - Vec3::Z * delirium_data::kv!(136)) {
+            let up = Vec3::new(h.x, h.y, h.z + 1.0);
+            let r = Vec3::splat(delirium_data::kv!(78));
+            let tris: Vec<[Vec3; 3]> = world.tris_near(up - Vec3::Z * delirium_data::kv!(80) - r, up + r).into_iter().map(|t| t.0).collect();
+            body.translation.z = delirium::collision::sphere_down(&tris, up, delirium_data::kv!(78), delirium_data::kv!(80)).map_or(h.z, |s| s.1.z) + 1.0;
+        }
         Rise { clip: IDLE, hold: true, t: 0.0, body, lay }
     }
 
@@ -446,3 +464,4 @@ impl Clips {
         self.place(&self.pose(r.clip, 1.0), r.body)
     }
 }
+

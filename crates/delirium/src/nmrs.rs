@@ -1,9 +1,10 @@
+use crate::fneg;
 use crate::Fma;
 
 pub static LOOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn loose(j: usize, l: [(f32, f32); 3]) -> [(f32, f32); 3] {
-    let want = match j { 0 | 3 => [0.0, 0.0, delirium_data::kv!(11 f32)], 2 | 5 => [delirium_data::kv!(76), delirium_data::kv!(35), 0.0], _ => return l };
+    let want = match j { 0 | 3 => [0.0, 0.0, delirium_data::kv!(11 f32)], 2 | 5 => [delirium_data::kv!(79), delirium_data::kv!(38), 0.0], _ => return l };
     if !LOOSE.load(std::sync::atomic::Ordering::Relaxed) { return l }
     std::array::from_fn(|k| {
         let (mid, half) = ((l[k].0 + l[k].1) * 0.5, ((l[k].1 - l[k].0) * 0.5).max(want[k].to_radians()));
@@ -39,12 +40,30 @@ pub fn set(nm: usize, joints: Vec<nm_asset::Joint>, parts: Vec<[[f32; 3]; 4]>, m
 
 pub fn cg(nm: usize) -> Vec3 {
     let Some(p) = PARTS[nm].get().and_then(|p| p.first()) else { return Vec3::ZERO };
+    let r = quarter_rows([p[0], p[1], p[2]]);
+    let t = p[delirium_data::kv!(0 int)];
+    Vec3::from_array(std::array::from_fn(|j| t[0] * r[0][j] + t[1] * r[1][j] + t[2] * r[2][j]))
+}
+
+fn quarter_rows(m: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     let h = std::f32::consts::FRAC_PI_2 as f64;
     let (c, s) = (h.cos() as f32, h.sin() as f32);
     let z = [[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]];
-    let r: Vec<[f32; 3]> = p[..delirium_data::kv!(0 int)].iter().map(|m| std::array::from_fn(|j| z[2][j].mul_add(m[2], z[1][j].mul_add(m[1], z[0][j] * m[0])))).collect();
-    let t = p[delirium_data::kv!(0 int)];
-    Vec3::from_array(std::array::from_fn(|j| t[0] * r[0][j] + t[1] * r[1][j] + t[2] * r[2][j]))
+    m.map(|m| std::array::from_fn(|j| z[2][j].mul_add(m[2], z[1][j].mul_add(m[1], z[0][j] * m[0]))))
+}
+
+fn bodies(parts: &[[[f32; 3]; 4]]) -> Vec<([Vec3; 3], Vec3)> {
+    let off = Vec3::from(parts[0][delirium_data::kv!(0 int)]);
+    parts.iter().enumerate().map(|(i, p)| {
+        let mut m = [0.0f32; 16];
+        for k in 0..delirium_data::kv!(1 int) {
+            m[delirium_data::kv!(1 int) * k..delirium_data::kv!(1 int) * k + delirium_data::kv!(0 int)].copy_from_slice(&p[k]);
+        }
+        delirium_data::matfix::matrix_fix(&mut m);
+        let r: [[f32; 3]; 3] = std::array::from_fn(|k| [m[delirium_data::kv!(1 int) * k], m[delirium_data::kv!(1 int) * k + 1], m[delirium_data::kv!(1 int) * k + 2]]);
+        let r = if i == 0 { quarter_rows(r) } else { r };
+        (r.map(Vec3::from), Vec3::from(p[delirium_data::kv!(0 int)]) - off)
+    }).collect()
 }
 
 pub(crate) fn ours(v: [f32; 3]) -> Vec3 {
@@ -62,25 +81,25 @@ pub fn KNEE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]>
 pub fn ANKLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [2, delirium_data::kv!(2 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SPINE() -> &'static [usize; 4] { static V: std::sync::OnceLock<[usize; 4]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(97 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SPINE() -> &'static [usize; 4] { static V: std::sync::OnceLock<[usize; 4]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn NECK() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(77 int), delirium_data::kv!(106 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn NECK() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(81 int), delirium_data::kv!(113 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CLAVICLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(52 int), delirium_data::kv!(51 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn CLAVICLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(55 int), delirium_data::kv!(54 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHOULDER() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(107 int), delirium_data::kv!(103 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SHOULDER() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(114 int), delirium_data::kv!(110 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn ELBOW() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(53 int), delirium_data::kv!(209 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn ELBOW() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(56 int), delirium_data::kv!(211 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn WRIST() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(194 int), delirium_data::kv!(195 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn WRIST() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(198 int), delirium_data::kv!(199 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LIMBS() -> &'static [(usize, usize); 4] { static V: std::sync::OnceLock<[(usize, usize); 4]> = std::sync::OnceLock::new(); let f = || [(delirium_data::kv!(107 int), delirium_data::kv!(53 int)), (delirium_data::kv!(103 int), delirium_data::kv!(209 int)), (0, 1), (delirium_data::kv!(0 int), delirium_data::kv!(1 int))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn LIMBS() -> &'static [(usize, usize); 4] { static V: std::sync::OnceLock<[(usize, usize); 4]> = std::sync::OnceLock::new(); let f = || [(delirium_data::kv!(114 int), delirium_data::kv!(56 int)), (delirium_data::kv!(110 int), delirium_data::kv!(211 int)), (0, 1), (delirium_data::kv!(0 int), delirium_data::kv!(1 int))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Debug)]
 pub struct JointDef {
@@ -101,10 +120,12 @@ pub struct JointDef {
 }
 
 pub fn joints(build: &Build, asset: &[nm_asset::Joint]) -> Option<Vec<JointDef>> {
-    if asset.len() != delirium_data::kv!(122 int) || build.parts.len() != delirium_data::kv!(104 int) {
+    let parts = PARTS[build.nm].get()?;
+    if asset.len() != delirium_data::kv!(127 int) || build.parts.len() != delirium_data::kv!(111 int) || parts.len() != delirium_data::kv!(111 int) {
         return None;
     }
     let zero = zero_pose(build);
+    let (body, off) = (bodies(parts), Vec3::from(parts[0][delirium_data::kv!(0 int)]));
     asset.iter().enumerate().map(|(i, j)| {
         let child = i + 1;
         let parent = build.parts[child].parent?;
@@ -114,10 +135,9 @@ pub fn joints(build: &Build, asset: &[nm_asset::Joint]) -> Option<Vec<JointDef>>
         let frame = Quat::from_mat3(&Mat3::from_cols(x, z.cross(x), z)).normalize();
         let (in_parent, in_child) = ((zero[parent].inverse() * frame).normalize(), (zero[child].inverse() * frame).normalize());
         let (rage_parent, rage_child) = rage_frames(j.three, &j.limits, in_parent, in_child);
-        let (lp, lc) = (crate::nmdbm::rage_link(build.nm, parent).inverse(), crate::nmdbm::rage_link(build.nm, child).inverse());
-        let rows = |q: Quat| { let m = Mat3::from_quat(q.normalize()); [m.row(0), m.row(1), m.row(2)] };
-        let (pm, cm) = if j.three { rage_rows(&j.limits, rows(lp * in_parent), rows(lc * in_child)) } else { (rows(lp * rage_parent), rows(lc * rage_child)) };
-        let rigid = crate::rigid::JointConst { pm, pa: lp * build.parts[child].anchor_parent, ca: lc * build.parts[child].anchor, cm };
+        let (a, b) = (&body[parent], &body[child]);
+        let rigid = rage_const(j.three, j.centred, Vec3::from(j.pos) - off, Vec3::from(j.twist_axis), Vec3::from(j.lean_axis), &j.limits,
+                              (&a.0, a.1), (&b.0, b.1));
         Some(JointDef {
             parent, child, three: j.three, in_parent, in_child, rage_parent, rage_child,
             limits: j.limits, flip: j.flip,
@@ -129,7 +149,7 @@ pub fn joints(build: &Build, asset: &[nm_asset::Joint]) -> Option<Vec<JointDef>>
 
 pub fn asset_layout(build: &mut Build, frames: &mut [Transform]) {
     let (Some(parts), Some(asset)) = (PARTS[build.nm].get(), ASSET[build.nm].get()) else { return };
-    if parts.len() != delirium_data::kv!(104 int) || asset.len() != delirium_data::kv!(122 int) || build.parts.len() != delirium_data::kv!(104 int) || frames.len() != delirium_data::kv!(104 int) {
+    if parts.len() != delirium_data::kv!(111 int) || asset.len() != delirium_data::kv!(127 int) || build.parts.len() != delirium_data::kv!(111 int) || frames.len() != delirium_data::kv!(111 int) {
         return;
     }
     let zero = zero_pose(build);
@@ -151,7 +171,7 @@ pub fn asset_layout(build: &mut Build, frames: &mut [Transform]) {
 
 pub fn derive_links(build: &Build, stand: &[Quat]) -> Option<Vec<Quat>> {
     let parts = PARTS[build.nm].get()?;
-    if build.parts.len() != delirium_data::kv!(104 int) || parts.len() != delirium_data::kv!(104 int) || stand.len() != delirium_data::kv!(104 int) {
+    if build.parts.len() != delirium_data::kv!(111 int) || parts.len() != delirium_data::kv!(111 int) || stand.len() != delirium_data::kv!(111 int) {
         return None;
     }
     Some(parts.iter().zip(stand).map(|(m, &s)| {
@@ -195,7 +215,7 @@ fn frames(p: Vec3, c: Vec3, x: Vec3, b: Vec3, (ra, ta): (&[Vec3; 3], Vec3), (rb,
 }
 
 pub(crate) fn joint_limits(f: [f32; 3]) -> ([f32; 6], [bool; 2]) {
-    let g = |x: f32| { let v = x - delirium_data::kv!(522 f32); if -v >= 0.0 { 0.0 } else { v } };
+    let g = |x: f32| { let v = x - delirium_data::kv!(520 f32); if -v >= 0.0 { 0.0 } else { v } };
     let l = [g(f[0]), g(f[0]), g(f[1]), g(f[1]), g(f[2]), g(f[2])];
     (l, [f[0] != f[1], l[delirium_data::kv!(2 int)] != f32::MAX])
 }
@@ -216,7 +236,7 @@ pub struct PhJoint {
 
 pub fn ph_joint(s: &mut nm_asset::Stream, off: Vec3, a: (&[Vec3; 3], Vec3), b: (&[Vec3; 3], Vec3)) -> Option<PhJoint> {
     let three = match s.byte().ok()? { b'3' => true, b'1' => false, _ => return None };
-    let eps = delirium_data::kv!(523 f32);
+    let eps = delirium_data::kv!(521 f32);
     let mut v = || s.vec3().ok().map(Vec3::from);
     let p = v()? - off;
     let ax = v()?;
@@ -235,33 +255,41 @@ pub fn ph_joint(s: &mut nm_asset::Stream, off: Vec3, a: (&[Vec3; 3], Vec3), b: (
         Vec3::ZERO
     };
     let (centred, effector) = (s.flag().ok()? != 0, s.flag().ok()? != 0);
-    let n = if three { delirium_data::kv!(325 int) } else { delirium_data::kv!(7 int) };
+    let n = if three { delirium_data::kv!(324 int) } else { delirium_data::kv!(7 int) };
     let blob = s.string(Some(n)).ok()?;
     if blob.len() != n {
         return None;
     }
     let f = |k: usize| f32::from_bits(u32::from_be_bytes([blob[k], blob[k + 1], blob[k + 2], blob[k + delirium_data::kv!(0 int)]]));
+    let l = if three { [(f(delirium_data::kv!(55 int)), f(delirium_data::kv!(54 int))), (f(delirium_data::kv!(127 int)), f(delirium_data::kv!(107 int))), (f(delirium_data::kv!(85 int)), f(delirium_data::kv!(7 int)))] } else { [(0.0, 0.0); 3] };
+    let jc = rage_const(three, centred, p, ax, lean, &l, a, b);
     if !centred {
-        let (u, w) = across(ax);
-        return Some(PhJoint { three, effector, jc: frames(p, u, w, ax, a, b), limits: None });
+        return Some(PhJoint { three, effector, jc, limits: None });
     }
     if !three {
-        let (u, w) = across(ax);
-        let c = delirium_data::kv!(522 f32);
-        let (lo, hi) = (c + f(delirium_data::kv!(23 int)), f(delirium_data::kv!(52 int)) - c);
-        let (lo, hi) = if lo <= hi { (lo, hi) } else { let m = (f(delirium_data::kv!(23 int)) + f(delirium_data::kv!(52 int))) * 0.5; (m, m) };
-        return Some(PhJoint { three, effector, jc: frames(p, u, w, ax, a, b), limits: Some(([lo, hi, lo, hi, 0.0, 0.0], [false; 2])) });
+        let c = delirium_data::kv!(520 f32);
+        let (lo, hi) = (c + f(delirium_data::kv!(23 int)), f(delirium_data::kv!(55 int)) - c);
+        let (lo, hi) = if lo <= hi { (lo, hi) } else { let m = (f(delirium_data::kv!(23 int)) + f(delirium_data::kv!(55 int))) * 0.5; (m, m) };
+        return Some(PhJoint { three, effector, jc, limits: Some(([lo, hi, lo, hi, 0.0, 0.0], [false; 2])) });
     }
-    let l = [(f(delirium_data::kv!(52 int)), f(delirium_data::kv!(51 int))), (f(delirium_data::kv!(122 int)), f(delirium_data::kv!(100 int))), (f(delirium_data::kv!(81 int)), f(delirium_data::kv!(7 int)))];
     let h = l.map(|(lo, hi)| (hi - lo) * 0.5);
-    let mut jc = joint_frames(p, ax, lean, a, b);
     let (mut lim, _) = joint_limits(h);
-    let (qa, qb) = rage_turns(&l);
-    (jc.pm, jc.cm) = (turn_rows(jc.pm, qa), turn_rows(jc.cm, qb));
     for k in 0..delirium_data::kv!(0 int) {
-        lim[2 * k + 1] = joint_limits([f(delirium_data::kv!(90 int) + delirium_data::kv!(1 int) * k) * h[k]; 3]).0[0];
+        lim[2 * k + 1] = joint_limits([f(delirium_data::kv!(94 int) + delirium_data::kv!(1 int) * k) * h[k]; 3]).0[0];
     }
     Some(PhJoint { three, effector, jc, limits: Some((lim, [true, lim[delirium_data::kv!(2 int)] != f32::MAX])) })
+}
+
+fn rage_const(three: bool, centred: bool, p: Vec3, ax: Vec3, lean: Vec3, l: &[(f32, f32); 3], a: (&[Vec3; 3], Vec3),
+              b: (&[Vec3; 3], Vec3)) -> crate::rigid::JointConst {
+    if !(centred && three) {
+        let (u, w) = across(ax);
+        return frames(p, u, w, ax, a, b);
+    }
+    let mut jc = joint_frames(p, ax, lean, a, b);
+    let (qa, qb) = rage_turns(l);
+    (jc.pm, jc.cm) = (turn_rows(jc.pm, qa), turn_rows(jc.cm, qb));
+    jc
 }
 
 fn rage_frames(three: bool, limits: &[(f32, f32); 3], in_parent: Quat, in_child: Quat) -> (Quat, Quat) {
@@ -276,7 +304,7 @@ fn rage_frames(three: bool, limits: &[(f32, f32); 3], in_parent: Quat, in_child:
 
 pub(crate) fn zero_pose(build: &Build) -> Vec<Quat> {
     let Some(parts) = PARTS[build.nm].get().filter(|p| p.len() == build.parts.len()) else { return build.parts.iter().map(|p| p.bind).collect() };
-    parts.iter().enumerate().map(|(k, m)| (asset_frame(m, true) * crate::nmdbm::link(build.nm, k).inverse()).normalize()).collect()
+    parts.iter().enumerate().map(|(k, m)| (asset_frame(m, true) * crate::nmdbm::link(&build.links, k).inverse()).normalize()).collect()
 }
 
 pub(crate) fn zero_places(build: &Build) -> Vec<Vec3> {
@@ -315,19 +343,19 @@ pub fn angles(q: Quat) -> [f32; 3] {
         return [0.0; 3];
     }
     let wz = w.fma(w, z * z);
-    let (tq, a, b) = if wz > delirium_data::kv!(524) {
+    let (tq, a, b) = if wz > delirium_data::kv!(522) {
         let s = wz.sqrt();
         let tq = if w >= 0.0 { z / (s + w) } else { z / (w - s) };
         let k = 1.0 / ((s + 1.0) * s);
-        (tq, y.fma(z, -(w * x)) * k, w.fma(y, x * z) * k)
+        (tq, y.fma(z, fneg(w * x)) * k, w.fma(y, x * z) * k)
     } else {
         let r = 1.0 / (1.0 - wz).sqrt();
-        (0.0, -(r * x), r * y)
+        (0.0, fneg(r * x), r * y)
     };
     let t = b.fma(b, a * a).sqrt();
     let atan = |v: f32| (v as f64).atan() as f32;
-    let k = 1.0 / t * (atan(t) * delirium_data::kv!(108));
-    [atan(tq) * delirium_data::kv!(108), k * b, k * a]
+    let k = 1.0 / t * (atan(t) * delirium_data::kv!(84));
+    [atan(tq) * delirium_data::kv!(84), k * b, k * a]
 }
 
 fn mat_quat(r: &[[f32; 3]; 3]) -> Quat {
@@ -352,9 +380,9 @@ fn mat_quat(r: &[[f32; 3]; 3]) -> Quat {
     Quat::from_xyzw(v[0], v[1], v[2], v[delirium_data::kv!(0 int)])
 }
 
-pub fn incoming_rows(nm: usize, frames: &[Transform]) -> Vec<[Vec3; 3]> {
+pub fn incoming_rows(links: &[Quat], frames: &[Transform]) -> Vec<[Vec3; 3]> {
     frames.iter().enumerate().map(|(k, f)| {
-        let m = Mat3::from_quat(f.rotation * crate::nmdbm::link(nm, k));
+        let m = Mat3::from_quat(f.rotation * crate::nmdbm::link(links, k));
         [m.x_axis, m.y_axis, m.z_axis]
     }).collect()
 }
@@ -365,7 +393,7 @@ pub fn rotation([tw, l1, l2]: [f32; 3]) -> Quat {
     }
     let sw = l2.fma(l2, l1 * l1).sqrt();
     let tan = |v: f32| (v as f64).tan() as f32;
-    let f = 1.0 / (sw + delirium_data::kv!(47)) * tan(sw * delirium_data::kv!(17));
+    let f = 1.0 / (sw + delirium_data::kv!(50)) * tan(sw * delirium_data::kv!(17));
     let (a, b, tq) = (f * l2, f * l1, tan(tw * delirium_data::kv!(17)));
     let (c, e) = (2.0 / tq.fma(tq, 1.0), 2.0 / (b.fma(b, a * a) + 1.0));
     let (c1, e1) = (c - 1.0, e - 1.0);
@@ -373,7 +401,7 @@ pub fn rotation([tw, l1, l2]: [f32; 3]) -> Quat {
 }
 
 pub fn quat_rows(q: [f32; 4]) -> [Vec3; 3] {
-    let c = delirium_data::kv!(525 f32);
+    let c = delirium_data::kv!(523 f32);
     let (x, y, z, w) = (q[0] * c, q[1] * c, q[2] * c, q[delirium_data::kv!(0 int)] * c);
     let (zx, yx, wz, wy, zy, wx) = (z * x, y * x, w * z, w * y, z * y, w * x);
     let (zz, yy, xx) = (z * z, y * y, x * x);
@@ -393,7 +421,7 @@ pub fn tan_quat(tq: f32, a: f32, b: f32) -> Quat {
 
 #[allow(non_snake_case)]
 #[inline]
-fn MIN_DAMPING() -> f32 { delirium_data::kv!(60) }
+fn MIN_DAMPING() -> f32 { delirium_data::kv!(64) }
 
 pub fn effector_angles(raw: [f32; 3], limits: &[(f32, f32); 3], flip: [bool; 3]) -> [f32; 3] {
     std::array::from_fn(|k| {
@@ -514,7 +542,7 @@ pub struct Character {
 fn targets(j: &JointDef, e: &Effector) -> [f32; 3] {
     let mid = |k: usize| (j.limits[k].0 + j.limits[k].1) * 0.5;
     let half = |k: usize| (j.limits[k].1 - j.limits[k].0) * 0.5;
-    let k = delirium_data::kv!(136) / (e.strength + delirium_data::kv!(251)) + 1.0;
+    let k = delirium_data::kv!(25) / (e.strength + delirium_data::kv!(250)) + 1.0;
     let flip = |n: usize, x: f32| if j.flip[n] { -x } else { x };
     let (mut d1, mut d2, d3) = (flip(0, e.desired[0]), flip(1, e.desired[1]), flip(2, e.desired[2]));
     let (u, v) = ((d1 - mid(0)) / half(0), (d2 - mid(1)) / half(1));
@@ -542,18 +570,18 @@ impl Character {
     }
 
     pub fn seed(&mut self, s: u32) {
-        let s = (s << delirium_data::kv!(0 int)) & delirium_data::kv!(526 int) & delirium_data::kv!(527 int);
-        self.rng = (s + (s == 0) as u32, s.rotate_left(delirium_data::kv!(51 int)) ^ s);
+        let s = (s << delirium_data::kv!(0 int)) & delirium_data::kv!(524 int) & delirium_data::kv!(525 int);
+        self.rng = (s + (s == 0) as u32, s.rotate_left(delirium_data::kv!(54 int)) ^ s);
     }
 
     pub fn random(&mut self) -> f32 {
-        (self.random_bits() & delirium_data::kv!(185 int)) as f32 / delirium_data::kv!(528)
+        (self.random_bits() & delirium_data::kv!(190 int)) as f32 / delirium_data::kv!(526)
     }
 
     pub fn random_bits(&mut self) -> u32 {
-        let n = self.rng.0 as u64 * delirium_data::kv!(187 int) + self.rng.1 as u64;
+        let n = self.rng.0 as u64 * delirium_data::kv!(192 int) + self.rng.1 as u64;
         self.rng = (n as u32, (n >> delirium_data::kv!(7 int)) as u32);
-        self.rng.0 & delirium_data::kv!(529 int)
+        self.rng.0 & delirium_data::kv!(527 int)
     }
 
     pub fn actual(&self, i: usize, frames: &[Transform]) -> [f32; 3] {
@@ -623,7 +651,7 @@ impl Character {
         let has = |set: &[u8]| set.contains(&s);
         let mut out = vec![];
         match p {
-            b'f' if s == b'b' => out.extend(0..delirium_data::kv!(122 int)),
+            b'f' if s == b'b' => out.extend(0..delirium_data::kv!(127 int)),
             b'u' => {
                 if s == b'w' { out.extend((*WRIST())); }
                 if s == b'c' { out.extend((*CLAVICLE())); }
@@ -687,7 +715,7 @@ impl Character {
                 let [l1, l2, tw] = targets(j, e);
                 rotation([tw, l1, l2])
             } else {
-                let d = e.desired[0].clamp((-half(0)).fma(delirium_data::kv!(487), mid(0)), half(0).fma(delirium_data::kv!(487), mid(0)));
+                let d = e.desired[0].clamp((-half(0)).fma(delirium_data::kv!(486), mid(0)), half(0).fma(delirium_data::kv!(486), mid(0)));
                 e.desired[0] = d;
                 rotation([d, 0.0, 0.0])
             };
@@ -704,8 +732,8 @@ impl Character {
         for (i, (j, e)) in self.joints.iter().zip(&self.eff).enumerate() {
             let well = 1.0 - e.injury;
             let (strength, damping) = (e.strength * well * k, (e.damping * well * k).max(MIN_DAMPING()));
-            let x = damping.fma(delirium_data::kv!(61), strength) * e.muscle_stiffness * dt * 0.5;
-            let blend = (delirium_data::kv!(32) * dt).max(x / (x + 1.0)).clamp(0.0, 1.0);
+            let x = damping.fma(delirium_data::kv!(65), strength) * e.muscle_stiffness * dt * 0.5;
+            let blend = (delirium_data::kv!(35) * dt).max(x / (x + 1.0)).clamp(0.0, 1.0);
             let target = if j.three { targets(j, e) } else { [e.desired[0], 0.0, 0.0] };
             let soft = std::array::from_fn(|k| {
                 let (l, f) = (e.soft[k], j.three && j.flip[k]);

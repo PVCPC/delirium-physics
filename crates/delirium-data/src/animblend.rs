@@ -1,3 +1,5 @@
+use crate::estimate::fneg;
+
 pub const UNSET: f32 = -1.0;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,7 +35,7 @@ impl Player {
     pub fn new(duration: f32) -> Self {
         Player {
             duration: Some(duration), phase: 0.0, prev_phase: 0.0, rate: 1.0, weight: 1.0, goal: 0.0, blend_rate: 0.0,
-            weight_step: UNSET, phase_step: UNSET, blend_out: -crate::kv!(108), priority: 0, mask: 0,
+            weight_step: UNSET, phase_step: UNSET, blend_out: -crate::kv!(84), priority: 0, mask: 0,
             playing: false, paused: false, finished: false, looped: false, hold: false, blending: false,
             active: false, loops: false, synced: false, remove_blended_out: false, blend_out_at_end: false,
             own_channel: false, skip_weight: false,
@@ -60,14 +62,14 @@ impl Player {
                 return;
             }
             (self.goal, self.blending) = (1.0, true);
-            self.blend_rate = if delta - crate::kv!(129) >= 0.0 { delta } else { crate::kv!(129) };
+            self.blend_rate = if delta - crate::kv!(134) >= 0.0 { delta } else { crate::kv!(134) };
         } else if delta < 0.0 {
             if self.weight <= 0.0 && delta >= self.signed_blend_rate() {
                 return;
             }
             let d = -delta;
             (self.goal, self.blending) = (0.0, true);
-            self.blend_rate = if d - crate::kv!(129) >= 0.0 { d } else { crate::kv!(129) };
+            self.blend_rate = if d - crate::kv!(134) >= 0.0 { d } else { crate::kv!(134) };
         } else {
             self.blending = false;
         }
@@ -145,7 +147,7 @@ impl Player {
             } else if self.phase < 0.0 {
                 self.finished = true;
                 if self.looped {
-                    self.phase = ((self.phase + crate::kv!(28)) as f64 % 1.0) as f32;
+                    self.phase = ((self.phase + crate::kv!(26)) as f64 % 1.0) as f32;
                 } else {
                     self.phase = 0.0;
                     if self.hold { self.prev_phase = 0.0 } else { self.playing = false }
@@ -176,8 +178,8 @@ impl Player {
 }
 
 fn frame_rate(duration: f32) -> f32 {
-    let frames = duration.mul_add(crate::kv!(80), 1.0) - 1.0;
-    crate::kv!(80) / if 1.0 - frames >= 0.0 { 1.0 } else { frames }
+    let frames = duration.mul_add(crate::kv!(27), 1.0) - 1.0;
+    crate::kv!(27) / if 1.0 - frames >= 0.0 { 1.0 } else { frames }
 }
 
 pub fn sync_phases(players: &mut [Player], dt: f32) {
@@ -209,7 +211,7 @@ pub fn sync_phases(players: &mut [Player], dt: f32) {
 pub fn priority_weights(players: &[Player]) -> Vec<f32> {
     let mut out = vec![0.0; players.len()];
     let (mut count0, mut only0) = (0, 0);
-    for layer in (0..=crate::kv!(97 u8)).rev() {
+    for layer in (0..=crate::kv!(104 u8)).rev() {
         let mut sum = 0.0f32;
         for (i, p) in players.iter().enumerate() {
             if p.duration.is_some() && !p.own_channel && p.priority == layer {
@@ -266,19 +268,19 @@ pub struct Dof {
 pub fn blend_n(dest: &mut [Dof], sources: &[&[Dof]], weights: &[f32], priority: Option<&[u8]>) {
     let total = weights.iter().fold(0.0f32, |s, &w| s + w);
     let total = if total - 1.0 >= 0.0 { 1.0 } else { total };
-    let rest = if total > crate::kv!(264) { 0.0 } else { 1.0 - total };
+    let rest = if total > crate::kv!(263) { 0.0 } else { 1.0 - total };
     let mut w = vec![0.0f32; weights.len()];
     for (d, dof) in dest.iter_mut().enumerate() {
         for (i, s) in sources.iter().enumerate() {
             w[i] = if s[d].invalid { 0.0 } else { weights[i] };
         }
-        if let Some(p) = priority.filter(|_| dof.track < 2 || dof.track == crate::kv!(104 int)) {
+        if let Some(p) = priority.filter(|_| dof.track < 2 || dof.track == crate::kv!(111 int)) {
             layer_weights(&mut w, p, crate::kv!(23 int));
         }
         let mut acc = rest;
         for w in w.iter_mut() {
             acc = *w + acc;
-            if acc >= crate::kv!(129) {
+            if acc >= crate::kv!(134) {
                 let q = *w / acc;
                 *w = if !(q >= 0.0) { 0.0 } else if q >= 1.0 { 1.0 } else { q };
             } else {
@@ -310,8 +312,8 @@ fn blend_dof(d: &mut Dof, s: &Dof, t: f32) {
             d.value = [r * x, r * y, r * z, r * w];
         }
         1 => (d.value, d.invalid) = (s.value, false),
-        0 if t > crate::kv!(129) => {
-            if t < crate::kv!(264) && !d.invalid {
+        0 if t > crate::kv!(134) => {
+            if t < crate::kv!(263) && !d.invalid {
                 for (a, &b) in d.value.iter_mut().zip(&s.value) {
                     *a = (b - *a).mul_add(t, *a);
                 }
@@ -321,8 +323,8 @@ fn blend_dof(d: &mut Dof, s: &Dof, t: f32) {
             d.invalid = false;
         }
         0 => {}
-        2 if t < crate::kv!(264) && !d.invalid => (d.value[0], d.invalid) = ((s.value[0] - d.value[0]).mul_add(t, d.value[0]), s.invalid),
-        2 if t > crate::kv!(129) => (d.value[0], d.invalid) = (s.value[0], s.invalid),
+        2 if t < crate::kv!(263) && !d.invalid => (d.value[0], d.invalid) = ((s.value[0] - d.value[0]).mul_add(t, d.value[0]), s.invalid),
+        2 if t > crate::kv!(134) => (d.value[0], d.invalid) = (s.value[0], s.invalid),
         2 => {}
         _ if t >= 0.5 => (d.value[0], d.invalid) = (s.value[0], false),
         _ => {}
@@ -340,10 +342,10 @@ pub struct MoverPlayer {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn FULL_MOVER_WEIGHT() -> u32 { crate::kv!(179 int) }
+pub fn FULL_MOVER_WEIGHT() -> u32 { crate::kv!(184 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn OWN_CHANNEL() -> u32 { crate::kv!(626 int) }
+pub fn OWN_CHANNEL() -> u32 { crate::kv!(634 int) }
 
 pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     use crate::staticcount::{MOVER_BITS, NO_MOVER_TRACK};
@@ -351,7 +353,7 @@ pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     let (mut count0, mut lowest) = (0, 0);
     for (k, p) in players.iter().enumerate().filter(|(_, p)| p.clip) {
         let root = |mask: u32| mask == 0 || mask_passes(mask as u8, 0);
-        let counts = p.flags & NO_MOVER_TRACK() == 0 && p.mover_track && p.flags & OWN_CHANNEL() == 0 && root(p.flags & crate::kv!(194 int))
+        let counts = p.flags & NO_MOVER_TRACK() == 0 && p.mover_track && p.flags & OWN_CHANNEL() == 0 && root(p.flags & crate::kv!(198 int))
             || p.flags & MOVER_BITS() != 0;
         if counts && p.layer == 0 {
             (count0, lowest) = (count0 + 1, w.len());
@@ -383,7 +385,7 @@ pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     if count0 == 1 {
         w[lowest] = 1.0;
     }
-    layer_weights(&mut w, &layer.iter().map(|&l| u8::try_from(l).unwrap_or(crate::kv!(390 int))).collect::<Vec<_>>(), crate::kv!(97 int));
+    layer_weights(&mut w, &layer.iter().map(|&l| u8::try_from(l).unwrap_or(crate::kv!(389 int))).collect::<Vec<_>>(), crate::kv!(104 int));
     let mut out = vec![0.0; players.len() + 1];
     for (&k, &x) in from.iter().zip(&w) {
         out[k] = x;
@@ -396,18 +398,18 @@ pub const MASK_BONES: [u16; 1] = [0];
 #[allow(non_snake_case)]
 #[inline]
 pub fn MASKS() -> &'static [&'static [(u8, u8)]; 12] { static V: std::sync::OnceLock<[&'static [(u8, u8)]; 12]> = std::sync::OnceLock::new(); let f = || [
-    Box::leak(Box::new([(0, crate::kv!(363 int))])).as_slice(),
-    Box::leak(Box::new([(2, crate::kv!(34 int)), (crate::kv!(396 int), crate::kv!(396 int)), (crate::kv!(254 int), crate::kv!(363 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(362 int))])).as_slice(),
+    Box::leak(Box::new([(2, crate::kv!(37 int)), (crate::kv!(395 int), crate::kv!(395 int)), (crate::kv!(253 int), crate::kv!(362 int))])).as_slice(),
     Box::leak(Box::new([(2, crate::kv!(22 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(7 int), crate::kv!(33 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(97 int), crate::kv!(332 int))])).as_slice(),
-    Box::leak(Box::new([(0, crate::kv!(254 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(356 int), crate::kv!(374 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(319 int), crate::kv!(192 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(97 int), crate::kv!(332 int)), (crate::kv!(7 int), crate::kv!(33 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(7 int), crate::kv!(33 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(97 int), crate::kv!(332 int))])).as_slice(),
-    Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(97 int), crate::kv!(52 int)), (crate::kv!(7 int), crate::kv!(311 int)), (crate::kv!(350 int), crate::kv!(399 int)), (crate::kv!(342 int), crate::kv!(253 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(104 int), crate::kv!(331 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(253 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(355 int), crate::kv!(373 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(318 int), crate::kv!(197 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(331 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(331 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(55 int)), (crate::kv!(7 int), crate::kv!(310 int)), (crate::kv!(349 int), crate::kv!(398 int)), (crate::kv!(341 int), crate::kv!(252 int))])).as_slice(),
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn mask_passes(mask: u8, bone: u16) -> bool {
@@ -416,7 +418,7 @@ pub fn mask_passes(mask: u8, bone: u16) -> bool {
 }
 
 pub fn ease_ratio(ratio: f32, wanted: f32, dt: f32, player: bool, top: f32) -> f32 {
-    let (up, down) = if player { (crate::kv!(108), 2.0) } else { (2.0, crate::kv!(61)) };
+    let (up, down) = if player { (crate::kv!(84), 2.0) } else { (2.0, crate::kv!(65)) };
     if wanted > ratio {
         let r = dt.mul_add(up, ratio);
         let r = if r > wanted { wanted } else { r };
@@ -438,6 +440,44 @@ pub fn move_ratio(m: f32, s: f32) -> f32 {
 pub fn split_ratio(ratio: f32) -> [(i32, f32); 2] {
     let frac = (ratio as f64 % 1.0) as f32;
     let slot = ratio as i32;
-    if frac.abs() < crate::kv!(48) { [(slot, 1.0), (-1, 0.0)] } else { [(slot, 1.0 - frac), (slot + 1, frac)] }
+    if frac.abs() < crate::kv!(51) { [(slot, 1.0), (-1, 0.0)] } else { [(slot, 1.0 - frac), (slot + 1, frac)] }
+}
+
+#[allow(non_snake_case)]
+#[inline]
+fn LIST_SLACK() -> f32 { crate::kv!(635) }
+
+pub fn normalize_list(w: &mut [f32]) {
+    let Some(last) = w.len().checked_sub(1) else { return };
+    for x in w.iter_mut() {
+        if !(*x >= 0.0) {
+            *x = 0.0;
+        } else if *x > 1.0 {
+            *x = 1.0;
+        }
+    }
+    let sum = w.iter().fold(0.0f32, |s, &x| s + x);
+    if !(sum < 1.0) && sum <= LIST_SLACK() {
+        return;
+    }
+    let e = crate::estimate::frsqrte(sum as f64) as f32;
+    let k = e * e;
+    let mut rest = 0.0f32;
+    for x in &mut w[..last] {
+        *x *= k;
+        rest = *x + rest;
+    }
+    w[last] = 1.0 - rest;
+}
+
+pub fn old_set_rate(old: i32, new: i32, own: i32) -> f32 {
+    let slow = (old == crate::kv!(37 int) && new == own) || (old == own && new == crate::kv!(37 int)) || (old == crate::kv!(349 int) && new == crate::kv!(36 int))
+        || (old == crate::kv!(36 int) && new == crate::kv!(349 int));
+    if slow { 1.0 } else { 2.0 }
+}
+
+pub fn old_set_weight(weight: f32, rate: f32, dt: f32) -> Option<f32> {
+    let w = fneg(dt.mul_add(rate, -weight));
+    if w <= 0.0 { None } else { Some(w) }
 }
 

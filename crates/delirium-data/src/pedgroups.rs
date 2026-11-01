@@ -3,7 +3,7 @@ use crate::mathrt;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn COUNT() -> usize { crate::kv!(89 int) }
+pub fn COUNT() -> usize { crate::kv!(93 int) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn LEADER() -> usize { crate::kv!(22 int) }
@@ -22,16 +22,19 @@ pub struct Member {
 #[derive(Clone, Debug)]
 pub struct Group<P> {
     pub slots: [Option<P>; 8],
+    pub generation: u16,
     pub separation: f32,
     pub formation: Formation,
     pub kind: u8,
+    pub number: u8,
     pub in_use: bool,
     pub owner: u32,
 }
 
 impl<P: Copy + PartialEq> Default for Group<P> {
     fn default() -> Self {
-        Group { slots: [None; 8], separation: crate::kv!(80), formation: Formation::new(LOOSE), kind: 0, in_use: false, owner: 0 }
+        Group { slots: [None; 8], generation: 0, separation: crate::kv!(27), formation: Formation::new(LOOSE), kind: 0,
+            number: 0, in_use: false, owner: 0 }
     }
 }
 
@@ -42,6 +45,10 @@ impl<P: Copy + PartialEq> Group<P> {
 
     pub fn has(&self, p: P) -> bool {
         self.slots.contains(&Some(p))
+    }
+
+    pub fn is_leader(&self, p: P) -> bool {
+        self.slots[LEADER()] == Some(p)
     }
 
     pub fn count(&self) -> usize {
@@ -56,6 +63,21 @@ impl<P: Copy + PartialEq> Group<P> {
         if !self.has(p) {
             if let Some(s) = self.slots[..LEADER()].iter_mut().find(|s| s.is_none()) {
                 *s = Some(p);
+            }
+        }
+    }
+
+    pub fn make_room_kept(&mut self, n: usize, keep: impl Fn(P) -> bool) {
+        let mut left = n;
+        for s in 0..LEADER() {
+            if left == 0 {
+                break;
+            }
+            if let Some(p) = self.slots[s] {
+                if !keep(p) {
+                    self.slots[s] = None;
+                    left -= 1;
+                }
             }
         }
     }
@@ -148,14 +170,15 @@ impl<P: Copy + PartialEq> Groups<P> {
 
     pub fn create(&mut self, kind: u8) -> Option<usize> {
         let range = match kind {
-            0 => crate::kv!(7 int)..crate::kv!(89 int),
+            0 => crate::kv!(7 int)..crate::kv!(93 int),
             1 | 2 => 0..crate::kv!(7 int),
-            _ => 0..crate::kv!(89 int),
+            _ => 0..crate::kv!(93 int),
         };
         let i = range.into_iter().find(|&i| !self.0[i].in_use)?;
         let g = &mut self.0[i];
         g.flush();
         (g.in_use, g.kind) = (true, kind);
+        g.number = i as u8;
         Some(i)
     }
 
@@ -172,6 +195,112 @@ impl<P: Copy + PartialEq> Groups<P> {
                 g.flush();
             }
         }
+    }
+}
+
+pub fn formation_script(kind: u8) -> Option<i32> {
+    match kind {
+        LOOSE => Some(0),
+        SURROUND_FACING_INWARDS => Some(1),
+        SURROUND_FACING_AHEAD => Some(2),
+        LINE_ABREAST => Some(crate::kv!(0 int)),
+        FOLLOW_IN_LINE => Some(crate::kv!(1 int)),
+        _ => None,
+    }
+}
+
+impl<P: Copy + PartialEq> Groups<P> {
+    pub fn resolve(&self, handle: i32) -> Option<usize> {
+        if handle == -1 {
+            return None;
+        }
+        let i = (handle & crate::kv!(53 int)) as usize;
+        let g = self.0.get(i)?;
+        (g.in_use && i32::from(g.generation) == (handle >> crate::kv!(54 int)) & crate::kv!(53 int)).then_some(i)
+    }
+
+    pub fn handle_of(&self, i: usize) -> i32 {
+        let generation = self.0.get(i).map_or(0, |g| g.generation);
+        (i32::from(generation) << crate::kv!(54 int)) | (i as i32 & crate::kv!(53 int))
+    }
+
+    pub fn handle(&mut self, i: usize) -> i32 {
+        let g = &mut self.0[i];
+        g.generation = if g.generation >= crate::kv!(928 int) { 1 } else { g.generation + 1 };
+        (i32::from(g.generation) << crate::kv!(54 int)) | (i as i32 & crate::kv!(53 int))
+    }
+
+    pub fn recorded(&self, number: u8) -> Option<usize> {
+        usize::try_from(number).ok().filter(|&n| n < COUNT())
+    }
+
+    pub fn size(&self, handle: i32) -> (i32, i32) {
+        match self.resolve(handle) {
+            Some(i) => (self.0[i].leader().is_some() as i32, self.0[i].followers() as i32),
+            None => (0, 0),
+        }
+    }
+
+    pub fn formation_of(&self, handle: i32) -> i32 {
+        self.resolve(handle).map_or(crate::kv!(2 int), |i| formation_script(self.0[i].formation.kind).unwrap_or(crate::kv!(2 int)))
+    }
+
+    pub fn member_at(&self, handle: i32, slot: i32) -> Option<P> {
+        let i = self.resolve(handle)?;
+        let s = usize::try_from(slot).ok().filter(|&s| s < crate::kv!(23 int))?;
+        self.0[i].slots[s]
+    }
+
+    pub fn leader_at(&self, handle: i32) -> Option<P> {
+        self.member_at(handle, LEADER() as i32)
+    }
+
+    pub fn nth_member_at(&self, handle: i32, n: i32) -> Option<P> {
+        let i = self.resolve(handle)?;
+        let g = &self.0[i];
+        if n < 0 || n as usize >= g.followers() {
+            return None;
+        }
+        g.slots[..LEADER()].iter().flatten().nth(n as usize).copied()
+    }
+
+    pub fn index_of(&self, group: Option<usize>) -> i32 {
+        group.map_or(-1, |g| self.handle_of(self.0[g].number as usize))
+    }
+
+    pub fn is_member(&self, handle: i32, ped: Option<P>) -> bool {
+        ped.is_some_and(|p| self.resolve(handle).is_some_and(|i| self.0[i].in_use && self.0[i].has(p)))
+    }
+
+    pub fn is_leader_of(&self, handle: i32, ped: Option<P>) -> bool {
+        ped.is_some_and(|p| self.resolve(handle).is_some_and(|i| self.0[i].in_use && self.0[i].is_leader(p)))
+    }
+
+    pub fn set_leader_at(&mut self, handle: i32, ped: Option<P>, member: impl Fn(P) -> Member) {
+        let Some(i) = self.resolve(handle) else { return };
+        let Some(p) = ped else {
+            self.0[i].slots[LEADER()] = None;
+            return;
+        };
+        self.0[i].set_leader(p);
+        self.0[i].update(&member);
+    }
+
+    pub fn add_at(&mut self, handle: i32, ped: Option<P>, keep: impl Fn(P) -> bool, member: impl Fn(P) -> Member) {
+        let Some(i) = self.resolve(handle) else { return };
+        let Some(p) = ped else { return };
+        let g = &mut self.0[i];
+        if g.followers() >= LEADER() && g.leader().is_some_and(|l| member(l).player) {
+            g.make_room_kept(1, keep);
+        }
+        g.add(p);
+        g.update(&member);
+    }
+
+    pub fn remove_at(&mut self, group: Option<usize>, ped: Option<P>, member: impl Fn(P) -> Member) {
+        let (Some(i), Some(p)) = (group, ped) else { return };
+        self.0[i].remove(p);
+        self.0[i].update(&member);
     }
 }
 
@@ -193,19 +322,19 @@ pub fn script_formation(n: i32) -> Option<u8> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn TURNS() -> u32 { crate::kv!(853 int) }
+fn TURNS() -> u32 { crate::kv!(929 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_LEADER() -> u32 { crate::kv!(854 int) }
+fn FACE_LEADER() -> u32 { crate::kv!(930 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_AWAY() -> u32 { crate::kv!(796 int) }
+fn FACE_AWAY() -> u32 { crate::kv!(812 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LEAD() -> u32 { crate::kv!(789 int) }
+pub fn LEAD() -> u32 { crate::kv!(805 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CROWD() -> u32 { crate::kv!(791 int) }
+pub fn CROWD() -> u32 { crate::kv!(807 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Place {
@@ -232,15 +361,15 @@ pub struct Formation {
 impl Formation {
     pub fn new(kind: u8) -> Formation {
         let (spacing, flags) = match kind {
-            LOOSE => (crate::kv!(30), crate::kv!(855 int)),
-            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(856 int)),
-            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(857 int)),
-            FOLLOW_IN_LINE => (2.0, crate::kv!(858 int)),
-            _ => (2.0, crate::kv!(859 int)),
+            LOOSE => (crate::kv!(33), crate::kv!(931 int)),
+            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(932 int)),
+            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(933 int)),
+            FOLLOW_IN_LINE => (2.0, crate::kv!(934 int)),
+            _ => (2.0, crate::kv!(935 int)),
         };
-        let catch_up = if kind == FOLLOW_IN_LINE { [1.0, crate::kv!(60)] } else { [crate::kv!(5), crate::kv!(133)] };
+        let catch_up = if kind == FOLLOW_IN_LINE { [1.0, crate::kv!(64)] } else { [crate::kv!(5), crate::kv!(139)] };
         Formation { kind, spacing, catch_up, flags, places: Default::default(), leader: Place::default(), count: 0,
-            last: [crate::kv!(860 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
+            last: [crate::kv!(936 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
             trail_near: [0.0; 8] }
     }
 
@@ -264,7 +393,7 @@ impl Formation {
     }
 
     fn surround(&mut self, l: &Member, followers: &[Option<Member>; 7]) {
-        let step = crate::kv!(596 f32) / followers.iter().flatten().count() as f32;
+        let step = crate::kv!(604 f32) / followers.iter().flatten().count() as f32;
         let mut a = 0.0f32;
         for (place, _) in self.places.iter_mut().zip(followers).filter(|(_, m)| m.is_some()) {
             let at = if self.flags & TURNS() != 0 { wrap(l.facing + a) } else { a };
@@ -345,10 +474,10 @@ impl Formation {
         let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
         let mut d = sub(l.pos, self.last);
         let mut gone = d[0].mul_add(d[0], d[1].mul_add(d[1], d[2] * d[2]));
-        if gone > crate::kv!(28) {
-            (self.trail, self.trail_heading, self.trail_near) = ([l.pos; 8], [l.heading; 8], [crate::kv!(32); 8]);
+        if gone > crate::kv!(26) {
+            (self.trail, self.trail_heading, self.trail_near) = ([l.pos; 8], [l.heading; 8], [crate::kv!(35); 8]);
             self.last = l.pos;
-            (d, gone) = ([0.0; 3], crate::kv!(129));
+            (d, gone) = ([0.0; 3], crate::kv!(134));
         }
         if gone > s2 {
             self.trail.copy_within(0..crate::kv!(22 int), 1);
@@ -358,9 +487,9 @@ impl Formation {
             let v = sub(l.pos, self.last);
             self.trail_near[0] = 1.0;
             self.trail_heading[0] =
-                if v[0].mul_add(v[0], v[1] * v[1]) > crate::kv!(64) { heading_between(v[0], v[1], 0.0, 0.0) } else { l.heading };
+                if v[0].mul_add(v[0], v[1] * v[1]) > crate::kv!(68) { heading_between(v[0], v[1], 0.0, 0.0) } else { l.heading };
             self.last = l.pos;
-            (d, gone) = ([0.0; 3], crate::kv!(129));
+            (d, gone) = ([0.0; 3], crate::kv!(134));
         }
         let speed = l.vel[2].mul_add(l.vel[2], l.vel[0].mul_add(l.vel[0], l.vel[1] * l.vel[1])).sqrt();
         if gone != 0.0 || n != self.count {
@@ -372,7 +501,7 @@ impl Formation {
                     let (a, b) = (self.trail[m], self.trail[m + 1]);
                     let seg = sub(a, b);
                     let mut p: [f32; 3] = std::array::from_fn(|k| seg[k].mul_add(frac, b[k]));
-                    if speed > crate::kv!(73) {
+                    if speed > crate::kv!(78) {
                         p = std::array::from_fn(|k| seg[k].mul_add(0.5, p[k]));
                     }
                     self.places[i] = Place { pos: p, heading: heading_between(seg[0], seg[1], 0.0, 0.0),
@@ -389,7 +518,7 @@ pub fn heading_between(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     const H: f32 = std::f32::consts::FRAC_PI_2;
     let (dx, mut dy) = (x2 - x1, y2 - y1);
     if dy == 0.0 {
-        dy = crate::kv!(68);
+        dy = crate::kv!(72);
     }
     let a = mathrt::atan2((dx / dy) as f64, 1.0) as f32;
     match (dx > 0.0, dy > 0.0) {

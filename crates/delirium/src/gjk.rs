@@ -4,7 +4,7 @@ use crate::{Vd, Vx};
 const EPS: f32 = f32::EPSILON;
 #[allow(non_snake_case)]
 #[inline]
-fn REL2() -> f32 { delirium_data::kv!(47) }
+fn REL2() -> f32 { delirium_data::kv!(50) }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Shape {
@@ -24,7 +24,7 @@ fn unit(d: Vec3) -> Vec3 {
     }
     let t = (-(n as f64 * (e * e) as f64 - 1.0)) as f32;
     let y = (t as f64 * (0.5 * e) as f64 + e as f64) as f32;
-    if n > delirium_data::kv!(96 f32) { Vec3::new(y * d.x, y * d.y, y * d.z) } else { Vec3::Y }
+    if n > delirium_data::kv!(101 f32) { Vec3::new(y * d.x, y * d.y, y * d.z) } else { Vec3::Y }
 }
 
 fn fma3(x: Vec3, y: f32, z: Vec3) -> Vec3 {
@@ -67,20 +67,20 @@ pub enum Pen {
 #[allow(non_snake_case)]
 #[inline]
 fn SPHERE() -> &'static [[f32; 3]; 42] { static V: std::sync::OnceLock<[[f32; 3]; 42]> = std::sync::OnceLock::new(); let f = || [
-    [0.0, -0.0, -1.0], [delirium_data::kv!(144), -delirium_data::kv!(145), -delirium_data::kv!(146)], [-delirium_data::kv!(147), -delirium_data::kv!(148), -delirium_data::kv!(146)],
-    [-delirium_data::kv!(149), -0.0, -delirium_data::kv!(150)], [-delirium_data::kv!(147), delirium_data::kv!(148), -delirium_data::kv!(151)], [delirium_data::kv!(144), delirium_data::kv!(145), -delirium_data::kv!(146)],
-    [delirium_data::kv!(147), -delirium_data::kv!(148), delirium_data::kv!(151)], [-delirium_data::kv!(144), -delirium_data::kv!(145), delirium_data::kv!(146)], [-delirium_data::kv!(144), delirium_data::kv!(145), delirium_data::kv!(146)],
-    [delirium_data::kv!(147), delirium_data::kv!(148), delirium_data::kv!(146)], [delirium_data::kv!(149), 0.0, delirium_data::kv!(150)], [-0.0, 0.0, 1.0],
-    [delirium_data::kv!(152), -delirium_data::kv!(153), -delirium_data::kv!(154)], [-delirium_data::kv!(155), -delirium_data::kv!(156), -delirium_data::kv!(154)], [delirium_data::kv!(157), -delirium_data::kv!(158), -delirium_data::kv!(159)],
-    [delirium_data::kv!(152), delirium_data::kv!(153), -delirium_data::kv!(154)], [delirium_data::kv!(160), -0.0, -delirium_data::kv!(161)], [-delirium_data::kv!(162), -0.0, -delirium_data::kv!(163)],
-    [-delirium_data::kv!(164), -delirium_data::kv!(165), -delirium_data::kv!(161)], [-delirium_data::kv!(155), delirium_data::kv!(156), -delirium_data::kv!(154)], [-delirium_data::kv!(164), delirium_data::kv!(165), -delirium_data::kv!(161)],
-    [delirium_data::kv!(157), delirium_data::kv!(158), -delirium_data::kv!(159)], [delirium_data::kv!(166), delirium_data::kv!(167), 0.0], [delirium_data::kv!(166), -delirium_data::kv!(167), 0.0],
-    [delirium_data::kv!(168), -delirium_data::kv!(169), 0.0], [0.0, -1.0, 0.0], [-delirium_data::kv!(168), -delirium_data::kv!(169), 0.0],
-    [-delirium_data::kv!(166), -delirium_data::kv!(167), -0.0], [-delirium_data::kv!(166), delirium_data::kv!(167), -0.0], [-delirium_data::kv!(168), delirium_data::kv!(169), -0.0],
-    [-0.0, 1.0, -0.0], [delirium_data::kv!(168), delirium_data::kv!(169), -0.0], [delirium_data::kv!(164), -delirium_data::kv!(165), delirium_data::kv!(161)],
-    [-delirium_data::kv!(157), -delirium_data::kv!(158), delirium_data::kv!(159)], [-delirium_data::kv!(160), 0.0, delirium_data::kv!(161)], [-delirium_data::kv!(157), delirium_data::kv!(158), delirium_data::kv!(159)],
-    [delirium_data::kv!(164), delirium_data::kv!(165), delirium_data::kv!(161)], [delirium_data::kv!(162), 0.0, delirium_data::kv!(163)], [delirium_data::kv!(155), -delirium_data::kv!(156), delirium_data::kv!(154)],
-    [-delirium_data::kv!(152), -delirium_data::kv!(153), delirium_data::kv!(154)], [-delirium_data::kv!(152), delirium_data::kv!(153), delirium_data::kv!(154)], [delirium_data::kv!(155), delirium_data::kv!(156), delirium_data::kv!(154)],
+    [0.0, -0.0, -1.0], [delirium_data::kv!(149), -delirium_data::kv!(150), -delirium_data::kv!(151)], [-delirium_data::kv!(152), -delirium_data::kv!(153), -delirium_data::kv!(151)],
+    [-delirium_data::kv!(154), -0.0, -delirium_data::kv!(155)], [-delirium_data::kv!(152), delirium_data::kv!(153), -delirium_data::kv!(156)], [delirium_data::kv!(149), delirium_data::kv!(150), -delirium_data::kv!(151)],
+    [delirium_data::kv!(152), -delirium_data::kv!(153), delirium_data::kv!(156)], [-delirium_data::kv!(149), -delirium_data::kv!(150), delirium_data::kv!(151)], [-delirium_data::kv!(149), delirium_data::kv!(150), delirium_data::kv!(151)],
+    [delirium_data::kv!(152), delirium_data::kv!(153), delirium_data::kv!(151)], [delirium_data::kv!(154), 0.0, delirium_data::kv!(155)], [-0.0, 0.0, 1.0],
+    [delirium_data::kv!(157), -delirium_data::kv!(158), -delirium_data::kv!(159)], [-delirium_data::kv!(160), -delirium_data::kv!(161), -delirium_data::kv!(159)], [delirium_data::kv!(162), -delirium_data::kv!(163), -delirium_data::kv!(164)],
+    [delirium_data::kv!(157), delirium_data::kv!(158), -delirium_data::kv!(159)], [delirium_data::kv!(165), -0.0, -delirium_data::kv!(166)], [-delirium_data::kv!(167), -0.0, -delirium_data::kv!(168)],
+    [-delirium_data::kv!(169), -delirium_data::kv!(170), -delirium_data::kv!(166)], [-delirium_data::kv!(160), delirium_data::kv!(161), -delirium_data::kv!(159)], [-delirium_data::kv!(169), delirium_data::kv!(170), -delirium_data::kv!(166)],
+    [delirium_data::kv!(162), delirium_data::kv!(163), -delirium_data::kv!(164)], [delirium_data::kv!(171), delirium_data::kv!(172), 0.0], [delirium_data::kv!(171), -delirium_data::kv!(172), 0.0],
+    [delirium_data::kv!(173), -delirium_data::kv!(174), 0.0], [0.0, -1.0, 0.0], [-delirium_data::kv!(173), -delirium_data::kv!(174), 0.0],
+    [-delirium_data::kv!(171), -delirium_data::kv!(172), -0.0], [-delirium_data::kv!(171), delirium_data::kv!(172), -0.0], [-delirium_data::kv!(173), delirium_data::kv!(174), -0.0],
+    [-0.0, 1.0, -0.0], [delirium_data::kv!(173), delirium_data::kv!(174), -0.0], [delirium_data::kv!(169), -delirium_data::kv!(170), delirium_data::kv!(166)],
+    [-delirium_data::kv!(162), -delirium_data::kv!(163), delirium_data::kv!(164)], [-delirium_data::kv!(165), 0.0, delirium_data::kv!(166)], [-delirium_data::kv!(162), delirium_data::kv!(163), delirium_data::kv!(164)],
+    [delirium_data::kv!(169), delirium_data::kv!(170), delirium_data::kv!(166)], [delirium_data::kv!(167), 0.0, delirium_data::kv!(168)], [delirium_data::kv!(160), -delirium_data::kv!(161), delirium_data::kv!(159)],
+    [-delirium_data::kv!(157), -delirium_data::kv!(158), delirium_data::kv!(159)], [-delirium_data::kv!(157), delirium_data::kv!(158), delirium_data::kv!(159)], [delirium_data::kv!(160), delirium_data::kv!(161), delirium_data::kv!(159)],
 ]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug)]
@@ -149,7 +149,7 @@ fn tri_point(a: Vec3, b: Vec3, c: Vec3, [u, v, w]: [f32; 3]) -> Vec3 {
 fn outside(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> i32 {
     let n = (b - a).vx(c - a);
     let sd = n.vd(d - a);
-    if sd * sd < delirium_data::kv!(47) {
+    if sd * sd < delirium_data::kv!(50) {
         return -1;
     }
     (n.vd(-a) * sd < 0.0) as i32
@@ -168,7 +168,7 @@ struct Simplex {
 
 impl Simplex {
     fn has(&self, w: Vec3) -> bool {
-        let tol = self.w.iter().map(|x| x.length_squared()).fold(1.0f32, f32::max).sqrt() * delirium_data::kv!(129);
+        let tol = self.w.iter().map(|x| x.length_squared()).fold(1.0f32, f32::max).sqrt() * delirium_data::kv!(134);
         let near = |x: Vec3| (x - w).abs().cmple(Vec3::splat(tol)).all();
         self.w.iter().any(|&x| near(x)) || self.last.is_some_and(near)
     }
@@ -299,17 +299,17 @@ pub fn closest(a: &Shape, ra: Mat3, pa: Vec3, b: &Shape, rb: Mat3, pb: Vec3, axi
             check = true;
             break;
         }
-        if it > delirium_data::kv!(38 int) || s.w.len() == delirium_data::kv!(1 int) || d2 <= EPS * s.w.iter().map(|x| x.length_squared()).fold(0.0, f32::max) {
+        if it > delirium_data::kv!(41 int) || s.w.len() == delirium_data::kv!(1 int) || d2 <= EPS * s.w.iter().map(|x| x.length_squared()).fold(0.0, f32::max) {
             break;
         }
     }
     let (ma, mb, l2) = (a.margin(), b.margin(), v.vd(v));
-    degen |= check && l2 < delirium_data::kv!(68);
+    degen |= check && l2 < delirium_data::kv!(72);
     let found = (check && l2 > EPS).then(|| {
         let r = rsq(l2);
         Closest { n: (s.p1 - s.p2) * r, a: (-v).mul_add(Vec3::splat(ma * r), s.p1), b: v.mul_add(Vec3::splat(mb * r), s.p2), dist: recip(r) - ma - mb }
     });
-    let Some(dirs) = pen.filter(|_| found.is_none_or(|f| degen && f.dist + ma + mb < delirium_data::kv!(48))) else { return found };
+    let Some(dirs) = pen.filter(|_| found.is_none_or(|f| degen && f.dist + ma + mb < delirium_data::kv!(51))) else { return found };
     match (found, penetration(a, ra, pa, b, rb, pb, dirs)) {
         (Some(f), Some(p)) if !(p.dist < f.dist) => Some(f),
         (f, p) => p.or(f),
@@ -340,12 +340,12 @@ fn penetration(a: &Shape, ra: Mat3, pa: Vec3, b: &Shape, rb: Mat3, pb: Vec3, pen
         }
     }
     let over = if best.0 >= 0.0 || matches!(pen, Pen::Tri(..)) { best.0 } else { 0.0 };
-    let (proj, n) = (over + ((a.margin() + b.margin()) + delirium_data::kv!(48)), best.1);
+    let (proj, n) = (over + ((a.margin() + b.margin()) + delirium_data::kv!(51)), best.1);
     let c = closest(a, ra, n.mul_add(Vec3::splat(proj), pa), b, rb, pb, Vec3::Z, f32::INFINITY, None)?;
     let pa = c.b - c.n * (proj * c.n.vd(n) - c.dist);
     let l2 = (pa - c.b).vd(pa - c.b);
     let len = l2 * rsq(l2);
-    (l2 > delirium_data::kv!(170)).then(|| Closest { n: (c.b - pa) * recip(len), a: pa, b: c.b, dist: -len })
+    (l2 > delirium_data::kv!(175)).then(|| Closest { n: (c.b - pa) * recip(len), a: pa, b: c.b, dist: -len })
 }
 
 pub fn tapered(top: f32, bottom: f32, length: f32) -> Shape {

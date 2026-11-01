@@ -1,3 +1,4 @@
+use delirium_data::estimate::fneg;
 use std::f32::consts::{FRAC_2_PI, FRAC_PI_4, TAU};
 
 pub fn vunit3(v: [f32; 3]) -> [f32; 3] {
@@ -8,7 +9,7 @@ pub fn vunit3(v: [f32; 3]) -> [f32; 3] {
     }
     let sq = e * e;
     let half = 0.5 * e;
-    let t = -n.mul_add(sq, -1.0);
+    let t = fneg(n.mul_add(sq, -1.0));
     let y = t.mul_add(half, e);
     v.map(|c| c * y)
 }

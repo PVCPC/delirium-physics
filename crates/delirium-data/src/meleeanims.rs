@@ -75,7 +75,7 @@ fn cut31(t: &[u8]) -> Vec<u8> {
     t[..t.len().min(31)].to_vec()
 }
 
-pub fn read(file: &[u8]) -> Vec<MeleeGroup> {
+pub fn read(file: &[u8]) -> Option<Vec<MeleeGroup>> {
     let mut lines = Lines { buf: [0; 512], at: 0 };
     let mut out = vec![];
     let (mut header, mut in_anims) = (false, false);
@@ -121,9 +121,9 @@ pub fn read(file: &[u8]) -> Vec<MeleeGroup> {
             out.push(g);
         } else if header {
             let mut t = tokens(&line);
-            name = cut31(t.next().unwrap_or_default());
-            dictionary = cut31(t.next().unwrap_or_default());
-            let s = t.next().unwrap_or_default();
+            name = cut31(t.next()?);
+            dictionary = cut31(t.next()?);
+            let s = t.next()?;
             if is(s, "SoloResident") {
                 solo = Load::Resident;
             } else if is(s, "SoloStreamed") {
@@ -132,7 +132,7 @@ pub fn read(file: &[u8]) -> Vec<MeleeGroup> {
                 solo = Load::Barred;
             }
             in_anims = true;
-            let n = t.next().unwrap_or_default();
+            let n = t.next()?;
             if is(n, "NetResident") {
                 net = Load::Resident;
             } else if is(n, "NetStreamed") {
@@ -146,7 +146,7 @@ pub fn read(file: &[u8]) -> Vec<MeleeGroup> {
             header = false;
         } else if in_anims {
             let mut t = tokens(&line);
-            let name = cut31(t.next().unwrap_or_default());
+            let name = cut31(t.next()?);
             let mut a = Anim { name, entry: [anims.len() as u32 + 0x1C0, 0x1008600, 3] };
             for w in t {
                 if is(w, "-UpperBody") {
@@ -162,7 +162,7 @@ pub fn read(file: &[u8]) -> Vec<MeleeGroup> {
             anims.push(a);
         }
     }
-    out
+    Some(out)
 }
 
 pub fn store_groups(groups: &[MeleeGroup]) -> Vec<crate::animgrp::Group> {

@@ -39,8 +39,8 @@ pub(super) fn apply(a:&mut Agent,build:&Build,target:&[Transform],dt:f32,ramp:f3
     let native=ch.clone();let mut phase=native.clone();phase.support=wanted;
     let native_body=Body{ch:&native,build,doll:&a.doll,frames:&frames};
     let phase_body=Body{ch:&phase,build,doll:&a.doll,frames:&frames};
-    let old=delirium::nmdbm::oppose_gravity(&native_body,native.attached);
-    let new=delirium::nmdbm::oppose_gravity(&phase_body,phase.attached);
+    let mut old=vec![Vec3::ZERO;build.parts.len()];delirium::nmdbm::oppose_gravity(&native_body,native.attached,&mut old);
+    let mut new=vec![Vec3::ZERO;build.parts.len()];delirium::nmdbm::oppose_gravity(&phase_body,phase.attached,&mut new);
     for (k,(old,new)) in old.into_iter().zip(new).enumerate() {
         if let Some((r,j))=couple((new-old)*gain,dt) {
             let centre=a.doll.centre(k);

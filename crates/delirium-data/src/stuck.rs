@@ -38,6 +38,22 @@ pub enum Scan {
     Stuck,
 }
 
+impl Scan {
+    pub fn ground_bits(self, bits: u32) -> u32 {
+        match self {
+            Scan::Idle => bits,
+            Scan::Water => bits & 0x7FFF_FFFF,
+            Scan::Stuck => bits | 0xC000_0000,
+        }
+    }
+}
+
+pub const UP: [f32; 3] = [0.0, 0.0, 1.0];
+
+pub fn ground_point(at: [f32; 3]) -> [f32; 3] {
+    [at[0] - UP[0] * 1.0, at[1] - UP[1] * 1.0, at[2] - UP[2] * 1.0]
+}
+
 impl Scanner {
     pub fn update(&mut self, i: &Input) -> Scan {
         if !i.in_world || i.attached || i.dying || i.ragdoll {
@@ -60,7 +76,7 @@ impl Scanner {
             [0.0; 3]
         };
         let t = self.time;
-        let d2 = moved[0].mul_add(moved[0], moved[1].mul_add(moved[1], moved[2] * moved[2]));
+        let d2 = moved[2].mul_add(moved[2], moved[1].mul_add(moved[1], moved[0] * moved[0]));
         if t > SLOW_AFTER && d2 < (t * SLOW) * (t * SLOW) || t > VERTICAL_AFTER && moved[2].abs() < t * VERTICAL {
             self.flag = 1;
         }
@@ -113,6 +129,14 @@ pub const STEP_BACK: f32 = 0.5;
 pub const STEP_DISTANCE: f32 = 5.0;
 pub const STEP_MS: i32 = 10000;
 
+pub fn step_point(at: [f32; 3], ahead: [f32; 3], side: [f32; 3], coin: bool) -> [f32; 3] {
+    let back: [f32; 3] = std::array::from_fn(|n| at[n] - ahead[n] * STEP_BACK);
+    std::array::from_fn(|n| if coin { side[n].mul_add(STEP_BACK, back[n]) } else { back[n] - side[n] * STEP_BACK })
+}
+
+pub const JUMP_IN_AIR: u32 = 241;
+pub const FALL_DONE: u32 = 4;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Next {
     Keep,
@@ -125,10 +149,11 @@ pub struct Step {
     pub next: Next,
     pub clear: bool,
     pub ground: bool,
+    pub clear_20000: bool,
 }
 
 const fn go(sub: Sub, clear: bool, ground: bool) -> Step {
-    Step { next: Next::To(sub), clear, ground }
+    Step { next: Next::To(sub), clear, ground, clear_20000: false }
 }
 
 pub fn first(flag: u16) -> Step {
@@ -136,7 +161,7 @@ pub fn first(flag: u16) -> Step {
 }
 
 pub fn next(done: Sub, flag: u16, player: bool) -> Step {
-    let end = Step { next: Next::End, clear: false, ground: false };
+    let end = Step { next: Next::End, clear: false, ground: false, clear_20000: false };
     match done {
         Sub::Fall | Sub::StepAway if flag == 0 => end,
         Sub::Fall | Sub::StepAway => go(Sub::Stand, false, true),
@@ -149,14 +174,19 @@ pub fn next(done: Sub, flag: u16, player: bool) -> Step {
     }
 }
 
-pub fn control(sub: Sub, flag: u16, jump_in_air: bool) -> Step {
-    let keep = Step { next: Next::Keep, clear: false, ground: false };
+pub fn control_with(sub: Sub, flag: u16, inner: Option<(u32, u32)>) -> Step {
+    let keep = Step { next: Next::Keep, clear: false, ground: false, clear_20000: false };
     match sub {
         Sub::Stand if flag == 0 => Step { next: Next::End, ..keep },
-        Sub::Stand => Step { ground: true, ..keep },
-        Sub::Jump if flag != 0 && jump_in_air => go(Sub::Stand, false, true),
+        Sub::Stand => Step { ground: true, clear_20000: true, ..keep },
+        Sub::Jump if flag != 0 && matches!(inner, Some((JUMP_IN_AIR, _))) => go(Sub::Stand, false, true),
+        Sub::Fall if flag != 0 && inner == Some((crate::fall::kind::FALL, FALL_DONE)) => Step { ground: true, ..keep },
         Sub::StepAway if flag != 0 => go(Sub::Stand, false, true),
         _ => keep,
     }
+}
+
+pub fn control(sub: Sub, flag: u16, jump_in_air: bool) -> Step {
+    control_with(sub, flag, jump_in_air.then_some((JUMP_IN_AIR, 0)))
 }
 

@@ -1,3 +1,4 @@
+use crate::fneg;
 use crate::rigid::{col, ldot, row_mul, rows_mul};
 use crate::estimate::vrefp;
 use crate::Vd;
@@ -84,7 +85,7 @@ impl Sym {
 }
 
 fn nms(a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
-    Vec3::new(-a.x.mul_add(b.x, -c.x), -a.y.mul_add(b.y, -c.y), -a.z.mul_add(b.z, -c.z))
+    Vec3::new(fneg(a.x.mul_add(b.x, fneg(c.x))), fneg(a.y.mul_add(b.y, fneg(c.y))), fneg(a.z.mul_add(b.z, fneg(c.z))))
 }
 
 fn vx(a: Vec3, b: Vec3) -> Vec3 {
@@ -96,7 +97,7 @@ fn fmsub(a: f32, b: f32, c: f32) -> f32 {
 }
 
 fn fnmsub(a: f32, b: f32, c: f32) -> f32 {
-    -a.mul_add(b, -c)
+    fneg(a.mul_add(b, fneg(c)))
 }
 
 #[derive(Clone, Copy)]
@@ -364,6 +365,7 @@ pub struct Artic {
     art: Vec<Sym>,
     y: Vec<Sym>,
     joint: Vec<Option<Cache>>,
+    pub axis: Vec<Option<Vec3>>,
     pub arm: Vec<f32>,
 }
 
@@ -413,7 +415,7 @@ impl Artic {
             art[k] = art[k].add(&out);
         }
         let y = art.iter().map(invert).collect();
-        Artic { parent: joints.iter().map(|j| j.map(|j| j.parent)).collect(), order: order.to_vec(), link, ic, ir, art, y, joint: cache, arm }
+        Artic { parent: joints.iter().map(|j| j.map(|j| j.parent)).collect(), order: order.to_vec(), link, ic, ir, art, y, joint: cache, arm, axis: joints.iter().map(|j| j.and_then(|j| j.axis)).collect() }
     }
 
     fn own_f(&self, k: usize, x: P2) -> P2 {
@@ -539,8 +541,22 @@ impl Artic {
         self.solve_f(&acc.iter().map(|a| (a.0.mul_add(Vec3::splat(dt), Vec3::ZERO), a.1.mul_add(Vec3::splat(dt), Vec3::ZERO))).collect::<Vec<_>>())
     }
 
+    pub fn spin_k(&self, k: usize) -> M3 {
+        self.y[k].a
+    }
+
     pub fn point_k(&self, k: usize, r: Vec3) -> M3 {
         self.y[k].point(r)
+    }
+
+    pub fn pair_k(&self, a: usize, ra: Vec3, c: usize, rc: Vec3) -> M3 {
+        let o = E.map(|e| {
+            let mut lz = Lazy::new(self, vec![ZERO2; self.y.len()]);
+            lz.push(a, (e, vx(ra, e)));
+            lz.at(c, rc)
+        });
+        let (x, w) = (cols(&o), add3(&self.point_k(a, ra), &self.point_k(c, rc)));
+        [w[0] - x[0] - o[0], w[1] - x[1] - o[1], w[2] - x[2] - o[2]]
     }
 }
 
@@ -619,6 +635,11 @@ impl<'a> Lazy<'a> {
         self.cur = self.walk(k);
         let (w, v) = padd(self.d[k], self.base[k]);
         vx(w, r) + v
+    }
+
+    pub fn spin(&mut self, k: usize) -> Vec3 {
+        self.cur = self.walk(k);
+        padd(self.d[k], self.base[k]).0
     }
 
     pub fn spins(&mut self, c: usize) -> (Vec3, Vec3) {

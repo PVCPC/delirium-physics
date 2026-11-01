@@ -16,9 +16,18 @@ pub mod kind {
     pub const IN_WATER: u32 = 66;
     pub const GUN_SHOT: u32 = 15;
     pub const BULLET_IMPACT: u32 = 116;
+    pub const INJURED_CRY_FOR_HELP: u32 = 119;
+    pub const REVIVED: u32 = 18;
     pub const GUN_AIMED_AT: u32 = 31;
     pub const DRAGGED_OUT_CAR: u32 = 7;
     pub const DISLIKE: u32 = 37;
+    pub const HATE: u32 = 36;
+    pub const WANTED: u32 = 117;
+    pub const PED_TO_FLEE: u32 = 26;
+    pub const PED_COLLISION_WITH_PLAYER: u32 = 3;
+    pub const PED_COLLISION_WITH_PED: u32 = 2;
+    pub const VEHICLE_COLLISION: u32 = 1;
+    pub const BUILDING_COLLISION: u32 = 6;
     pub const GUN_SHOT_WHIZZED_BY: u32 = 49;
     pub const SWITCH2NM: u32 = 130;
     pub const POTENTIAL_GET_RUN_OVER: u32 = 12;
@@ -52,11 +61,12 @@ pub struct Damage<P> {
     pub task: Option<Box<dyn Task<P>>>,
     pub nm: bool,
     pub dir: [f32; 3],
+    pub weapon: u32,
 }
 
 impl<P> Clone for Damage<P> {
     fn clone(&self) -> Self {
-        Damage { real: self.real, source: self.source, outcome: self.outcome, task: self.task.clone(), nm: self.nm, dir: self.dir }
+        Damage { real: self.real, source: self.source, outcome: self.outcome, task: self.task.clone(), nm: self.nm, dir: self.dir, weapon: self.weapon }
     }
 }
 
@@ -108,6 +118,12 @@ impl<P> Clone for Script<P> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VehicleHit {
+    pub vehicle: i32,
+    pub state: i32,
+}
+
 pub struct Event<P> {
     pub kind: u32,
     pub age: u32,
@@ -124,6 +140,11 @@ pub struct Event<P> {
     pub wait: Wait,
     pub danger: Option<Danger>,
     pub walked_into: Option<WalkedInto>,
+    pub collision: Option<bool>,
+    pub vehicle: Option<VehicleHit>,
+    pub revived: Option<(Source, Option<Source>)>,
+    pub water: Option<f32>,
+    pub died: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -175,7 +196,8 @@ impl<P> Clone for Event<P> {
         Event {
             kind: self.kind, age: self.age, keep: self.keep, response: self.response, damage: self.damage.clone(), whizzed: self.whizzed,
             switch: self.switch.clone(), script: self.script.clone(), bump: self.bump, tag: self.tag, run_over: self.run_over,
-            stuck: self.stuck, wait: self.wait, danger: self.danger, walked_into: self.walked_into,
+            stuck: self.stuck, wait: self.wait, danger: self.danger, walked_into: self.walked_into, collision: self.collision,
+            revived: self.revived, water: self.water, died: self.died, vehicle: self.vehicle,
         }
     }
 }
@@ -188,11 +210,25 @@ pub trait Pedlike {
     fn is_player(&self) -> bool {
         false
     }
+    fn moving(&self) -> bool {
+        false
+    }
+    fn ask_movement(&mut self, _urgency: u8) -> bool {
+        true
+    }
+    fn give_movement(&mut self, _task: Box<dyn Task<Self>>)
+    where
+        Self: Sized,
+    {
+    }
     fn agility(&self) -> i32 {
         0
     }
     fn healthy(&self) -> bool {
         !self.is_dead()
+    }
+    fn marked(&self) -> bool {
+        false
     }
     fn on_ragdoll(&self) -> bool {
         false
@@ -210,16 +246,28 @@ pub trait Pedlike {
 
 impl<P: Pedlike> Event<P> {
     fn blank(kind: u32, response: i32) -> Event<P> {
-        Event { kind, age: 0, keep: false, response, damage: None, whizzed: None, switch: None, script: None, bump: None, tag: 0, run_over: None, stuck: None, wait: Wait::default(), danger: None, walked_into: None }
+        Event { kind, age: 0, keep: false, response, damage: None, whizzed: None, switch: None, script: None, bump: None, tag: 0, run_over: None, stuck: None, wait: Wait::default(), danger: None, walked_into: None, collision: None, revived: None, water: None, died: None, vehicle: None }
     }
 
-    pub fn damage(outcome: Outcome, source: Option<Source>, dir: [f32; 3], task: Option<Box<dyn Task<P>>>, nm: bool) -> Event<P> {
+    pub fn in_water(strength: f32) -> Event<P> {
+        Event { water: Some(strength), ..Event::blank(kind::IN_WATER, NO_RESPONSE) }
+    }
+
+    pub fn damage(outcome: Outcome, source: Option<Source>, dir: [f32; 3], weapon: u32, task: Option<Box<dyn Task<P>>>, nm: bool) -> Event<P> {
         let outcome = Outcome { flags: outcome.flags | APPLIED | LANDED, ..outcome };
-        Event { damage: Some(Damage { real: true, source, outcome, task, nm, dir }), ..Event::blank(kind::DAMAGE, NO_RESPONSE) }
+        Event { damage: Some(Damage { real: true, source, outcome, task, nm, dir, weapon }), ..Event::blank(kind::DAMAGE, NO_RESPONSE) }
+    }
+
+    pub fn revived(medic: Source, car: Option<Source>) -> Event<P> {
+        Event { revived: Some((medic, car)), ..Event::blank(kind::REVIVED, NO_RESPONSE) }
     }
 
     pub fn on_fire() -> Event<P> {
         Event::blank(kind::ON_FIRE, NO_RESPONSE)
+    }
+
+    pub fn death(ms: u32) -> Event<P> {
+        Event { died: Some(ms), ..Event::blank(kind::DEATH, NO_RESPONSE) }
     }
 
     pub fn whizzed_by(w: Whizzed) -> Event<P> {
@@ -236,6 +284,38 @@ impl<P: Pedlike> Event<P> {
 
     pub fn dislike(w: Whizzed) -> Event<P> {
         Event { whizzed: Some(w), ..Event::blank(kind::DISLIKE, RESPONSE_FIGHT) }
+    }
+
+    pub fn hate(w: Whizzed) -> Event<P> {
+        Event { whizzed: Some(w), ..Event::blank(kind::HATE, RESPONSE_FIGHT) }
+    }
+
+    pub fn cry_for_help(w: Whizzed) -> Event<P> {
+        Event { whizzed: Some(w), ..Event::blank(kind::INJURED_CRY_FOR_HELP, RESPONSE_FIGHT) }
+    }
+
+    pub fn wanted(w: Whizzed) -> Event<P> {
+        Event { whizzed: Some(w), ..Event::blank(kind::WANTED, RESPONSE_FIGHT) }
+    }
+
+    pub fn ped_to_flee(w: Whizzed) -> Event<P> {
+        Event { whizzed: Some(w), ..Event::blank(kind::PED_TO_FLEE, RESPONSE_FIGHT) }
+    }
+
+    pub fn ped_collision_with_ped(concerned: bool) -> Event<P> {
+        Event { collision: Some(concerned), ..Event::blank(kind::PED_COLLISION_WITH_PED, NO_RESPONSE) }
+    }
+
+    pub fn ped_collision_with_player(concerned: bool) -> Event<P> {
+        Event { collision: Some(concerned), ..Event::blank(kind::PED_COLLISION_WITH_PLAYER, NO_RESPONSE) }
+    }
+
+    pub fn vehicle_collision(concerned: bool, hit: VehicleHit) -> Event<P> {
+        Event { collision: Some(concerned), vehicle: Some(hit), ..Event::blank(kind::VEHICLE_COLLISION, NO_RESPONSE) }
+    }
+
+    pub fn building_collision(concerned: bool) -> Event<P> {
+        Event { collision: Some(concerned), ..Event::blank(kind::BUILDING_COLLISION, NO_RESPONSE) }
     }
 
     pub fn melee_action(w: Whizzed) -> Event<P> {
@@ -305,6 +385,13 @@ impl<P: Pedlike> Event<P> {
             (None, kind::GUN_AIMED_AT) => 67,
             (None, kind::DRAGGED_OUT_CAR) => 52,
             (None, kind::DISLIKE) => 27,
+            (None, kind::HATE) => 31,
+            (None, kind::INJURED_CRY_FOR_HELP) => 34,
+            (None, kind::REVIVED) => 104,
+            (None, kind::WANTED) => 28,
+            (None, kind::PED_TO_FLEE) => 2,
+            (None, kind::PED_COLLISION_WITH_PLAYER | kind::PED_COLLISION_WITH_PED) => 83,
+            (None, kind::VEHICLE_COLLISION) => 81,
             (None, kind::POTENTIAL_GET_RUN_OVER) => 68,
             (None, kind::STUCK_IN_AIR) => self.stuck.unwrap_or(86),
             (None, kind::IMMINENT_DANGER) => 69,
@@ -319,7 +406,7 @@ impl<P: Pedlike> Event<P> {
         matches!(
             self.kind,
             kind::SWITCH2NM | kind::SCRIPT_COMMAND | kind::STATIC_COUNT_REACHED_MAX | kind::POTENTIAL_GET_RUN_OVER | kind::STUCK_IN_AIR | kind::IMMINENT_DANGER
-                | kind::POTENTIAL_BE_WALKED_INTO
+                | kind::POTENTIAL_BE_WALKED_INTO | kind::PED_COLLISION_WITH_PLAYER | kind::PED_COLLISION_WITH_PED | kind::VEHICLE_COLLISION
         )
     }
 
@@ -331,6 +418,7 @@ impl<P: Pedlike> Event<P> {
         !matches!(
             self.kind,
             kind::ON_FIRE | kind::SCRIPT_COMMAND | kind::STATIC_COUNT_REACHED_MAX | kind::POTENTIAL_GET_RUN_OVER | kind::IMMINENT_DANGER | kind::POTENTIAL_BE_WALKED_INTO
+                | kind::PED_COLLISION_WITH_PLAYER | kind::PED_COLLISION_WITH_PED
         )
     }
 
@@ -342,13 +430,13 @@ impl<P: Pedlike> Event<P> {
         match &self.script {
             Some(s) if self.kind == kind::GIVE_PED_TASK => ped.healthy() || s.urgent,
             Some(_) => ped.healthy(),
-            None if self.whizzed.is_some() && !matches!(self.kind, kind::DISLIKE | kind::MELEE_ACTION) && (!self.wait.ready || self.wait.aged) => true,
+            None if self.whizzed.is_some() && !matches!(self.kind, kind::DISLIKE | kind::HATE | kind::WANTED | kind::PED_TO_FLEE | kind::MELEE_ACTION) && (!self.wait.ready || self.wait.aged) => true,
             None => self.keep || self.age == 0,
         }
     }
 
     fn ready(&mut self, ped: &P, tasks: &Manager<P>) -> bool {
-        if self.whizzed.is_none() || matches!(self.kind, kind::DISLIKE | kind::MELEE_ACTION) {
+        if self.whizzed.is_none() || matches!(self.kind, kind::DISLIKE | kind::HATE | kind::WANTED | kind::PED_TO_FLEE | kind::MELEE_ACTION) {
             return true;
         }
         let w = &mut self.wait;
@@ -396,8 +484,14 @@ impl<P: Pedlike> Event<P> {
         if let Some(w) = &self.walked_into {
             return !ped.is_dead() && w.state != 1;
         }
+        if let Some(c) = self.collision {
+            return c;
+        }
         if self.kind == kind::STATIC_COUNT_REACHED_MAX {
             return !ped.on_ragdoll();
+        }
+        if self.kind == kind::IN_WATER {
+            return !(!ped.is_player() && tasks.find(task::IN_WATER).is_some()) && !ped.is_dead() && !ped.marked();
         }
         if self.kind == kind::STUCK_IN_AIR {
             return ped.stuck_in_air();
@@ -427,12 +521,15 @@ impl<P: Pedlike> Event<P> {
             if running.kind == self.kind {
                 return player(Some(w)) && !player(running.whizzed.as_ref()) && self.priority() >= running.priority();
             }
-            if running.kind == kind::GUN_AIMED_AT && !matches!(self.kind, kind::DISLIKE | kind::MELEE_ACTION) {
+            if running.kind == kind::GUN_AIMED_AT && !matches!(self.kind, kind::DISLIKE | kind::HATE | kind::WANTED | kind::PED_TO_FLEE | kind::MELEE_ACTION) {
                 return true;
             }
         }
-        if self.kind == kind::POTENTIAL_BE_WALKED_INTO && running.temporary() {
+        if matches!(self.kind, kind::POTENTIAL_BE_WALKED_INTO | kind::PED_COLLISION_WITH_PLAYER | kind::PED_COLLISION_WITH_PED) && running.temporary() {
             return true;
+        }
+        if self.kind == kind::VEHICLE_COLLISION {
+            return running.kind != 121;
         }
         if self.kind == kind::STUCK_IN_AIR {
             return crate::stuck::overrides(self.priority(), running.priority(), running.kind);
@@ -446,6 +543,11 @@ impl<P: Pedlike> Event<P> {
         }
         if self.kind == kind::ON_FIRE && (95..=96).contains(&running.priority()) {
             return true;
+        }
+        if let Some(s) = self.water {
+            if running.kind == kind::DAMAGE || running.kind == kind::STUCK_IN_AIR && s > 1.0 {
+                return true;
+            }
         }
         self.priority() >= running.priority()
     }
@@ -475,6 +577,9 @@ impl<P> Default for Response<P> {
 
 pub trait Handler<P> {
     fn respond(&self, ped: &mut P, tasks: &Manager<P>, event: &Event<P>) -> Response<P>;
+    fn respond_other(&self, _ped: &mut P, _tasks: &Manager<P>, _event: &Event<P>) -> Option<Box<dyn Task<P>>> {
+        None
+    }
 }
 
 pub fn give<P>(r: Response<P>, temporary: bool, ped: &mut P, tasks: &mut Manager<P>) {
@@ -500,11 +605,12 @@ pub struct Events<P> {
     script: ScriptTask,
     serial: u64,
     slot2: bool,
+    other: Option<Box<dyn Task<P>>>,
 }
 
 impl<P> Default for Events<P> {
     fn default() -> Self {
-        Events { queue: vec![], recs: Default::default(), script: ScriptTask::default(), serial: 0, slot2: false }
+        Events { queue: vec![], recs: Default::default(), script: ScriptTask::default(), serial: 0, slot2: false, other: None }
     }
 }
 

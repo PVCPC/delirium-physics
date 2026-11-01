@@ -1,3 +1,4 @@
+use delirium_data::estimate::fneg;
 use crate::rng::Rand;
 use crate::tyre::flags;
 
@@ -31,7 +32,7 @@ pub fn heat(temp: f32, tyre_flags: u32, surface: f32, dt: f32, rand: &mut Rand) 
 
 pub fn cool(temp: f32, dt: f32) -> f32 {
     let k: f32 = if temp > 30.0 { 50.0 } else { 6.0 };
-    -k.mul_add(dt, -temp)
+    fneg(k.mul_add(dt, -temp))
 }
 
 pub fn hold(temp: f32) -> f32 {

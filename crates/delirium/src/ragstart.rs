@@ -1,3 +1,4 @@
+use crate::fneg;
 use crate::prelude::*;
 
 pub fn start_part(now: [Vec3; 4], prev: Option<&[Vec3; 4]>, cen: Vec3, dt: f32, e: [f32; 3], v_ref: Vec3) -> ([Vec3; 4], Vec3, Vec3) {
@@ -96,7 +97,7 @@ fn primitive(p: &ProbePart, a: Vec3, b: Vec3) -> Option<ProbeHit> {
 fn seg_capsule(s: Vec3, e: Vec3, len: f32, r: f32) -> Option<(f32, i32)> {
     #[allow(non_snake_case)]
     #[inline]
-    fn EPS() -> f32 { delirium_data::kv!(47) }
+    fn EPS() -> f32 { delirium_data::kv!(50) }
     let (r2, h, d) = (r * r, len * 0.5, e - s);
     let (mut t1, mut t2): (f32, f32);
     let (mut id1, mut id2) = (-1i32, -1i32);
@@ -108,10 +109,10 @@ fn seg_capsule(s: Vec3, e: Vec3, len: f32, r: f32) -> Option<(f32, i32)> {
         }
         let b = s.z.mul_add(d.z, s.x * d.x);
         let c = (s.z.mul_add(s.z, s.x * s.x) - r2) * a;
-        let disc = b.mul_add(b, -c);
+        let disc = b.mul_add(b, fneg(c));
         let q = if disc > 0.0 { disc.sqrt() } else { 0.0 };
         let ia = 1.0 / a;
-        (t1, t2) = ((-b - q) * ia, (q - b) * ia);
+        (t1, t2) = ((fneg(b) - q) * ia, (q - b) * ia);
         let (y1, y2) = (t1.mul_add(d.y, s.y), t2.mul_add(d.y, s.y));
         let side = |y: f32| !(y < -h) && !(y > h);
         if side(y1) {
@@ -127,12 +128,12 @@ fn seg_capsule(s: Vec3, e: Vec3, len: f32, r: f32) -> Option<(f32, i32)> {
             let mut cap = |o: f32, id: i32, below: bool| {
                 let bb = s.x.mul_add(d.x, o.mul_add(d.y, s.z * d.z));
                 let cc = (s.x.mul_add(s.x, s.z.mul_add(s.z, o * o)) - r2) * dd;
-                let disc = bb.mul_add(bb, -cc);
+                let disc = bb.mul_add(bb, fneg(cc));
                 if disc > 0.0 {
                     let q = disc.sqrt();
                     let out = |y: f32| if below { y < -h } else { y > h };
                     if out(y1) {
-                        (id1, t1) = (id, (-bb - q) * idd);
+                        (id1, t1) = (id, (fneg(bb) - q) * idd);
                     }
                     if out(y2) {
                         (id2, t2) = (id, (q - bb) * idd);

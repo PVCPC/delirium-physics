@@ -27,14 +27,14 @@ pub struct PointArm {
 
 impl Default for PointArmParams {
     fn default() -> PointArmParams {
-        PointArmParams { target: Vec3::ZERO, twist: delirium_data::kv!(24), arm_straightness: delirium_data::kv!(20), arm_stiffness: delirium_data::kv!(26), arm_damping: 1.0, instance_index: -1,
+        PointArmParams { target: Vec3::ZERO, twist: delirium_data::kv!(24), arm_straightness: delirium_data::kv!(20), arm_stiffness: delirium_data::kv!(30), arm_damping: 1.0, instance_index: -1,
                          point_swing_limit: delirium_data::kv!(12), use_left_arm: false, use_zero_pose_when_not_pointing: false }
     }
 }
 
 impl Default for PointArm {
     fn default() -> PointArm {
-        PointArm { p: PointArmParams::default(), reach: delirium_data::kv!(70), active: false, pointing: false }
+        PointArm { p: PointArmParams::default(), reach: delirium_data::kv!(74), active: false, pointing: false }
     }
 }
 
@@ -84,10 +84,10 @@ impl PointArm {
         crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t, p.twist, 1.0, side, 1.0, Vec3::ZERO, None);
         share(c.ch, c.b.frames, l.e[0], l.e[1]);
         let s = swing(c.ch, l.e[0]);
-        if !self.pointing && s < p.point_swing_limit - delirium_data::kv!(73) {
+        if !self.pointing && s < p.point_swing_limit - delirium_data::kv!(78) {
             self.pointing = true;
         }
-        if self.pointing && s > p.point_swing_limit + delirium_data::kv!(73) {
+        if self.pointing && s > p.point_swing_limit + delirium_data::kv!(78) {
             self.pointing = false;
         }
         let ch = &mut *c.ch;
@@ -107,7 +107,7 @@ impl PointArm {
             for j in Character::mask(mask) {
                 ch.eff[j].blend_to_zero(1.0);
             }
-            ch.set_stiffness(delirium_data::kv!(61), 1.0, mask, None);
+            ch.set_stiffness(delirium_data::kv!(65), 1.0, mask, None);
         } else {
             ch.eff[l.e[0]].desired = clav;
             ch.eff[l.e[1]].desired = sh;

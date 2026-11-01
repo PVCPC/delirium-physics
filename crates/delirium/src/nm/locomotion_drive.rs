@@ -23,7 +23,7 @@ impl LocomotionDrive {
         self.weight.is_finite()&&(0.0..=1.0).contains(&self.weight)
             &&self.gain_weight.is_finite()&&(0.0..=self.weight).contains(&self.gain_weight)
             &&self.targets.iter().flatten().all(|x|x.is_finite())
-            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(32)..=delirium_data::kv!(212)).contains(x))
+            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(35)..=delirium_data::kv!(214)).contains(x))
             &&self.response.iter().all(|x|x.is_finite()&&(0.5..=2.0).contains(x))
     }
 }
@@ -67,7 +67,7 @@ impl Agent {
         let mut yaw=native.yaw;
         let mut torque=crate::nmdbm::foot_yaw(&body,&mut yaw,dt);
         for i in 0..2 {if !stance[i] {torque[phase.joints[(*ANKLE())[i]].child]=Vec3::ZERO;}}
-        for (t,g) in torque.iter_mut().zip(crate::nmdbm::oppose_gravity(&body,phase.attached)) {*t+=g;}
+        crate::nmdbm::oppose_gravity(&body,phase.attached,&mut torque);
         let desired_push=ch.stabilise.map_or_else(||vec![Vec3::ZERO;build.parts.len()],|(k,_)|stabilise_on(&body,k,dt,stance));
         if held.torque.len()<torque.len() {held.torque.resize(torque.len(),Vec3::ZERO);}
         for (i,t) in torque.into_iter().enumerate() {
@@ -95,7 +95,7 @@ pub(super) fn apply_targets(ch:&mut Character,d:LocomotionDrive,stance:[bool;2])
         let leg=i/delirium_data::kv!(0 int);let e=&mut ch.eff[i];let k=d.leg_stiffness[leg];
         e.strength+=(k*k-e.strength)*d.gain_weight;
         e.damping+=(2.*k-e.damping)*d.gain_weight;
-        let response=if (*ANKLE()).contains(&i) {if stance[leg] {delirium_data::kv!(27)} else {1.}}
+        let response=if (*ANKLE()).contains(&i) {if stance[leg] {delirium_data::kv!(31)} else {1.}}
             else if (*KNEE()).contains(&i) {if stance[leg] {delirium_data::kv!(12)} else {2.}} else {delirium_data::kv!(12)};
         e.muscle_stiffness+=(response*d.response[leg]-e.muscle_stiffness)*d.gain_weight;
     }
@@ -109,15 +109,15 @@ pub(super) fn support_character(ch:&Character,stance:[bool;2])->Character {
 
 pub(super) fn stabilise_on(body:&crate::nmdbm::Body,k:f32,dt:f32,stance:[bool;2])->Vec<Vec3> {
     let feet:Vec<_>=(0..2).filter(|&i|stance[i]).map(|i|body.ch.joints[(*ANKLE())[i]].child)
-        .filter(|&f|body.doll.touch[f]&delirium_data::kv!(91 int)==delirium_data::kv!(7 int)).collect();
+        .filter(|&f|body.doll.touch[f]&delirium_data::kv!(95 int)==delirium_data::kv!(7 int)).collect();
     if feet.len()==2 {return crate::nmdbm::stabilise(body,k,dt);}
     let mut out=vec![Vec3::ZERO;body.build.parts.len()];
     let Some(&foot)=feet.first() else {return out;};
     let up=body.ch.up;let (com,vel)=body.doll.com();let mid=body.doll.centre(foot);
     let fv=body.doll.motion(foot).0;
     let s=((com-mid).normalize_or_zero().dot(up).max(0.).powi(4)*k).powi(2);
-    let f=(com+vel*delirium_data::kv!(73)-mid)*s+(vel-fv)*(delirium_data::kv!(57)*s);
-    let f=(f-up*f.dot(up))*(dt*delirium_data::kv!(196));
+    let f=(com+vel*delirium_data::kv!(78)-mid)*s+(vel-fv)*(delirium_data::kv!(60)*s);
+    let f=(f-up*f.dot(up))*(dt*delirium_data::kv!(103));
     out[foot]+=f;out[body.ch.joints[(*HIP())[0]].parent]-=f;out
 }
 
