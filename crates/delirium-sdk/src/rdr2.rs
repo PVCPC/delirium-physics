@@ -8,13 +8,18 @@ use crate::*;
 
 /// Delirium part index -> RDR2 part number (RDR2 numbers its parts breadth-first).
 const PART_OF: [usize; 21] = [0, 1, 4, 5, 2, 6, 7, 3, 8, 9, 10, 13, 20, 11, 14, 15, 16, 12, 17, 18, 19];
+/// The same for the files with the older part names (Buttocks, Thigh_Left...: fred_large.xml, wilma_large.xml), which
+/// number the legs, spine and arms in Delirium's order with the neck and head last.
+const PART_OF_OLD: [usize; 21] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 19, 20, 11, 12, 13, 14, 15, 16, 17, 18];
 /// Each Delirium part's parent part (joint j joins part j + 1 to this).
 const PARENT: [usize; 21] = [0, 0, 1, 2, 0, 4, 5, 0, 7, 8, 9, 10, 11, 10, 13, 14, 15, 10, 17, 18, 19];
 
 type M3 = [[f32; 3]; 3];
 
+/// A tag's text; tag names in any case (the large bodies' files write them all in lower case).
 fn tag<'a>(s: &'a str, t: &str) -> Option<&'a str> {
-    let a = s.find(&format!("<{t}>"))? + t.len() + 2;
+    // (ASCII lower case keeps every byte where it was, so the offset is the original's)
+    let a = s.to_ascii_lowercase().find(&format!("<{}>", t.to_ascii_lowercase()))? + t.len() + 2;
     Some(s[a..].split('<').next()?.trim())
 }
 
@@ -95,8 +100,9 @@ impl Character {
         let rj = joints(xml);
         // RDR2's frames are around its pelvis; put its pelvis where the base's is.
         let shift = base.parts[0].frame[3];
+        let part_of = if xml.contains("<bodyPart name=\"Buttocks\">") { PART_OF_OLD } else { PART_OF };
         let frame = |d: usize| -> (M3, [f32; 3]) {
-            let (r, t) = rp[PART_OF[d]].unwrap();
+            let (r, t) = rp[part_of[d]].unwrap();
             (r, add(t, shift))
         };
         let mut joints_out = Vec::with_capacity(20);
