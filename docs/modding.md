@@ -288,6 +288,7 @@ Do not add gravity compensation: gravity is not included in the drive.
 | Push | `nm_agent_apply_impulse(a, part, at, impulse)`, `nm_agent_apply_push(a, at, impulse)` (nearest part), `nm_agent_add_velocity` |
 | Find a part | `nm_agent_nearest_part`, `nm_agent_raycast` |
 | Reactions | `nm_agent_task_shot`, `task_balance`, `task_catch_fall`, `task_flinch` |
+| RDR2 reactions (optional) | `nm_agent_rdr2_shot(a, w, part, at, dir)` after `nm_agent_task_shot`; `nm_agent_rdr2_melee(a, w, part, at, dir)` instead of a flinch; `nm_rdr2_set(name, value)` to tune them |
 | Animation pose | `nm_agent_set_incoming_transforms(a, transforms, parts)` (7 floats per part; `parts = 0` clears), used by `activePose` and `incomingTransforms` |
 | Events | `nm_agent_feedback_count`, `nm_agent_feedback_get` |
 | World | `nm_world_add_floor`, `nm_world_add_mesh`, `nm_world_set_boxes`, `nm_world_raycast`, `nm_set_surface(material, friction, elasticity)` |
@@ -412,6 +413,24 @@ they end. Numbers in brackets are the defaults.
 RDR2 bodies: `nm_character_from_rdr2` turns one of RDR2's naturalmotion XML files (fred.xml, wilma.xml and the
 size variants, from your own copy) into an `nm-character-1` body on top of a base body.
 
+#### RDR2 reactions on hits (optional)
+
+A game (or the playroom, with "Red Dead Redemption 2 reactions" in Reactions, `!rdr2`, or `rdr2_reactions 1` in
+settings.txt) can have its hits pick these the way RDR2 does, with one call per hit. Off, nothing changes.
+
+- `nm_agent_rdr2_shot(agent, world, part, hitPoint, bulletDir)`, right after `nm_agent_task_shot`. By where the bullet
+  hit: `shotFromBehind` (the trunk, from behind), `shotInGuts` (parts 7-8), `shotInjuredLeg` (thighs and shins),
+  `shotInjuredArm` (upper arms to hands); a `shotSnap` every time; by chance `shotSpin` (trunk) or `shotFallToKnees`
+  (belly, pelvis, legs), and `reachForWound` (not the head, neck, hands or feet; both hands for the belly). Returns
+  how many started.
+- `nm_agent_rdr2_melee(agent, world, part, hitPoint, blowDir)`, instead of a flinch: `meleeReact`, softened so a punch
+  staggers him and rarely drops him.
+- Both keep `rdr2Balance` on.
+- `nm_rdr2_set(name, value)`, for every agent: `snap`, `hitLocation`, `melee`, `balance` (0 off, 1 on); `spin`
+  (0.25), `knees` (0.15), `reach` (0.7), chances 0 to 1.
+
+Rust callers use `delirium::extras_rdr2::Reactions` (`on_shot`, `on_melee`), which returns the messages to send.
+
 Parameters marked unused in the listing are accepted (and counted in the return
 value of `nm_msg_send`) but do not change anything.
 
@@ -477,7 +496,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 
 | Command | Effect |
 |---|---|
-| `!button NAME` | Press a UI button by its label: `balance`, `drunk`, `windmill`, `pedal`, `writhe`, `rollup`, `catchfall`, `highfall`, `stairs`, `shot`, `flinch`, `brace`, `look`, `point`, `lean`, `relax`, `stayup`, `foetal`, `grab`, `overwall`, `STOP all`, `RESET pose`, `shot back`, `throw ball`, `throw box`, `drop crate`, `clear`, `push front`, `push back`, `car`, `fall`, `explosion pile`, `wrecking ball`, `ice`, `crowd`, `grid`, `add taxi`, `clear taxis`, `tackle high`, `tackle low`, `jump`, `jump dive`, `dismember`, `hat`, `avoid`, `get-up`, `infinite health`, `walk`, `passive`, `super punch`, `hero physics`, `replay`, `walk learned`, `run learned`, or any extra message's name |
+| `!button NAME` | Press a UI button by its label: `balance`, `drunk`, `windmill`, `pedal`, `writhe`, `rollup`, `catchfall`, `highfall`, `stairs`, `shot`, `flinch`, `brace`, `look`, `point`, `lean`, `relax`, `stayup`, `foetal`, `grab`, `overwall`, `STOP all`, `RESET pose`, `shot back`, `throw ball`, `throw box`, `drop crate`, `clear`, `push front`, `push back`, `car`, `fall`, `explosion pile`, `wrecking ball`, `ice`, `crowd`, `grid`, `add taxi`, `clear taxis`, `tackle high`, `tackle low`, `jump`, `jump dive`, `dismember`, `hat`, `avoid`, `get-up`, `infinite health`, `walk`, `passive`, `super punch`, `hero physics`, `replay`, `walk learned`, `run learned`, `rdr2 reactions`, or any extra message's name |
 | `!body S\|A\|L\|K\|F\|T` | Body preset: S small 1.60 m / 55 kg, A medium 1.75 / 77, L large 1.90 / 110, K lanky 1.90 / 64, F fat 1.72 / 125, T stocky 1.63 / 88. |
 | `!strength N` | Set the strength value. |
 | `!walk x,y` | Walk towards a point (`!walk 0,0` stops). |
@@ -485,6 +504,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!infinite` | Toggle infinite health. |
 | `!nododge` | Stop the character dodging. |
 | `!oncue LINE` | Run `LINE` (a script line) when the character next goes over. |
+| `!rdr2` | Toggle Red Dead Redemption 2 reactions on shots and punches. |
 
 ### Hits and forces
 
@@ -569,6 +589,7 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 | `sun_r`, `sun_g`, `sun_b` | 0 to 1 | Sun colour. |
 | `sound` | 0/1 | Sound on. |
 | `vol`, `vol_fx`, `vol_portal` | 0 to 1 | Volumes. |
+| `rdr2_reactions` | 0/1 | Red Dead Redemption 2 reactions on shots and punches (off by default). |
 
 ## Tips and troubleshooting
 
