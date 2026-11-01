@@ -247,6 +247,18 @@ namespace Delirium
         /// <summary>A character file from a the game fred.xrt (and a build dump, or NULL for none), into `buf` as usual. Load fred.xrt (nm_init) first when a build is given: the build is laid out on it.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_character_from_xrt([MarshalAs(UnmanagedType.LPUTF8Str)] string xrt_path, [MarshalAs(UnmanagedType.LPUTF8Str)] string build_path, byte[] buf, int len);
+        /// <summary>An RDR2 body as `nm-character-1` JSON: `xml_path` one of RDR2's naturalmotion XML files (fred.xml, wilma.xml...), `base_json` a base body (from nm_character_from_xrt); with `build_path` (the base's build dump) the result also carries a build fitted to RDR2's proportions. Writes the JSON into `buf` like nm_character_from_xrt.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_character_from_rdr2([MarshalAs(UnmanagedType.LPUTF8Str)] string xml_path, [MarshalAs(UnmanagedType.LPUTF8Str)] string base_json, [MarshalAs(UnmanagedType.LPUTF8Str)] string build_path, byte[] buf, int len);
+        /// <summary>The RDR2 reactions option, for nm_agent_rdr2_shot / nm_agent_rdr2_melee (every agent): `name` one of "snap", "hitLocation", "melee", "balance" (0 off, 1 on), "spin", "knees", "reach" (chances, 0..1). Defaults: all on, spin 0.25, knees 0.15, reach 0.7.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_rdr2_set([MarshalAs(UnmanagedType.LPUTF8Str)] string name, float value);
+        /// <summary>RDR2's reactions to a bullet, started after the shot itself (nm_agent_task_shot): part `part` hit at `at` (world), the bullet going along `dir`. By where it hit: shotFromBehind, shotInGuts, shotInjuredLeg or shotInjuredArm; shotSnap; by chance shotSpin or shotFallToKnees, and reachForWound; rdr2Balance stays on (see nm_rdr2_set). Returns how many messages started.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_rdr2_shot(IntPtr a, IntPtr w, int part, float[] at, float[] dir);
+        /// <summary>RDR2's melee reaction (meleeReact, softened so a punch staggers and rarely drops) to a blow on part `part` at `at` (world) along `dir`, instead of a flinch; rdr2Balance stays on (see nm_rdr2_set). Returns how many messages started (0 with "melee" off).</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_rdr2_melee(IntPtr a, IntPtr w, int part, float[] at, float[] dir);
 
         /// <summary>A string out of a buffer call (nm_*_name, nm_last_error...).</summary>
         public static string Str(Func<byte[], int, int> call)

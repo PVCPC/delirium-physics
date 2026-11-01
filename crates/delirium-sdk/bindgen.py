@@ -1,4 +1,4 @@
-# Writes the SDK's bindings from src/lib.rs's and src/character.rs's exported functions, constants and doc comments:
+# Writes the SDK's bindings from src/lib.rs's, src/character.rs's and src/rdr2.rs's exported functions, constants and doc comments:
 #   include/delirium_physics.h            C
 #   bindings/csharp/Delirium.cs   C# (P/Invoke)
 #   bindings/python/delirium_physics.py   Python (ctypes)
@@ -6,7 +6,7 @@
 import os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-src = ''.join(open(os.path.join(HERE, 'src', f), encoding='utf-8').read() for f in ('lib.rs', 'character.rs'))
+src = ''.join(open(os.path.join(HERE, 'src', f), encoding='utf-8').read() for f in ('lib.rs', 'character.rs', 'rdr2.rs'))
 
 consts = re.findall(r'pub const (NM_\w+): i32 = (-?\d+);', src)
 fns = []

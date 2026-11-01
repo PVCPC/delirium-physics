@@ -1,6 +1,9 @@
 //! Tries the RDR2 extra messages on a standing body and prints what they do over time.
 //! Usage: GTAIV_EXE=<GTAIV.exe> cargo run --release -p delirium-sdk --example rdr2_try -- <Fred.art|fred.xrt> <build.txt> <message> [name=value...]
 //! Values: true/false, x,y,z (a vector), a whole number (an int) or a decimal with a point (a float). Message "none" sends nothing.
+//! Message "rdr2shot" (part=N, back=true for a shot from behind) shoots him through the SDK as a game would:
+//! nm_agent_task_shot, the bullet's push, then nm_agent_rdr2_shot (RDR2's reactions to it).
+use delirium_physics::rdr2::nm_agent_rdr2_shot;
 use delirium_physics::*;
 use std::ffi::CString;
 
@@ -59,7 +62,19 @@ fn main() {
                     println!("sent {m} -> {}", nm_msg_send(g, w));
                 }
             }
-            if k == 60 && a[3] != "none" {
+            if k == 60 && a[3] == "rdr2shot" {
+                let arg = |n: &str| a[4..].iter().find_map(|kv| kv.strip_prefix(&format!("{n}=")).map(str::to_string));
+                let part: i32 = arg("part").and_then(|v| v.parse().ok()).unwrap_or(10);
+                let (l, r) = (get(13), get(17));
+                let f = { let d = [l[1] - r[1], -(l[0] - r[0])]; let n = (d[0] * d[0] + d[1] * d[1]).sqrt(); [d[0] / n, d[1] / n, 0.0f32] };
+                // the bullet travels against his facing (from in front), or along it from behind
+                let s = if arg("back").as_deref() == Some("true") { 1.0 } else { -1.0 };
+                let dir = [f[0] * s, f[1] * s, 0.0f32];
+                let at = get(part);
+                nm_agent_task_shot(g, w, c("*").as_ptr(), part, at.as_ptr(), dir.as_ptr(), 200.0);
+                nm_agent_apply_push(g, at.as_ptr(), [dir[0] * 40.0, dir[1] * 40.0, 0.0f32].as_ptr());
+                println!("shot part {part}: nm_agent_rdr2_shot started {}", nm_agent_rdr2_shot(g, w, part, at.as_ptr(), dir.as_ptr()));
+            } else if k == 60 && a[3] != "none" {
                 nm_msg_begin(g, c(&a[3]).as_ptr());
                 nm_msg_set_bool(g, c("start").as_ptr(), 1);
                 // "@f,l,u": a point forward / left / up of the pelvis (his facing); "@n:f,l,u": a direction that way

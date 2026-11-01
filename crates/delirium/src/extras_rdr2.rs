@@ -1723,3 +1723,97 @@ impl Extra for Keyframe {
         self.t > self.blend + self.hold
     }
 }
+
+/// One message to start: its name and parameters (start=true among them).
+pub type Start = (&'static str, Vec<(&'static str, crate::msg::Value)>);
+
+/// The RDR2 reactions option, for a game or the playroom that wants them on its hits: which of the messages above a
+/// hit starts, and how often. Chances are 0..1. Nothing calls this by itself; a caller that leaves the option off
+/// gets Delirium's reactions unchanged.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reactions {
+    /// every shot: shotSnap, the hit part jerked along the bullet and snapped back
+    pub snap: bool,
+    /// chance a shot in the trunk spins him round (shotSpin)
+    pub spin: f32,
+    /// chance a shot in the belly, pelvis or legs drops him to his knees (shotFallToKnees; not with a spin)
+    pub knees: f32,
+    /// where he is hit matters: shotFromBehind (the back), shotInGuts (the belly), shotInjuredLeg, shotInjuredArm
+    pub hit_location: bool,
+    /// chance a hand goes to the wound (reachForWound; not the head, neck, hands or feet; both hands for the belly)
+    pub reach: f32,
+    /// a melee blow: meleeReact instead of the usual flinch
+    pub melee: bool,
+    /// rdr2Balance on from the first hit: stiffer legs when running, feet set down flat
+    pub balance: bool,
+}
+
+impl Default for Reactions {
+    fn default() -> Reactions {
+        Reactions { snap: true, spin: 0.25, knees: 0.15, hit_location: true, reach: 0.7, melee: true, balance: true }
+    }
+}
+
+impl Reactions {
+    /// What a bullet starts, sent after the shot itself: `part` hit at `at`, travelling along `dir`; `fwd` is the
+    /// way he faces ((left clavicle - right clavicle) x up).
+    pub fn on_shot(&self, rand: &mut delirium_data::rng::Rand, part: usize, at: Vec3, dir: Vec3, fwd: Vec3) -> Vec<Start> {
+        use crate::msg::Value::{Bool as B, Float as F, Int as I, Vec3 as V};
+        let mut out: Vec<Start> = vec![];
+        let mut go = |name, mut ps: Vec<_>| {
+            ps.insert(0, ("start", B(true)));
+            out.push((name, ps));
+        };
+        if self.balance {
+            go("rdr2Balance", vec![]);
+        }
+        if self.snap {
+            go("shotSnap", vec![("bulletDir", V(dir)), ("bodyPart", I(part as i32)), ("snapMag", F(rand.float_in_range(0.3, 0.5)))]);
+        }
+        // Delirium's parts: 1-3 / 4-6 the legs, 7-10 the spine (7-8 the belly), 13-16 / 17-20 the arms
+        let (trunk, low) = ((7..=10).contains(&part), part <= 8);
+        let spun = trunk && rand.float_in_range(0.0, 1.0) < self.spin;
+        let mut knees = false;
+        if spun {
+            go("shotSpin", vec![("hitPoint", V(at)), ("bulletDir", V(dir))]);
+        } else if low && rand.float_in_range(0.0, 1.0) < self.knees {
+            knees = true;
+            go("shotFallToKnees", vec![("ftkPitchForwards", B(rand.float_in_range(0.0, 1.0) < 0.6))]);
+        }
+        let mut gut = false;
+        if self.hit_location {
+            let (f, d) = (fwd.with_z(0.0).normalize_or_zero(), dir.with_z(0.0).normalize_or_zero());
+            if (trunk || part == 0) && f.dot(d) > 0.4 {
+                go("shotFromBehind", vec![("sfbSpineAmount", F(rand.float_in_range(0.4, 0.6))), ("sfbNeckAmount", F(rand.float_in_range(0.2, 0.4)))]);
+            } else if part == 7 || part == 8 {
+                gut = true;
+                go("shotInGuts", vec![("sigSpineAmount", F(rand.float_in_range(0.45, 0.7))), ("sigPeriod", F(rand.float_in_range(1.0, 2.0)))]);
+            } else if !knees && matches!(part, 1 | 2 | 4 | 5) {
+                go("shotInjuredLeg", vec![("bodyPart", I(part as i32)), ("legInjuryTime", F(rand.float_in_range(1.0, 2.0)))]);
+            } else if matches!(part, 14..=16 | 18..=20) {
+                go("shotInjuredArm", vec![("bodyPart", I(part as i32)), ("bulletDir", V(dir))]);
+            }
+        }
+        if !matches!(part, 3 | 6 | 11 | 12 | 16 | 20) && rand.float_in_range(0.0, 1.0) < self.reach {
+            go("reachForWound", vec![("hitPoint", V(at)), ("hitPart", I(part as i32)), ("reachWithOneHand", B(!gut)),
+                                     ("timeBeforeReachForWound", F(rand.float_in_range(0.1, 0.3))), ("grabHoldTime", F(rand.float_in_range(1.5, 3.0)))]);
+        }
+        out
+    }
+
+    /// What a melee blow starts (instead of a flinch): `part` hit at `at` by a blow along `dir`. Softer than the
+    /// message's defaults, so a punch staggers him and rarely drops him.
+    pub fn on_melee(&self, rand: &mut delirium_data::rng::Rand, part: usize, at: Vec3, dir: Vec3) -> Vec<Start> {
+        use crate::msg::Value::{Bool as B, Float as F, Int as I, Vec3 as V};
+        if !self.melee {
+            return vec![];
+        }
+        let mut out: Vec<Start> = vec![];
+        if self.balance {
+            out.push(("rdr2Balance", vec![("start", B(true))]));
+        }
+        out.push(("meleeReact", vec![("start", B(true)), ("hitPoint", V(at)), ("hitNormal", V(-dir.normalize_or_zero())), ("hitPart", I(part as i32)),
+                                     ("Lean", F(rand.float_in_range(40.0, 55.0))), ("snapMag", F(rand.float_in_range(0.15, 0.22))), ("csLooseness", F(0.35))]));
+        out
+    }
+}

@@ -193,3 +193,70 @@ pub unsafe extern "C" fn nm_character_from_rdr2(xml_path: *const c_char, base_js
     }
 }
 
+
+/// The RDR2 reactions option every agent shares (nm_rdr2_set); Delirium's own reactions are unchanged unless a caller
+/// asks for these (nm_agent_rdr2_shot / nm_agent_rdr2_melee).
+static REACTIONS: std::sync::Mutex<Option<delirium::extras_rdr2::Reactions>> = std::sync::Mutex::new(None);
+
+fn reactions() -> delirium::extras_rdr2::Reactions {
+    REACTIONS.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or_default()
+}
+
+/// Sends what the RDR2 option picked, in order; the count started.
+unsafe fn start_all(a: *mut NmAgent, w: *const NmWorld, o: Vec<delirium::extras_rdr2::Start>) -> i32 {
+    let (Some(a), Some(w)) = (unsafe { a.as_mut() }, unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null agent or world") };
+    let mut st = std::mem::take(&mut a.agent.msgs);
+    let n = o.iter().filter(|(m, ps)| msg::send(&mut a.agent, &a.build, &w.0, &mut st, m, ps).is_ok()).count();
+    a.agent.msgs = st;
+    n as i32
+}
+
+/// The RDR2 reactions option, for nm_agent_rdr2_shot / nm_agent_rdr2_melee (every agent): `name` one of "snap",
+/// "hitLocation", "melee", "balance" (0 off, 1 on), "spin", "knees", "reach" (chances, 0..1). Defaults: all on, spin
+/// 0.25, knees 0.15, reach 0.7.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_rdr2_set(name: *const c_char, value: f32) -> i32 {
+    let mut r = reactions();
+    let on = value != 0.0;
+    match unsafe { text(name) } {
+        Some("snap") => r.snap = on,
+        Some("hitLocation") => r.hit_location = on,
+        Some("melee") => r.melee = on,
+        Some("balance") => r.balance = on,
+        Some("spin") => r.spin = value.clamp(0.0, 1.0),
+        Some("knees") => r.knees = value.clamp(0.0, 1.0),
+        Some("reach") => r.reach = value.clamp(0.0, 1.0),
+        _ => return fail(NM_E_PARAM, "nm_rdr2_set: no such option"),
+    }
+    *REACTIONS.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+    0
+}
+
+/// RDR2's reactions to a bullet, started after the shot itself (nm_agent_task_shot): part `part` hit at `at`
+/// (world), the bullet going along `dir`. By where it hit: shotFromBehind, shotInGuts, shotInjuredLeg or
+/// shotInjuredArm; shotSnap; by chance shotSpin or shotFallToKnees, and reachForWound; rdr2Balance stays on (see
+/// nm_rdr2_set). Returns how many messages started.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_rdr2_shot(a: *mut NmAgent, w: *const NmWorld, part: i32, at: *const f32, dir: *const f32) -> i32 {
+    let Some(g) = (unsafe { a.as_ref() }) else { return fail(NM_E_ARG, "null agent") };
+    if at.is_null() || dir.is_null() || !(0..g.build.parts.len().min(21) as i32).contains(&part) {
+        return fail(NM_E_ARG, "bad hit");
+    }
+    // facing: (left clavicle - right clavicle) x up
+    let fwd = (g.agent.doll.centre(13) - g.agent.doll.centre(17)).cross(Vec3::Z);
+    let o = reactions().on_shot(&mut RAND.lock().unwrap_or_else(|e| e.into_inner()), part as usize, unsafe { v3(at) }, unsafe { v3(dir) }, fwd);
+    unsafe { start_all(a, w, o) }
+}
+
+/// RDR2's melee reaction (meleeReact, softened so a punch staggers and rarely drops) to a blow on part `part` at
+/// `at` (world) along `dir`, instead of a flinch; rdr2Balance stays on (see nm_rdr2_set). Returns how many messages
+/// started (0 with "melee" off).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_rdr2_melee(a: *mut NmAgent, w: *const NmWorld, part: i32, at: *const f32, dir: *const f32) -> i32 {
+    let Some(g) = (unsafe { a.as_ref() }) else { return fail(NM_E_ARG, "null agent") };
+    if at.is_null() || dir.is_null() || !(0..g.build.parts.len().min(21) as i32).contains(&part) {
+        return fail(NM_E_ARG, "bad hit");
+    }
+    let o = reactions().on_melee(&mut RAND.lock().unwrap_or_else(|e| e.into_inner()), part as usize, unsafe { v3(at) }, unsafe { v3(dir) });
+    unsafe { start_all(a, w, o) }
+}
