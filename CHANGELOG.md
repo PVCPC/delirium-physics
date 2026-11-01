@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Behaviours from Red Dead Redemption 2's Euphoria, as extra messages: `duck`, `shotSnap`, `shotSpin`,
+  `shotFallToKnees`, `meleeReact`, `shotFromBehind`, `shotInGuts`, `shotInjuredLeg`, `shotInjuredArm`,
+  `reachForWound`, `wallCollision`, `setFallingReaction`, `rdr2Balance` and `keyframe` (see docs/modding.md). They do
+  nothing until sent with `start=true`, so the existing behaviours are unchanged, bit for bit.
+- The SDK's `nm_character_from_rdr2` makes a character file from one of RDR2's body files (fred.xml, wilma.xml and the
+  size variants, from your own copy) on top of a base body.
+- Examples: `regress` (a fingerprint of fixed scenes, to check a change leaves the physics alone), `rdr2_try` (tries
+  an extra message on a standing body) and `rdr2_body` (converts an RDR2 body and stands it up).
+
 ## 0.2.6
 
 ### Changed
