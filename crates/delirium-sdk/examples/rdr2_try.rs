@@ -20,7 +20,25 @@ fn main() {
         assert!(nm_init(c(&a[1]).as_ptr()) >= 0);
         let build = nm_build_load(c(&a[2]).as_ptr());
         let w = nm_world_create();
-        nm_world_add_floor(w, 0.0, 0.0, 0.0, 50.0);
+        if let Some(r) = std::env::var("PEDESTAL").ok().and_then(|v| v.parse::<f32>().ok()) {
+            // PEDESTAL=r: flat ground within r of the origin (a square), 0.6 m lower beyond it (a ledge all round)
+            let n = 41usize; let step = 0.1f32; let half = (n - 1) as f32 * step * 0.5;
+            let mut pos = vec![];
+            for iy in 0..n { for ix in 0..n {
+                let (x, y) = (ix as f32 * step - half, iy as f32 * step - half);
+                pos.extend([x, y, if x.abs() <= r && y.abs() <= r { 0.0 } else { -0.6 }]);
+            } }
+            let mut tri: Vec<u32> = vec![];
+            for iy in 0..n - 1 { for ix in 0..n - 1 {
+                let a0 = (iy * n + ix) as u32; let (a1, b0) = (a0 + 1, a0 + n as u32); let b1 = b0 + 1;
+                tri.extend([a0, a1, b1, a0, b1, b0]);
+            } }
+            let mat = vec![0u8; tri.len() / 3];
+            assert!(nm_world_add_mesh(w, pos.as_ptr(), (n * n) as i32, tri.as_ptr(), (tri.len() / 3) as i32, mat.as_ptr()) >= 0);
+            nm_world_add_floor(w, 0.0, 0.0, -0.6, 50.0);
+        } else {
+            nm_world_add_floor(w, 0.0, 0.0, 0.0, 50.0);
+        }
         let g = nm_agent_create(build, [0.0f32; 3].as_ptr(), 0.0, 0.3);
         nm_msg_begin(g, c("bodyBalance").as_ptr());
         nm_msg_set_bool(g, c("start").as_ptr(), 1);

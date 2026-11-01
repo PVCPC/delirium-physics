@@ -37,6 +37,7 @@ pub static MESSAGES: [Message; 14] = [
         Param { name: "objectBehindVictimNormal", kind: Kind::Vec3, used: true, doc: "the wall's normal, out of it towards him (zero: nothing happens)" },
         Param { name: "solidWall", kind: Kind::Bool, used: true, doc: "make the wall solid for his body (true; false when the world already has it)" },
         Param { name: "wallStiffness", kind: Kind::Float, used: true, doc: "that wall's spring, 1/s^2 (400)" },
+        Param { name: "wallHalfWidth", kind: Kind::Float, used: true, doc: "the wall reaches this far either side of the point, m (0: on and on)" },
         Param { name: "slumpMode", kind: Kind::Int, used: true, doc: "0: slump when his back meets it, 1: always slump, 2: never (0)" },
         Param { name: "braceWall", kind: Kind::Bool, used: true, doc: "facing it: both hands on the wall (true); false: just a rebound" },
         Param { name: "braceDistance", kind: Kind::Float, used: true, doc: "brace when his chest is within this of it, m (0.9)" },
@@ -1256,7 +1257,7 @@ enum WallMode { Slump, Brace, Glance, Rebound }
 pub struct WallCollision {
     at: Vec3, normal: Vec3, solid: bool, slump_mode: i32, brace: bool, brace_dist: f32, brace_stiffness: f32,
     react: f32, impact_legs: f32, sit_start: f32, sit_rate: f32, glance: f32, glance_time: f32, rebound: f32,
-    forward_time: f32, stiffness: f32, snap_mag: f32, wall_k: f32,
+    forward_time: f32, stiffness: f32, snap_mag: f32, wall_k: f32, half_width: f32,
     t: f32, mode: Option<WallMode>, snap: Option<Snap>, arm: [Option<[f32; 6]>; 2], legs: f32,
 }
 
@@ -1271,6 +1272,7 @@ impl WallCollision {
             glance: p.f("glanceSpinMag", 60.0)?, glance_time: p.f("glanceSpinTime", 0.5)?.max(0.01),
             rebound: p.f("reboundForce", 150.0)?, forward_time: p.f("timeToForward", 0.8)?.max(0.0),
             stiffness: p.f("stiffness", 10.0)?, snap_mag: p.f("snapMag", 0.3)?, wall_k: p.f("wallStiffness", 400.0)?,
+            half_width: p.f("wallHalfWidth", 0.0)?.max(0.0),
             t: 0.0, mode: None, snap: None, arm: [None; 2], legs: 0.0,
         })
     }
@@ -1281,11 +1283,16 @@ impl WallCollision {
         (self.at, n.normalize_or_zero())
     }
 
-    /// Keeps his parts on his side of the wall: a damped spring per part on how far it is inside.
+    /// Keeps his parts on his side of the wall: a damped spring per part on how far it is inside (and, with a
+    /// wallHalfWidth, only along that much of it either side of the point given).
     fn wall(&self, c: &mut Ctx, at: Vec3, n: Vec3) {
+        let along = c.ch.up.normalize_or(Vec3::Z).cross(n).normalize_or_zero();
         for k in 0..c.b.build.parts.len().min(21) {
             let pd = &c.b.build.parts[k];
             let q = c.b.part(k);
+            if self.half_width > 0.0 && (q.m.d - at).dot(along).abs() > self.half_width {
+                continue;
+            }
             let reach = pd.radius + pd.half * 0.5;
             let inside = reach - (q.m.d - at).dot(n);
             if inside > 0.0 {
@@ -1507,13 +1514,20 @@ impl FallingReaction {
 impl FallingReaction {
     /// What his arms and knees carry on all fours (NaturalMotion uses such helpers too: joint strength alone
     /// can't hold a body up): the upper body's weight held at the chest over the hands, the lower body's at the
-    /// pelvis over the knees, each a damped spring to its height, by `k`.
+    /// pelvis over the knees, each a damped spring to its height, by `k` - each only while hands (or knees) touch.
     fn support(&self, c: &mut Ctx, ground: f32, up: Vec3, k: f32) {
         let mass = |r: std::ops::RangeInclusive<usize>| r.map(|i| c.b.build.parts[i].mass).sum::<f32>();
         let (upper, lower) = (mass(7..=20), mass(0..=6));
         let hands_at = (c.b.part(16).m.d + c.b.part(20).m.d) * 0.5;
         let knees_at = (c.b.part(2).m.d + c.b.part(5).m.d) * 0.5;
-        for (part, over, height, m) in [(10, hands_at, 0.6, upper), (0, knees_at, 0.55, lower * 0.6)] {
+        // only what the hands and knees really rest on: a helper with nothing under it would hold him up in the
+        // air (a slope down, a ledge, stairs)
+        let hands = c.b.doll.collided(&[15, 16, 19, 20]);
+        let knees = c.b.doll.collided(&[1, 2, 4, 5]);
+        for (part, over, height, m, on) in [(10, hands_at, 0.6, upper, hands), (0, knees_at, 0.55, lower * 0.6, knees)] {
+            if !on {
+                continue;
+            }
             let q = c.b.part(part);
             let off = over - q.m.d;
             let flat = off - up * off.dot(up);
