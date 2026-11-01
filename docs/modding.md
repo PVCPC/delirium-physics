@@ -411,12 +411,17 @@ joint's target as an offset, cleared every step, so they add up without building
 they end. Numbers in brackets are the defaults.
 
 RDR2 bodies: `nm_character_from_rdr2` turns one of RDR2's naturalmotion XML files (fred.xml, wilma.xml and the
-size variants, from your own copy) into an `nm-character-1` body on top of a base body.
+size variants, from your own copy) into an `nm-character-1` body on top of a base body (Homer's, or Marge's). Both of
+RDR2's part namings are read. On Homer's GTA IV base, RDR2's regular, fat, large, short, skinny and tall men and its
+two women stand and take a shot; the very small (0.9 m) and very large (scaled 2.2 times) ones are outside what the
+balancer is tuned for.
 
 #### RDR2 reactions on hits (optional)
 
-A game (or the playroom, with "Red Dead Redemption 2 reactions" in Reactions, `!rdr2`, or `rdr2_reactions 1` in
-settings.txt) can have its hits pick these the way RDR2 does, with one call per hit. Off, nothing changes.
+A game can have its hits pick these the way RDR2 does, with one call per hit. In the playroom, switch Reactions'
+"Reaction style" from GTA IV to Red Dead Redemption 2 (or `!rdr2`, or `rdr2_reactions 1` in settings.txt): shots
+then also start RDR2's reactions, and punches get `meleeReact` instead of the flinch. GTA IV style, the default, is
+Delirium's own, unchanged.
 
 - `nm_agent_rdr2_shot(agent, world, part, hitPoint, bulletDir)`, right after `nm_agent_task_shot`. By where the bullet
   hit: `shotFromBehind` (the trunk, from behind), `shotInGuts` (parts 7-8), `shotInjuredLeg` (thighs and shins),
@@ -496,7 +501,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 
 | Command | Effect |
 |---|---|
-| `!button NAME` | Press a UI button by its label: `balance`, `drunk`, `windmill`, `pedal`, `writhe`, `rollup`, `catchfall`, `highfall`, `stairs`, `shot`, `flinch`, `brace`, `look`, `point`, `lean`, `relax`, `stayup`, `foetal`, `grab`, `overwall`, `STOP all`, `RESET pose`, `shot back`, `throw ball`, `throw box`, `drop crate`, `clear`, `push front`, `push back`, `car`, `fall`, `explosion pile`, `wrecking ball`, `ice`, `crowd`, `grid`, `add taxi`, `clear taxis`, `tackle high`, `tackle low`, `jump`, `jump dive`, `dismember`, `hat`, `avoid`, `get-up`, `infinite health`, `walk`, `passive`, `super punch`, `hero physics`, `replay`, `walk learned`, `run learned`, `rdr2 reactions`, or any extra message's name |
+| `!button NAME` | Press a UI button by its label: `balance`, `drunk`, `windmill`, `pedal`, `writhe`, `rollup`, `catchfall`, `highfall`, `stairs`, `shot`, `flinch`, `brace`, `look`, `point`, `lean`, `relax`, `stayup`, `foetal`, `grab`, `overwall`, `STOP all`, `RESET pose`, `shot back`, `throw ball`, `throw box`, `drop crate`, `clear`, `push front`, `push back`, `car`, `fall`, `explosion pile`, `wrecking ball`, `ice`, `crowd`, `grid`, `add taxi`, `clear taxis`, `tackle high`, `tackle low`, `jump`, `jump dive`, `dismember`, `hat`, `avoid`, `get-up`, `infinite health`, `walk`, `passive`, `super punch`, `hero physics`, `replay`, `walk learned`, `run learned`, `rdr2 reactions` (switches the reaction style), or any extra message's name |
 | `!body S\|A\|L\|K\|F\|T` | Body preset: S small 1.60 m / 55 kg, A medium 1.75 / 77, L large 1.90 / 110, K lanky 1.90 / 64, F fat 1.72 / 125, T stocky 1.63 / 88. |
 | `!strength N` | Set the strength value. |
 | `!walk x,y` | Walk towards a point (`!walk 0,0` stops). |
@@ -504,7 +509,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!infinite` | Toggle infinite health. |
 | `!nododge` | Stop the character dodging. |
 | `!oncue LINE` | Run `LINE` (a script line) when the character next goes over. |
-| `!rdr2` | Toggle Red Dead Redemption 2 reactions on shots and punches. |
+| `!rdr2` | Switch the reaction style between GTA IV (the default) and Red Dead Redemption 2. |
 
 ### Hits and forces
 
@@ -589,7 +594,7 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 | `sun_r`, `sun_g`, `sun_b` | 0 to 1 | Sun colour. |
 | `sound` | 0/1 | Sound on. |
 | `vol`, `vol_fx`, `vol_portal` | 0 to 1 | Volumes. |
-| `rdr2_reactions` | 0/1 | Red Dead Redemption 2 reactions on shots and punches (off by default). |
+| `rdr2_reactions` | 0/1 | Reaction style: 0 GTA IV (the default), 1 Red Dead Redemption 2. |
 
 ## Tips and troubleshooting
 

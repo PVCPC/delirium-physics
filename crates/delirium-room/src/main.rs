@@ -960,7 +960,7 @@ struct Sim {
     no_dodge: bool,
     dodge_gap: f32,
     extra: bool,
-    /// Red Dead Redemption 2's reactions on shots and punches (off: Delirium's own, unchanged)
+    /// Reaction style: Red Dead Redemption 2's on shots and punches, or GTA IV's (false: Delirium's own, unchanged)
     rdr2: bool,
     /// RDR2 reactions waiting for the shot task's first messages (which would stop them)
     rdr2_after: Vec<String>,
@@ -2531,7 +2531,8 @@ impl Sim {
                 if kind(self.weapon) == 2 && (self.hero.is_none() || self.hero_gun) {
                     self.cut(k, at, -j.normalize_or(Vec3::Z), dmg);
                 }
-                (if self.rand.float_in_range(0.0, 1.0) > BALANCE_ROLL() { "balance" } else { "flinch" }, vec![imp(k, at, j)])
+                // RDR2 style: he keeps his balance and RDR2's melee reaction (below) takes the flinch's place
+                (if self.rdr2 || self.rand.float_in_range(0.0, 1.0) > BALANCE_ROLL() { "balance" } else { "flinch" }, vec![imp(k, at, j)])
             }
             hero::Hit::Bump(_) => ("balance", vec![]),
         };
@@ -3541,7 +3542,7 @@ impl Sim {
             }
             "rdr2 reactions" => {
                 self.rdr2 = !self.rdr2;
-                let s = format!("room  RDR2 reactions: {}", if self.rdr2 { "on" } else { "off" });
+                let s = format!("room  reaction style: {}", if self.rdr2 { "Red Dead Redemption 2" } else { "GTA IV" });
                 return self.say(s);
             }
             "crowd" => return self.crowd(),
@@ -9742,8 +9743,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     }
                 }
             });
-            ui.checkbox(&mut sim.rdr2, "Red Dead Redemption 2 reactions")
-                .on_hover_text("Shots and punches also start RDR2's reactions: where he is hit matters (arches from behind, folds over a gut shot, limps, arm knocked round), a hand to the wound, a snap, sometimes a spin or a fall to his knees; punches get RDR2's melee reaction. Off: Delirium's own, unchanged.");
+            ui.horizontal(|ui| {
+                ui.label("Reaction style");
+                ui.selectable_value(&mut sim.rdr2, false, "GTA IV")
+                    .on_hover_text("Delirium's own reactions, as GTA IV's.");
+                ui.selectable_value(&mut sim.rdr2, true, "Red Dead Redemption 2")
+                    .on_hover_text("Shots also start RDR2's reactions: where he is hit matters (arches from behind, folds over a gut shot, limps, arm knocked round), a hand to the wound, a snap, sometimes a spin or a fall to his knees. Punches get RDR2's melee reaction instead of the flinch.");
+            });
             ui.checkbox(&mut sim.extra, "Additional experimental reactions")
                 .on_hover_text("Our own uses of the reaction engine's moves, beyond the game's: pick which below.");
             let on = sim.extra;
