@@ -726,7 +726,7 @@ impl Extra for Melee {
         }
         let flinching = self.flinch && self.t < self.flinch_time;
         if flinching {
-            for &j in &*SPINE() {
+            for &j in SPINE() {
                 let d = &mut c.ch.eff[j].desired[0];
                 *d += (0.08 - *d) * 0.2;
             }
@@ -1366,7 +1366,7 @@ impl Extra for WallCollision {
                         c.out.force(k, -n * pd.mass * a);
                     }
                 }
-                for &j in &*SPINE() {
+                for &j in SPINE() {
                     Knees::ease(c, j, 0, 0.0, 2.0 * dt);
                 }
                 let t = self.t - self.sit_start;
@@ -1475,11 +1475,11 @@ impl FallingReaction {
             Knees::ease(c, HIP()[s], 0, 1.5 * w, 6.0 * dt);
             Knees::ease(c, KNEE()[s], 0, 1.6 * w * knee_dir(c, KNEE()[s]), 6.0 * dt);
         }
-        for &j in &*SPINE() {
+        for &j in SPINE() {
             Knees::ease(c, j, 0, 0.0, 3.0 * dt);
         }
         if self.head_up {
-            for &j in &*NECK() {
+            for &j in NECK() {
                 Knees::ease(c, j, 0, -0.35 * w, 3.0 * dt);
             }
         }
