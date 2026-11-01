@@ -8,7 +8,112 @@ use crate::nmrs::{HIP, KNEE, NECK, SPINE};
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 5] = [
+pub static MESSAGES: [Message; 14] = [
+    Message { name: "keyframe", params: &[
+        Param { name: "blendTime", kind: Kind::Float, used: true, doc: "s to blend into the neutral stand (0.3)" },
+        Param { name: "holdTime", kind: Kind::Float, used: true, doc: "s it then holds it (0.5)" },
+        Param { name: "settle", kind: Kind::Float, used: true, doc: "how hard the upper body's motion is damped meanwhile, 1/s (3)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "spine and neck stiffness; the arms 0.8 of it (11)" },
+    ] },
+    Message { name: "rdr2Balance", params: &[
+        Param { name: "runningThresh", kind: Kind::Float, used: true, doc: "his speed along the ground above which he balances as running, m/s (0.65)" },
+        Param { name: "legStiffnessRun", kind: Kind::Float, used: true, doc: "hips and knees at least this stiff when running (13; 0: off)" },
+        Param { name: "startFlat", kind: Kind::Float, used: true, doc: "a foot this little above the other (m) is turned fully flat (0.1)" },
+        Param { name: "endFlat", kind: Kind::Float, used: true, doc: "from this high above the other (m) it isn't (0.3)" },
+        Param { name: "flatStiffness", kind: Kind::Float, used: true, doc: "the turn's strength, N m per rad (12; 0: off)" },
+    ] },
+    Message { name: "setFallingReaction", params: &[
+        Param { name: "handsAndKnees", kind: Kind::Bool, used: true, doc: "end a forward fall on all fours (true; false: nothing happens)" },
+        Param { name: "hkHoldTime", kind: Kind::Float, used: true, doc: "s he stays on hands and knees (1.5)" },
+        Param { name: "stoppedStrengthDecay", kind: Kind::Float, used: true, doc: "then his strength fades by this per s (1)" },
+        Param { name: "minArmStiffness", kind: Kind::Float, used: true, doc: "arms' stiffness on all fours (14)" },
+        Param { name: "minLegStiffness", kind: Kind::Float, used: true, doc: "legs' stiffness (12)" },
+        Param { name: "minSpineStiffness", kind: Kind::Float, used: true, doc: "spine and neck stiffness (9)" },
+        Param { name: "hkHeadAvoid", kind: Kind::Bool, used: true, doc: "keep the head up off the ground (true)" },
+        Param { name: "pushForward", kind: Kind::Float, used: true, doc: "a push on the chest tipping him forwards first, N (0)" },
+    ] },
+    Message { name: "wallCollision", params: &[
+        Param { name: "objectBehindVictimPos", kind: Kind::Vec3, used: true, doc: "a point on the wall he ran into, world" },
+        Param { name: "objectBehindVictimNormal", kind: Kind::Vec3, used: true, doc: "the wall's normal, out of it towards him (zero: nothing happens)" },
+        Param { name: "solidWall", kind: Kind::Bool, used: true, doc: "make the wall solid for his body (true; false when the world already has it)" },
+        Param { name: "wallStiffness", kind: Kind::Float, used: true, doc: "that wall's spring, 1/s^2 (400)" },
+        Param { name: "slumpMode", kind: Kind::Int, used: true, doc: "0: slump when his back meets it, 1: always slump, 2: never (0)" },
+        Param { name: "braceWall", kind: Kind::Bool, used: true, doc: "facing it: both hands on the wall (true); false: just a rebound" },
+        Param { name: "braceDistance", kind: Kind::Float, used: true, doc: "brace when his chest is within this of it, m (0.9)" },
+        Param { name: "braceArmStiffness", kind: Kind::Float, used: true, doc: "the bracing arms' stiffness (12)" },
+        Param { name: "reactTime", kind: Kind::Float, used: true, doc: "s the impact weakens his legs (0.3)" },
+        Param { name: "impactLegStiffReduction", kind: Kind::Float, used: true, doc: "leg stiffness lost at the impact (3)" },
+        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "the snap away from the wall at the impact, as shotSnap's (0.3)" },
+        Param { name: "sitStartTime", kind: Kind::Float, used: true, doc: "slumping: s before he lets go of balance (0.3)" },
+        Param { name: "sitRate", kind: Kind::Float, used: true, doc: "slumping: how fast his legs give, per s (1)" },
+        Param { name: "glanceSpinMag", kind: Kind::Float, used: true, doc: "side on: the spin away from the wall, N m (60)" },
+        Param { name: "glanceSpinTime", kind: Kind::Float, used: true, doc: "side on: s that spin decays over (0.5)" },
+        Param { name: "timeToForward", kind: Kind::Float, used: true, doc: "s the hands hold the wall before he pushes off it (0.8)" },
+        Param { name: "reboundForce", kind: Kind::Float, used: true, doc: "the push off the wall, N (150)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "his stiffness (10)" },
+    ] },
+    Message { name: "reachForWound", params: &[
+        Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "the wound, world (zero: in front of the part)" },
+        Param { name: "hitPart", kind: Kind::Int, used: true, doc: "the part it is on, 0..20 (-1: the belly)" },
+        Param { name: "timeBeforeReachForWound", kind: Kind::Float, used: true, doc: "s before reaching (0.2)" },
+        Param { name: "grabHoldTime", kind: Kind::Float, used: true, doc: "s the hand holds the wound (2)" },
+        Param { name: "reachWithOneHand", kind: Kind::Bool, used: true, doc: "one hand for a trunk wound (true); false: both" },
+        Param { name: "allowInjuredThighReach", kind: Kind::Bool, used: true, doc: "reach for a thigh, bending down to it (true)" },
+        Param { name: "allowInjuredLowerLegReach", kind: Kind::Bool, used: true, doc: "reach for a shin or foot, bending further (false)" },
+        Param { name: "armStiffness", kind: Kind::Float, used: true, doc: "the reaching arm's stiffness (10)" },
+        Param { name: "bend2spine", kind: Kind::Float, used: true, doc: "forward bend of the spine for a leg wound, rad (0.5)" },
+        Param { name: "bend2hip", kind: Kind::Float, used: true, doc: "hip bend for a leg wound, rad (0.6)" },
+        Param { name: "bend2leg", kind: Kind::Float, used: true, doc: "knee bend for a leg wound, rad (0.4)" },
+        Param { name: "spineTwistMag", kind: Kind::Float, used: true, doc: "twist of the spine round to a trunk wound, rad (0.2)" },
+        Param { name: "bendTimeUp", kind: Kind::Float, used: true, doc: "s the bend comes in over (0.4)" },
+        Param { name: "bendTimeDown", kind: Kind::Float, used: true, doc: "s it goes over after (0.5)" },
+        Param { name: "spineStiffness", kind: Kind::Float, used: true, doc: "trunk stiffness while bending (12)" },
+    ] },
+    Message { name: "shotFromBehind", params: &[
+        Param { name: "sfbSpineAmount", kind: Kind::Float, used: true, doc: "how far the spine arches back, rad over the whole spine (0.5)" },
+        Param { name: "sfbNeckAmount", kind: Kind::Float, used: true, doc: "how far the neck goes back, rad (0.3)" },
+        Param { name: "sfbHipAmount", kind: Kind::Float, used: true, doc: "how far the hips push forward, rad (0.25)" },
+        Param { name: "sfbKneeAmount", kind: Kind::Float, used: true, doc: "how far the knees give, rad (0.15)" },
+        Param { name: "sfbPeriod", kind: Kind::Float, used: true, doc: "s the arch swells and goes over (0.7)" },
+        Param { name: "sfbArmsOnset", kind: Kind::Float, used: true, doc: "s before the arms go loose (0)" },
+        Param { name: "sfbKneesOnset", kind: Kind::Float, used: true, doc: "s before the knees give (0.05)" },
+        Param { name: "sfbNoiseGain", kind: Kind::Float, used: true, doc: "tremble in the arch, 0..2 (0)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "trunk stiffness while arching (10)" },
+    ] },
+    Message { name: "shotInGuts", params: &[
+        Param { name: "sigSpineAmount", kind: Kind::Float, used: true, doc: "how far the spine hunches forward, rad over the whole spine (0.6)" },
+        Param { name: "sigNeckAmount", kind: Kind::Float, used: true, doc: "how far the neck bends forward, rad (0.25)" },
+        Param { name: "sigKneeAmount", kind: Kind::Float, used: true, doc: "how far the knees bend, rad; the hips flex by half (0.15)" },
+        Param { name: "sigPeriod", kind: Kind::Float, used: true, doc: "s he stays folded (1.5)" },
+        Param { name: "sigBlend", kind: Kind::Float, used: true, doc: "s it eases off over after (0.5)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "trunk stiffness (10)" },
+    ] },
+    Message { name: "shotInjuredLeg", params: &[
+        Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part hit: 1..3 left leg, 4..6 right (-1: leftLeg says)" },
+        Param { name: "leftLeg", kind: Kind::Bool, used: true, doc: "the left leg, when bodyPart doesn't say (true)" },
+        Param { name: "legLiftTime", kind: Kind::Float, used: true, doc: "s the leg jerks up for (0.25)" },
+        Param { name: "legInjuryLift", kind: Kind::Float, used: true, doc: "how far it jerks up: hip flex, rad; the knee bends twice that (0.3)" },
+        Param { name: "legInjuryTime", kind: Kind::Float, used: true, doc: "s the leg stays weak (1.5)" },
+        Param { name: "legInjury", kind: Kind::Float, used: true, doc: "share of the leg's strength lost, 0..1 (0.4)" },
+        Param { name: "legInjuryHipPitch", kind: Kind::Float, used: true, doc: "hip flex on the weak leg, rad (0.1)" },
+        Param { name: "legInjurySpineBend", kind: Kind::Float, used: true, doc: "forward bend of the spine meanwhile, rad (0.15)" },
+        Param { name: "legLimpBend", kind: Kind::Float, used: true, doc: "knee bend on the weak leg, rad (0.2)" },
+        Param { name: "legLean", kind: Kind::Float, used: true, doc: "push sagging him towards the weak leg, N (15)" },
+        Param { name: "legSag", kind: Kind::Float, used: true, doc: "how far the balancer sinks him meanwhile, m (0.04)" },
+        Param { name: "legBlend", kind: Kind::Float, used: true, doc: "s it fades over after (0.5)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "the leg's stiffness when well (10)" },
+    ] },
+    Message { name: "shotInjuredArm", params: &[
+        Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part hit: 13..16 left arm, 17..20 right (-1: leftArm says)" },
+        Param { name: "leftArm", kind: Kind::Bool, used: true, doc: "the left arm, when bodyPart doesn't say (true)" },
+        Param { name: "bulletDir", kind: Kind::Vec3, used: true, doc: "the bullet's direction (zero: from in front)" },
+        Param { name: "injuredArmTime", kind: Kind::Float, used: true, doc: "s the shoulder is knocked round for (0.25)" },
+        Param { name: "hipYaw", kind: Kind::Float, used: true, doc: "torque turning the trunk with the bullet, N m (80)" },
+        Param { name: "hipRoll", kind: Kind::Float, used: true, doc: "torque dropping the hit shoulder, N m (30)" },
+        Param { name: "armLoose", kind: Kind::Float, used: true, doc: "share of the arm's stiffness lost, 0..1 (0.7)" },
+        Param { name: "armLooseTime", kind: Kind::Float, used: true, doc: "s the arm hangs loose (1)" },
+        Param { name: "stiffness", kind: Kind::Float, used: true, doc: "the arm's stiffness when well (10)" },
+    ] },
     Message { name: "meleeReact", params: &[
         Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "where the blow landed, world (zero)" },
         Param { name: "hitNormal", kind: Kind::Vec3, used: true, doc: "the body's surface normal there, outwards; the blow pushes against it (zero: no push or snap)" },
@@ -107,6 +212,15 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "shotSpin" => Some(Spin::new(p).map(|e| Box::new(e) as _)),
         "shotFallToKnees" => Some(Knees::new(p).map(|e| Box::new(e) as _)),
         "meleeReact" => Some(Melee::new(p).map(|e| Box::new(e) as _)),
+        "shotFromBehind" => Some(FromBehind::new(p).map(|e| Box::new(e) as _)),
+        "shotInGuts" => Some(InGuts::new(p).map(|e| Box::new(e) as _)),
+        "shotInjuredLeg" => Some(InjuredLeg::new(p).map(|e| Box::new(e) as _)),
+        "shotInjuredArm" => Some(InjuredArm::new(p).map(|e| Box::new(e) as _)),
+        "reachForWound" => Some(ReachForWound::new(p).map(|e| Box::new(e) as _)),
+        "wallCollision" => Some(WallCollision::new(p).map(|e| Box::new(e) as _)),
+        "setFallingReaction" => Some(FallingReaction::new(p).map(|e| Box::new(e) as _)),
+        "rdr2Balance" => Some(BalanceRdr2::new(p).map(|e| Box::new(e) as _)),
+        "keyframe" => Some(Keyframe::new(p).map(|e| Box::new(e) as _)),
         _ => None,
     }
 }
@@ -139,8 +253,8 @@ impl Duck {
         let mag = self.mag[0] + (self.mag[1] - self.mag[0]) * c.ch.random();
         let (s, n) = (*SPINE(), *NECK());
         // (joint, axis, rate, direction): axis 0 lean forwards/back, 1 lean sideways, 2 twist
-        // a spine joint's lean1 goes back as it rises, so forwards is towards its lower limit
-        let bend = if self.forward { -1.0 } else { 1.0 };
+        // a spine or neck joint's lean1 bends forwards as it rises, so forwards is towards its upper limit
+        let bend = if self.forward { 1.0 } else { -1.0 };
         let side = if self.left { -1.0 } else { 1.0 };
         let mut want: Vec<(usize, usize, f32, f32)> = vec![
             (s[0], 0, self.rates[0], bend), (s[1], 0, self.rates[0], bend),
@@ -256,7 +370,7 @@ impl Snap {
         let up = c.ch.up.normalize_or(Vec3::Z);
         let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
         // left shoulder minus right, crossed this way round, points the way he faces
-        let forward = up.cross(side).normalize_or(Vec3::Y);
+        let forward = side.cross(up).normalize_or(Vec3::Y);
         let dir = if self.dir == Vec3::ZERO { -forward } else { self.dir.normalize_or(-forward) };
         let (use_dir, random) = (self.use_dir, self.random);
         let r = Vec3::new(c.ch.random(), c.ch.random(), c.ch.random()) * 2.0 - 1.0;
@@ -440,7 +554,7 @@ impl Knees {
     }
 
     fn forward(c: &Ctx, up: Vec3) -> Vec3 {
-        let f = up.cross(c.b.part(13).m.d - c.b.part(17).m.d);
+        let f = (c.b.part(13).m.d - c.b.part(17).m.d).cross(up);
         (f - up * f.dot(up)).normalize_or(Vec3::Y)
     }
 
@@ -485,7 +599,7 @@ impl Extra for Knees {
                     Self::ease(c, hips[s], 0, (hl[1] * 0.2).min(0.4), step);
                 }
                 for &j in &spine {
-                    Self::ease(c, j, 0, -self.spine_bend / 4.0, step);
+                    Self::ease(c, j, 0, self.spine_bend / 4.0, step);
                 }
                 c.out.force(0, fwd * self.helper);
                 // on his knees once they are near the ground (measured from his feet; shin contacts are too patchy)
@@ -590,7 +704,7 @@ impl Extra for Melee {
         self.t += dt;
         let up = c.ch.up.normalize_or(Vec3::Z);
         let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
-        let fwd = up.cross(side).normalize_or(Vec3::Y);
+        let fwd = side.cross(up).normalize_or(Vec3::Y);
         // the spot hit, carried along with the part it is on
         let part = (0..21).contains(&self.part).then_some(self.part as usize);
         let (point, part_pos) = (self.point, part.map(|k| c.b.part(k).m.d));
@@ -613,7 +727,7 @@ impl Extra for Melee {
         if flinching {
             for &j in &*SPINE() {
                 let d = &mut c.ch.eff[j].desired[0];
-                *d += (-0.08 - *d) * 0.2;
+                *d += (0.08 - *d) * 0.2;
             }
         }
         for i in 0..2 {
@@ -641,5 +755,961 @@ impl Extra for Melee {
     fn done(&self) -> bool {
         let end = self.loose_time.max(self.lean_time).max(self.flinch_time).max(if self.rfw { self.rfw_delay + self.rfw_time } else { 0.0 });
         self.t > end && self.snap.as_ref().is_none_or(Snap::done)
+    }
+}
+
+/// A set of joint-axis bends laid over whatever the balancer or shot wants, scaled by a weight each tick. If
+/// something else rewrote the target since the last tick, the bend goes on top of that; otherwise the previous
+/// bend is taken off first, so it never builds up.
+struct Bends { ch: Vec<(usize, usize, f32)>, last: Vec<f32>, wrote: Vec<f32> }
+
+impl Bends {
+    fn new(ch: Vec<(usize, usize, f32)>) -> Bends {
+        let n = ch.len();
+        Bends { ch, last: vec![0.0; n], wrote: vec![f32::NAN; n] }
+    }
+
+    fn apply(&mut self, c: &mut Ctx, w: f32, stiffness: f32) {
+        for (i, &(j, k, amt)) in self.ch.iter().enumerate() {
+            let d = c.ch.eff[j].desired[k];
+            let base = if (d - self.wrote[i]).abs() < 1e-6 { d - self.last[i] } else { d };
+            let add = amt * w;
+            c.ch.eff[j].desired[k] = base + add;
+            (self.last[i], self.wrote[i]) = (add, base + add);
+            if w > 0.0 && k == 0 && stiffness > 0.0 {
+                c.ch.eff[j].set_stiffness(stiffness, 1.0, None);
+            }
+        }
+    }
+}
+
+/// Which way a knee bends: towards whichever of its limits is further from straight.
+fn knee_dir(c: &Ctx, j: usize) -> f32 {
+    let l = c.ch.limits(j);
+    if l[0].abs() > l[1].abs() { -1.0 } else { 1.0 }
+}
+
+/// The side a part is on: 0 left (leg 1..=3, arm 13..=16), 1 right (leg 4..=6, arm 17..=20), None otherwise.
+fn part_side(part: i32) -> Option<usize> {
+    match part {
+        1..=3 | 13..=16 => Some(0),
+        4..=6 | 17..=20 => Some(1),
+        _ => None,
+    }
+}
+
+/// A quick rise, a short hold and a slower return: 0 before `onset`, 1 a quarter of the way through `period`,
+/// held to halfway, back to 0 at its end.
+fn swell(t: f32, onset: f32, period: f32) -> f32 {
+    let x = (t - onset) / period.max(0.01);
+    if !(0.0..1.0).contains(&x) { 0.0 } else if x < 0.25 { x / 0.25 } else if x < 0.5 { 1.0 } else { (1.0 - x) / 0.5 }
+}
+
+/// RDR2's shot from behind: a bullet in the back arches him. The spine bends back by sfbSpineAmount (spread over its
+/// joints), the neck by sfbNeckAmount, the hips push forward (sfbHipAmount) and the knees give a little
+/// (sfbKneeAmount, after sfbKneesOnset); after sfbArmsOnset the arms go loose so they fling with it. It swells over
+/// sfbPeriod; sfbNoiseGain adds a tremble.
+pub struct FromBehind {
+    period: f32, arms_onset: f32, knees_onset: f32, noise: f32, stiffness: f32, amounts: [f32; 4],
+    t: f32, trunk: Option<Bends>, knees: Option<Bends>,
+}
+
+impl FromBehind {
+    fn new(p: &mut P) -> Result<FromBehind, Error> {
+        Ok(FromBehind {
+            amounts: [p.f("sfbSpineAmount", 0.5)?, p.f("sfbNeckAmount", 0.3)?, p.f("sfbHipAmount", 0.25)?, p.f("sfbKneeAmount", 0.15)?],
+            period: p.f("sfbPeriod", 0.7)?.max(0.05), arms_onset: p.f("sfbArmsOnset", 0.0)?.max(0.0),
+            knees_onset: p.f("sfbKneesOnset", 0.05)?.max(0.0), noise: p.f("sfbNoiseGain", 0.0)?.max(0.0),
+            stiffness: p.f("stiffness", 10.0)?, t: 0.0, trunk: None, knees: None,
+        })
+    }
+}
+
+impl Extra for FromBehind {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let [spine, neck, hip, knee] = self.amounts;
+        let trunk = self.trunk.get_or_insert_with(|| {
+            let mut v: Vec<_> = SPINE().iter().map(|&j| (j, 0, -spine / 4.0)).collect();
+            v.extend(NECK().iter().map(|&j| (j, 0, -neck / 2.0)));
+            v.extend(HIP().iter().map(|&j| (j, 0, -hip)));
+            Bends::new(v)
+        });
+        let w = swell(self.t, 0.0, self.period);
+        let w = if self.noise > 0.0 && w > 0.0 { w * (1.0 + self.noise * 0.2 * (c.ch.random() - 0.5)) } else { w };
+        trunk.apply(c, w, self.stiffness);
+        let knees = self.knees.get_or_insert_with(|| Bends::new(KNEE().iter().map(|&j| (j, 0, knee * knee_dir(c, j))).collect()));
+        knees.apply(c, swell(self.t, self.knees_onset, self.period), 0.0);
+        if self.t > self.arms_onset && self.t < self.arms_onset + self.period * 0.5 {
+            c.ch.set_stiffness(self.stiffness * 0.4, 1.0, "ua", None);
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.t > self.period + self.knees_onset.max(self.arms_onset)
+    }
+}
+
+/// RDR2's shot in the guts: he folds over the wound. The spine hunches forward by sigSpineAmount and the neck by
+/// sigNeckAmount and the knees bend a little (sigKneeAmount). It comes in over a fifth of a second, holds for
+/// sigPeriod and eases off over sigBlend. (The hands are reachForWound's, with reachWithOneHand false.)
+pub struct InGuts {
+    spine: f32, neck: f32, knee: f32, period: f32, blend: f32, stiffness: f32, t: f32, bends: Option<Bends>,
+}
+
+impl InGuts {
+    fn new(p: &mut P) -> Result<InGuts, Error> {
+        Ok(InGuts {
+            spine: p.f("sigSpineAmount", 0.6)?, neck: p.f("sigNeckAmount", 0.25)?, knee: p.f("sigKneeAmount", 0.15)?,
+            period: p.f("sigPeriod", 1.5)?.max(0.0), blend: p.f("sigBlend", 0.5)?.max(0.05), stiffness: p.f("stiffness", 10.0)?,
+            t: 0.0, bends: None,
+        })
+    }
+
+    fn weight(&self) -> f32 {
+        if self.t < 0.2 { self.t / 0.2 } else if self.t < 0.2 + self.period { 1.0 } else { (1.0 - (self.t - 0.2 - self.period) / self.blend).max(0.0) }
+    }
+}
+
+impl Extra for InGuts {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let w = self.weight();
+        let (spine, neck, knee) = (self.spine, self.neck, self.knee);
+        let bends = self.bends.get_or_insert_with(|| {
+            let mut v: Vec<_> = SPINE().iter().map(|&j| (j, 0, spine / 4.0)).collect();
+            v.extend(NECK().iter().map(|&j| (j, 0, neck / 2.0)));
+            v.extend(KNEE().iter().map(|&j| (j, 0, knee * knee_dir(c, j))));
+            v.extend(HIP().iter().map(|&j| (j, 0, knee * 0.5)));
+            Bends::new(v)
+        });
+        bends.apply(c, w, self.stiffness);
+    }
+
+    fn done(&self) -> bool {
+        self.t > 0.2 + self.period + self.blend
+    }
+}
+
+/// RDR2's injured leg: a hit leg first jerks up (hip and knee flex by legInjuryLift over legLiftTime), then for
+/// legInjuryTime it is weak (its strength down by legInjury, the knee bent by legLimpBend, the hip by
+/// legInjuryHipPitch) while the spine bends forward (legInjurySpineBend) and he sinks (legSag) and sags towards it
+/// (legLean); then it
+/// fades over legBlend. The leg is bodyPart's (1..=6), or leftLeg's.
+pub struct InjuredLeg {
+    side: usize, lift_time: f32, lift: f32, time: f32, injury: f32, hip_pitch: f32, spine_bend: f32, limp: f32,
+    lean: f32, sag: f32, blend: f32, stiffness: f32, t: f32, lift_b: Option<Bends>, limp_b: Option<Bends>,
+}
+
+impl InjuredLeg {
+    fn new(p: &mut P) -> Result<InjuredLeg, Error> {
+        let part = p.i("bodyPart", -1)?;
+        let left = p.b("leftLeg", true)?;
+        Ok(InjuredLeg {
+            side: part_side(part).unwrap_or(if left { 0 } else { 1 }),
+            lift_time: p.f("legLiftTime", 0.25)?.max(0.0), lift: p.f("legInjuryLift", 0.3)?,
+            time: p.f("legInjuryTime", 1.5)?.max(0.0), injury: p.f("legInjury", 0.4)?.clamp(0.0, 1.0),
+            hip_pitch: p.f("legInjuryHipPitch", 0.1)?, spine_bend: p.f("legInjurySpineBend", 0.15)?, limp: p.f("legLimpBend", 0.2)?,
+            lean: p.f("legLean", 15.0)?, sag: p.f("legSag", 0.04)?.max(0.0), blend: p.f("legBlend", 0.5)?.max(0.05), stiffness: p.f("stiffness", 10.0)?,
+            t: 0.0, lift_b: None, limp_b: None,
+        })
+    }
+}
+
+impl Extra for InjuredLeg {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let s = self.side;
+        let (hip, knee) = (HIP()[s], KNEE()[s]);
+        let (lift, limp, pitch, bend) = (self.lift, self.limp, self.hip_pitch, self.spine_bend);
+        let kd = knee_dir(c, knee);
+        let lift_b = self.lift_b.get_or_insert_with(|| Bends::new(vec![(hip, 0, lift), (knee, 0, 2.0 * lift * kd)]));
+        lift_b.apply(c, swell(self.t, 0.0, self.lift_time * 2.0), 0.0);
+        let limp_b = self.limp_b.get_or_insert_with(|| {
+            let mut v = vec![(knee, 0, limp * kd), (hip, 0, pitch)];
+            v.extend(SPINE().iter().map(|&j| (j, 0, bend / 4.0)));
+            Bends::new(v)
+        });
+        let t = self.t - self.lift_time;
+        let w = if t < 0.0 { 0.0 } else if t < 0.15 { t / 0.15 } else if t < self.time { 1.0 } else { (1.0 - (t - self.time) / self.blend).max(0.0) };
+        limp_b.apply(c, w, 0.0);
+        if w > 0.0 {
+            // the weak leg: its strength down by legInjury (stiffness by its square root)
+            let k = (1.0 - self.injury * w).max(0.05).sqrt();
+            c.ch.set_stiffness(self.stiffness * k, 1.0, ["ll", "lr"][s], None);
+            // the balancer sinks him a little onto the weak leg
+            if self.sag > 0.0 {
+                c.out.dbm_leg_offset = Some(-self.sag * w);
+            }
+            if self.lean != 0.0 {
+                let up = c.ch.up.normalize_or(Vec3::Z);
+                let foot = c.b.part([3, 6][s]).m.d - c.com;
+                let towards = (foot - up * foot.dot(up)).normalize_or_zero();
+                c.out.force(10, towards * self.lean * w);
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.t > self.lift_time + self.time + self.blend
+    }
+
+    fn stop(&mut self, c: &mut Ctx) {
+        if self.sag > 0.0 {
+            c.out.dbm_leg_offset = Some(0.0);
+        }
+    }
+}
+
+/// RDR2's injured arm: a hit arm knocks that shoulder back and down. For injuredArmTime a yaw torque (hipYaw, N m)
+/// turns the trunk with the bullet and a roll torque (hipRoll, N m) drops the hit shoulder, fading out; the arm hangs
+/// loose (its stiffness down by armLoose) for armLooseTime. The arm is bodyPart's (13..=20), or leftArm's.
+pub struct InjuredArm {
+    side: usize, dir: Vec3, time: f32, yaw: f32, roll: f32, loose: f32, loose_time: f32, stiffness: f32, t: f32,
+}
+
+impl InjuredArm {
+    fn new(p: &mut P) -> Result<InjuredArm, Error> {
+        let part = p.i("bodyPart", -1)?;
+        let left = p.b("leftArm", true)?;
+        Ok(InjuredArm {
+            side: part_side(part).unwrap_or(if left { 0 } else { 1 }), dir: p.v("bulletDir", Vec3::ZERO)?,
+            time: p.f("injuredArmTime", 0.25)?.max(0.0), yaw: p.f("hipYaw", 80.0)?, roll: p.f("hipRoll", 30.0)?,
+            loose: p.f("armLoose", 0.7)?.clamp(0.0, 1.0), loose_time: p.f("armLooseTime", 1.0)?.max(0.0),
+            stiffness: p.f("stiffness", 10.0)?, t: 0.0,
+        })
+    }
+}
+
+impl Extra for InjuredArm {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let r = c.b.part([13, 17][self.side]).m.d - c.com;
+        if self.t < self.time {
+            let w = 1.0 - self.t / self.time.max(0.01);
+            // yaw: the way that carries the hit shoulder along the bullet (from in front if none given)
+            let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+            let push = if self.dir == Vec3::ZERO { up.cross(side) } else { self.dir };
+            let push = (push - up * push.dot(up)).normalize_or_zero();
+            let yaw = up * r.cross(push).dot(up).signum() * self.yaw * w;
+            // roll: the way that drops the hit shoulder
+            let roll = r.cross(-up).normalize_or_zero() * self.roll * w;
+            c.out.torque(10, (yaw + roll) * 0.7);
+            c.out.torque(0, (yaw + roll) * 0.3);
+        }
+        if self.t < self.loose_time {
+            c.ch.set_stiffness(self.stiffness * (1.0 - self.loose), 1.0, ["ul", "ur"][self.side], None);
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.t > self.time.max(self.loose_time)
+    }
+}
+
+/// A point and a direction carried along with a part: kept in the part's own frame.
+#[derive(Clone, Copy)]
+struct OnPart { part: usize, pos: Vec3, dir: Vec3 }
+
+impl OnPart {
+    fn new(c: &Ctx, part: usize, at: Vec3, dir: Vec3) -> OnPart {
+        let m = c.b.part(part).m;
+        let local = |v: Vec3| Vec3::new(v.dot(m.a), v.dot(m.b), v.dot(m.c));
+        OnPart { part, pos: local(at - m.d), dir: local(dir) }
+    }
+
+    fn now(&self, c: &Ctx) -> (Vec3, Vec3) {
+        let m = c.b.part(self.part).m;
+        let world = |v: Vec3| m.a * v.x + m.b * v.y + m.c * v.z;
+        (world(self.pos) + m.d, world(self.dir).normalize_or_zero())
+    }
+}
+
+/// Clavicle (lean1, lean2), shoulder (lean1, lean2, twist) and elbow angles, inside their limits, that put the hand
+/// nearest `target`: a coordinate search over the body's own forward kinematics from its current pose, starting at
+/// `start` and kept close to it, so the answer moves smoothly from tick to tick. (A two-bone solve can't find poses
+/// that need the clavicle and the shoulder's twist, such as a hand on the chest.) Returns the angles and how far
+/// the hand would be from the target.
+fn arm_solve(c: &Ctx, l: crate::nmshot::Limb, target: Vec3, start: [f32; 6]) -> ([f32; 6], f32) {
+    let (cl, sh, el, hand) = (l.e[0], l.e[1], l.e[2], l.p[delirium_data::kv!(0 int)]);
+    let mut ang: Vec<[f32; 3]> = (0..c.ch.joints.len()).map(|j| c.ch.actual(j, c.b.frames)).collect();
+    let root = c.b.frames[0];
+    let base = c.ch.pose(c.b.build, root, &ang)[hand].translation;
+    let now = c.b.frames[hand].translation;
+    let (lc, ls, le) = (c.ch.limits(cl), c.ch.limits(sh), c.ch.limits(el));
+    let lo = [lc[0], lc[2], ls[0], ls[2], ls[4], le[0]];
+    let hi = [lc[1], lc[3], ls[1], ls[3], ls[5], le[1]];
+    let twist = ang[cl][2];
+    let mut hand_at = |x: [f32; 6]| {
+        ang[cl] = [x[0], x[1], twist];
+        ang[sh] = [x[2], x[3], x[4]];
+        ang[el] = [x[5], 0.0, 0.0];
+        c.ch.pose(c.b.build, root, &ang)[hand].translation - base + now
+    };
+    let mut cost = |x: [f32; 6]| {
+        let keep: f32 = (0..6).map(|k| (x[k] - start[k]).powi(2)).sum();
+        (hand_at(x) - target).length_squared() + 0.002 * keep
+    };
+    let mut x: [f32; 6] = std::array::from_fn(|k| start[k].clamp(lo[k], hi[k]));
+    let mut best = cost(x);
+    for step in [0.25, 0.12, 0.06, 0.03] {
+        for _ in 0..3 {
+            let mut moved = false;
+            for k in 0..6 {
+                for d in [step, -step] {
+                    let mut y = x;
+                    y[k] = (y[k] + d).clamp(lo[k], hi[k]);
+                    let f = cost(y);
+                    if f < best {
+                        (best, x, moved) = (f, y, true);
+                    }
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+    }
+    let miss = (hand_at(x) - target).length();
+    (x, miss)
+}
+
+/// RDR2's reach for wound, a behaviour of its own there: after timeBeforeReachForWound one hand (or, without
+/// reachWithOneHand, both) goes to the wound and holds it for grabHoldTime, the palm on the body and pulled onto
+/// it, while the body bends towards the wound: a little hunch and a twist round to it for the trunk, and for a
+/// thigh (allowInjuredThighReach) the hips, knees and spine bend down so the hand gets there. The bend comes in over
+/// bendTimeUp and goes over bendTimeDown. The hand is the far one for an arm wound, the same side's for a leg, the
+/// nearer one for the trunk.
+pub struct ReachForWound {
+    point: Vec3, part: i32, wait: f32, hold: f32, one_hand: bool, thigh: bool, lower_leg: bool, arm_stiffness: f32,
+    spine_bend: f32, hip_bend: f32, knee_bend: f32, twist: f32, up: f32, down: f32, stiffness: f32,
+    t: f32, wound: Option<OnPart>, hands: [bool; 2], sign: [f32; 2], bends: Option<Bends>, arm: [Option<[f32; 6]>; 2],
+}
+
+impl ReachForWound {
+    fn new(p: &mut P) -> Result<ReachForWound, Error> {
+        Ok(ReachForWound {
+            point: p.v("hitPoint", Vec3::ZERO)?, part: p.i("hitPart", -1)?,
+            wait: p.f("timeBeforeReachForWound", 0.2)?.max(0.0), hold: p.f("grabHoldTime", 2.0)?.max(0.0),
+            one_hand: p.b("reachWithOneHand", true)?, thigh: p.b("allowInjuredThighReach", true)?,
+            lower_leg: p.b("allowInjuredLowerLegReach", false)?, arm_stiffness: p.f("armStiffness", 10.0)?,
+            spine_bend: p.f("bend2spine", 0.5)?, hip_bend: p.f("bend2hip", 0.6)?, knee_bend: p.f("bend2leg", 0.4)?,
+            twist: p.f("spineTwistMag", 0.2)?, up: p.f("bendTimeUp", 0.4)?.max(0.01), down: p.f("bendTimeDown", 0.5)?.max(0.01),
+            stiffness: p.f("spineStiffness", 12.0)?,
+            t: 0.0, wound: None, hands: [false; 2], sign: [1.0; 2], bends: None, arm: [None; 2],
+        })
+    }
+
+    /// The hands to use and the body's bend, once, from where the wound is.
+    fn aim(&mut self, c: &mut Ctx) {
+        let part = self.part as usize;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+        let fwd = side.cross(up).normalize_or(Vec3::Y);
+        let q = c.b.part(part).m.d;
+        let point = if self.point == Vec3::ZERO { q + fwd * if (7..=10).contains(&part) { 0.18 } else { 0.12 } } else { self.point };
+        // the body's surface there: out from the part's axis (for the trunk, out from the spine)
+        let out = point - q;
+        let out = (out - up * out.dot(up)).normalize_or(fwd);
+        self.wound = Some(OnPart::new(c, part, point, out));
+        let leg = (1..=6).contains(&part);
+        let lower = matches!(part, 2 | 3 | 5 | 6);
+        let arm = (13..=20).contains(&part);
+        let left = (point - c.com).dot(side) > 0.0;
+        self.hands = if arm {
+            if part_side(self.part) == Some(0) { [false, true] } else { [true, false] }
+        } else if leg {
+            let ok = if lower { self.lower_leg } else { self.thigh };
+            let s = part_side(self.part).unwrap_or(0);
+            [ok && s == 0, ok && s == 1]
+        } else if self.one_hand {
+            [left, !left]
+        } else {
+            [true, true]
+        };
+        let (sb, hb, kb, tw) = (self.spine_bend, self.hip_bend, self.knee_bend, self.twist);
+        let mut v: Vec<(usize, usize, f32)> = vec![];
+        if leg && self.hands.contains(&true) {
+            // bend down to the leg: hips and knees (both legs) and the spine forwards
+            let more = if lower { 1.5 } else { 1.0 };
+            v.extend(SPINE().iter().map(|&j| (j, 0, sb * more / 4.0)));
+            v.extend(HIP().iter().map(|&j| (j, 0, hb * more)));
+            v.extend(KNEE().iter().map(|&j| (j, 0, kb * more * knee_dir(c, j))));
+        } else if !arm {
+            // a hunch over the wound and a twist round to it
+            v.extend(SPINE().iter().map(|&j| (j, 0, 0.15 / 4.0)));
+        }
+        if tw != 0.0 && !leg {
+            let to = if left { 1.0 } else { -1.0 };
+            v.extend(SPINE().iter().map(|&j| (j, 2, tw * to / 4.0)));
+        }
+        self.bends = Some(Bends::new(v));
+    }
+
+    /// One hand to the wound: the clavicle forward, the arm by IK to just off the wound, the palm turned onto it,
+    /// and a pull once close (as Delirium's shot reaches).
+    fn reach(&mut self, c: &mut Ctx, i: usize, t: Vec3, n: Vec3, dt: f32) {
+        let l = crate::nmshot::limb(i);
+        let part = self.wound.map_or(0, |w| w.part);
+        for j in [l.e[0], l.e[1], l.e[2]] {
+            c.ch.eff[j].oppose_gravity = 1.0;
+        }
+        c.ch.set_stiffness(self.arm_stiffness, 1.0, ["ul", "ur"][i], None);
+        // aim just off the wound, closing in as the hand gets near
+        let hand = c.b.part(l.p[delirium_data::kv!(0 int)]).m.d;
+        let mut dh = hand - t;
+        let s = dh.dot(n);
+        dh -= n * if s < 0.0 { s } else { 0.0 };
+        // and from a little above while far, so the hand comes round the hip rather than into it
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let t2 = t + n * (dh.length() * 0.5 - 0.05).min(0.25) + up * (dh.length() * 0.5).min(0.15);
+        let start = self.arm[i].unwrap_or_else(|| {
+            let [k, a, e] = [0, 1, 2].map(|n| c.ch.actual(l.e[n], c.b.frames));
+            [k[0], k[1], a[0], a[1], a[2], e[0]]
+        });
+        let (mut x, mut miss) = arm_solve(c, l, t2, start);
+        if self.arm[i].is_none() || miss > 0.08 {
+            // the search only finds the nearest pose, so also try from the arm raised forwards and across
+            for (sl1, stw) in [(0.6, 0.0), (1.2, -0.6), (0.9, 0.4)] {
+                let (y, m) = arm_solve(c, l, t2, [start[0], start[1], sl1, start[3], stw, 1.5]);
+                if m + 0.02 < miss {
+                    (x, miss) = (y, m);
+                }
+            }
+        }
+        self.arm[i] = Some(x);
+        (c.ch.eff[l.e[0]].desired[0], c.ch.eff[l.e[0]].desired[1]) = (x[0], x[1]);
+        c.ch.eff[l.e[1]].desired = [x[2], x[3], x[4]];
+        c.ch.eff[l.e[2]].desired[0] = x[5];
+        let side = if i == 0 { 1.0 } else { -1.0 };
+        if crate::nmshot::Shot::wrist(c, l, t, n, side) < 0.0 && part != 12 {
+            self.sign[i] = -self.sign[i];
+        }
+        // the pull: once within 0.3 m, a growing impulse draws the palm onto the wound (and the body back onto it)
+        let h = c.b.part(l.p[delirium_data::kv!(0 int)]);
+        let at = h.m.d - h.m.a * (self.sign[i] * 0.02);
+        let d = (t - at).length();
+        if d < 0.3 {
+            let k = ((0.3 - d) / 0.2).clamp(0.0, 1.0) * 4.0;
+            let mut imp = (t - at) * k * k + (c.b.part(part).v - h.v) * (k * 0.2);
+            if dt < 1.0 / 60.0 {
+                imp *= dt * 60.0;
+            }
+            let wrist = c.b.joint_pos(l.e[3]);
+            c.out.impulse.push((l.p[delirium_data::kv!(0 int)], wrist, imp));
+            c.out.impulse.push((part, t, -imp));
+        }
+    }
+}
+
+impl Extra for ReachForWound {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        if !(0..21).contains(&self.part) {
+            self.part = 8;
+        }
+        if self.wound.is_none() {
+            self.aim(c);
+        }
+        let t = self.t - self.wait;
+        let w = if t < 0.0 { 0.0 } else if t < self.hold { (t / self.up).min(1.0) } else { (1.0 - (t - self.hold) / self.down).max(0.0) };
+        if let Some(b) = self.bends.as_mut() {
+            b.apply(c, w, self.stiffness);
+        }
+        if t >= 0.0 && t < self.hold {
+            let (at, n) = self.wound.expect("aimed").now(c);
+            // two hands: side by side over the wound, one a little higher, so they don't fight for the spot
+            let both = self.hands == [true, true];
+            let up = c.ch.up.normalize_or(Vec3::Z);
+            let across = n.cross(up).normalize_or_zero();
+            for i in 0..2 {
+                if self.hands[i] && !c.ch.busy[i] {
+                    let s = if i == 0 { 1.0 } else { -1.0 };
+                    let at = if both { at + across * (0.07 * s * across.dot(c.b.part(13).m.d - c.b.part(17).m.d).signum()) + up * (0.03 * s) } else { at };
+                    self.reach(c, i, at, n, dt);
+                }
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.t > self.wait + self.hold + self.down
+    }
+}
+
+/// What a balancerCollisionsReaction does with the wall, from how he meets it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum WallMode { Slump, Brace, Glance, Rebound }
+
+/// RDR2's balancer collisions reaction (wallCollision here: Delirium's GTA V balancerCollisionsReaction, the slump
+/// alone, keeps that name): he has run or stumbled into a wall (objectBehindVictimPos, with
+/// objectBehindVictimNormal pointing out of it towards him). The wall is made solid for his body here (Delirium's world
+/// has only the ground): a spring pushes any part back out of its plane. At the impact (reactTime) his legs weaken
+/// by impactLegStiffReduction and he snaps away from it. Then, by how he meets it:
+/// - back to it (or slumpMode 1): he slumps, letting go of balance after sitStartTime and sliding down it to sit, legs
+///   weakening at sitRate, his back pressed to it and his feet sliding out;
+/// - facing it (with braceWall, within braceDistance): both hands go to the wall at chest height and hold it with
+///   braceArmStiffness, then after timeToForward he pushes himself off it (reboundForce);
+/// - side on: a glancing spin away from it (glanceSpinMag, decaying over glanceSpinTime), the near hand on the wall.
+/// slumpMode 2 never slumps.
+pub struct WallCollision {
+    at: Vec3, normal: Vec3, solid: bool, slump_mode: i32, brace: bool, brace_dist: f32, brace_stiffness: f32,
+    react: f32, impact_legs: f32, sit_start: f32, sit_rate: f32, glance: f32, glance_time: f32, rebound: f32,
+    forward_time: f32, stiffness: f32, snap_mag: f32, wall_k: f32,
+    t: f32, mode: Option<WallMode>, snap: Option<Snap>, arm: [Option<[f32; 6]>; 2], legs: f32,
+}
+
+impl WallCollision {
+    fn new(p: &mut P) -> Result<WallCollision, Error> {
+        Ok(WallCollision {
+            at: p.v("objectBehindVictimPos", Vec3::ZERO)?, normal: p.v("objectBehindVictimNormal", Vec3::ZERO)?,
+            solid: p.b("solidWall", true)?, slump_mode: p.i("slumpMode", 0)?, brace: p.b("braceWall", true)?,
+            brace_dist: p.f("braceDistance", 0.9)?, brace_stiffness: p.f("braceArmStiffness", 12.0)?,
+            react: p.f("reactTime", 0.3)?.max(0.0), impact_legs: p.f("impactLegStiffReduction", 3.0)?.max(0.0),
+            sit_start: p.f("sitStartTime", 0.3)?.max(0.0), sit_rate: p.f("sitRate", 1.0)?.max(0.01),
+            glance: p.f("glanceSpinMag", 60.0)?, glance_time: p.f("glanceSpinTime", 0.5)?.max(0.01),
+            rebound: p.f("reboundForce", 150.0)?, forward_time: p.f("timeToForward", 0.8)?.max(0.0),
+            stiffness: p.f("stiffness", 10.0)?, snap_mag: p.f("snapMag", 0.3)?, wall_k: p.f("wallStiffness", 400.0)?,
+            t: 0.0, mode: None, snap: None, arm: [None; 2], legs: 0.0,
+        })
+    }
+
+    /// The wall's plane, horizontal normal out towards him.
+    fn plane(&self, up: Vec3) -> (Vec3, Vec3) {
+        let n = self.normal - up * self.normal.dot(up);
+        (self.at, n.normalize_or_zero())
+    }
+
+    /// Keeps his parts on his side of the wall: a damped spring per part on how far it is inside.
+    fn wall(&self, c: &mut Ctx, at: Vec3, n: Vec3) {
+        for k in 0..c.b.build.parts.len().min(21) {
+            let pd = &c.b.build.parts[k];
+            let q = c.b.part(k);
+            let reach = pd.radius + pd.half * 0.5;
+            let inside = reach - (q.m.d - at).dot(n);
+            if inside > 0.0 {
+                let vn = q.v.dot(n);
+                let a = self.wall_k * inside - 2.0 * self.wall_k.sqrt() * vn.min(0.0);
+                c.out.force(k, n * pd.mass * a.max(0.0));
+            }
+        }
+    }
+
+    /// One hand flat on the wall in front of its shoulder (a little lower), as reachForWound places hands.
+    fn hand_on_wall(&mut self, c: &mut Ctx, i: usize, at: Vec3, n: Vec3, up: Vec3) {
+        let l = crate::nmshot::limb(i);
+        let sh = c.b.part(l.p[0]).m.d;
+        let on = sh - n * (sh - at).dot(n) - up * 0.15;
+        let target = on + n * 0.04;
+        let start = self.arm[i].unwrap_or_else(|| {
+            let [k, a, e] = [0, 1, 2].map(|j| c.ch.actual(l.e[j], c.b.frames));
+            [k[0], k[1], 0.9, a[1], a[2], 0.4]
+        });
+        let (x, _) = arm_solve(c, l, target, start);
+        self.arm[i] = Some(x);
+        (c.ch.eff[l.e[0]].desired[0], c.ch.eff[l.e[0]].desired[1]) = (x[0], x[1]);
+        c.ch.eff[l.e[1]].desired = [x[2], x[3], x[4]];
+        c.ch.eff[l.e[2]].desired[0] = x[5];
+        c.ch.set_stiffness(self.brace_stiffness, 1.0, ["ul", "ur"][i], None);
+        let side = if i == 0 { 1.0 } else { -1.0 };
+        crate::nmshot::Shot::wrist(c, l, on, n, side);
+    }
+}
+
+impl Extra for WallCollision {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let (at, n) = self.plane(up);
+        if n == Vec3::ZERO {
+            self.t = f32::INFINITY;
+            return;
+        }
+        let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+        let fwd = side.cross(up).normalize_or(Vec3::Y);
+        let mode = *self.mode.get_or_insert_with(|| {
+            let facing = -fwd.dot(n);
+            let dist = (c.b.part(10).m.d - at).dot(n);
+            if self.slump_mode == 1 || (self.slump_mode == 0 && facing < -0.5) {
+                WallMode::Slump
+            } else if facing > 0.5 {
+                if self.brace && dist < self.brace_dist { WallMode::Brace } else { WallMode::Rebound }
+            } else {
+                WallMode::Glance
+            }
+        });
+        if self.solid {
+            self.wall(c, at, n);
+        }
+        // the impact: legs weaken, a snap away from the wall
+        if self.t < self.react {
+            c.ch.set_stiffness((self.stiffness - self.impact_legs).max(2.0), 1.0, "lb", None);
+        }
+        let snap = self.snap.get_or_insert_with(|| Snap::at(self.snap_mag, 10, n));
+        if !snap.done() {
+            snap.tick(c, dt);
+        }
+        match mode {
+            WallMode::Slump => {
+                // he sags back onto the wall: pelvis and chest drawn to it (a damped spring down to touching), the
+                // spine held straight so the back lies on it
+                for k in [0, 10] {
+                    let pd = &c.b.build.parts[k];
+                    let q = c.b.part(k);
+                    let gap = (q.m.d - at).dot(n) - (pd.radius + 0.02);
+                    if gap > 0.0 {
+                        let a = 60.0 * gap.min(0.4) + 12.0 * q.v.dot(n).max(0.0);
+                        c.out.force(k, -n * pd.mass * a);
+                    }
+                }
+                for &j in &*SPINE() {
+                    Knees::ease(c, j, 0, 0.0, 2.0 * dt);
+                }
+                let t = self.t - self.sit_start;
+                if t < 0.0 {
+                    return;
+                }
+                c.out.dbm = Some(false);
+                // legs give at sitRate; the hips and knees fold into a sit, the back stays against the wall
+                self.legs = (self.legs + dt * self.sit_rate).min(1.0);
+                let w = self.legs;
+                let k = (self.stiffness * (1.0 - 0.6 * w)).max(3.0);
+                c.ch.set_stiffness(k, 1.0, "lb", None);
+                c.ch.set_stiffness(self.stiffness * 0.8, 1.0, "us", None);
+                for s in 0..2 {
+                    Knees::ease(c, HIP()[s], 0, 1.3 * w, 3.0 * dt);
+                    Knees::ease(c, KNEE()[s], 0, 1.4 * w * knee_dir(c, KNEE()[s]), 3.0 * dt);
+                }
+                c.ch.set_stiffness(self.stiffness * 0.5, 1.0, "ua", None);
+                // sitting up against it: the chest kept over the pelvis along the wall and held up above it (his
+                // back's friction on the wall, which Delirium's virtual wall doesn't have)
+                let along = up.cross(n).normalize_or_zero();
+                let (pel, chest) = (c.b.part(0), c.b.part(10));
+                let off = (chest.m.d - pel.m.d).dot(along);
+                let rise = (chest.m.d - pel.m.d).dot(up);
+                let cm = c.b.build.parts[10].mass;
+                let side = -along * (150.0 * off + 20.0 * (chest.v - pel.v).dot(along));
+                let lift = up * (150.0 * (0.42 - rise).max(0.0) - 15.0 * chest.v.dot(up).min(0.0));
+                c.out.force(10, (side + lift) * cm * w);
+                // sliding down it; the feet slide out from it
+                for f in [3, 6] {
+                    c.out.force(f, n * 4.0 * c.b.build.parts[f].mass * w);
+                }
+            }
+            WallMode::Brace => {
+                if self.t < self.forward_time {
+                    for i in 0..2 {
+                        if !c.ch.busy[i] {
+                            self.hand_on_wall(c, i, at, n, up);
+                        }
+                    }
+                } else if self.t < self.forward_time + 0.25 {
+                    // push off: arms straighten against it, a shove on the chest away from it
+                    c.out.force(10, n * self.rebound);
+                    c.out.force(0, n * self.rebound * 0.4);
+                }
+            }
+            WallMode::Rebound => {
+                if self.t < 0.25 {
+                    c.out.force(10, n * self.rebound);
+                }
+            }
+            WallMode::Glance => {
+                // turn away from the wall: the way that swings his facing towards its normal
+                let sign = up.cross(fwd).dot(n).signum();
+                let tq = self.glance * (-self.t / self.glance_time).exp();
+                c.out.torque(10, up * sign * tq * 0.7);
+                c.out.torque(0, up * sign * tq * 0.3);
+                if self.t < self.forward_time {
+                    let near = if (at - c.com).dot(side) > 0.0 { 0 } else { 1 };
+                    if !c.ch.busy[near] {
+                        self.hand_on_wall(c, near, at, n, up);
+                    }
+                }
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        match self.mode {
+            Some(WallMode::Slump) => self.t > self.sit_start + 6.0,
+            Some(WallMode::Brace) => self.t > self.forward_time + 0.6,
+            Some(_) => self.t > self.forward_time.max(self.glance_time * 3.0).max(self.react),
+            None => self.t.is_infinite(),
+        }
+    }
+}
+
+/// RDR2's falling reaction with handsAndKnees (its setfallingreaction, folded into catchFall there): a forward fall
+/// ends on all fours. The balancer lets go and, as he goes down, the hips and knees fold (about a right angle each)
+/// and the hands reach for the ground under the shoulders. Once hands and knees are down he holds there for
+/// hkHoldTime, the trunk level and the head up, the arms at least minArmStiffness; then his strength fades
+/// (stoppedStrengthDecay per second) and he sinks onto his front. pushForward tips him over first (testing, or a
+/// stumble forwards).
+pub struct FallingReaction {
+    on: bool, hold: f32, decay: f32, arm_k: f32, leg_k: f32, spine_k: f32, push: f32, head_up: bool,
+    t: f32, phase: u8, since: f32, ground: Option<f32>, arm: [Option<[f32; 6]>; 2], strength: f32,
+}
+
+impl FallingReaction {
+    fn new(p: &mut P) -> Result<FallingReaction, Error> {
+        Ok(FallingReaction {
+            on: p.b("handsAndKnees", true)?, hold: p.f("hkHoldTime", 1.5)?.max(0.0), decay: p.f("stoppedStrengthDecay", 1.0)?.max(0.01),
+            arm_k: p.f("minArmStiffness", 14.0)?, leg_k: p.f("minLegStiffness", 12.0)?, spine_k: p.f("minSpineStiffness", 9.0)?,
+            push: p.f("pushForward", 0.0)?, head_up: p.b("hkHeadAvoid", true)?,
+            t: 0.0, phase: 0, since: 0.0, ground: None, arm: [None; 2], strength: 1.0,
+        })
+    }
+
+    /// The pose: hips and knees folded by `w` of a right angle, spine level, neck up, the hands to the ground under
+    /// the shoulders, stiffness by `k` of the set floors.
+    fn pose(&mut self, c: &mut Ctx, w: f32, k: f32, ground: f32, up: Vec3, fwd: Vec3, dt: f32) {
+        c.ch.set_stiffness(self.leg_k * k, 1.0, "lb", None);
+        c.ch.set_stiffness(self.spine_k * k, 1.0, "us", None);
+        c.ch.set_stiffness(self.spine_k * k, 1.0, "un", None);
+        for s in 0..2 {
+            Knees::ease(c, HIP()[s], 0, 1.5 * w, 6.0 * dt);
+            Knees::ease(c, KNEE()[s], 0, 1.6 * w * knee_dir(c, KNEE()[s]), 6.0 * dt);
+        }
+        for &j in &*SPINE() {
+            Knees::ease(c, j, 0, 0.0, 3.0 * dt);
+        }
+        if self.head_up {
+            for &j in &*NECK() {
+                Knees::ease(c, j, 0, -0.35 * w, 3.0 * dt);
+            }
+        }
+        for i in 0..2 {
+            if c.ch.busy[i] {
+                continue;
+            }
+            let l = crate::nmshot::limb(i);
+            // under the shoulder (the clavicle's outer end, roughly), a little ahead of it, on the ground
+            let sh = c.b.part(l.p[0]).m.d;
+            let mid = (c.b.part(13).m.d + c.b.part(17).m.d) * 0.5;
+            let out = sh + (sh - mid) * 0.6;
+            let below = out - up * ((out.dot(up) - ground) - 0.04) + fwd * 0.08;
+            let start = self.arm[i].unwrap_or_else(|| {
+                let [kk, a, e] = [0, 1, 2].map(|j| c.ch.actual(l.e[j], c.b.frames));
+                [kk[0], kk[1], 0.6, a[1], a[2], 0.2]
+            });
+            let (x, _) = arm_solve(c, l, below, start);
+            self.arm[i] = Some(x);
+            (c.ch.eff[l.e[0]].desired[0], c.ch.eff[l.e[0]].desired[1]) = (x[0], x[1]);
+            c.ch.eff[l.e[1]].desired = [x[2], x[3], x[4]];
+            c.ch.eff[l.e[2]].desired[0] = x[5];
+            c.ch.set_stiffness(self.arm_k * k, 1.0, ["ul", "ur"][i], None);
+        }
+    }
+}
+
+impl FallingReaction {
+    /// What his arms and knees carry on all fours (NaturalMotion uses such helpers too: joint strength alone
+    /// can't hold a body up): the upper body's weight held at the chest over the hands, the lower body's at the
+    /// pelvis over the knees, each a damped spring to its height, by `k`.
+    fn support(&self, c: &mut Ctx, ground: f32, up: Vec3, k: f32) {
+        let mass = |r: std::ops::RangeInclusive<usize>| r.map(|i| c.b.build.parts[i].mass).sum::<f32>();
+        let (upper, lower) = (mass(7..=20), mass(0..=6));
+        let hands_at = (c.b.part(16).m.d + c.b.part(20).m.d) * 0.5;
+        let knees_at = (c.b.part(2).m.d + c.b.part(5).m.d) * 0.5;
+        for (part, over, height, m) in [(10, hands_at, 0.6, upper), (0, knees_at, 0.55, lower * 0.6)] {
+            let q = c.b.part(part);
+            let off = over - q.m.d;
+            let flat = off - up * off.dot(up);
+            let vflat = q.v - up * q.v.dot(up);
+            let h = q.m.d.dot(up) - ground;
+            let lift = 4.9 + 90.0 * (height - h).clamp(-0.2, 0.3) - 10.0 * q.v.dot(up);
+            c.out.force(part, (flat * 20.0 - vflat * 5.0 + up * lift.max(0.0)) * m * k);
+        }
+        // the knees drawn in under the hips (the legs trail out behind him otherwise)
+        let under = c.b.part(0).m.d;
+        for shin in [2, 5] {
+            let q = c.b.part(shin);
+            let off = under - q.m.d;
+            let flat = off - up * off.dot(up);
+            let vflat = q.v - up * q.v.dot(up);
+            c.out.force(shin, (flat * 25.0 - vflat * 5.0) * c.b.build.parts[shin].mass * 2.0 * k);
+        }
+    }
+}
+
+impl Extra for FallingReaction {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        if !self.on {
+            return;
+        }
+        self.t += dt;
+        self.since += dt;
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+        let fwd = side.cross(up).normalize_or(Vec3::Y);
+        let ground = *self.ground.get_or_insert_with(|| c.b.part(3).m.d.dot(up).min(c.b.part(6).m.d.dot(up)) - 0.06);
+        c.out.dbm = Some(false);
+        if self.t < 0.3 && self.push != 0.0 {
+            c.out.force(10, fwd * self.push);
+        }
+        let h = |c: &Ctx, k: usize| c.b.part(k).m.d.dot(up) - ground;
+        match self.phase {
+            0 => {
+                // going down: fold in and reach for the ground
+                let w = (self.t / 0.25).min(1.0);
+                self.pose(c, w, 1.0, ground, up, fwd, dt);
+                // arms and knees take the landing once he is low
+                if h(c, 10) < 0.75 {
+                    self.support(c, ground, up, 0.7);
+                }
+                let hands = h(c, 16).max(h(c, 20)) < 0.12;
+                let knees = h(c, 2).min(h(c, 5)) < 0.25;
+                if (hands && knees) || self.since > 1.5 {
+                    (self.phase, self.since) = (1, 0.0);
+                }
+            }
+            1 => {
+                // on all fours: the pose held, his weight on hands and knees
+                self.pose(c, 1.0, 1.0, ground, up, fwd, dt);
+                self.support(c, ground, up, 1.0);
+                if self.since > self.hold {
+                    (self.phase, self.since) = (2, 0.0);
+                }
+            }
+            _ => {
+                // strength fades: he sinks down onto his front
+                self.strength = (self.strength - self.decay * dt).max(0.15);
+                let k = self.strength;
+                self.pose(c, 1.0, k, ground, up, fwd, dt);
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        !self.on || (self.phase == 2 && self.strength <= 0.15 && self.since > 0.5)
+    }
+}
+
+/// RDR2's balancer additions, laid over Delirium's balancer while he balances (it stays on till stopped):
+/// - running balance: above runningThresh (m/s, his centre's speed along the ground) the hips and knees are at least
+///   legStiffnessRun, so a running stumble stays a stumble rather than folding;
+/// - feet flattening: a foot coming down is turned flat to the ground (its sole square to up), fully from startFlat
+///   above the other foot down, not at all from endFlat up (as RDR2's startFlat / endFlat), by a muscle-like torque
+///   pair between foot and shin (flatStiffness, N m per rad).
+pub struct BalanceRdr2 {
+    run_thresh: f32, run_k: f32, start_flat: f32, end_flat: f32, flat_k: f32,
+}
+
+impl BalanceRdr2 {
+    fn new(p: &mut P) -> Result<BalanceRdr2, Error> {
+        Ok(BalanceRdr2 {
+            run_thresh: p.f("runningThresh", 0.65)?, run_k: p.f("legStiffnessRun", 13.0)?,
+            start_flat: p.f("startFlat", 0.1)?.max(0.0), end_flat: p.f("endFlat", 0.3)?, flat_k: p.f("flatStiffness", 12.0)?.max(0.0),
+        })
+    }
+}
+
+impl Extra for BalanceRdr2 {
+    fn tick(&mut self, c: &mut Ctx, _dt: f32) {
+        if c.dbm_failed {
+            return;
+        }
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let speed = (c.vel - up * c.vel.dot(up)).length();
+        if speed > self.run_thresh && self.run_k > 0.0 {
+            let (s, d) = (self.run_k * self.run_k, 2.0 * self.run_k);
+            for j in [HIP()[0], KNEE()[0], HIP()[1], KNEE()[1]] {
+                let e = &mut c.ch.eff[j];
+                (e.strength, e.damping) = (e.strength.max(s), e.damping.max(d));
+            }
+        }
+        if self.flat_k > 0.0 {
+            for (foot, shin, other) in [(3, 2, 6), (6, 5, 3)] {
+                let f = c.b.part(foot);
+                let h = (f.m.d - c.b.part(other).m.d).dot(up);
+                let span = (self.end_flat - self.start_flat).max(0.01);
+                let w = ((self.end_flat - h) / span).clamp(0.0, 1.0);
+                if w <= 0.0 {
+                    continue;
+                }
+                // the sole's normal is the foot's b axis (the balancer squares it to the ground the same way)
+                let err = f.m.b.normalize_or(up).cross(up);
+                let spin = f.w - c.b.part(shin).w;
+                let t = (err * self.flat_k - spin * self.flat_k * 0.1) * w;
+                c.out.torque(foot, t);
+                c.out.torque(shin, -t);
+            }
+        }
+    }
+}
+
+/// RDR2's keyframe behaviour, used here to blend a balancing body into a neutral stand before it is handed back to
+/// animation: over blendTime the spine and neck ease straight, the hands go to his sides, and the parts' motion is
+/// damped (settle, 1/s), so the animation picks up from a pose close to its own; then it holds that for holdTime.
+/// The legs stay the balancer's.
+pub struct Keyframe {
+    blend: f32, hold: f32, settle: f32, stiffness: f32,
+    t: f32, start: Option<Vec<(usize, [f32; 3])>>, arm: [Option<[f32; 6]>; 2],
+}
+
+impl Keyframe {
+    fn new(p: &mut P) -> Result<Keyframe, Error> {
+        Ok(Keyframe {
+            blend: p.f("blendTime", 0.3)?.max(0.02), hold: p.f("holdTime", 0.5)?.max(0.0), settle: p.f("settle", 3.0)?.max(0.0),
+            stiffness: p.f("stiffness", 11.0)?, t: 0.0, start: None, arm: [None; 2],
+        })
+    }
+}
+
+impl Extra for Keyframe {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let x = (self.t / self.blend).min(1.0);
+        let w = x * x * (3.0 - 2.0 * x);
+        let up = c.ch.up.normalize_or(Vec3::Z);
+        let side = (c.b.part(13).m.d - c.b.part(17).m.d).normalize_or(Vec3::X);
+        let fwd = side.cross(up).normalize_or(Vec3::Y);
+        // spine and neck: from where they were towards straight
+        let start = self.start.get_or_insert_with(|| SPINE().iter().chain(NECK().iter()).map(|&j| (j, c.ch.eff[j].desired)).collect());
+        for &(j, d0) in start.iter() {
+            c.ch.eff[j].desired = d0.map(|a| a * (1.0 - w));
+            c.ch.eff[j].set_stiffness(self.stiffness, 1.0, None);
+        }
+        // hands down at his sides
+        let pelvis = c.b.part(0).m.d;
+        for i in 0..2 {
+            if c.ch.busy[i] {
+                continue;
+            }
+            let l = crate::nmshot::limb(i);
+            let s = if i == 0 { 1.0 } else { -1.0 };
+            let target = pelvis + side * (0.24 * s) - up * 0.06 + fwd * 0.03;
+            let st = self.arm[i].unwrap_or_else(|| {
+                let [k, a, e] = [0, 1, 2].map(|n| c.ch.actual(l.e[n], c.b.frames));
+                [k[0], k[1], a[0], a[1], a[2], e[0]]
+            });
+            let (xs, _) = arm_solve(c, l, target, st);
+            self.arm[i] = Some(xs);
+            let blend = |d: &mut f32, to: f32| *d += (to - *d) * w;
+            {
+                let e0 = &mut c.ch.eff[l.e[0]].desired;
+                blend(&mut e0[0], xs[0]);
+                blend(&mut e0[1], xs[1]);
+            }
+            for k in 0..3 {
+                blend(&mut c.ch.eff[l.e[1]].desired[k], xs[2 + k]);
+            }
+            blend(&mut c.ch.eff[l.e[2]].desired[0], xs[5]);
+            c.ch.set_stiffness(self.stiffness * 0.8, 1.0, ["ul", "ur"][i], None);
+        }
+        // settle: the upper body's motion relative to the pelvis damped out
+        if self.settle > 0.0 {
+            let pv = c.b.part(0).v;
+            for k in 7..21 {
+                let q = c.b.part(k);
+                c.out.force(k, -(q.v - pv) * c.b.build.parts[k].mass * self.settle * w);
+            }
+        }
+    }
+
+    fn done(&self) -> bool {
+        self.t > self.blend + self.hold
     }
 }

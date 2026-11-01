@@ -11,11 +11,11 @@ fn c(s: &str) -> CString {
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     unsafe {
-        if let Ok(e) = std::env::var("GTAIV_EXE") {
-            assert_eq!(nm_unlock(c(&e).as_ptr()), 0);
-        }
         if a[1].to_ascii_lowercase().ends_with(".art") {
             delirium_data::LE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        if let Ok(e) = std::env::var("GTAIV_EXE") {
+            assert_eq!(nm_unlock(c(&e).as_ptr()), 0);
         }
         assert!(nm_init(c(&a[1]).as_ptr()) >= 0);
         let build = nm_build_load(c(&a[2]).as_ptr());
@@ -27,11 +27,39 @@ fn main() {
         nm_msg_send(g, w);
         let get = |p: i32| { let mut v = [0.0f32; 3]; nm_agent_get_part_transform(g, p, v.as_mut_ptr(), std::ptr::null_mut()); v };
         for k in 0..std::env::var("STEPS").ok().and_then(|s| s.parse().ok()).unwrap_or(240) {
+            if k == 30 {
+                // PRE=<message>: another message (start=true, its defaults) sent first
+                if let Ok(pre) = std::env::var("PRE") {
+                    let mut it = pre.split_whitespace();
+                    let m = it.next().unwrap_or("").to_string();
+                    nm_msg_begin(g, c(&m).as_ptr());
+                    nm_msg_set_bool(g, c("start").as_ptr(), 1);
+                    for kv in it {
+                        let (n, v) = kv.split_once('=').unwrap();
+                        nm_msg_set_float(g, c(n).as_ptr(), v.parse().unwrap());
+                    }
+                    println!("sent {m} -> {}", nm_msg_send(g, w));
+                }
+            }
             if k == 60 && a[3] != "none" {
                 nm_msg_begin(g, c(&a[3]).as_ptr());
                 nm_msg_set_bool(g, c("start").as_ptr(), 1);
+                // "@f,l,u": a point forward / left / up of the pelvis (his facing); "@n:f,l,u": a direction that way
+                let (pel, l, r) = (get(0), get(13), get(17));
+                let lv = { let d = [l[0] - r[0], l[1] - r[1]]; let n = (d[0] * d[0] + d[1] * d[1]).sqrt(); [d[0] / n, d[1] / n] };
+                let fv = [lv[1], -lv[0]];
+                let rel = |s: &str, point: bool| -> [f32; 3] {
+                    let x: Vec<f32> = s.split(',').map(|x| x.parse().unwrap()).collect();
+                    let o = if point { pel } else { [0.0; 3] };
+                    [o[0] + fv[0] * x[0] + lv[0] * x[1], o[1] + fv[1] * x[0] + lv[1] * x[1], o[2] + x[2]]
+                };
                 for kv in &a[4..] {
                     let (n, v) = kv.split_once('=').unwrap();
+                    if let Some(rest) = v.strip_prefix('@') {
+                        let f = if let Some(d) = rest.strip_prefix("n:") { rel(d, false) } else { rel(rest, true) };
+                        nm_msg_set_vec3(g, c(n).as_ptr(), f.as_ptr());
+                        continue;
+                    }
                     match v {
                         "true" | "false" => { nm_msg_set_bool(g, c(n).as_ptr(), (v == "true") as i32); }
                         _ if v.contains(',') => {
@@ -43,9 +71,19 @@ fn main() {
                     }
                 }
                 let r = nm_msg_send(g, w);
-                println!("sent {} -> {r}", a[3]);
+                println!("sent {} -> {r}  (pelvis {:.3},{:.3}  facing {:.3},{:.3})", a[3], pel[0], pel[1], fv[0], fv[1]);
             }
             nm_agent_step(g, w, 1.0 / 60.0);
+            if let Ok(path) = std::env::var("DUMP") {
+                // every part's position each 0.1 s, one line per sample: t then x y z for parts 0..20
+                if k % 6 == 5 {
+                    use std::io::Write;
+                    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path).unwrap();
+                    let mut line = format!("{:.2}", (k + 1) as f32 / 60.0);
+                    for p in 0..21 { let v = get(p); line += &format!(" {:.3} {:.3} {:.3}", v[0], v[1], v[2]); }
+                    writeln!(f, "{line}").unwrap();
+                }
+            }
             if k % 6 == 5 {
                 let (pel, chest, head) = (get(0), get(10), get(12));
                 // facing: across the shoulders (left clavicle minus right), turned a quarter about up
@@ -54,6 +92,21 @@ fn main() {
                 println!("t {:.2}  pelvis z {:.3}  chest y {:+.3} z {:.3}  head x {:+.3} y {:+.3} z {:.3}  facing {:+6.1}  balancing {}",
                          (k + 1) as f32 / 60.0, pel[2], chest[1] - pel[1], chest[2], head[0] - pel[0], head[1] - pel[1], head[2],
                          yaw, nm_agent_is_balancing(g));
+                if std::env::var("LEAN").is_ok() {
+                    // forward (across the shoulders x up): how far chest and head are ahead of the pelvis, and knee heights
+                    let f = [l[1] - r[1], -(l[0] - r[0])];
+                    let n = (f[0] * f[0] + f[1] * f[1]).sqrt().max(1e-6);
+                    let ahead = |p: [f32; 3]| ((p[0] - pel[0]) * f[0] + (p[1] - pel[1]) * f[1]) / n;
+                    let (lk, rk) = (get(2), get(5));
+                    println!("      ahead  chest {:+.3} head {:+.3}   knees L z {:.2} R z {:.2}   feet L z {:.2} R z {:.2}", ahead(chest), ahead(head), lk[2], rk[2], get(3)[2], get(6)[2]);
+                }
+                if let Ok(wv) = std::env::var("WALLAT") {
+                    // distance of pelvis, chest and head from a wall plane: WALLAT=px,py,nx,ny (world)
+                    let w: Vec<f32> = wv.split(',').map(|x| x.parse().unwrap()).collect();
+                    let d = |p: [f32; 3]| (p[0] - w[0]) * w[2] + (p[1] - w[1]) * w[3];
+                    let (lh, rh) = (get(16), get(20));
+                    println!("      wall   pelvis {:.2} chest {:.2} head {:.2}   heights {:.2} {:.2} {:.2}   hands L {:.2} at {:.2} R {:.2} at {:.2}", d(pel), d(chest), d(head), pel[2], chest[2], head[2], d(lh), lh[2], d(rh), rh[2]);
+                }
                 if std::env::var("HANDS").is_ok() {
                     let (lh, rh) = (get(16), get(20));
                     println!("      hands  L x {:+.2} y {:+.2} z {:.2}   R x {:+.2} y {:+.2} z {:.2}", lh[0] - pel[0], lh[1] - pel[1], lh[2], rh[0] - pel[0], rh[1] - pel[1], rh[2]);
