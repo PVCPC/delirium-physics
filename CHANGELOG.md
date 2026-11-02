@@ -15,6 +15,8 @@
 - An optional RDR2 reactions mode: `nm_agent_rdr2_shot` / `nm_agent_rdr2_melee` (and `nm_rdr2_set`) start RDR2's
   reactions to a hit by where it landed, one call per hit. In the playroom, a "Reaction style" switch in Reactions:
   GTA IV (the default, unchanged) or Red Dead Redemption 2 (`!rdr2`).
+- Playroom: Red Dead Redemption 2's horse, from your own horse.xml: a physics horse that stands, takes hits, and goes
+  down as a ragdoll when a leg is lamed or it's killed (Character, `!horse`).
 - Playroom: Red Dead Redemption 2 weapons (lasso, bolas, dynamite, fire bottle, tomahawk, bow), each with its own
   reaction; in Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`.
 - Playroom: a Parameters tab to change any behaviour's parameters (GTA IV's, the extras, RDR2's), with what each one

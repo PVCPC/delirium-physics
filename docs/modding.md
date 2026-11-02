@@ -442,6 +442,19 @@ Hero:
   in place of GTA IV's.
 - Tomahawk and bow: hit as shots, so RDR2 reaction style adds RDR2's reactions by where they hit.
 
+#### RDR2 horse (playroom)
+
+Character, "Red Dead Redemption 2 horse": with the path to RDR2's horse body file (horse.xml, from your own copy:
+common_0.rpf, data/naturalmotion), Bring the horse puts a physics horse 2.5 m beside Homer (`!horse [path]`; `!horse
+off` takes it away; the path is kept in settings.txt as `rdr2_horse`). It's built from where RDR2's file puts its
+parts, with Delirium's own shapes and masses (about 600 kg, the trunk one rigid barrel). While it's sound it stands, as
+RDR2's horses do on their animation: muscles hold its pose and a lift on the barrel carries most of its weight. Shoot,
+blast, tomahawk or arrow it: a leg hit twice gives and it goes down; killed (400 health) it goes down; down, it's a
+ragdoll. It meets Homer, the room's floor and walls.
+
+No part of it weighs under 10 kg: Delirium's joint solver blows up with a very light part on the end of a chain under
+a heavy one (RDR2's 1 kg tail tip on the barrel), which a person never has.
+
 #### RDR2 reactions on hits (optional)
 
 A game can have its hits pick these the way RDR2 does, with one call per hit. In the playroom, switch Reactions'
@@ -578,6 +591,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!weapon I` | 0 pistol, 1 heavy pistol, 2 SMG, 3 rifle, 4 sniper, 5 shotgun, 6 rocket launcher, 7 grenade, 8 fire bottle, 9 bat, 10 knife, 11 taser, 12 stun baton; Red Dead Redemption 2's: 13 lasso, 14 bolas, 15 dynamite, 16 fire bottle, 17 tomahawk, 18 bow. |
 | `!aim gun\|camera` | Aim mode. |
 | `!gunat dx,dy,dz`, `!gunreach K [up]`, `!gun dx,dy,dz`, `!gunfire` | Floating-gun controls: aim, reach, aim off the chest and fire, fire. |
+| `!horse [path]`, `!horse off` | Bring Red Dead Redemption 2's horse (from your horse.xml) beside him; take it away. |
 | `!rope dx,dy,dz` | With a lasso round him: pull the rope to that far from the roped part (`!rope off` lets go). |
 | `!portal gun` | Pick the portal gun (needs portal mode). |
 | `!skate` | J: Homer on the skateboard or off it (needs Skate 3 linked). |
@@ -635,6 +649,7 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 | `vol`, `vol_fx`, `vol_portal` | 0 to 1 | Volumes. |
 | `rdr2_reactions` | 0/1 | Reaction style: 0 GTA IV (the default), 1 Red Dead Redemption 2. |
 | `param` | `behaviour.parameter value` | A value changed in the Parameters tab, one line each (e.g. `param shotFallToKnees.ftkPitchForce 150`). |
+| `rdr2_horse` | path | Your RDR2 horse.xml, for the horse. |
 | `rdr2_pick` | 7 numbers | The RDR2 reaction picker, when changed: snap, spin chance, knees chance, where-hit, reach chance, melee, balance. |
 
 ## Tips and troubleshooting
