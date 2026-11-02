@@ -35,6 +35,9 @@ pub struct BlasManager {
     /// retirements since the last build, and every batch ahead of it has one more build to wait
     /// out.
     pending_deletions: VecDeque<Vec<Blas>>,
+    /// Delirium: frames since the last TLAS build. With ray tracing off none is built, and the retirements above would
+    /// otherwise wait for one forever (the water's mesh, rebuilt every frame, retired a BLAS every frame).
+    idle_frames: u32,
 }
 
 impl BlasManager {
@@ -51,6 +54,7 @@ impl BlasManager {
     }
 
     pub fn note_tlas_build(&mut self) {
+        self.idle_frames = 0;
         if !self.pending_deletions.is_empty() {
             self.pending_deletions.push_back(Vec::new());
         }
@@ -208,6 +212,15 @@ pub fn delete_raytracing_blas(
     mut blas_manager: ResMut<BlasManager>,
     render_queue: Res<RenderQueue>,
 ) {
+    // Delirium: no TLAS built for longer than the double buffer lasts, so none points at a retired BLAS: they all go
+    blas_manager.idle_frames = blas_manager.idle_frames.saturating_add(1);
+    if blas_manager.idle_frames > TLAS_BUILDS_BEFORE_DELETION_ALLOWED as u32 {
+        let all: Vec<Blas> = blas_manager.pending_deletions.drain(..).flatten().collect();
+        if !all.is_empty() {
+            render_queue.on_submitted_work_done(move || drop(all));
+        }
+        return;
+    }
     if blas_manager.pending_deletions.len() <= TLAS_BUILDS_BEFORE_DELETION_ALLOWED {
         return;
     }
