@@ -633,7 +633,10 @@ fn lasso_on(part: usize) -> (usize, i32) {
     }
 }
 
-const LASSO_SECS: f32 = 6.0;
+/// How long the lasso stays round him once you stop pulling, s.
+const LASSO_HOLD: f32 = 4.0;
+/// Rope slack: it only pulls once the part is this far from the pointer, m.
+const ROPE_SLACK: f32 = 0.25;
 const DYNAMITE_FUSE: f32 = 3.0;
 
 const LEAN_SECS: f32 = 1.5;
@@ -661,6 +664,13 @@ struct Gun {
     rdr2: Vec<(Vec3, Vec3, f32, usize)>,
     /// a lasso round him: the part it pulls and how long it stays on
     lasso: Option<(usize, f32)>,
+    /// the lasso in flight: the part it was aimed at (it locks on, as RDR2's does) and where it was thrown from
+    lasso_aim: (Option<usize>, Vec3),
+    /// the rope's end: where the pointer pulls it while the left button is held (None: slack), the plane it's pulled
+    /// in (through the part, facing the camera, from when the button went down), and where it was last pulled to
+    rope: Option<Vec3>,
+    rope_plane: Option<(Vec3, Vec3)>,
+    rope_end: Vec3,
     fires: Vec<(Vec3, f32)>,
     swing: f32,
 }
@@ -3740,6 +3750,12 @@ impl Sim {
             self.sounds.push(sfx::Snd::Shot(self.weapon));
             return self.gun.rockets.push((from, dir * ROCKET_SPEED(), 0.0));
         }
+        if kind(self.weapon) == 3 {
+            // Red Dead Redemption 2's: thrown at what the camera looks at
+            let to = self.agent.doll.probe(&self.build, from, from + dir * 60.0).map(|h| h.1)
+                .or_else(|| self.world.contact(from, dir, 60.0).map(|c| from + dir * c.0)).unwrap_or(from + dir * 20.0);
+            return self.rdr2_throw(from + dir * 0.5, to);
+        }
         let (_, acc, pellets, _) = self.gun_stats();
         self.pellets(from, dir, acc, pellets, fatal);
     }
@@ -3899,6 +3915,11 @@ impl Sim {
         let d = to - from;
         let t = (d.length() / rdr2_speed(self.weapon)).max(0.05);
         let fuse = if WEAPONS[self.weapon].0 == "dynamite" { DYNAMITE_FUSE } else { 0.0 };
+        if WEAPONS[self.weapon].0 == "lasso" {
+            // it locks onto the part nearest where it's aimed, if that's on him, and pulls back the way it came
+            let k = self.agent.doll.nearest(&self.build, to);
+            self.gun.lasso_aim = ((self.ours().p(k).distance(to) < 0.6).then_some(k), from);
+        }
         self.gun.rdr2.push((from, d / t + Vec3::Z * 4.905 * t, fuse, self.weapon));
         self.say(format!("room  {} thrown", WEAPONS[self.weapon].0));
         self.gun.kick = KICK[self.weapon];
@@ -3909,13 +3930,19 @@ impl Sim {
     /// caught (rdr2Lasso with dragged), the bolas wraps his legs (rdr2Bolas), the tomahawk and the arrow hit as shots
     /// (so RDR2 reaction style adds its reactions), the fire bottle starts a fire, the dynamite rolls and goes off.
     fn rdr2_frame(&mut self, dt: f32) {
-        if let Some((_, left)) = self.gun.lasso.as_mut() {
-            *left -= dt;
-            if *left <= 0.0 {
-                self.gun.lasso = None;
-                self.send("rdr2Lasso start=false");
-                self.send("dragged start=false");
-                self.say("room  lasso: let go".into());
+        if let Some((part, left)) = self.gun.lasso {
+            match self.gun.rope {
+                Some(to) => {
+                    self.gun.lasso = Some((part, LASSO_HOLD));
+                    self.gun.rope_end = to;
+                    self.rope_pull(part, to, dt);
+                }
+                None if left - dt <= 0.0 => {
+                    self.gun.lasso = None;
+                    self.send("rdr2Lasso start=false");
+                    self.say("room  lasso: slips off".into());
+                }
+                None => self.gun.lasso = Some((part, left - dt)),
             }
         }
         let mut landed = vec![];
@@ -3945,6 +3972,12 @@ impl Sim {
                     landed.push((*w, h.1, d, Some(h)));
                     false
                 }
+                // the lasso locked on: landing by the part it was aimed at (round his feet, say) still catches it
+                (None, Some((at, n))) if WEAPONS[*w].0 == "lasso" && self.gun.lasso_aim.0.is_some_and(|k| self.ours().p(k).distance(at) < 0.8) => {
+                    let k = self.gun.lasso_aim.0.unwrap_or(0);
+                    landed.push((*w, at, d, Some((k, at, n))));
+                    false
+                }
                 (None, Some((at, _))) => {
                     landed.push((*w, at, d, None));
                     false
@@ -3967,14 +4000,15 @@ impl Sim {
                     self.say("room  fire bottle: fire".into());
                 }
                 ("lasso", Some((part, _, _))) => {
-                    let (rope, how) = lasso_on(part);
-                    let toward = (self.gun.at - at).with_z(0.0).normalize_or(-d.with_z(0.0).normalize_or(Vec3::X));
-                    self.send(&format!("dragged start=true ropedBodyPart={rope} direction={} speed=2.5 delay=0.4 force=1.2", v3(toward)));
+                    let (aimed, from) = self.gun.lasso_aim;
+                    let (rope, how) = lasso_on(aimed.unwrap_or(part));
+                    self.held = false;
                     self.send(&format!("rdr2Lasso start=true lassoedtype={how}"));
-                    self.gun.lasso = Some((rope, LASSO_SECS));
-                    self.say(format!("room  lasso round his {}", ["neck", "chest and arms", "feet"][how as usize]));
+                    (self.gun.lasso, self.gun.rope_end) = (Some((rope, LASSO_HOLD)), from);
+                    self.say(format!("room  lasso round his {}: hold the left button to pull", ["neck", "chest and arms", "feet"][how as usize]));
                 }
                 ("bolas", Some(_)) => {
+                    self.held = false;
                     self.send("rdr2Bolas start=true");
                     self.say("room  bolas round his legs".into());
                 }
@@ -3982,6 +4016,29 @@ impl Sim {
                 (name, _) => self.say(format!("room  {name}: missed")),
             }
         }
+    }
+
+    /// The lasso's rope pulling `part` towards `to`: as the mouse grab pulls, but only along the rope and only once
+    /// it's taut (a rope never pushes).
+    fn rope_pull(&mut self, part: usize, to: Vec3, dt: f32) {
+        let Some(f) = self.agent.doll.frames().nth(part) else { return };
+        let at = f.translation;
+        let off = to - at;
+        let stretch = off.length() - ROPE_SLACK;
+        if stretch <= 0.0 {
+            return;
+        }
+        let along = off / off.length();
+        let (v, _) = self.agent.doll.vel(part);
+        let damp = (2.0 * (PULL_K * self.agent.doll.mass()).sqrt()).min(30.0 * self.agent.doll.part_mass(part));
+        let tension = PULL_K * stretch - damp * v.dot(along);
+        if tension <= 0.0 {
+            return;
+        }
+        self.held = false;
+        let imp = (along * tension).clamp_length_max(PULL_MAX) * dt;
+        let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
+        let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "applyImpulse", &ps);
     }
 
     fn swing_weapon(&mut self) {
@@ -7790,7 +7847,12 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
         }
     }
     if let Some((part, _)) = sim.gun.lasso {
-        g.line(sim.gun.at, sim.ours().p(part), Color::srgb(0.85, 0.7, 0.45));
+        let (at, end) = (sim.ours().p(part), sim.gun.rope.unwrap_or(sim.gun.rope_end));
+        // taut while you pull, sagging when slack
+        let sag = if sim.gun.rope.is_some() { 0.0 } else { 0.25 * at.distance(end) };
+        let mid = (at + end) * 0.5 - Vec3::Z * sag;
+        g.line(at, mid, Color::srgb(0.85, 0.7, 0.45));
+        g.line(mid, end, Color::srgb(0.85, 0.7, 0.45));
     }
     let flick = time.elapsed_secs() * 9.0;
     for &(at, age) in sim.gun.fires.iter().filter(|_| sim.fire == 0) {
@@ -8427,6 +8489,24 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         }
     }
     sim.pop_screen = sim.pops.iter().filter_map(|&(p, n, age, small)| camera.world_to_viewport(gt, p + Vec3::Z * POP_RISE * age / POP_LIFE).ok().map(|c| (c, n, age, small))).collect();
+    // a lasso round him: holding the left button pulls the rope towards the pointer (as a grab pulls), in a plane
+    // through the roped part facing the camera, instead of throwing again
+    if let (Some((part, _)), None) = (sim.gun.lasso, sim.hero.as_ref()) {
+        let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok());
+        let down = buttons.pressed(MouseButton::Left) && !sim.over_ui;
+        if buttons.just_pressed(MouseButton::Left) && let Some(r) = ray {
+            sim.gun.rope_plane = Some((sim.ours().p(part), -*r.direction));
+        }
+        if let (true, Some(r), Some((p, n))) = (down, ray, sim.gun.rope_plane) && r.direction.dot(n).abs() > 1e-4 {
+            sim.gun.rope = Some(r.origin + *r.direction * ((p - r.origin).dot(n) / r.direction.dot(n)));
+        }
+        if buttons.just_released(MouseButton::Left) {
+            (sim.gun.rope, sim.gun.rope_plane) = (None, None);
+        }
+        if down || buttons.just_released(MouseButton::Left) {
+            return;
+        }
+    }
     if sim.aim_gun && sim.hero.is_none() {
         let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok()).map(|r| (r.origin, *r.direction));
         let hold = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
@@ -8880,6 +8960,13 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 }
             }
             ("!gunfire", _) => sim.gun_fire(false),
+            ("!rope", Some(d)) => sim.gun.rope = match (sim.gun.lasso, d) {
+                (_, "off") | (None, _) => None,
+                (Some((part, _)), d) => {
+                    let v: Vec<f32> = d.split(',').filter_map(|x| x.parse().ok()).collect();
+                    Some(sim.ours().p(part) + Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)))
+                }
+            },
             ("!weapon", Some(i)) => sim.weapon = i.parse::<usize>().unwrap_or(0).min(WEAPONS.len() - 1),
             ("!aim", Some(m)) => (sim.aim_gun, sim.gun.placed) = (m == "gun", false),
             ("!gun", Some(d)) => {

@@ -431,8 +431,10 @@ balancer is tuned for.
 The playroom's weapon picker has a Red Dead Redemption 2 group, thrown (or loosed) from the floating gun or by the
 Hero:
 
-- Lasso: where the loop catches him picks the lasso (head or neck: round the neck; legs: round the feet; otherwise
-  round the chest and arms), then `dragged` pulls him towards you with `rdr2Lasso`, for 6 s.
+- Lasso: it locks onto the part nearest where you aim, as RDR2's does, and catches it even if it lands on the floor
+  beside it: head or neck, round the neck; legs, round the feet; otherwise round the chest and arms (`rdr2Lasso`'s
+  type). Then hold the left button to pull the rope towards the pointer, as a grab pulls but only while the rope is
+  taut; let go and it goes slack, and 4 s later the loop slips off.
 - Bolas: `rdr2Bolas`, his legs wrapped.
 - Dynamite: rolls, and goes off after 3 s.
 - Fire bottle: a fire where it breaks. In Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`
@@ -575,6 +577,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!weapon I` | 0 pistol, 1 heavy pistol, 2 SMG, 3 rifle, 4 sniper, 5 shotgun, 6 rocket launcher, 7 grenade, 8 fire bottle, 9 bat, 10 knife, 11 taser, 12 stun baton; Red Dead Redemption 2's: 13 lasso, 14 bolas, 15 dynamite, 16 fire bottle, 17 tomahawk, 18 bow. |
 | `!aim gun\|camera` | Aim mode. |
 | `!gunat dx,dy,dz`, `!gunreach K [up]`, `!gun dx,dy,dz`, `!gunfire` | Floating-gun controls: aim, reach, aim off the chest and fire, fire. |
+| `!rope dx,dy,dz` | With a lasso round him: pull the rope to that far from the roped part (`!rope off` lets go). |
 | `!portal gun` | Pick the portal gun (needs portal mode). |
 | `!skate` | J: Homer on the skateboard or off it (needs Skate 3 linked). |
 | `!skate x,y,yaw` | On the board at that spot, facing yaw (radians from +X). |
