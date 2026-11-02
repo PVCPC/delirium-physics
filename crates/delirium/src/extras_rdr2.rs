@@ -864,6 +864,15 @@ fn knee_dir(c: &Ctx, j: usize) -> f32 {
     if l[0].abs() > l[1].abs() { -1.0 } else { 1.0 }
 }
 
+/// Drives a joint axis to `x` of its range (-1 one limit, 0 the middle, 1 the other), through its offset.
+fn drive(c: &mut Ctx, j: usize, k: usize, x: f32) {
+    let l = c.ch.limits(j);
+    let (lo, hi) = (l[2 * k], l[2 * k + 1]);
+    let to = (hi - lo) * 0.5 * x.clamp(-1.0, 1.0) + (hi + lo) * 0.5;
+    let e = &mut c.ch.eff[j];
+    e.offset[k] += to - e.desired[k];
+}
+
 /// The side a part is on: 0 left (leg 1..=3, arm 13..=16), 1 right (leg 4..=6, arm 17..=20), None otherwise.
 fn part_side(part: i32) -> Option<usize> {
     match part {
@@ -2032,7 +2041,7 @@ impl Extra for OnFire {
     fn tick(&mut self, c: &mut Ctx, dt: f32) {
         use std::f32::consts::PI;
         self.t += dt;
-        self.phase += dt * 2.0 * PI / 0.6;
+        self.phase += dt * 2.0 * PI / 0.45;
         let (ph, up) = (self.phase, c.up);
         let pelvis = c.b.part(0).m.d;
         if self.down.is_none() && (self.t > self.stagger || c.dbm_failed || pelvis.dot(up) < 0.55) {
@@ -2041,43 +2050,48 @@ impl Extra for OnFire {
         let ground = self.down.is_some();
         if ground {
             c.out.dbm = Some(false);
-            c.ch.set_stiffness(8.0, 1.0, "fb", None);
+            c.ch.set_stiffness(10.0, 1.0, "fb", None);
         }
-        // arms: on his feet a windmill (or a writhe), down curled in towards his face (or a writhe)
+        // arms: thrown about across most of their range, on his feet a windmill (or a writhe), down a writhe (or
+        // curled in towards his face); the elbows bend and straighten as they go
         for i in 0..2 {
             let l = crate::nmshot::limb(i);
             let (sh, el) = (l.e[1], l.e[2]);
             let s = i as f32 * PI;
             let ed = knee_dir(c, el);
-            let writhe = [0.7 * (1.7 * ph + s).sin(), 0.6 * (1.3 * ph + 2.0 * s + 0.5).sin(), 0.5 + 0.5 * (2.3 * ph + s).sin()];
-            let (other, w) = if ground { ([0.4, 0.3, 1.0], self.down_blend[0]) } else { ([1.2 * (ph + s).sin(), 1.2 * (ph + s).cos(), 0.3], self.up_blend[0]) };
+            let writhe = [0.85 * (1.7 * ph + s).sin(), 0.8 * (1.3 * ph + 2.0 * s + 0.5).sin(), 0.5 * (1.1 * ph + s).sin(), 0.3 + 0.6 * (2.3 * ph + s).sin()];
+            let (other, w) = if ground { ([0.5, 0.0, 0.0, 0.8], self.down_blend[0]) }
+                             else { ([1.0 * (ph + s).sin(), 1.0 * (ph + s).cos(), 0.0, 0.1], self.up_blend[0]) };
             let mix = |k: usize| other[k] * (1.0 - w) + writhe[k] * w;
-            c.ch.eff[sh].offset[0] += mix(0);
-            c.ch.eff[sh].offset[1] += mix(1);
-            c.ch.eff[el].offset[0] += mix(2) * 1.4 * ed;
-            c.ch.set_stiffness(9.0, 1.0, ["ul", "ur"][i], None);
+            for k in 0..3 {
+                drive(c, sh, k, mix(k));
+            }
+            drive(c, el, 0, mix(3) * ed);
+            c.ch.set_stiffness(15.0, 0.8, ["ul", "ur"][i], None);
         }
-        // spine: held (on his feet) or curled forward (down), and a writhe
+        // spine: hunched forward (more when down), and a writhe
         let w = if ground { self.down_blend[1] } else { self.up_blend[1] };
-        let curl = if ground { 0.6 } else { 0.0 };
+        let curl = if ground { 0.6 } else { 0.35 };
         let n = SPINE().len() as f32;
         for (k, &j) in SPINE().iter().enumerate() {
             let o = k as f32;
-            let writhe = [0.35 * (1.3 * ph + o).sin(), 0.25 * (0.9 * ph + 1.0 + o).sin(), 0.4 * (1.1 * ph + o * 0.5).sin()];
+            let writhe = [0.5 * (1.3 * ph + o).sin(), 0.4 * (0.9 * ph + 1.0 + o).sin(), 0.6 * (1.1 * ph + o * 0.5).sin()];
             for a in 0..3 {
-                c.ch.eff[j].offset[a] += ((if a == 0 { curl } else { 0.0 }) * (1.0 - w) + writhe[a] * w) / n;
+                c.ch.eff[j].offset[a] += ((if a == 0 { curl } else { 0.0 }) * (1.0 - w * 0.5) + writhe[a] * w) / n;
             }
         }
-        // legs: the balancer's (on his feet) or drawn up (down), and a writhe
+        // legs: the balancer's (on his feet) or drawn up (down), and a kicking writhe
         let w = if ground { self.down_blend[2] } else { self.up_blend[2] };
         for s in 0..2 {
             let (hip, knee) = (HIP()[s], KNEE()[s]);
             let kd = knee_dir(c, knee);
             let o = s as f32 * 2.0;
-            let writhe = [0.5 * (1.9 * ph + o).sin(), 0.6 + 0.6 * (2.1 * ph + o).sin()];
-            let posed = if ground { [0.9, 1.4] } else { [0.0, 0.0] };
+            let big = if ground { 1.0 } else { 0.35 };
+            let writhe = [big * 0.9 * (1.9 * ph + o).sin(), big * 0.4 * (1.4 * ph + o + 1.0).sin(), big * (0.8 + 0.8 * (2.1 * ph + o).sin())];
+            let posed = if ground { [1.0, 0.0, 1.6] } else { [0.0, 0.0, 0.0] };
             c.ch.eff[hip].offset[0] += posed[0] * (1.0 - w) + writhe[0] * w;
-            c.ch.eff[knee].offset[0] += (posed[1] * (1.0 - w) + writhe[1] * w) * kd;
+            c.ch.eff[hip].offset[1] += posed[1] * (1.0 - w) + writhe[1] * w;
+            c.ch.eff[knee].offset[0] += (posed[2] * (1.0 - w) + writhe[2] * w) * kd;
         }
         match self.down {
             None => {
