@@ -11,7 +11,7 @@ use crate::ragdoll::GRAVITY;
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 25] = [
+pub static MESSAGES: [Message; 26] = [
     Message { name: "keyframe", params: &[
         Param { name: "blendTime", kind: Kind::Float, used: true, doc: "s to blend into the neutral stand (0.3)" },
         Param { name: "holdTime", kind: Kind::Float, used: true, doc: "s it then holds it (0.5)" },
@@ -234,6 +234,12 @@ pub static MESSAGES: [Message; 25] = [
         Param { name: "ropeendfriction", kind: Kind::Float, used: false, doc: "the roped part's grip (0.5)" },
         Param { name: "otherendfriction", kind: Kind::Float, used: false, doc: "the other end's grip (2)" },
     ] },
+    Message { name: "rdr2Bolas", params: &[
+        Param { name: "bindStrength", kind: Kind::Float, used: true, doc: "how hard the bolas holds his ankles together, N per m (900)" },
+        Param { name: "fallTime", kind: Kind::Float, used: true, doc: "s before his balance gives (0.3)" },
+        Param { name: "struggleTime", kind: Kind::Float, used: true, doc: "s he struggles on the ground before he's free (5; 0: until stopped)" },
+        Param { name: "struggle", kind: Kind::Float, used: true, doc: "how hard he struggles, 0..1 (0.7)" },
+    ] },
     Message { name: "leanRandom", params: LEAN_RANDOM },
     Message { name: "hipsLeanInDirection", params: &[
         Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "how far the hips go; less than 0 away (0.5)" },
@@ -327,6 +333,7 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "keyframe" => Some(Keyframe::new(p).map(|e| Box::new(e) as _)),
         "onFire" => Some(OnFire::new(p).map(|e| Box::new(e) as _)),
         "rdr2Lasso" => Some(Lasso::new(p).map(|e| Box::new(e) as _)),
+        "rdr2Bolas" => Some(Bolas::new(p).map(|e| Box::new(e) as _)),
         "leanRandom" | "hipsLeanInDirection" | "hipsLeanToPosition" | "hipsLeanTowardsObject" | "hipsLeanRandom" | "forceLeanInDirection"
         | "forceLeanToPosition" | "forceLeanTowardsObject" | "forceLeanRandom" => Some(Lean::new(name, p).map(|e| Box::new(e) as _)),
         _ => None,
@@ -2304,5 +2311,79 @@ impl Extra for Lasso {
                 c.out.force(k, up * self.bump.0 * w);
             }
         }
+    }
+}
+
+/// RDR2's bolas, written from how it looks (its own parameters aren't known, so these are Delirium's): the bolas
+/// wraps his legs, holding his ankles (and less, his knees) together; after fallTime his balance gives and he
+/// topples, arms thrown out; down, he struggles, both legs kicking together, his arms pushing and his trunk
+/// twisting, for struggleTime, then he's free (the bolas lets go).
+pub struct Bolas {
+    bind: f32, fall: f32, time: f32, struggle: f32, t: f32,
+}
+
+impl Bolas {
+    fn new(p: &mut P) -> Result<Bolas, Error> {
+        Ok(Bolas {
+            bind: p.f("bindStrength", 900.0)?.max(0.0), fall: p.f("fallTime", 0.3)?.max(0.0), time: p.f("struggleTime", 5.0)?.max(0.0),
+            struggle: p.f("struggle", 0.7)?.clamp(0.0, 1.0), t: 0.0,
+        })
+    }
+}
+
+impl Extra for Bolas {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        use std::f32::consts::TAU;
+        self.t += dt;
+        // the cords: ankles held together, knees less so
+        for (a, b, k) in [(3, 6, 1.0), (2, 5, 0.5)] {
+            let d = c.b.part(b).m.d - c.b.part(a).m.d;
+            let f = (d * self.bind * k).clamp_length_max(self.bind);
+            c.out.force(a, f);
+            c.out.force(b, -f);
+        }
+        if self.t < self.fall {
+            return;
+        }
+        c.out.dbm = Some(false);
+        let up = c.up;
+        let down = c.b.part(0).m.d.dot(up) < 0.45;
+        let since = self.t - self.fall;
+        if !down && since < 1.5 {
+            // toppling: arms thrown out
+            for i in 0..2 {
+                let l = crate::nmshot::limb(i);
+                drive(c, l.e[1], 0, 0.7);
+                drive(c, l.e[1], 1, 0.6);
+                c.ch.set_stiffness(11.0, 1.0, ["ul", "ur"][i], None);
+            }
+            return;
+        }
+        // down: struggling, the bound legs kicking together, arms pushing, trunk twisting
+        let s = self.struggle;
+        let ph = TAU * 1.1 * since;
+        for side in 0..2 {
+            let (hip, knee) = (HIP()[side], KNEE()[side]);
+            let kd = knee_dir(c, knee);
+            c.ch.eff[hip].offset[0] += 1.3 * s * ph.sin();
+            c.ch.eff[knee].offset[0] += s * (0.9 + 0.9 * (ph + 0.8).sin()) * kd;
+        }
+        for i in 0..2 {
+            let l = crate::nmshot::limb(i);
+            let ed = knee_dir(c, l.e[2]);
+            drive(c, l.e[1], 0, 0.9 * s * (ph * 0.9 + i as f32).sin());
+            drive(c, l.e[1], 1, 0.6 * s * (ph * 0.7 + i as f32 * 1.5).sin());
+            drive(c, l.e[2], 0, (0.2 + 0.7 * s * (ph * 1.3 + i as f32 * 2.0).sin()) * ed);
+        }
+        let n = SPINE().len() as f32;
+        for &j in SPINE().iter() {
+            c.ch.eff[j].offset[2] += 0.5 * s * (ph * 0.6).sin() / n;
+            c.ch.eff[j].offset[1] += 0.3 * s * (ph * 0.8 + 1.0).sin() / n;
+        }
+        c.ch.set_stiffness(13.0, 0.8, "fb", None);
+    }
+
+    fn done(&self) -> bool {
+        self.time > 0.0 && self.t > self.fall + self.time
     }
 }

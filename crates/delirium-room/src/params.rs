@@ -91,6 +91,10 @@ const ABOUT: &[(&str, &str)] = &[
     ("forceLeanRandom", "Pushes bodyPart a random way.\n• A new way every changeTimeMin..changeTimeMax s.\n• leanAmount times his weight, while he's on his feet.\n• Runs until stopped."),
     ("onFire", "On fire.\n• On his feet for staggerTime: he staggers, windmilling his arms over his head.\n• He keeps windmilling as he goes down.\n• Down: he thrashes, and with rollOverFlag rolls back and forth to put the flames out.\n• Runs until stopped."),
     ("rdr2Lasso", "Lassoed and dragged. Send it with dragged, which pulls the rope (ropedBodyPart: 11 neck, 10 chest, 3 a foot).\nBy lassoedtype:\n• 0, the neck: his hands claw at the rope at his throat.\n• 1, the chest and arms: arms pinned to his sides, he wriggles.\n• 2, the feet: legs held straight, arms reaching past his head, clawing at the ground.\nDown, his legs kick and spine writhes, and the ground bumps him; optionally he's stunned first. Runs until stopped."),
+    ("rdr2Bolas", "A bolas round his legs.
+• His ankles (and knees) are held together.
+• After fallTime his balance gives and he topples.
+• Down, he struggles, both legs kicking together, for struggleTime, then he's free."),
     ("keyframe", "Before handing him back to animation.\n• Straightens his spine and neck and brings his hands to his sides over blendTime.\n• Holds it for holdTime, so the animation picks up from a close pose.\n• His legs stay on his balance."),
 ];
 

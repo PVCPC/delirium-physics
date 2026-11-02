@@ -409,6 +409,7 @@ they do nothing until sent with `start=true`, so the existing behaviours are unc
 | `forceLeanInDirection`, `forceLeanToPosition`, `forceLeanTowardsObject`, `forceLeanRandom` | A push on `bodyPart` that way, `leanAmount` times his weight, while he's on his feet. Runs until stopped. | `leanAmount` (0.2), `bodyPart` (0), `dir` / `pos` / `offset`, or for random `leanAmountMin` (0.3), `leanAmountMax` (0.4), `changeTimeMin` (2), `changeTimeMax` (4) |
 | `onFire` | On fire: for `staggerTime` he staggers, his lean swinging forwards and back (up to `stumbleMaxLeanForward` / `stumbleMaxLeanBack`) against where he's heading, his arms windmilling in big circles (shaken by a writhe, `armsWindmillWritheBlend`), still windmilling as he goes down; then the balancer lets go and, down, he writhes between curled up and thrashing and, with `rollOverFlag`, rolls back and forth for `maxRollOverTime` within `rollOverRadius` of where he fell. Runs until stopped. Its defaults are RDR2's. | `staggerTime` (2.5), `staggerLeanRate` (0.9), `stumbleMaxLeanBack` (0.4), `stumbleMaxLeanForward` (0.5), `armsWindmillWritheBlend` (0.4), `spineStumbleWritheBlend` (0.7), `legsStumbleWritheBlend` (0.2), `armsPoseWritheBlend` (0.7), `spinePoseWritheBlend` (0.55), `legsPoseWritheBlend` (0.5), `rollTorqueScale` (25), `predictTime` (0.1), `rollOverFlag` (true), `maxRollOverTime` (8), `rollOverRadius` (2) |
 | `rdr2Lasso` | Lassoed and dragged (send it with `dragged`, which does the pulling, its `ropedBodyPart` where the rope is: 11 the neck, 10 the chest, 3 or 6 a foot). By `lassoedtype`: 0 round the neck, his hands claw at the rope where it's round `grabPart`; 1 round the chest and arms, his arms pinned to his sides, wriggling more; 2 round the feet, his legs held straight and his arms reaching past his head, clawing at the ground. Down, his legs kick (not tied at the feet), his spine writhes forwards and back and side to side, and the ground bumps him now and then; with `stunnedtime` he first lies limp. Runs until stopped. Its defaults are RDR2's. | `lassoedtype` (0), `grabPart` (11), `grabposl`, `grabposr`, `grabpointamp` (zero), `grabpointfreq` (4,5,3), `legAmplitude` (0.4), `spinefreq` (2.5), `spineAmplitude` (1), `spsidefreq` (2), `spsideamp` (1), `ground*Stiffness` (11), `ground*Damping` (0.5), `bumpsim` (400), `bumpsimprob` (0.08), `stunnedtime` (0), `stunnedblendout` (0) |
+| `rdr2Bolas` | A bolas round his legs: his ankles (and knees) held together, his balance gives after `fallTime` and he topples, then he struggles on the ground, both legs kicking together, for `struggleTime`, and is free. RDR2's own bolas parameters aren't known, so these are Delirium's. | `bindStrength` (900), `fallTime` (0.3), `struggleTime` (5; 0 until stopped), `struggle` (0.7) |
 | `keyframe` | Before handing the body back to animation: blends spine and neck straight and the hands to his sides over `blendTime`, damping the upper body, and holds it for `holdTime`, so the animation picks up from a pose close to its own. The legs stay the balancer's. | `blendTime` (0.3), `holdTime` (0.5), `settle` (3), `stiffness` (11) |
 
 In the lean family, `instanceIndex` and `boundIndex` are accepted but unused: the point (`offset`) is a world point,
@@ -424,6 +425,19 @@ size variants, from your own copy) into an `nm-character-1` body on top of a bas
 RDR2's part namings are read. On Homer's GTA IV base, RDR2's regular, fat, large, short, skinny and tall men and its
 two women stand and take a shot; the very small (0.9 m) and very large (scaled 2.2 times) ones are outside what the
 balancer is tuned for.
+
+#### RDR2 weapons (playroom)
+
+The playroom's weapon picker has a Red Dead Redemption 2 group, thrown (or loosed) from the floating gun or by the
+Hero:
+
+- Lasso: where the loop catches him picks the lasso (head or neck: round the neck; legs: round the feet; otherwise
+  round the chest and arms), then `dragged` pulls him towards you with `rdr2Lasso`, for 6 s.
+- Bolas: `rdr2Bolas`, his legs wrapped.
+- Dynamite: rolls, and goes off after 3 s.
+- Fire bottle: a fire where it breaks. In Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`
+  in place of GTA IV's.
+- Tomahawk and bow: hit as shots, so RDR2 reaction style adds RDR2's reactions by where they hit.
 
 #### RDR2 reactions on hits (optional)
 
@@ -558,7 +572,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!pad HEX` | Hold fight bits: 10 attack 2, 80 kick, 40 block, 1 lock-on; `0` releases. |
 | `!hero_weapon I` | Select a weapon row (`-1` or invalid = fists). |
 | `!hero_fire dx,dy,dz` | Fire in a direction. |
-| `!weapon I` | 0 pistol, 1 heavy pistol, 2 SMG, 3 rifle, 4 sniper, 5 shotgun, 6 rocket launcher, 7 grenade, 8 fire bottle, 9 bat, 10 knife. |
+| `!weapon I` | 0 pistol, 1 heavy pistol, 2 SMG, 3 rifle, 4 sniper, 5 shotgun, 6 rocket launcher, 7 grenade, 8 fire bottle, 9 bat, 10 knife, 11 taser, 12 stun baton; Red Dead Redemption 2's: 13 lasso, 14 bolas, 15 dynamite, 16 fire bottle, 17 tomahawk, 18 bow. |
 | `!aim gun\|camera` | Aim mode. |
 | `!gunat dx,dy,dz`, `!gunreach K [up]`, `!gun dx,dy,dz`, `!gunfire` | Floating-gun controls: aim, reach, aim off the chest and fire, fire. |
 | `!portal gun` | Pick the portal gun (needs portal mode). |

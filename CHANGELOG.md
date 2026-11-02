@@ -5,7 +5,7 @@
 ### Added
 - Behaviours from Red Dead Redemption 2's Euphoria, as extra messages: `duck`, `shotSnap`, `shotSpin`,
   `shotFallToKnees`, `meleeReact`, `shotFromBehind`, `shotInGuts`, `shotInjuredLeg`, `shotInjuredArm`,
-  `reachForWound`, `wallCollision`, `setFallingReaction`, `rdr2Balance`, `keyframe`, `onFire`, `rdr2Lasso` and the lean family
+  `reachForWound`, `wallCollision`, `setFallingReaction`, `rdr2Balance`, `keyframe`, `onFire`, `rdr2Lasso`, `rdr2Bolas` and the lean family
   (`leanRandom`, `hipsLeanInDirection`, `hipsLeanToPosition`, `hipsLeanTowardsObject`, `hipsLeanRandom`,
   `forceLeanInDirection`, `forceLeanToPosition`, `forceLeanTowardsObject`, `forceLeanRandom`) (see docs/modding.md). They do
   nothing until sent with `start=true`, so the existing behaviours are unchanged, bit for bit.
@@ -15,6 +15,8 @@
 - An optional RDR2 reactions mode: `nm_agent_rdr2_shot` / `nm_agent_rdr2_melee` (and `nm_rdr2_set`) start RDR2's
   reactions to a hit by where it landed, one call per hit. In the playroom, a "Reaction style" switch in Reactions:
   GTA IV (the default, unchanged) or Red Dead Redemption 2 (`!rdr2`).
+- Playroom: Red Dead Redemption 2 weapons (lasso, bolas, dynamite, fire bottle, tomahawk, bow), each with its own
+  reaction; in Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`.
 - Playroom: a Parameters tab to change any behaviour's parameters (GTA IV's, the extras, RDR2's), with what each one
   does on hover, and the RDR2 reaction picker's chances; changed values are used every time that behaviour starts and
   saved in settings.txt. Nothing changed: the room behaves exactly as before.

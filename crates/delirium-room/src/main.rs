@@ -604,10 +604,37 @@ fn save_settings(sim: NonSend<Sim>, mut last: Local<Option<Option<String>>>) {
 fn help_seen() -> bool {
     std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(HELP_SEEN))).is_some_and(|p| p.exists())
 }
-const WEAPONS: [(&str, &str, f32); 13] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
+const WEAPONS: [(&str, &str, f32); 19] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
                                          ("ak47", "AK47", 50.0), ("sniper", "SNIPERRIFLE", 50.0), ("shotgun", "SHOTGUN", 50.0), ("rpg", "RLAUNCHER", 50.0),
                                           ("grenade", "GRENADE", 50.0), ("molotov", "MOLOTOV", 50.0), ("bat", "BASEBALLBAT", 50.0), ("knife", "KNIFE", 50.0),
-                                          ("taser", "TASER", 10.0), ("baton", "BASEBALLBAT", 50.0)];
+                                          ("taser", "TASER", 10.0), ("baton", "BASEBALLBAT", 50.0),
+                                          // Red Dead Redemption 2's (kind 3), from how they act in it: thrown, each with its own reaction
+                                          ("lasso", "LASSO", 0.0), ("bolas", "BOLAS", 0.0), ("dynamite", "DYNAMITE", 50.0),
+                                          ("fire bottle", "MOLOTOV", 50.0), ("tomahawk", "TOMAHAWK", 60.0), ("bow", "BOW", 45.0)];
+
+/// How fast each Red Dead Redemption 2 weapon flies, m/s.
+fn rdr2_speed(w: usize) -> f32 {
+    match WEAPONS[w].0 {
+        "bow" => 45.0,
+        "tomahawk" => 18.0,
+        "bolas" => 16.0,
+        "dynamite" => 11.0,
+        _ => 14.0,
+    }
+}
+
+/// Lassoed: (the part the rope pulls, rdr2Lasso's lassoedtype) for the part the loop caught.
+fn lasso_on(part: usize) -> (usize, i32) {
+    match part {
+        11 | 12 => (11, 0),
+        1..=3 => (3, 2),
+        4..=6 => (6, 2),
+        _ => (10, 1),
+    }
+}
+
+const LASSO_SECS: f32 = 6.0;
+const DYNAMITE_FUSE: f32 = 3.0;
 
 const LEAN_SECS: f32 = 1.5;
 
@@ -630,6 +657,10 @@ struct Gun {
     rockets: Vec<(Vec3, Vec3, f32)>,
     blasts: Vec<(Vec3, f32)>,
     thrown: Vec<(Vec3, Vec3, f32, bool)>,
+    /// Red Dead Redemption 2 weapons in flight: where, velocity, fuse or age, which weapon
+    rdr2: Vec<(Vec3, Vec3, f32, usize)>,
+    /// a lasso round him: the part it pulls and how long it stays on
+    lasso: Option<(usize, f32)>,
     fires: Vec<(Vec3, f32)>,
     swing: f32,
 }
@@ -641,10 +672,11 @@ impl Gun {
     }
 }
 
-const KICK: [f32; 13] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8, 0.2, 1.2];
-const GUN_FALLBACK: [(f32, f32, f32); 13] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
+const KICK: [f32; 19] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8, 0.2, 1.2, 0.3, 0.3, 0.3, 0.3, 0.4, 0.5];
+const GUN_FALLBACK: [(f32, f32, f32); 19] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
                                             (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (600.0, 0.0, 0.0), (400.0, 0.0, 0.0),
-                                            (1500.0, 0.0, 0.0), (600.0, 0.0, 0.0)];
+                                            (1500.0, 0.0, 0.0), (600.0, 0.0, 0.0),
+                                            (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (800.0, 0.0, 0.0), (900.0, 0.0, 0.0)];
 const TAXI_RADIUS: f32 = 0.303;
 const TAXI_AXLE: Vec2 = Vec2::new(0.73, 1.326);
 const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916, 2.466, 1.05)];
@@ -675,7 +707,7 @@ const HIGH_DROP: f32 = 12.0;
 const TUMBLE: f32 = 7.0;
 const TAXIS: usize = 4;
 
-const CLIP_FALLBACK: [u32; 13] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1, 1, 1];
+const CLIP_FALLBACK: [u32; 19] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
 const BLAST_R: f32 = 5.0;
 const PILE_FUSE: f32 = 2.0;
@@ -683,7 +715,7 @@ const BLAST_DV: f32 = 15.0;
 const BLAST_DAMAGE: f32 = 250.0;
 const PELLETS: usize = 16;
 
-const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 13] = [
+const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 19] = [
     (&[([0.03, 0.035, 0.19], [0.0, 0.02, -0.015], 0.0), ([0.028, 0.11, 0.045], [0.0, -0.045, 0.045], -0.25), ([0.006, 0.025, 0.04], [0.0, -0.01, -0.01], 0.0)], 0.11),
     (&[([0.035, 0.045, 0.27], [0.0, 0.025, -0.04], 0.0), ([0.032, 0.12, 0.05], [0.0, -0.05, 0.05], -0.2), ([0.006, 0.03, 0.045], [0.0, -0.01, -0.015], 0.0)], 0.175),
     (&[([0.045, 0.06, 0.36], [0.0, 0.02, -0.08], 0.0), ([0.02, 0.02, 0.1], [0.0, 0.02, -0.31], 0.0), ([0.05, 0.05, 0.14], [0.0, 0.005, -0.2], 0.0),
@@ -703,12 +735,20 @@ const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 13] = [
     (&[([0.035, 0.045, 0.15], [0.0, 0.02, -0.01], 0.0), ([0.028, 0.1, 0.045], [0.0, -0.045, 0.045], -0.25)], 0.1),
     (&[([0.035, 0.035, 0.25], [0.0, 0.0, -0.125], 0.0), ([0.04, 0.04, 0.4], [0.0, 0.0, -0.45], 0.0), ([0.008, 0.008, 0.05], [0.012, 0.0, -0.675], 0.0),
        ([0.008, 0.008, 0.05], [-0.012, 0.0, -0.675], 0.0)], 0.7),
+    // lasso (a coil), bolas (two weights on a cord), dynamite (a stick), fire bottle, tomahawk (haft and head), bow
+    (&[([0.16, 0.03, 0.16], [0.0, 0.0, -0.06], 0.0), ([0.01, 0.01, 0.12], [0.0, 0.0, -0.18], 0.0)], 0.2),
+    (&[([0.05, 0.05, 0.05], [0.0, 0.0, -0.05], 0.0), ([0.01, 0.01, 0.2], [0.0, 0.0, -0.17], 0.0), ([0.05, 0.05, 0.05], [0.0, 0.0, -0.29], 0.0)], 0.3),
+    (&[([0.035, 0.035, 0.2], [0.0, 0.0, -0.1], 0.0), ([0.004, 0.004, 0.06], [0.0, 0.0, -0.23], 0.0)], 0.22),
+    (&[([0.075, 0.075, 0.17], [0.0, 0.0, -0.1], 0.0), ([0.03, 0.03, 0.09], [0.0, 0.0, -0.22], 0.0), ([0.02, 0.02, 0.05], [0.0, 0.0, -0.28], 0.0)], 0.3),
+    (&[([0.025, 0.025, 0.4], [0.0, 0.0, -0.2], 0.0), ([0.02, 0.12, 0.08], [0.0, 0.05, -0.37], 0.0)], 0.4),
+    (&[([0.02, 0.02, 1.1], [0.0, 0.03, -0.1], 0.0), ([0.03, 0.05, 0.08], [0.0, -0.02, -0.1], 0.0)], 0.2),
 ];
 
 fn kind(w: usize) -> u8 {
     match WEAPONS[w].0 {
         "grenade" | "molotov" => 1,
         "bat" | "baton" | "knife" => 2,
+        "lasso" | "bolas" | "dynamite" | "fire bottle" | "tomahawk" | "bow" => 3,
         _ => 0,
     }
 }
@@ -986,6 +1026,8 @@ struct Sim {
     rdr2: bool,
     /// RDR2 reactions waiting for the shot task's first messages (which would stop them)
     rdr2_after: Vec<String>,
+    /// RDR2's onFire running (Red Dead Redemption 2 style, while he burns)
+    rdr2_fire: bool,
     /// Which RDR2 reactions a hit starts (the Parameters tab's picker)
     rdr2_pick: delirium::extras_rdr2::Reactions,
     /// Behaviour parameters changed in the Parameters tab, sent with every message of that behaviour
@@ -3780,7 +3822,7 @@ impl Sim {
         let (_, acc, pellets, case) = self.gun_stats();
         let from = self.gun.at + self.gun.dir * GUN_MODELS[self.weapon].1;
         match kind(self.weapon) {
-            1 => return self.throw_weapon(from, self.gun.aim),
+            1 | 3 => return self.throw_weapon(from, self.gun.aim),
             2 => {
                 if self.gun.swing <= 0.0 {
                     self.gun.swing = swing_len(self.weapon);
@@ -3838,6 +3880,9 @@ impl Sim {
     }
 
     fn throw_weapon(&mut self, from: Vec3, to: Vec3) {
+        if kind(self.weapon) == 3 {
+            return self.rdr2_throw(from, to);
+        }
         let w = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1);
         let speed = w.map_or(THROW_SPEED, |w| if w.target_range > 0.0 { w.target_range } else { THROW_SPEED });
         let fuse = w.and_then(|w| w.projectile.as_ref()).filter(|p| p.kind == "FUSE" && p.fuse > 0.0).map_or(FUSE, |p| p.fuse / 1000.0);
@@ -3847,6 +3892,96 @@ impl Sim {
         self.gun.thrown.push((from, d / t + Vec3::Z * 4.905 * t, if molotov { f32::INFINITY } else { fuse }, molotov));
         self.gun.kick = KICK[self.weapon];
         self.sounds.push(sfx::Snd::Throw);
+    }
+
+    /// A Red Dead Redemption 2 weapon thrown (or loosed, the bow) from `from` to land at `to`.
+    fn rdr2_throw(&mut self, from: Vec3, to: Vec3) {
+        let d = to - from;
+        let t = (d.length() / rdr2_speed(self.weapon)).max(0.05);
+        let fuse = if WEAPONS[self.weapon].0 == "dynamite" { DYNAMITE_FUSE } else { 0.0 };
+        self.gun.rdr2.push((from, d / t + Vec3::Z * 4.905 * t, fuse, self.weapon));
+        self.say(format!("room  {} thrown", WEAPONS[self.weapon].0));
+        self.gun.kick = KICK[self.weapon];
+        self.sounds.push(sfx::Snd::Throw);
+    }
+
+    /// The Red Dead Redemption 2 weapons in flight, and what each does when it lands: the lasso pulls him by where it
+    /// caught (rdr2Lasso with dragged), the bolas wraps his legs (rdr2Bolas), the tomahawk and the arrow hit as shots
+    /// (so RDR2 reaction style adds its reactions), the fire bottle starts a fire, the dynamite rolls and goes off.
+    fn rdr2_frame(&mut self, dt: f32) {
+        if let Some((_, left)) = self.gun.lasso.as_mut() {
+            *left -= dt;
+            if *left <= 0.0 {
+                self.gun.lasso = None;
+                self.send("rdr2Lasso start=false");
+                self.send("dragged start=false");
+                self.say("room  lasso: let go".into());
+            }
+        }
+        let mut landed = vec![];
+        let mut flying = std::mem::take(&mut self.gun.rdr2);
+        flying.retain_mut(|(p, v, fuse, w)| {
+            v.z -= 9.8 * dt;
+            let (d, len) = (v.normalize_or(Vec3::Z), v.length() * dt);
+            let him = self.agent.doll.probe(&self.build, *p, *p + d * len);
+            let wall = self.world.contact(*p, d, len).map(|c| (*p + d * c.0, c.1));
+            if WEAPONS[*w].0 == "dynamite" {
+                *fuse -= dt;
+                match him.map(|h| (h.1, -d)).or(wall) {
+                    Some((at, n)) => {
+                        *p = at + n * 0.03;
+                        *v = (*v - 2.0 * v.dot(n) * n) * 0.35;
+                    }
+                    None => *p += d * len,
+                }
+                if *fuse <= 0.0 {
+                    landed.push((*w, *p, d, None));
+                    return false;
+                }
+                return true;
+            }
+            match (him, wall) {
+                (Some(h), _) => {
+                    landed.push((*w, h.1, d, Some(h)));
+                    false
+                }
+                (None, Some((at, _))) => {
+                    landed.push((*w, at, d, None));
+                    false
+                }
+                (None, None) => {
+                    *p += d * len;
+                    *fuse += dt;
+                    *fuse < 6.0
+                }
+            }
+        });
+        self.gun.rdr2 = flying;
+        for (w, at, d, him) in landed {
+            match (WEAPONS[w].0, him) {
+                ("dynamite", _) => self.explode(at),
+                ("fire bottle", _) => {
+                    let z = self.world.ground(at + Vec3::Z, 3.0).unwrap_or(at.z);
+                    self.gun.fires.push((at.with_z(z), 0.0));
+                    self.sounds.push(sfx::Snd::Crash);
+                    self.say("room  fire bottle: fire".into());
+                }
+                ("lasso", Some((part, _, _))) => {
+                    let (rope, how) = lasso_on(part);
+                    let toward = (self.gun.at - at).with_z(0.0).normalize_or(-d.with_z(0.0).normalize_or(Vec3::X));
+                    self.send(&format!("dragged start=true ropedBodyPart={rope} direction={} speed=2.5 delay=0.4 force=1.2", v3(toward)));
+                    self.send(&format!("rdr2Lasso start=true lassoedtype={how}"));
+                    self.gun.lasso = Some((rope, LASSO_SECS));
+                    self.say(format!("room  lasso round his {}", ["neck", "chest and arms", "feet"][how as usize]));
+                }
+                ("bolas", Some(_)) => {
+                    self.send("rdr2Bolas start=true");
+                    self.say("room  bolas round his legs".into());
+                }
+                ("tomahawk" | "bow", Some((part, at, normal))) => self.fire(part, Some((at, d, normal)), false, &[]),
+                (name, _) => self.say(format!("room  {name}: missed")),
+            }
+        }
     }
 
     fn swing_weapon(&mut self) {
@@ -3894,6 +4029,7 @@ impl Sim {
             true
         });
         self.gun.thrown = thrown;
+        self.rdr2_frame(dt);
         for at in boom {
             self.explode(at);
         }
@@ -4052,6 +4188,10 @@ impl Sim {
         if self.dead {
             (self.burning, self.on_fire) = (0.0, None);
         }
+        if self.rdr2_fire && (self.burning <= 0.0 || self.dead) {
+            self.rdr2_fire = false;
+            self.send("onFire start=false");
+        }
         if self.burning <= 0.0 && self.on_fire.is_none() {
             return;
         }
@@ -4065,7 +4205,14 @@ impl Sim {
                 *c = (*c + dt / CHAR_TIME * (0.6 + 0.8 * ((k as f32 * 12.9898).sin() * 43758.545).rem_euclid(1.0))).min(CHAR_MAX);
             }
         }
-        if burning && self.on_fire.is_none() && self.fire_react {
+        if burning && self.rdr2 && self.fire_react && self.on_fire.is_none() {
+            // Red Dead Redemption 2 style: RDR2's onFire (stagger windmilling, down, roll) in place of GTA IV's task
+            if !self.rdr2_fire {
+                self.rdr2_fire = true;
+                self.send("onFire start=true");
+                self.say("room  Homer catches fire (RDR2's onFire)".into());
+            }
+        } else if burning && self.on_fire.is_none() && self.fire_react {
             let mut f = delirium::nm::OnFire::new("*");
             f.start(&mut self.agent, &self.build, &self.world, &self.tp, &mut self.rand);
             self.on_fire = Some(f);
@@ -4690,7 +4837,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, rdr2: false, rdr2_after: vec![], rdr2_pick: Default::default(), param_edits: Default::default(), param_search: String::new(), param_changed_only: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, rdr2: false, rdr2_after: vec![], rdr2_fire: false, rdr2_pick: Default::default(), param_edits: Default::default(), param_search: String::new(), param_changed_only: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
@@ -7624,6 +7771,27 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     for &(p, _, _, molotov) in &sim.gun.thrown {
         g.sphere(Isometry3d::from_translation(p), 0.05, if molotov { Color::srgb(1.0, 0.6, 0.2) } else { Color::srgb(0.4, 0.95, 1.0) });
     }
+    for &(p, v, _, w) in &sim.gun.rdr2 {
+        let d = v.normalize_or(Vec3::Z);
+        match WEAPONS[w].0 {
+            "lasso" => drop(g.circle(Isometry3d::new(p, Quat::from_rotation_arc(Vec3::Z, d)), 0.35, Color::srgb(0.85, 0.7, 0.45))),
+            "bolas" => {
+                let side = d.cross(Vec3::Z).normalize_or(Vec3::X) * 0.25;
+                g.line(p - side, p + side, Color::srgb(0.6, 0.5, 0.35));
+                g.sphere(Isometry3d::from_translation(p - side), 0.05, Color::srgb(0.4, 0.35, 0.3));
+                g.sphere(Isometry3d::from_translation(p + side), 0.05, Color::srgb(0.4, 0.35, 0.3));
+            }
+            "dynamite" => {
+                g.line(p - d * 0.1, p + d * 0.1, Color::srgb(0.85, 0.2, 0.15));
+                g.sphere(Isometry3d::from_translation(p + d * 0.12), 0.02, Color::srgb(1.0, 0.85, 0.3));
+            }
+            "fire bottle" => drop(g.sphere(Isometry3d::from_translation(p), 0.05, Color::srgb(1.0, 0.6, 0.2))),
+            _ => g.line(p - d * if WEAPONS[w].0 == "bow" { 0.7 } else { 0.35 }, p, Color::srgb(0.75, 0.75, 0.8)),
+        }
+    }
+    if let Some((part, _)) = sim.gun.lasso {
+        g.line(sim.gun.at, sim.ours().p(part), Color::srgb(0.85, 0.7, 0.45));
+    }
     let flick = time.elapsed_secs() * 9.0;
     for &(at, age) in sim.gun.fires.iter().filter(|_| sim.fire == 0) {
         let a = (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0);
@@ -9968,12 +10136,12 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let (portal, picked) = (false, false);
             sub(ui, "Weapon");
             let per = per_row(ui, 108.0);
-            for (k, head) in [(0, "Guns"), (1, "Thrown"), (2, "Melee")] {
+            for (k, head) in [(0, "Guns"), (1, "Thrown"), (2, "Melee"), (3, "Red Dead Redemption 2")] {
                 ui.label(egui::RichText::new(head).weak());
                 egui::Grid::new(("guns", k)).spacing([10.0, 8.0]).show(ui, |ui| {
                     for (j, (i, w)) in WEAPONS.iter().enumerate().filter(|(i, _)| kind(*i) == k).enumerate() {
                         let on = sim.weapon == i && !picked;
-                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", "taser" => "Taser", "baton" => "Stun baton", _ => w.0 }).selected(on));
+                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", "taser" => "Taser", "baton" => "Stun baton", "lasso" => "Lasso", "bolas" => "Bolas", "dynamite" => "Dynamite", "fire bottle" => "Fire bottle", "tomahawk" => "Tomahawk", "bow" => "Bow", _ => w.0 }).selected(on));
                         if b.clicked() { pressed = Some(format!("#weapon {i}")); }
                         if j % per == per - 1 {
                             ui.end_row();
