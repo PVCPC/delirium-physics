@@ -122,9 +122,9 @@ fn main() {
                 // facing: across the shoulders (left clavicle minus right), turned a quarter about up
                 let (l, r) = (get(13), get(17));
                 let yaw = (-(l[0] - r[0])).atan2(l[1] - r[1]).to_degrees();
-                println!("t {:.2}  pelvis z {:.3}  chest y {:+.3} z {:.3}  head x {:+.3} y {:+.3} z {:.3}  facing {:+6.1}  balancing {}",
+                println!("t {:.2}  pelvis z {:.3}  chest y {:+.3} z {:.3}  head x {:+.3} y {:+.3} z {:.3}  facing {:+6.1}  balancing {}  pelvis at {:+.2} {:+.2}",
                          (k + 1) as f32 / 60.0, pel[2], chest[1] - pel[1], chest[2], head[0] - pel[0], head[1] - pel[1], head[2],
-                         yaw, nm_agent_is_balancing(g));
+                         yaw, nm_agent_is_balancing(g), pel[0], pel[1]);
                 if std::env::var("LEAN").is_ok() {
                     // forward (across the shoulders x up): how far chest and head are ahead of the pelvis, and knee heights
                     let f = [l[1] - r[1], -(l[0] - r[0])];

@@ -5,11 +5,13 @@
 //! messages: nothing here runs unless one is sent with start=true, so every existing behaviour is unchanged.
 use crate::extras::{Extra, P};
 use crate::msg::{Error, Kind, Message, Param};
+use crate::nmdbm::LeanMode;
 use crate::nmrs::{HIP, KNEE, NECK, SPINE};
+use crate::ragdoll::GRAVITY;
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 14] = [
+pub static MESSAGES: [Message; 24] = [
     Message { name: "keyframe", params: &[
         Param { name: "blendTime", kind: Kind::Float, used: true, doc: "s to blend into the neutral stand (0.3)" },
         Param { name: "holdTime", kind: Kind::Float, used: true, doc: "s it then holds it (0.5)" },
@@ -205,6 +207,79 @@ pub static MESSAGES: [Message; 14] = [
         Param { name: "snapNeck", kind: Kind::Bool, used: true, doc: "(true)" },
         Param { name: "snapPhasedLegs", kind: Kind::Bool, used: true, doc: "the right leg kicks the other way (true)" },
     ] },
+    Message { name: "leanRandom", params: LEAN_RANDOM },
+    Message { name: "hipsLeanInDirection", params: &[
+        Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "how far the hips go; less than 0 away (0.5)" },
+        Param { name: "dir", kind: Kind::Vec3, used: true, doc: "which way, world (zero: none)" },
+    ] },
+    Message { name: "hipsLeanToPosition", params: &[
+        Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "how far the hips go; less than 0 away (0.2)" },
+        Param { name: "pos", kind: Kind::Vec3, used: true, doc: "towards this point, world" },
+    ] },
+    Message { name: "hipsLeanTowardsObject", params: &[
+        Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "how far the hips go; less than 0 away (0.5)" },
+        Param { name: "offset", kind: Kind::Vec3, used: true, doc: "towards this point, world (as leanTowardsObject)" },
+        Param { name: "instanceIndex", kind: Kind::Int, used: false, doc: "the object (-1)" },
+        Param { name: "boundIndex", kind: Kind::Int, used: false, doc: "its part (0)" },
+    ] },
+    Message { name: "hipsLeanRandom", params: HIPS_LEAN_RANDOM },
+    Message { name: "forceLeanInDirection", params: &[
+        Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "the push, times his weight; less than 0 away (0.2)" },
+        Param { name: "dir", kind: Kind::Vec3, used: true, doc: "which way, world (zero: none)" },
+        Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part pushed, 0..20 (0, the pelvis)" },
+    ] },
+    Message { name: "forceLeanToPosition", params: &[
+        Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "the push, times his weight; less than 0 away (0.2)" },
+        Param { name: "pos", kind: Kind::Vec3, used: true, doc: "towards this point, world" },
+        Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part pushed, 0..20 (0, the pelvis)" },
+    ] },
+    Message { name: "forceLeanTowardsObject", params: &[
+        Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "the push, times his weight; less than 0 away (0.2)" },
+        Param { name: "offset", kind: Kind::Vec3, used: true, doc: "towards this point, world (as leanTowardsObject)" },
+        Param { name: "instanceIndex", kind: Kind::Int, used: false, doc: "the object (-1)" },
+        Param { name: "boundIndex", kind: Kind::Int, used: false, doc: "its part (0)" },
+        Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part pushed, 0..20 (0, the pelvis)" },
+    ] },
+    Message { name: "forceLeanRandom", params: FORCE_LEAN_RANDOM },
+    Message { name: "onFire", params: &[
+        Param { name: "staggerTime", kind: Kind::Float, used: true, doc: "s he staggers on his feet before he goes down (2.5)" },
+        Param { name: "staggerLeanRate", kind: Kind::Float, used: true, doc: "how fast his stagger's lean swings, 0..1 (0.9)" },
+        Param { name: "stumbleMaxLeanBack", kind: Kind::Float, used: true, doc: "most he leans back while staggering (0.4)" },
+        Param { name: "stumbleMaxLeanForward", kind: Kind::Float, used: true, doc: "most he leans forward while staggering (0.5)" },
+        Param { name: "armsWindmillWritheBlend", kind: Kind::Float, used: true, doc: "on his feet, arms: 0 windmill, 1 writhe (0.4)" },
+        Param { name: "spineStumbleWritheBlend", kind: Kind::Float, used: true, doc: "on his feet, spine: 0 held, 1 writhes (0.7)" },
+        Param { name: "legsStumbleWritheBlend", kind: Kind::Float, used: true, doc: "on his feet, legs: 0 the balancer's, 1 writhe (0.2)" },
+        Param { name: "armsPoseWritheBlend", kind: Kind::Float, used: true, doc: "down, arms: 0 curled to his face, 1 writhe (0.7)" },
+        Param { name: "spinePoseWritheBlend", kind: Kind::Float, used: true, doc: "down, spine: 0 curled, 1 writhes (0.55)" },
+        Param { name: "legsPoseWritheBlend", kind: Kind::Float, used: true, doc: "down, legs: 0 drawn up, 1 writhe (0.5)" },
+        Param { name: "rollTorqueScale", kind: Kind::Float, used: true, doc: "down, how hard he rolls to put the flames out (25)" },
+        Param { name: "predictTime", kind: Kind::Float, used: true, doc: "s ahead his stagger leans against where he's heading (0.1)" },
+        Param { name: "rollOverFlag", kind: Kind::Bool, used: true, doc: "down, he rolls back and forth (true)" },
+        Param { name: "maxRollOverTime", kind: Kind::Float, used: true, doc: "s he keeps rolling (8)" },
+        Param { name: "rollOverRadius", kind: Kind::Float, used: true, doc: "m from where he fell he may roll (2)" },
+    ] },
+];
+
+const LEAN_RANDOM: &[Param] = &[
+    Param { name: "leanAmountMin", kind: Kind::Float, used: true, doc: "least lean (0.2)" },
+    Param { name: "leanAmountMax", kind: Kind::Float, used: true, doc: "most lean (0.2)" },
+    Param { name: "changeTimeMin", kind: Kind::Float, used: true, doc: "s before a new way, at least (0.5)" },
+    Param { name: "changeTimeMax", kind: Kind::Float, used: true, doc: "at most (1)" },
+];
+
+const HIPS_LEAN_RANDOM: &[Param] = &[
+    Param { name: "leanAmountMin", kind: Kind::Float, used: true, doc: "least lean of the hips (0.3)" },
+    Param { name: "leanAmountMax", kind: Kind::Float, used: true, doc: "most lean of the hips (0.4)" },
+    Param { name: "changeTimeMin", kind: Kind::Float, used: true, doc: "s before a new way, at least (2)" },
+    Param { name: "changeTimeMax", kind: Kind::Float, used: true, doc: "at most (4)" },
+];
+
+const FORCE_LEAN_RANDOM: &[Param] = &[
+    Param { name: "leanAmountMin", kind: Kind::Float, used: true, doc: "least push, times his weight (0.3)" },
+    Param { name: "leanAmountMax", kind: Kind::Float, used: true, doc: "most push, times his weight (0.4)" },
+    Param { name: "changeTimeMin", kind: Kind::Float, used: true, doc: "s before a new way, at least (2)" },
+    Param { name: "changeTimeMax", kind: Kind::Float, used: true, doc: "at most (4)" },
+    Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part pushed, 0..20 (0, the pelvis)" },
 ];
 
 pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
@@ -223,6 +298,9 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "setFallingReaction" => Some(FallingReaction::new(p).map(|e| Box::new(e) as _)),
         "rdr2Balance" => Some(BalanceRdr2::new(p).map(|e| Box::new(e) as _)),
         "keyframe" => Some(Keyframe::new(p).map(|e| Box::new(e) as _)),
+        "onFire" => Some(OnFire::new(p).map(|e| Box::new(e) as _)),
+        "leanRandom" | "hipsLeanInDirection" | "hipsLeanToPosition" | "hipsLeanTowardsObject" | "hipsLeanRandom" | "forceLeanInDirection"
+        | "forceLeanToPosition" | "forceLeanTowardsObject" | "forceLeanRandom" => Some(Lean::new(name, p).map(|e| Box::new(e) as _)),
         _ => None,
     }
 }
@@ -1816,5 +1894,221 @@ impl Reactions {
         out.push(("meleeReact", vec![("start", B(true)), ("hitPoint", V(at)), ("hitNormal", V(-dir.normalize_or_zero())), ("hitPart", I(part as i32)),
                                      ("Lean", F(rand.float_in_range(40.0, 55.0))), ("snapMag", F(rand.float_in_range(0.15, 0.22))), ("csLooseness", F(0.35))]));
         out
+    }
+}
+
+/// How hard the hips leans push, m/s² per unit of leanAmount on his whole mass (Delirium's own).
+const HIPS_LEAN: f32 = 4.0;
+/// onFire's roll: torque per unit of rollTorqueScale per kg (Delirium's own).
+const ROLL: f32 = 0.075;
+
+/// What a lean moves: his balance, his hips, or a push on one part.
+#[derive(Clone, Copy, PartialEq)]
+enum LeanBy {
+    Balance,
+    Hips,
+    Push(usize),
+}
+
+/// Which way a lean goes.
+#[derive(Clone, Copy)]
+enum LeanWay {
+    Dir(Vec3),
+    Pos(Vec3),
+    Random { amount: [f32; 2], change: [f32; 2], goal: Vec3, now: Vec3, left: f32 },
+}
+
+/// The lean family (RDR2's, as GTA V's): leanRandom, hipsLean* and forceLean*, each in a direction, to a position,
+/// towards a point or at random. The plain one leans him through the balancer, as leanInDirection does; the hips ones
+/// push his pelvis that way and his chest the other, so his hips swing out over his feet; the force ones push bodyPart
+/// that way, leanAmount times his weight, while he's on his feet. A negative leanAmount goes away. The random ones pick a new way (and an amount between leanAmountMin
+/// and leanAmountMax) every changeTimeMin..changeTimeMax s. They run until stopped.
+pub struct Lean {
+    by: LeanBy,
+    way: LeanWay,
+    amount: f32,
+}
+
+impl Lean {
+    fn new(name: &str, p: &mut P) -> Result<Lean, Error> {
+        let by = if name.starts_with("hips") {
+            LeanBy::Hips
+        } else if name.starts_with("force") {
+            LeanBy::Push(p.i("bodyPart", 0)?.clamp(0, 20) as usize)
+        } else {
+            LeanBy::Balance
+        };
+        if name.ends_with("Random") {
+            let (lo, hi, t0, t1) = if by == LeanBy::Balance { (0.2, 0.2, 0.5, 1.0) } else { (0.3, 0.4, 2.0, 4.0) };
+            let amount = [p.f("leanAmountMin", lo)?, p.f("leanAmountMax", hi)?];
+            let change = [p.f("changeTimeMin", t0)?.max(0.05), p.f("changeTimeMax", t1)?.max(0.05)];
+            return Ok(Lean { by, way: LeanWay::Random { amount, change, goal: Vec3::ZERO, now: Vec3::ZERO, left: 0.0 }, amount: 0.0 });
+        }
+        let amount = p.f("leanAmount", if by == LeanBy::Hips && !name.ends_with("ToPosition") { 0.5 } else { 0.2 })?;
+        let way = if name.ends_with("InDirection") {
+            LeanWay::Dir(p.v("dir", Vec3::ZERO)?)
+        } else if name.ends_with("ToPosition") {
+            LeanWay::Pos(p.v("pos", Vec3::ZERO)?)
+        } else {
+            let _ = (p.i("instanceIndex", -1)?, p.i("boundIndex", 0)?);
+            LeanWay::Pos(p.v("offset", Vec3::ZERO)?)
+        };
+        Ok(Lean { by, way, amount })
+    }
+}
+
+impl Extra for Lean {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        let up = c.up;
+        let flat = |v: Vec3| (v - up * v.dot(up)).normalize_or_zero();
+        let (dir, amount) = match &mut self.way {
+            LeanWay::Dir(d) => (flat(*d), self.amount),
+            LeanWay::Pos(p) => (flat(*p - c.com), self.amount),
+            LeanWay::Random { amount, change, goal, now, left } => {
+                *left -= dt;
+                if *left <= 0.0 {
+                    let a = c.ch.random() * std::f32::consts::TAU;
+                    let side = flat(up.any_orthonormal_vector());
+                    let size = amount[0] + (amount[1] - amount[0]) * c.ch.random();
+                    *goal = (side * a.cos() + up.cross(side) * a.sin()) * size;
+                    *left = change[0] + (change[1] - change[0]) * c.ch.random();
+                }
+                // glide to the new lean over half the shortest change, so a reversal doesn't throw him over
+                *now += (*goal - *now) * (dt / (change[0] * 0.5)).min(1.0);
+                (now.normalize_or_zero(), now.length())
+            }
+        };
+        // the pushes stop once he's down: they lean him, they don't drag him along the floor
+        let up_now = c.b.part(0).m.d.dot(up) > 0.55 && !c.dbm_failed;
+        if dir == Vec3::ZERO || (self.by != LeanBy::Balance && !up_now) {
+            return;
+        }
+        match self.by {
+            LeanBy::Balance => {
+                let mode = match self.way {
+                    LeanWay::Pos(p) => LeanMode::Pos(p),
+                    _ => LeanMode::Dir(dir),
+                };
+                c.out.lean = Some((mode, amount, false));
+            }
+            LeanBy::Hips => {
+                // the hips one way and the chest the other: the hips swing out over his feet without pushing him off
+                let f = dir * amount * c.b.doll.mass() * HIPS_LEAN;
+                c.out.force(0, f);
+                c.out.force(10, -f);
+            }
+            LeanBy::Push(k) => c.out.force(k, dir * amount * c.b.doll.mass() * GRAVITY()),
+        }
+    }
+}
+
+/// RDR2's onFire: on his feet for staggerTime he staggers, his lean swinging forwards and back (up to
+/// stumbleMaxLeanForward / stumbleMaxLeanBack, at staggerLeanRate) and against where he's heading (predictTime), his
+/// arms flailing between a windmill and a writhe (armsWindmillWritheBlend), his spine and legs joining in by their
+/// blends. Then (or once his balance goes) the balancer lets go; down, he writhes between curled up and thrashing (the
+/// *PoseWritheBlend values) and, with rollOverFlag, rolls back and forth (rollTorqueScale) for maxRollOverTime while
+/// within rollOverRadius of where he fell. It runs until stopped.
+pub struct OnFire {
+    stagger: f32, lean_rate: f32, back: f32, fwd: f32, up_blend: [f32; 3], down_blend: [f32; 3], roll_k: f32, predict: f32,
+    roll: bool, roll_time: f32, radius: f32, t: f32, phase: f32, lean: f32, goal: f32, next: f32, down: Option<(f32, Vec3)>,
+}
+
+impl OnFire {
+    fn new(p: &mut P) -> Result<OnFire, Error> {
+        let u = |x: f32| x.clamp(0.0, 1.0);
+        Ok(OnFire {
+            stagger: p.f("staggerTime", 2.5)?.max(0.0), lean_rate: u(p.f("staggerLeanRate", 0.9)?),
+            back: p.f("stumbleMaxLeanBack", 0.4)?.max(0.0), fwd: p.f("stumbleMaxLeanForward", 0.5)?.max(0.0),
+            up_blend: [u(p.f("armsWindmillWritheBlend", 0.4)?), u(p.f("spineStumbleWritheBlend", 0.7)?), u(p.f("legsStumbleWritheBlend", 0.2)?)],
+            down_blend: [u(p.f("armsPoseWritheBlend", 0.7)?), u(p.f("spinePoseWritheBlend", 0.55)?), u(p.f("legsPoseWritheBlend", 0.5)?)],
+            roll_k: p.f("rollTorqueScale", 25.0)?.max(0.0), predict: p.f("predictTime", 0.1)?.max(0.0),
+            roll: p.b("rollOverFlag", true)?, roll_time: p.f("maxRollOverTime", 8.0)?.max(0.0), radius: p.f("rollOverRadius", 2.0)?.max(0.0),
+            t: 0.0, phase: 0.0, lean: 0.0, goal: 0.0, next: 0.0, down: None,
+        })
+    }
+}
+
+impl Extra for OnFire {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        use std::f32::consts::PI;
+        self.t += dt;
+        self.phase += dt * 2.0 * PI / 0.6;
+        let (ph, up) = (self.phase, c.up);
+        let pelvis = c.b.part(0).m.d;
+        if self.down.is_none() && (self.t > self.stagger || c.dbm_failed || pelvis.dot(up) < 0.55) {
+            self.down = Some((self.t, c.com));
+        }
+        let ground = self.down.is_some();
+        if ground {
+            c.out.dbm = Some(false);
+            c.ch.set_stiffness(8.0, 1.0, "fb", None);
+        }
+        // arms: on his feet a windmill (or a writhe), down curled in towards his face (or a writhe)
+        for i in 0..2 {
+            let l = crate::nmshot::limb(i);
+            let (sh, el) = (l.e[1], l.e[2]);
+            let s = i as f32 * PI;
+            let ed = knee_dir(c, el);
+            let writhe = [0.7 * (1.7 * ph + s).sin(), 0.6 * (1.3 * ph + 2.0 * s + 0.5).sin(), 0.5 + 0.5 * (2.3 * ph + s).sin()];
+            let (other, w) = if ground { ([0.4, 0.3, 1.0], self.down_blend[0]) } else { ([1.2 * (ph + s).sin(), 1.2 * (ph + s).cos(), 0.3], self.up_blend[0]) };
+            let mix = |k: usize| other[k] * (1.0 - w) + writhe[k] * w;
+            c.ch.eff[sh].offset[0] += mix(0);
+            c.ch.eff[sh].offset[1] += mix(1);
+            c.ch.eff[el].offset[0] += mix(2) * 1.4 * ed;
+            c.ch.set_stiffness(9.0, 1.0, ["ul", "ur"][i], None);
+        }
+        // spine: held (on his feet) or curled forward (down), and a writhe
+        let w = if ground { self.down_blend[1] } else { self.up_blend[1] };
+        let curl = if ground { 0.6 } else { 0.0 };
+        let n = SPINE().len() as f32;
+        for (k, &j) in SPINE().iter().enumerate() {
+            let o = k as f32;
+            let writhe = [0.35 * (1.3 * ph + o).sin(), 0.25 * (0.9 * ph + 1.0 + o).sin(), 0.4 * (1.1 * ph + o * 0.5).sin()];
+            for a in 0..3 {
+                c.ch.eff[j].offset[a] += ((if a == 0 { curl } else { 0.0 }) * (1.0 - w) + writhe[a] * w) / n;
+            }
+        }
+        // legs: the balancer's (on his feet) or drawn up (down), and a writhe
+        let w = if ground { self.down_blend[2] } else { self.up_blend[2] };
+        for s in 0..2 {
+            let (hip, knee) = (HIP()[s], KNEE()[s]);
+            let kd = knee_dir(c, knee);
+            let o = s as f32 * 2.0;
+            let writhe = [0.5 * (1.9 * ph + o).sin(), 0.6 + 0.6 * (2.1 * ph + o).sin()];
+            let posed = if ground { [0.9, 1.4] } else { [0.0, 0.0] };
+            c.ch.eff[hip].offset[0] += posed[0] * (1.0 - w) + writhe[0] * w;
+            c.ch.eff[knee].offset[0] += (posed[1] * (1.0 - w) + writhe[1] * w) * kd;
+        }
+        match self.down {
+            None => {
+                // stagger: the lean swings between back and forward, and against where he's heading
+                self.next -= dt;
+                if self.next <= 0.0 {
+                    self.goal = -self.back + (self.fwd + self.back) * c.ch.random();
+                    self.next = 0.5 + 0.7 * c.ch.random();
+                }
+                self.lean += (self.goal - self.lean) * (self.lean_rate * 4.0 * dt).min(1.0);
+                let clav = |i: usize| c.b.part(crate::nmshot::limb(i).p[0]).m.d;
+                let face = (clav(0) - clav(1)).cross(up);
+                let face = (face - up * face.dot(up)).normalize_or_zero();
+                let v = face * self.lean - (c.vel - up * c.vel.dot(up)) * self.predict;
+                if v.length() > 1e-3 {
+                    c.out.lean = Some((LeanMode::Dir(v.normalize()), v.length(), false));
+                }
+            }
+            Some((t0, at)) => {
+                // down: roll back and forth along his length to put the flames out
+                let since = self.t - t0;
+                let d = c.com - at;
+                if self.roll && since > 0.5 && since < self.roll_time && (d - up * d.dot(up)).length() < self.radius {
+                    let along = c.b.part(12).m.d - pelvis;
+                    let along = (along - up * along.dot(up)).normalize_or_zero();
+                    let sign = if (since / 1.2) as i32 % 2 == 0 { 1.0 } else { -1.0 };
+                    let tq = along * sign * self.roll_k * c.b.doll.mass() * ROLL;
+                    c.out.torque(0, tq * 0.5);
+                    c.out.torque(10, tq * 0.5);
+                }
+            }
+        }
     }
 }

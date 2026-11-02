@@ -1782,6 +1782,10 @@ impl Agent {
                     (d.pv.fixed_vel, d.pv.vel) = (v != Vec3::ZERO, v);
                 }
             }
+            // an extra (RDR2's leans, onFire) may ask for a lean; it lapses a moment after the extra stops asking
+            if let Some((mode, amount, as_force)) = out.lean {
+                self.lean = Some((mode, amount, 0.1, as_force));
+            }
             // an extra (RDR2's fall to knees) may switch the balancer off
             stop_dbm |= out.dbm == Some(false);
             for o in [brace_out, out] {

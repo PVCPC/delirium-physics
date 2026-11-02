@@ -80,6 +80,16 @@ const ABOUT: &[(&str, &str)] = &[
     ("wallCollision", "Run into a wall: a snap away from it and weak legs at the impact; his back to it: he slumps down it; facing it: both hands brace on it, then he pushes off; side on: a spin away. Can make the wall solid for his body (a plane, or wallHalfWidth wide)."),
     ("setFallingReaction", "Down onto hands and knees: the balancer lets go, he folds and puts his hands to the ground; once hands and a knee are down (or after 1.5 s) he holds there on all fours, head up, for hkHoldTime, then his strength fades and he sinks onto his front."),
     ("rdr2Balance", "Balancer extras while it runs: stiffer legs when he moves faster than runningThresh, and a foot stepping up onto something only a little higher is turned flat on it. Runs until stopped (start=false)."),
+    ("leanRandom", "Lean his whole balance this way (as leanInDirection); a new way, gliding to it, every changeTimeMin..changeTimeMax s. Runs until stopped."),
+    ("hipsLeanInDirection", "In a direction: the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
+    ("hipsLeanToPosition", "Towards a point: the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
+    ("hipsLeanTowardsObject", "Towards a point (as leanTowardsObject): the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
+    ("hipsLeanRandom", "A random way, changing every changeTimeMin..changeTimeMax s: the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
+    ("forceLeanInDirection", "In a direction: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
+    ("forceLeanToPosition", "Towards a point: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
+    ("forceLeanTowardsObject", "Towards a point (as leanTowardsObject): push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
+    ("forceLeanRandom", "A random way, changing every changeTimeMin..changeTimeMax s: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
+    ("onFire", "On fire: on his feet for staggerTime he staggers, his lean swinging forwards and back, arms flailing between a windmill and a writhe; then he goes down, writhes between curled up and thrashing, and (rollOverFlag) rolls back and forth to put the flames out. Runs until stopped."),
     ("keyframe", "Before handing the body back to animation: blends spine and neck straight and the hands to his sides over blendTime, damping the upper body, and holds it for holdTime, so the animation picks up from a pose close to its own. The legs stay the balancer's."),
 ];
 
