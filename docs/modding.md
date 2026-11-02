@@ -439,6 +439,18 @@ Rust callers use `delirium::extras_rdr2::Reactions` (`on_shot`, `on_melee`), whi
 Parameters marked unused in the listing are accepted (and counted in the return
 value of `nm_msg_send`) but do not change anything.
 
+### Parameters tab (playroom)
+
+The playroom's Parameters tab lists every behaviour's parameters (GTA IV's, Delirium's extras and RDR2's), grouped,
+with a search box. Hover a name for what it does, its type and default, and the behaviour it belongs to (and, for
+RDR2's, which hits start it). A changed value is sent with that behaviour every time the room sends it, from a
+button, a hit, a shot or the console, to every character, in place of the value the room would have used; Reset puts
+it back. Positions, directions, text and the part hit are set by the room each time, so they are shown but not
+edited. The tab also holds the RDR2 reaction picker (spin, knees and reach chances, and which reactions are on). Changes
+are saved in settings.txt (`param`, `rdr2_pick`); with nothing changed every message goes out exactly as before.
+Scripted and headless runs don't read settings.txt, so they never use changed values unless a script loads it
+(`!settings`).
+
 ## Playroom scripting
 
 Start the playroom with a script:
@@ -595,6 +607,8 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 | `sound` | 0/1 | Sound on. |
 | `vol`, `vol_fx`, `vol_portal` | 0 to 1 | Volumes. |
 | `rdr2_reactions` | 0/1 | Reaction style: 0 GTA IV (the default), 1 Red Dead Redemption 2. |
+| `param` | `behaviour.parameter value` | A value changed in the Parameters tab, one line each (e.g. `param shotFallToKnees.ftkPitchForce 150`). |
+| `rdr2_pick` | 7 numbers | The RDR2 reaction picker, when changed: snap, spin chance, knees chance, where-hit, reach chance, melee, balance. |
 
 ## Tips and troubleshooting
 

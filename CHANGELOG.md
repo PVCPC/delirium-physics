@@ -13,6 +13,9 @@
 - An optional RDR2 reactions mode: `nm_agent_rdr2_shot` / `nm_agent_rdr2_melee` (and `nm_rdr2_set`) start RDR2's
   reactions to a hit by where it landed, one call per hit. In the playroom, a "Reaction style" switch in Reactions:
   GTA IV (the default, unchanged) or Red Dead Redemption 2 (`!rdr2`).
+- Playroom: a Parameters tab to change any behaviour's parameters (GTA IV's, the extras, RDR2's), with what each one
+  does on hover, and the RDR2 reaction picker's chances; changed values are used every time that behaviour starts and
+  saved in settings.txt. Nothing changed: the room behaves exactly as before.
 - Examples: `regress` (a fingerprint of fixed scenes, to check a change leaves the physics alone), `rdr2_try` (tries
   an extra message on a standing body) and `rdr2_body` (converts an RDR2 body and stands it up).
 
