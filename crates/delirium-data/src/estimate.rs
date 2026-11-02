@@ -41,6 +41,45 @@ const VREFP: [[u32; 2]; 32] = [
     [0x041C00, 0x108], [0x020C00, 0x106],
 ];
 
+pub fn fneg<T: Fneg>(x: T) -> T {
+    x.fneg()
+}
+
+pub trait Fneg {
+    fn fneg(self) -> Self;
+}
+impl Fneg for f32 {
+    #[inline(always)]
+    fn fneg(self) -> f32 {
+        #[cfg(target_arch = "aarch64")]
+        {
+            let r: f32;
+            unsafe { core::arch::asm!("fneg {0:s}, {1:s}", out(vreg) r, in(vreg) self, options(pure, nomem, nostack)) };
+            r
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        -self
+    }
+}
+impl Fneg for f64 {
+    #[inline(always)]
+    fn fneg(self) -> f64 {
+        #[cfg(target_arch = "aarch64")]
+        {
+            let r: f64;
+            unsafe { core::arch::asm!("fneg {0:d}, {1:d}", out(vreg) r, in(vreg) self, options(pure, nomem, nostack)) };
+            r
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        -self
+    }
+}
+impl<T: Fneg, const N: usize> Fneg for [T; N] {
+    fn fneg(self) -> Self {
+        self.map(Fneg::fneg)
+    }
+}
+
 pub fn vrefp(x: f32) -> f32 {
     let b = x.to_bits();
     let (s, e, m) = (b & 0x8000_0000, (b >> 23) & 0xFF, b & 0x7F_FFFF);

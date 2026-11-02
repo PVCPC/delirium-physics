@@ -16,6 +16,23 @@
 - Examples: `regress` (a fingerprint of fixed scenes, to check a change leaves the physics alone), `rdr2_try` (tries
   an extra message on a standing body) and `rdr2_body` (converts an RDR2 body and stands it up).
 
+## 0.2.7
+
+### Added
+- Homer fights with his fists on the game's own fighting AI: it picks when he swings, blocks, dodges and counters,
+  reading what the Hero is doing, with his model's own fighting style.
+- The Homer button now cycles three modes: Passive (only takes hits), Fights (the game's AI) and Aggressive (the
+  0.2.6 fight: swings and guards all the time).
+- Gun AI button (Delirium / Game): on Game, Homer with a gun uses the game's choices (shoot, back off, or charge in
+  with his fists) and its timing between shots.
+
+### Changed
+- Engine updated to the latest upstream engine code.
+
+### Fixed
+- Even fight (#37) did nothing while Homer was passive; turning it on now makes him fight back.
+- A held bat or knife sat tilted, sticking out of the fingers; it now runs through the fist.
+
 ## 0.2.6
 
 ### Changed

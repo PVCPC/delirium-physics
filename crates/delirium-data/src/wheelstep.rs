@@ -1,16 +1,17 @@
+use crate::estimate::fneg;
 use crate::{mathrt, suspension::{self, Spring}, vehicles::Handling};
 
 pub type V4 = [f32; 4];
 pub const MAX_WHEELS: usize = 8;
 #[allow(non_snake_case)]
 #[inline]
-pub fn GRAVITY() -> &'static V4 { static V: std::sync::OnceLock<V4> = std::sync::OnceLock::new(); let f = || [0.0, 0.0, -crate::kv!(31), 0.0]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn GRAVITY() -> &'static V4 { static V: std::sync::OnceLock<V4> = std::sync::OnceLock::new(); let f = || [0.0, 0.0, -crate::kv!(34), 0.0]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn SIXTH() -> f32 { 1.0 / crate::kv!(32) }
+fn SIXTH() -> f32 { 1.0 / crate::kv!(35) }
 #[allow(non_snake_case)]
 #[inline]
-fn G() -> f32 { crate::kv!(31) }
+fn G() -> f32 { crate::kv!(34) }
 
 fn add(a: V4, b: V4) -> V4 {
     std::array::from_fn(|l| a[l] + b[l])
@@ -104,10 +105,10 @@ pub fn advance(m: &[V4; 4], vel: V4, ang: V4, h: f32) -> [V4; 4] {
     out[crate::kv!(0 int)] = madd(vel, h, m[crate::kv!(0 int)]);
     let w = mul(ang, h);
     let sq = w[2].mul_add(w[2], w[1].mul_add(w[1], w[0] * w[0]));
-    if sq > crate::kv!(66) {
+    if sq > crate::kv!(70) {
         let a = sq.sqrt();
         let e = 1.0 / a;
-        let e = e.mul_add(-e.mul_add(a, -1.0), e);
+        let e = e.mul_add(fneg(e.mul_add(a, -1.0)), e);
         let axis = mul(w, e);
         let r = axis_angle([axis[0], axis[1], axis[2]], a);
         for row in &mut out[..crate::kv!(0 int)] {
@@ -167,9 +168,9 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
     let off: V4 = std::array::from_fn(|l| world[l] - w.start[l]);
     let along = mul(w.normal, dot3(off, w.normal));
     let axis = by_columns(m, w.axis);
-    let delta = -along[2].mul_add(axis[2], along[0].mul_add(axis[0], axis[1] * along[1]));
+    let delta = fneg(along[2].mul_add(axis[2], along[0].mul_add(axis[0], axis[1] * along[1])));
     let mut x = fsel(blend - s.travel, s.travel, blend);
-    if !(w.health >= crate::kv!(78)) {
+    if !(w.health >= crate::kv!(82)) {
         x = at_least_zero(x - suspension::sag(s, w.health, w.x, w.drop));
     }
     let sink = suspension::sink(w.flags);
@@ -177,11 +178,11 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
         x = at_least_zero(x - sink);
     }
     let x = x + delta;
-    let cap = if w.on_entity { crate::kv!(64) } else { s.travel * 0.5 };
+    let cap = if w.on_entity { crate::kv!(68) } else { s.travel * 0.5 };
     let step = (t.inv_t * t.dt).mul_add(delta, moved);
     let rate = fsel(step - cap, cap, step) * t.inv_dt;
-    let share = if !(w.damage >= crate::kv!(28)) { s.share * crate::kv!(73) } else if !(w.damage >= crate::kv!(731)) { s.share * 0.5 } else { s.share };
-    let top = if w.on_entity { share + crate::kv!(57) } else { 1.0 };
+    let share = if !(w.damage >= crate::kv!(26)) { s.share * crate::kv!(78) } else if !(w.damage >= crate::kv!(740)) { s.share * 0.5 } else { s.share };
+    let top = if w.on_entity { share + crate::kv!(60) } else { 1.0 };
     let k = if s.front { 1.0 } else { crate::kv!(18) } * h.suspension_force;
     let f = k.mul_add(x - s.rest, share);
     let f = fsel(f, f, 0.0);
@@ -189,10 +190,10 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
     let spring = f * b.mass * G();
     let c = if !(rate <= 0.0) { h.suspension_comp_damp } else { h.suspension_rebound_damp };
     let mut damp = c * b.mass * G() * rate;
-    if !(w.damage >= crate::kv!(28)) {
+    if !(w.damage >= crate::kv!(26)) {
         damp *= 0.5;
-    } else if !(w.damage >= crate::kv!(731)) {
-        damp *= crate::kv!(70);
+    } else if !(w.damage >= crate::kv!(740)) {
+        damp *= crate::kv!(74);
     }
     let mut damp = h.suspension_bias[if s.front { 0 } else { 1 }] * damp;
     if !(damp >= -spring) {
@@ -207,7 +208,7 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
         let len2 = dot3(p, p);
         let e = rsqrte(len2);
         let e = if e == f32::INFINITY { 0.0 } else { e };
-        let k = (-len2.mul_add(e * e, -1.0)).mul_add(0.5 * e, e);
+        let k = (fneg(len2.mul_add(e * e, -1.0))).mul_add(0.5 * e, e);
         mul(p, k)
     };
     let push = mul(dir, damp + spring);
@@ -216,10 +217,10 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
     let r: V4 = std::array::from_fn(|l| w.contact[l] - o[crate::kv!(0 int)][l]);
     let (a, c) = ([push[2], push[0], push[1], push[crate::kv!(0 int)]], [r[1], r[2], r[0], r[crate::kv!(0 int)]]);
     let (pa, rc) = ([push[1], push[2], push[0], push[crate::kv!(0 int)]], [r[2], r[0], r[1], r[crate::kv!(0 int)]]);
-    let torque: V4 = std::array::from_fn(|l| -pa[l].mul_add(rc[l], -(a[l] * c[l])));
+    let torque: V4 = std::array::from_fn(|l| fneg(pa[l].mul_add(rc[l], -(a[l] * c[l]))));
     let (b0, b1, b2) = (dot3(m[0], torque), dot3(m[1], torque), dot3(m[2], torque));
     let mut body = [b0, b1, b2, b0];
-    if w.flags & crate::kv!(790 int) != 0 {
+    if w.flags & crate::kv!(806 int) != 0 {
         body[1] = 0.0;
     }
     let body: V4 = std::array::from_fn(|l| body[l] * b.inv_inertia[l]);
@@ -273,14 +274,14 @@ fn rsqrte(v: f32) -> f32 {
 fn cross(a: V4, b: V4) -> V4 {
     let (ay, az) = ([a[1], a[2], a[0], a[crate::kv!(0 int)]], [a[2], a[0], a[1], a[crate::kv!(0 int)]]);
     let (by, bz) = ([b[1], b[2], b[0], b[crate::kv!(0 int)]], [b[2], b[0], b[1], b[crate::kv!(0 int)]]);
-    std::array::from_fn(|l| -ay[l].mul_add(bz[l], -(az[l] * by[l])))
+    std::array::from_fn(|l| fneg(ay[l].mul_add(bz[l], -(az[l] * by[l]))))
 }
 
 pub(crate) fn unit(v: V4) -> V4 {
     let len2 = dot3(v, v);
     let e = rsqrte(len2);
     let e = if e == f32::INFINITY { 0.0 } else { e };
-    mul(v, (-len2.mul_add(e * e, -1.0)).mul_add(0.5 * e, e))
+    mul(v, (fneg(len2.mul_add(e * e, -1.0))).mul_add(0.5 * e, e))
 }
 
 pub fn axes(cache: &mut [V4; 2], axle: V4, normal: V4, flags: u32, m: &[V4; 4], steer: f32) -> (V4, V4) {
@@ -289,14 +290,14 @@ pub fn axes(cache: &mut [V4; 2], axle: V4, normal: V4, flags: u32, m: &[V4; 4], 
         return (fwd, side);
     }
     let mut side = axle;
-    if steer.abs() > crate::kv!(129) {
+    if steer.abs() > crate::kv!(134) {
         let (c, s) = (mathrt::cos(steer as f64) as f32, mathrt::sin(steer as f64) as f32);
         side = by_columns(&[[c, s, 0.0, 0.0], [-s, c, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0; 4]], side);
     }
     let side = by_columns(m, side);
     let n = if flags & crate::kv!(0 int) != 0 { normal } else { m[2] };
     let d = side[0].mul_add(n[0], side[1].mul_add(n[1], side[2] * n[2]));
-    let (fwd, side) = if d.abs() < crate::kv!(963) {
+    let (fwd, side) = if d.abs() < crate::kv!(1043) {
         let fwd = unit(cross(side, n));
         (fwd, unit(cross(n, fwd)))
     } else {
@@ -317,7 +318,7 @@ pub fn hold(h: &Handling, b: &Mass, w: &Strut, r: &mut Tread, cache: &mut [V4; 2
     let mut brake = r.brake * b.mass * G();
     let drive = b.mass * G() * r.drive;
     if w.flags & crate::kv!(1 int) == 0 || r.handbrake > crate::kv!(17) {
-        brake = (fsel(crate::kv!(64) - r.handbrake, crate::kv!(64), r.handbrake) * G()).mul_add(b.mass, brake);
+        brake = (fsel(crate::kv!(68) - r.handbrake, crate::kv!(68), r.handbrake) * G()).mul_add(b.mass, brake);
     }
     let brake = if brake > drive.abs() { brake } else { 0.0 };
     let o = &b.m;
@@ -333,7 +334,7 @@ pub fn hold(h: &Handling, b: &Mass, w: &Strut, r: &mut Tread, cache: &mut [V4; 2
     let none = r.anchor[0] == 0.0 && r.anchor[1] == 0.0 && r.anchor[2] == 0.0;
     let mut d: V4 = if none { [0.0; 4] } else { std::array::from_fn(|l| r.anchor[l] - w.start[l]) };
     let mut moved = false;
-    if brake == 0.0 || brake.abs() * b.inv_mass * crate::kv!(971 f32) < along.abs() {
+    if brake == 0.0 || brake.abs() * b.inv_mass * crate::kv!(1053 f32) < along.abs() {
         let k = mul(fwd, d[0].mul_add(fwd[0], d[1].mul_add(fwd[1], d[2] * fwd[2])));
         d = std::array::from_fn(|l| d[l] - k[l]);
         moved = true;
@@ -345,7 +346,7 @@ pub fn hold(h: &Handling, b: &Mass, w: &Strut, r: &mut Tread, cache: &mut [V4; 2
     let speed2 = v[0].mul_add(v[0], v[1].mul_add(v[1], v[2] * v[2]));
     if moved && speed2 > 1.0 {
         let run = v[0].mul_add(o[1][0], o[1][1].mul_add(v[1], o[1][2] * v[2]));
-        d = mul(d, (crate::kv!(112 f32) as f64).powf((run.abs() * frame_dt) as f64) as f32);
+        d = mul(d, (crate::kv!(28 f32) as f64).powf((run.abs() * frame_dt) as f64) as f32);
     }
     let across = d[0].mul_add(sd[0], d[1].mul_add(sd[1], d[2] * sd[2]));
     if none {
@@ -354,8 +355,8 @@ pub fn hold(h: &Handling, b: &Mass, w: &Strut, r: &mut Tread, cache: &mut [V4; 2
         r.anchor = add(w.start, d);
     }
     let n = w.normal;
-    if speed2 < 1.0 && o[0][0].mul_add(n[0], o[0][2].mul_add(n[2], o[0][1] * n[1])).abs() > crate::kv!(70) && n[2] < crate::kv!(70) {
-        r.anchor = madd(o[0], dot3(n, o[0]) * crate::kv!(113), r.anchor);
+    if speed2 < 1.0 && o[0][0].mul_add(n[0], o[0][2].mul_add(n[2], o[0][1] * n[1])).abs() > crate::kv!(74) && n[2] < crate::kv!(74) {
+        r.anchor = madd(o[0], dot3(n, o[0]) * crate::kv!(118), r.anchor);
     }
     Held { along, side, across, vel: v, fwd }
 }
@@ -380,7 +381,7 @@ pub fn roll_speed(b: &Mass, w: &Strut, cache: &[V4; 2], vel: V4, ang: V4) -> f32
 pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, m: &[V4; 4], vel: V4, ang: V4,
             t: &Times, axes: impl FnOnce(f32) -> (V4, V4), force: impl FnOnce(&TyreIn) -> [f32; 3]) -> Out {
     let weight = b.mass * G();
-    if !(load > weight * crate::kv!(48)) {
+    if !(load > weight * crate::kv!(51)) {
         return Out::default();
     }
     let blend = t.t * t.inv_dt;
@@ -388,7 +389,7 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
     let drive = r.drive_prev.mul_add(rest, r.drive * blend) * b.mass * G();
     let mut brake = r.brake_prev.mul_add(rest, r.brake * blend) * b.mass * G();
     if w.flags & crate::kv!(1 int) == 0 || !(r.handbrake <= crate::kv!(17)) {
-        brake = (fsel(r.handbrake - crate::kv!(64), r.handbrake, crate::kv!(64)) * b.mass).mul_add(G(), brake);
+        brake = (fsel(r.handbrake - crate::kv!(68), r.handbrake, crate::kv!(68)) * b.mass).mul_add(G(), brake);
     }
     let (drive, brake) = if !(brake <= drive.abs()) {
         (0.0, brake)
@@ -403,16 +404,16 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
     let arm: V4 = std::array::from_fn(|l| w.start[l] - o[crate::kv!(0 int)][l]);
     let mut spin = cross(arm, ang);
     let s = dot3(fwd, vel);
-    if s > crate::kv!(60) && w.flags & crate::kv!(178 int) != 0 {
+    if s > crate::kv!(64) && w.flags & crate::kv!(183 int) != 0 {
         let k = |c: f32| -> [f32; 4] { [c, c, c, 0.0] };
-        let (five, tenth, one, half) = (k(crate::kv!(60)), k(crate::kv!(73)), k(1.0), k(0.5));
+        let (five, tenth, one, half) = (k(crate::kv!(64)), k(crate::kv!(78)), k(1.0), k(0.5));
         for l in 0..crate::kv!(1 int) {
             let v = vpick(vpick((s - five[l]) * tenth[l], one[l], true), 0.0, false);
             spin[l] *= v.mul_add(half[l], one[l]);
         }
     }
     let v: V4 = std::array::from_fn(|l| spin[l] + vel[l]);
-    let cap = weight * crate::kv!(108);
+    let cap = weight * crate::kv!(84);
     let load = if !(load <= cap) { cap } else { load };
     let (along, across) = (dot3(fwd, v), dot3(side, v));
     let (mut hold_along, mut hold_across) = (0.0, 0.0);
@@ -435,14 +436,14 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
         let along_n = mul(n, dot3(n, off));
         let off: V4 = std::array::from_fn(|l| off[l] - along_n[l]);
         d = std::array::from_fn(|l| d[l] - off[l]);
-        let stop = brake.abs() * (b.inv_mass * crate::kv!(971 f32));
+        let stop = brake.abs() * (b.inv_mass * crate::kv!(1053 f32));
         if brake == 0.0 || along.abs() > stop {
             let k = mul(fwd, dot3(fwd, d));
             d = std::array::from_fn(|l| d[l] - k[l]);
         }
         let len2 = d[0].mul_add(d[0], d[2].mul_add(d[2], d[1] * d[1]));
-        if !(len2 <= reach * reach * crate::kv!(981)) {
-            d = mul(mul(d, rsqrte(dot3(d, d))), reach * crate::kv!(30));
+        if !(len2 <= reach * reach * crate::kv!(1062)) {
+            d = mul(mul(d, rsqrte(dot3(d, d))), reach * crate::kv!(33));
         }
         hold_along = fwd[0].mul_add(d[0], fwd[2].mul_add(d[2], fwd[1] * d[1]));
         hold_across = side[0].mul_add(d[0], side[2].mul_add(d[2], side[1] * d[1]));
@@ -459,7 +460,7 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
     let torque = cross(push, arm);
     let (b0, b1, b2) = (dot3(m[0], torque), dot3(m[1], torque), dot3(m[2], torque));
     let mut body = [b0, b1, b2, b0];
-    if w.flags & crate::kv!(790 int) != 0 {
+    if w.flags & crate::kv!(806 int) != 0 {
         body[1] = 0.0;
     }
     let body: V4 = std::array::from_fn(|l| body[l] * b.inv_inertia[l]);
@@ -522,7 +523,7 @@ pub fn integrate(b: &Body, force: V4, torque: V4, wheels: &mut [Wheel], dt: f32,
     let local = [d[0] * b.inv_inertia[0], d[1] * b.inv_inertia[1], d[2] * b.inv_inertia[2], d[0] * b.inv_inertia[crate::kv!(0 int)]];
     let w: [f32; 3] = std::array::from_fn(|c| dot3(local, [b.m[0][c], b.m[1][c], b.m[2][c], b.m[crate::kv!(0 int)][c]]));
     let fixed = Fixed { lin: mul(force, b.inv_mass), ang_acc: [w[0], w[1], w[2], w[0]] };
-    let c = mathrt::ceil((dt / crate::kv!(113)) as f64) as f32;
+    let c = mathrt::ceil((dt / crate::kv!(118)) as f64) as f32;
     let steps = fsel(1.0 - c, 1.0, c);
     let steps = if steps.is_nan() { i32::MIN } else { steps as i32 };
     let h = dt / steps as f32;

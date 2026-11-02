@@ -1,3 +1,4 @@
+use delirium_data::estimate::fneg;
 use crate::estimate::vrsqrtefp;
 
 pub const APPLIED: u8 = 0x80;
@@ -48,7 +49,7 @@ pub fn concerns(hit: Hit, v: &Victim, a: Option<&Attacker>) -> (bool, bool) {
         let s = (0.0f64 + d[0] as f64 * d[0] as f64 + d[1] as f64 * d[1] as f64 + d[2] as f64 * d[2] as f64) as f32;
         let e = vrsqrtefp(s);
         let e = if e == f32::INFINITY { 0.0 } else { e };
-        let r = (-s.mul_add(e * e, -1.0)).mul_add(0.5 * e, e);
+        let r = (fneg(s.mul_add(e * e, -1.0))).mul_add(0.5 * e, e);
         let u = d.map(|c| c * r);
         let f = a.victim_forward;
         if f[0].mul_add(u[0], f[1].mul_add(u[1], f[2] * u[2])) < 0.0 {
@@ -85,4 +86,30 @@ pub fn alert(level: i8, amount: f32, first: u32, second: u32) -> i8 {
     };
     let add = (factor * amount) as i32 as i8;
     (add as i32 + level as i32).clamp(0, 100) as i8
+}
+
+pub const WHIZZED_ALERT: f32 = 15.0;
+pub const IMPACT_ALERT: f32 = 25.0;
+pub const PINNED: i8 = 70;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Alertness {
+    pub level: i8,
+    pub hold: f32,
+    pub pinned: bool,
+}
+
+impl Alertness {
+    pub fn force(&mut self, pinned: bool, seconds: f32) {
+        (self.hold, self.level, self.pinned) = (seconds, 100, pinned);
+    }
+
+    pub fn step(&mut self, dt: f32) {
+        let down = (dt * 30.0) as i32 as i8;
+        self.level = (i32::from(self.level) - i32::from(down)).clamp(0, 100) as i8;
+        if self.hold > 0.0 {
+            self.hold = if self.hold - dt > 0.0 { self.hold - dt } else { 0.0 };
+            self.level = if self.pinned { 100 } else { 0 };
+        }
+    }
 }

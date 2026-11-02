@@ -9,6 +9,49 @@ pub mod prelude {
     }
 }
 
+pub fn fneg<T: Fneg>(x: T) -> T {
+    x.fneg()
+}
+pub trait Fneg {
+    fn fneg(self) -> Self;
+}
+impl Fneg for f32 {
+    #[inline(always)]
+    fn fneg(self) -> f32 {
+        estimate::fneg(self)
+    }
+}
+impl Fneg for f64 {
+    #[inline(always)]
+    fn fneg(self) -> f64 {
+        estimate::fneg(self)
+    }
+}
+impl Fneg for prelude::Vec3 {
+    #[inline(always)]
+    fn fneg(self) -> Self {
+        Self::from_array(estimate::fneg(self.to_array()))
+    }
+}
+impl Fneg for prelude::Vec3A {
+    #[inline(always)]
+    fn fneg(self) -> Self {
+        Self::from_array(estimate::fneg(self.to_array()))
+    }
+}
+impl Fneg for prelude::Vec4 {
+    #[inline(always)]
+    fn fneg(self) -> Self {
+        Self::from_array(estimate::fneg(self.to_array()))
+    }
+}
+impl Fneg for bevy_math::DVec3 {
+    #[inline(always)]
+    fn fneg(self) -> Self {
+        Self::from_array(estimate::fneg(self.to_array()))
+    }
+}
+
 pub(crate) trait Fma {
     fn fma(self, b: Self, c: Self) -> Self;
 }
@@ -38,7 +81,7 @@ pub(crate) trait Vx {
 }
 impl Vx for prelude::Vec3 {
     fn vx(self, b: Self) -> Self {
-        Self::new((-self.z).mul_add(b.y, self.y * b.z), (-self.x).mul_add(b.z, self.z * b.x), (-self.y).mul_add(b.x, self.x * b.y))
+        Self::new(fneg(self.z).mul_add(b.y, self.y * b.z), fneg(self.x).mul_add(b.z, self.z * b.x), fneg(self.y).mul_add(b.x, self.x * b.y))
     }
 }
 

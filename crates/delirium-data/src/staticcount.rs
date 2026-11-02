@@ -2,16 +2,16 @@ use crate::route::Point;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX() -> i32 { crate::kv!(277 int) }
+pub fn MAX() -> i32 { crate::kv!(276 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn FRAME() -> f32 { 1.0 / crate::kv!(80) }
+pub fn FRAME() -> f32 { 1.0 / crate::kv!(27) }
 #[allow(non_snake_case)]
 #[inline]
-fn NEAR() -> f32 { crate::kv!(763) }
+fn NEAR() -> f32 { crate::kv!(77) }
 #[allow(non_snake_case)]
 #[inline]
-fn NEAR_WIDE() -> f32 { crate::kv!(182) }
+fn NEAR_WIDE() -> f32 { crate::kv!(187) }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Look {
@@ -25,13 +25,13 @@ pub struct Look {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn FULL() -> f32 { crate::kv!(112) }
+pub fn FULL() -> f32 { crate::kv!(28) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(798 int) }
+pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(814 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MOVER_BITS() -> u32 { crate::kv!(890 int) }
+pub fn MOVER_BITS() -> u32 { crate::kv!(965 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Anim {
@@ -48,7 +48,7 @@ pub fn anim_moves(anims: &[Anim]) -> bool {
             return false;
         }
         if a.flags & NO_MOVER_TRACK() == 0 && a.mover_track {
-            let mask = (a.flags & crate::kv!(194 int)) as u8;
+            let mask = (a.flags & crate::kv!(198 int)) as u8;
             if mask == 0 || crate::animblend::mask_passes(mask, 0) {
                 return true;
             }

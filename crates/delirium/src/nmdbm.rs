@@ -1,3 +1,4 @@
+use crate::fneg;
 use crate::Fma;
 use crate::Vd;
 use crate::Vx;
@@ -63,18 +64,21 @@ pub struct Leg {
     pub limb: M34,
 }
 
-pub fn rage_link(nm: usize, k: usize) -> Quat {
-    let q = link(nm, k).normalize();
+pub fn rage_link(links: &[Quat], k: usize) -> Quat {
+    let q = link(links, k).normalize();
     if k == 0 { q * Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2) } else { q }
 }
 
 #[allow(non_snake_case)]
 #[inline]
-fn HOMER_PARTS() -> usize { delirium_data::kv!(104 int) }
+fn HOMER_PARTS() -> usize { delirium_data::kv!(111 int) }
 
-pub fn link(nm: usize, k: usize) -> Quat {
-    logged_links().filter(|_| nm == crate::nmrs::HOMER).or(DERIVED_LINKS[nm].get().map(|d| d.as_slice()))
-        .and_then(|t| t.get(k)).copied().unwrap_or(Quat::IDENTITY)
+pub fn link(links: &[Quat], k: usize) -> Quat {
+    links.get(k).copied().unwrap_or(Quat::IDENTITY)
+}
+
+pub fn asset_links(nm: usize) -> Vec<Quat> {
+    logged_links().filter(|_| nm == crate::nmrs::HOMER).map_or(vec![], <[Quat]>::to_vec)
 }
 
 pub fn logged_links() -> Option<&'static [Quat]> {
@@ -90,10 +94,8 @@ pub fn logged_links() -> Option<&'static [Quat]> {
     (!t.is_empty()).then_some(t.as_slice())
 }
 
-pub static DERIVED_LINKS: [std::sync::OnceLock<Vec<Quat>>; 2] = [const { std::sync::OnceLock::new() }; 2];
-
 fn step_clamp(b: &Body, c: Config) -> f32 {
-    if b.ch.mode == 2 { c.step_clamp * delirium_data::kv!(70) } else { c.step_clamp }
+    if b.ch.mode == 2 { c.step_clamp * delirium_data::kv!(74) } else { c.step_clamp }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -163,7 +165,7 @@ pub struct Feet {
 impl Default for Feet {
     fn default() -> Feet {
         Feet { pos: [Vec3::ZERO; 2], centre: Vec3::ZERO, start: Vec3::ZERO, prev_target: Vec3::ZERO, prev_sole: Vec3::ZERO,
-               height: [0.0; 2], countdown: delirium_data::kv!(38 int), dist: [0.0; 2], stepping: 0, flags: 0 }
+               height: [0.0; 2], countdown: delirium_data::kv!(41 int), dist: [0.0; 2], stepping: 0, flags: 0 }
     }
 }
 
@@ -196,7 +198,7 @@ pub(crate) fn slen(v: Vec3, o: &[u8; 3]) -> f32 {
 }
 
 pub(crate) fn shz(v: Vec3, up: Vec3, o: &[u8; 3]) -> Vec3 {
-    up.mul_add(Vec3::splat(-sdot(v, up, o)), v)
+    up.mul_add(Vec3::splat(fneg(sdot(v, up, o))), v)
 }
 
 fn sat(v: Vec3, up: Vec3, h: f32, o: &[u8; 3]) -> Vec3 {
@@ -237,7 +239,7 @@ pub(crate) fn atan2(y: f32, x: f32) -> f32 {
 
 pub(crate) fn atan2f(y: f32, x: f32) -> f32 {
     use std::f32::consts::{FRAC_PI_2, PI};
-    let (e, at) = (delirium_data::kv!(66), |v: f32| (v as f64).atan() as f32);
+    let (e, at) = (delirium_data::kv!(70), |v: f32| (v as f64).atan() as f32);
     if x > e {
         if y.abs() > e { at(y / x) } else { 0.0 }
     } else if x < -e {
@@ -280,7 +282,7 @@ fn clamp_length(v: Vec3, lo: f32, hi: f32) -> Vec3 {
     }
     let (n, mut y) = (n2 as f64, crate::estimate::frsqrte(n2 as f64));
     for _ in 0..2 {
-        y = (-(y * y)).mul_add(n, 1.0).mul_add(y * 0.5, y);
+        y = fneg(y * y).mul_add(n, 1.0).mul_add(y * 0.5, y);
     }
     v * (y as f32 * k)
 }
@@ -322,12 +324,12 @@ fn reach(t: Vec3, up: Vec3, pelvis: &M34, f1: f32, f2: f32) -> Vec3 {
     let uc = sdot(up, pelvis.c, b"yzx");
     let fwd = vnorm(shz(pelvis.c, up, b"yzx"));
     let side = fwd.vx(up);
-    let centre = side.mul_add(Vec3::splat(sdot(up, pelvis.b, b"zyx") * delirium_data::kv!(110)), fwd.mul_add(Vec3::splat(uc * delirium_data::kv!(110)), pelvis.d));
+    let centre = side.mul_add(Vec3::splat(sdot(up, pelvis.b, b"zyx") * delirium_data::kv!(116)), fwd.mul_add(Vec3::splat(uc * delirium_data::kv!(116)), pelvis.d));
     let centre = up.mul_add(Vec3::splat(sdot(t, up, b"yxz") - sdot(centre, up, b"zyx")), centre);
     let rel = t - centre;
-    let (x, y) = (sdot(rel, fwd, b"yzx") * (1.0 / (f1 * delirium_data::kv!(12))), sdot(rel, side, b"zyx") * (1.0 / (f2 * delirium_data::kv!(30))));
+    let (x, y) = (sdot(rel, fwd, b"yzx") * (1.0 / (f1 * delirium_data::kv!(12))), sdot(rel, side, b"zyx") * (1.0 / (f2 * delirium_data::kv!(33))));
     let r = y.fma(y, x * x).sqrt();
-    let s = (1.0 / (r + delirium_data::kv!(47))).min(1.0);
+    let s = (1.0 / (r + delirium_data::kv!(50))).min(1.0);
     let (x, y) = (sdot(rel, fwd, b"yzx"), sdot(rel, side, b"zyx"));
     side.mul_add(Vec3::splat(s * y), fwd.mul_add(Vec3::splat(s * x), centre))
 }
@@ -336,7 +338,7 @@ fn hip_leans(hip: &Eff3, t: Vec3, mid1: f32, mid2: f32, side: f32) -> (f32, f32)
     let d = t - hip.m.d;
     let v = vnorm(Vec3::new(hip.m.a.vd(d), hip.m.b.vd(d), hip.m.c.vd(d)));
     let th = acos(v.z);
-    let k = 1.0 / (v.y.fma(v.y, v.x * v.x).sqrt() + delirium_data::kv!(47));
+    let k = 1.0 / (v.y.fma(v.y, v.x * v.x).sqrt() + delirium_data::kv!(50));
     ((v.x * k).fma(th, mid1), (v.y * k * th).fma(side, mid2))
 }
 
@@ -350,9 +352,9 @@ fn hip_room(hip: &Eff3, l1: f32, l2: f32, l3: f32, l4: f32) -> f32 {
     let d2 = (l2 - m2).fma(i2, -((l4 - m2) * i2));
     let num = d2.fma(c2, d1 * c1);
     let den = num - (d2 + c2).fma(d2, (d1 + c1) * d1);
-    let t = if den.abs() > delirium_data::kv!(129) { 0.0 } else { num / den };
+    let t = if den.abs() > delirium_data::kv!(134) { 0.0 } else { num / den };
     let (p1, p2) = (t.fma(d1, c1), t.fma(d2, c2));
-    let k = 1.0 / (d2.fma(d2, d1 * d1).sqrt() + delirium_data::kv!(47));
+    let k = 1.0 / (d2.fma(d2, d1 * d1).sqrt() + delirium_data::kv!(50));
     let (u1, u2) = (k * d1, k * d2);
     let off = p1.fma(u2, -(p2 * u1)).abs();
     let (e1, e2) = if off >= 1.0 {
@@ -362,7 +364,7 @@ fn hip_room(hip: &Eff3, l1: f32, l2: f32, l3: f32, l4: f32) -> f32 {
         (h.fma(u1, p1).fma(s1, m1), h.fma(u2, p2).fma(s2, m2))
     };
     let (g1, g2) = (l1 - l3, l2 - l4);
-    let k = 1.0 / (g2.fma(g2, g1 * g1).sqrt() + delirium_data::kv!(47));
+    let k = 1.0 / (g2.fma(g2, g1 * g1).sqrt() + delirium_data::kv!(50));
     (k * g2).fma(e2 - a2, k * g1 * (e1 - a1))
 }
 
@@ -373,7 +375,7 @@ fn decide(s: &Snap, f: &mut Feet) {
     if f.stepping != 0 {
         return;
     }
-    let (lc, rc) = (s.flags & delirium_data::kv!(252 int) != 0, s.flags & delirium_data::kv!(7 int) != 0);
+    let (lc, rc) = (s.flags & delirium_data::kv!(251 int) != 0, s.flags & delirium_data::kv!(7 int) != 0);
     let mut left = if rc { a || !lc } else { !lc && b };
     let mut right = if lc { b || !rc } else { !rc && a };
     if left || right {
@@ -393,7 +395,7 @@ fn decide(s: &Snap, f: &mut Feet) {
     } else {
         return;
     };
-    f.flags = (f.flags & !delirium_data::kv!(100 int)) | (alone as u8) << delirium_data::kv!(1 int) | (far as u8) << delirium_data::kv!(0 int);
+    f.flags = (f.flags & !delirium_data::kv!(107 int)) | (alone as u8) << delirium_data::kv!(1 int) | (far as u8) << delirium_data::kv!(0 int);
     f.start = f.pos[f.stepping as usize - 1];
 }
 
@@ -402,17 +404,17 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
     f.height = [sdot(p.target[0], up, b"zyx"), sdot(p.target[1], up, b"zyx")];
     f.pos[0] = sat(s.legs[0].foot.m.d, up, f.height[0], b"zyx");
     f.pos[1] = sat(s.legs[1].foot.m.d, up, f.height[1], b"zyx");
-    if s.flags & delirium_data::kv!(252 int) == 0 || s.flags & delirium_data::kv!(7 int) == 0 {
+    if s.flags & delirium_data::kv!(251 int) == 0 || s.flags & delirium_data::kv!(7 int) == 0 {
         let [l, r] = &mut f.pos;
         separate(l, r, p.foot_width);
     }
     f.centre = (f.pos[0] + f.pos[1]) * 0.5;
     f.dist = [0.0; 2];
     let pc = sat(s.hvel.mul_add(Vec3::splat(p.lead), s.com), up, sdot(f.centre, up, b"zyx"), b"yxz");
-    let inside = support(pc, &s.legs[0].foot, &s.legs[1].foot, delirium_data::kv!(64), delirium_data::kv!(9), up) > p.p172;
+    let inside = support(pc, &s.legs[0].foot, &s.legs[1].foot, delirium_data::kv!(68), delirium_data::kv!(9), up) > p.p172;
     f.flags = (f.flags & !delirium_data::kv!(1 int)) | (inside as u8) << 2;
     let (lpos, rpos) = (s.legs[0].foot.m.d, s.legs[1].foot.m.d);
-    if f.flags & delirium_data::kv!(1 int) != 0 && slen(shz(rpos - lpos, up, b"yzx"), b"zyx") > p.foot_width + delirium_data::kv!(57) {
+    if f.flags & delirium_data::kv!(1 int) != 0 && slen(shz(rpos - lpos, up, b"yzx"), b"zyx") > p.foot_width + delirium_data::kv!(60) {
         f.flags &= !delirium_data::kv!(1 int);
     }
     let (a, c, so) = (s.m.a, s.m.c, p.step_offset);
@@ -423,14 +425,14 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
     f.dist = [slen(shz(target_a - lpos, up, b"yxz"), b"zyx"), slen(shz(target_b - rpos, up, b"yzx"), b"zyx")];
     decide(s, f);
     if f.stepping == 0 {
-        f.flags = (f.flags & delirium_data::kv!(253 int)) | (s.flags & delirium_data::kv!(252 int)) | (s.flags & delirium_data::kv!(7 int)) << 1;
+        f.flags = (f.flags & delirium_data::kv!(252 int)) | (s.flags & delirium_data::kv!(251 int)) | (s.flags & delirium_data::kv!(7 int)) << 1;
         return;
     }
     let two = f.stepping == 2;
     let (i, side, mut t, contact) = if two {
         (1, -1.0, target_b, s.flags & delirium_data::kv!(7 int) != 0)
     } else {
-        (0, 1.0, target_a, s.flags & delirium_data::kv!(252 int) != 0)
+        (0, 1.0, target_a, s.flags & delirium_data::kv!(251 int) != 0)
     };
     let leg = &s.legs[i];
     let stance = f.pos[1 - i];
@@ -438,7 +440,7 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
         f.flags |= delirium_data::kv!(23 int);
     }
     if !contact {
-        f.flags |= delirium_data::kv!(51 int);
+        f.flags |= delirium_data::kv!(54 int);
     }
     f.centre = s.hvel.mul_add(Vec3::splat(delirium_data::kv!(9)), s.com);
     t = reach(t, up, &s.pelvis.m, p.step_clamp * leg.hip.half_lean1, p.step_clamp * leg.hip.half_lean2);
@@ -446,8 +448,8 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
     let dir_t = vnorm(shz(t - f.start, up, b"yxz"));
     let ahead = sdot(t, dir_t, b"zyx") - sdot(fp, dir_t, b"zyx");
     let closing = sdot(s.vel, dir_t, b"zyx") - sdot(leg.foot.v, dir_t, b"zyx");
-    let left_frac = slen(shz(t - fp, up, b"zyx"), b"zyx") / (slen(shz(f.start - fp, up, b"zyx"), b"zyx") + delirium_data::kv!(47));
-    let sole = fp - leg.foot.m.c * delirium_data::kv!(57) * 0.5;
+    let left_frac = slen(shz(t - fp, up, b"zyx"), b"zyx") / (slen(shz(f.start - fp, up, b"zyx"), b"zyx") + delirium_data::kv!(50));
+    let sole = fp - leg.foot.m.c * delirium_data::kv!(60) * 0.5;
     let passed = slen(shz(sole - f.prev_target, up, b"zyx"), b"yxz") > slen(shz(f.prev_sole - t, up, b"zyx"), b"zyx");
     let mut speed = (slen(shz(f.prev_sole - f.prev_target, up, b"zyx"), b"yxz") - slen(shz(sole - t, up, b"zyx"), b"yxz")) / p.dt;
     f.prev_target = t;
@@ -455,16 +457,16 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
     let t1 = up.mul_add(Vec3::splat(sdot(f.pos[i], up, b"zyx") - sdot(t, up, b"yxz")), t);
     let (r80, r84) = hip_leans(&leg.hip, t1, leg.hip.mid_lean1, leg.hip.mid_lean2, side);
     let (r88, r92) = hip_leans(&leg.hip, f.start, leg.hip.mid_lean1, leg.hip.mid_lean2, side);
-    let lift = (closing.min(0.0).fma(delirium_data::kv!(73), ahead) * 0.5).clamp(-p.step_height, p.step_height);
+    let lift = (closing.min(0.0).fma(delirium_data::kv!(78), ahead) * 0.5).clamp(-p.step_height, p.step_height);
     let (n, foot) = if two { (p.normal[1], &s.legs[1].foot) } else { (p.normal[0], &s.legs[0].foot) };
-    let c2 = foot.w.vx(foot.m.c).mul_add(Vec3::splat(delirium_data::kv!(105)), foot.m.c);
+    let c2 = foot.w.vx(foot.m.c).mul_add(Vec3::splat(delirium_data::kv!(112)), foot.m.c);
     let tilt = delirium_data::kv!(12) / (sdot(n, up, b"zyx") + 0.5);
     let toe = sdot(n, c2, b"zyx");
     let room = hip_room(&leg.hip, r80, r84, r88, r92);
-    let mut h = toe.abs().min(1.0).fma(delirium_data::kv!(73), lift).min(room);
+    let mut h = toe.abs().min(1.0).fma(delirium_data::kv!(78), lift).min(room);
     let mut g = p.target[i];
-    if f.flags & delirium_data::kv!(51 int) == 0 {
-        h += delirium_data::kv!(105);
+    if f.flags & delirium_data::kv!(54 int) == 0 {
+        h += delirium_data::kv!(112);
         g = p.gup.mul_add(Vec3::splat(sdot(p.gup, f.start - g, b"zyx").max(0.0)), g);
     }
     let h = g.x.fma(up.x, g.z.fma(up.z, tilt.fma(h, g.y * up.y)));
@@ -472,24 +474,24 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
         speed = -1.0;
     }
     let t2 = sat(t1, up, h, b"yxz");
-    let t3 = reach(t2 + clamp_length(shz(t2 - f.pos[i], up, b"zyx"), 0.0, delirium_data::kv!(73)), up, &s.pelvis.m,
+    let t3 = reach(t2 + clamp_length(shz(t2 - f.pos[i], up, b"zyx"), 0.0, delirium_data::kv!(78)), up, &s.pelvis.m,
                    p.step_clamp * leg.hip.half_lean1, p.step_clamp * leg.hip.half_lean2);
     f.pos[i] = t3;
     let mid = (t3 + stance) * 0.5;
     f.centre = up.mul_add(Vec3::splat(sdot(mid, up, b"yzx") - sdot(f.centre, up, b"yzx")), f.centre);
-    f.flags = (f.flags & delirium_data::kv!(253 int)) | if two { delirium_data::kv!(252 int) } else { delirium_data::kv!(254 int) };
-    let other = if two { s.flags & delirium_data::kv!(252 int) != 0 } else { s.flags & delirium_data::kv!(7 int) != 0 };
-    let landed = contact && speed < 0.0 && (left_frac < 0.5 || (f.flags & delirium_data::kv!(23 int) != 0 && f.flags & delirium_data::kv!(51 int) != 0));
+    f.flags = (f.flags & delirium_data::kv!(252 int)) | if two { delirium_data::kv!(251 int) } else { delirium_data::kv!(253 int) };
+    let other = if two { s.flags & delirium_data::kv!(251 int) != 0 } else { s.flags & delirium_data::kv!(7 int) != 0 };
+    let landed = contact && speed < 0.0 && (left_frac < 0.5 || (f.flags & delirium_data::kv!(23 int) != 0 && f.flags & delirium_data::kv!(54 int) != 0));
     if landed || (contact && !other) {
-        f.flags |= if two { delirium_data::kv!(254 int) } else { delirium_data::kv!(252 int) };
+        f.flags |= if two { delirium_data::kv!(253 int) } else { delirium_data::kv!(251 int) };
         f.stepping = 0;
         decide(s, f);
     }
 }
 
 fn yaw(k: f32, pelvis: &M34, w: Vec3, toward: bool, predict: bool, angvel: Vec3) -> f32 {
-    let w1 = if predict { qrot(rotvec_quat(angvel * -delirium_data::kv!(57)), w, false) } else { w };
-    let a = atan2(-sdot(pelvis.c, w1, b"zyx"), -sdot(pelvis.b, w1, b"zyx") * k);
+    let w1 = if predict { qrot(rotvec_quat(angvel * -delirium_data::kv!(60)), w, false) } else { w };
+    let a = atan2(fneg(sdot(pelvis.c, w1, b"zyx")), fneg(sdot(pelvis.b, w1, b"zyx")) * k);
     let half = std::f32::consts::FRAC_PI_2;
     let mut a = if toward {
         if a >= 0.0 { a - half } else { a + half }
@@ -498,10 +500,10 @@ fn yaw(k: f32, pelvis: &M34, w: Vec3, toward: bool, predict: bool, angvel: Vec3)
         if a < -std::f32::consts::PI {
             a += std::f32::consts::TAU;
         }
-        if !(-delirium_data::kv!(255)..=delirium_data::kv!(255)).contains(&a) { 0.0 } else { a }
+        if !(-delirium_data::kv!(254)..=delirium_data::kv!(254)).contains(&a) { 0.0 } else { a }
     };
     if predict {
-        a = slen(w, b"yxz").min(1.0) * a * delirium_data::kv!(256);
+        a = slen(w, b"yxz").min(1.0) * a * delirium_data::kv!(255);
     }
     a
 }
@@ -514,7 +516,7 @@ pub fn pelvis_control(p: &Params, s: &Snap, pv: &mut Pelvis) {
     let w = if pv.fixed_vel { pv.vel } else { s.hvel };
     let toward = !pv.fixed_vel;
     let m = &s.pelvis.m;
-    let blend = |y: f32, cur: f32| ((y.clamp(-delirium_data::kv!(114), delirium_data::kv!(114)) - cur) * (slen(w, b"yxz") * 2.0).min(1.0)).fma(delirium_data::kv!(57), cur);
+    let blend = |y: f32, cur: f32| ((y.clamp(-delirium_data::kv!(119), delirium_data::kv!(119)) - cur) * (slen(w, b"yxz") * 2.0).min(1.0)).fma(delirium_data::kv!(60), cur);
     if pl && !pr {
         pv.yaw[0] = blend(yaw(1.0, m, w, toward, false, s.angvel), pv.yaw[0]);
         pv.yaw[1] = pv.yaw[0] * 0.5;
@@ -522,7 +524,7 @@ pub fn pelvis_control(p: &Params, s: &Snap, pv: &mut Pelvis) {
         pv.yaw[1] = blend(yaw(-1.0, m, w, toward, false, s.angvel), pv.yaw[1]);
         pv.yaw[0] = pv.yaw[1] * 0.5;
     } else if pv.fixed_vel {
-        pv.yaw[0] = (yaw(1.0, m, w, toward, true, s.angvel) + (pv.yaw[0] - pv.yaw[1]) * 0.5).clamp(-delirium_data::kv!(114), delirium_data::kv!(114));
+        pv.yaw[0] = (yaw(1.0, m, w, toward, true, s.angvel) + (pv.yaw[0] - pv.yaw[1]) * 0.5).clamp(-delirium_data::kv!(119), delirium_data::kv!(119));
         pv.yaw[1] = -pv.yaw[0];
     } else {
         let step = p.dt * 0.5;
@@ -535,25 +537,25 @@ pub fn pelvis_control(p: &Params, s: &Snap, pv: &mut Pelvis) {
     let hz = shz(s.m.c, up, b"zyx");
     let hx = shz(-s.m.a, up, b"xyz");
     let d = s.com - pv.centre;
-    let a = (-sdot(d, hz, b"yxz")).clamp(-delirium_data::kv!(227), delirium_data::kv!(9));
+    let a = (-sdot(d, hz, b"yxz")).clamp(-delirium_data::kv!(226), delirium_data::kv!(9));
     let b = -sdot(d, hx, b"zyx");
     let c = -sdot(s.hvel, hz, b"zyx");
     let e = -sdot(s.hvel, hx, b"yzx");
-    let f4 = p.lead * delirium_data::kv!(257);
+    let f4 = p.lead * delirium_data::kv!(256);
     if both {
-        pv.p52 = p.dt.fma(a, pv.p52).clamp(p.lean_bias - delirium_data::kv!(73), p.lean_bias + delirium_data::kv!(73));
-        pv.p56 = p.dt.fma(b, pv.p56).clamp(-delirium_data::kv!(73), delirium_data::kv!(73));
+        pv.p52 = p.dt.fma(a, pv.p52).clamp(p.lean_bias - delirium_data::kv!(78), p.lean_bias + delirium_data::kv!(78));
+        pv.p56 = p.dt.fma(b, pv.p56).clamp(-delirium_data::kv!(78), delirium_data::kv!(78));
     }
-    pv.out[0] = b.fma(delirium_data::kv!(258), (f4 * 0.5).fma(e, pv.p56 * delirium_data::kv!(259))) * delirium_data::kv!(260);
+    pv.out[0] = b.fma(delirium_data::kv!(257), (f4 * 0.5).fma(e, pv.p56 * delirium_data::kv!(258))) * delirium_data::kv!(259);
     if both {
-        pv.out[1] = a.fma(delirium_data::kv!(257), c.fma(f4, pv.p52 * delirium_data::kv!(261))) * -delirium_data::kv!(262);
+        pv.out[1] = a.fma(delirium_data::kv!(256), c.fma(f4, pv.p52 * delirium_data::kv!(260))) * -delirium_data::kv!(261);
     } else {
         pv.out[1] = 0.0;
-        pv.acc -= (-delirium_data::kv!(57) * c).clamp(0.0, 0.5);
+        pv.acc -= (-delirium_data::kv!(60) * c).clamp(0.0, 0.5);
     }
     let g = -sdot(p.normal[1], s.legs[1].foot.m.c, b"yzx") + -sdot(p.normal[0], s.legs[0].foot.m.c, b"yzx");
-    if g > delirium_data::kv!(64) {
-        pv.out[1] = ((g - delirium_data::kv!(64)) * delirium_data::kv!(5)).min(1.0).fma(-pv.out[1], pv.out[1]);
+    if g > delirium_data::kv!(68) {
+        pv.out[1] = ((g - delirium_data::kv!(68)) * delirium_data::kv!(5)).min(1.0).fma(-pv.out[1], pv.out[1]);
     }
 }
 
@@ -564,11 +566,11 @@ pub(crate) fn asin(x: f32) -> f32 {
 fn arc(a: Vec3, b: Vec3) -> Quat {
     let (na, mut nb) = (vnorm(a), vnorm(b));
     let d = na.y.fma(nb.y, na.z.fma(nb.z, na.x * nb.x));
-    if (d - 1.0).abs() < delirium_data::kv!(47) {
+    if (d - 1.0).abs() < delirium_data::kv!(50) {
         return Quat::IDENTITY;
     }
     let c = d + 1.0;
-    if c.abs() < delirium_data::kv!(47) {
+    if c.abs() < delirium_data::kv!(50) {
         let big_z = if a.x < a.y { a.y < a.z } else { a.x < a.z };
         nb = if big_z { Vec3::Y } else { Vec3::Z };
     }
@@ -581,7 +583,7 @@ fn arc(a: Vec3, b: Vec3) -> Quat {
     } else {
         let (n, mut y) = (n2 as f64, crate::estimate::frsqrte(n2 as f64));
         for _ in 0..2 {
-            y = (-(y * y)).mul_add(n, 1.0).mul_add(y * 0.5, y);
+            y = fneg(y * y).mul_add(n, 1.0).mul_add(y * 0.5, y);
         }
         y as f32
     };
@@ -621,14 +623,14 @@ struct LegIk {
 
 fn lead(c: &LegIk, hip: &Eff3, pelvis: &Part, vel: Vec3) -> Vec3 {
     let r = c.target - hip.m.d;
-    let k = hip.damping / (hip.strength + delirium_data::kv!(73)) * c.lead;
+    let k = hip.damping / (hip.strength + delirium_data::kv!(78)) * c.lead;
     let cr = r.vx(pelvis.w) * k;
     let turned = r + cr;
     let mut out = (vnorm(turned).mul_add(Vec3::splat(slen(r, b"zyx") - slen(turned, b"zyx")), cr) - (pelvis.v - vel) * k) + c.target;
     let n = vnorm(r);
     let along = sdot(n, out - hip.m.d, b"zyx");
-    if along < delirium_data::kv!(73) {
-        out = n.mul_add(Vec3::splat(delirium_data::kv!(73) - along), out);
+    if along < delirium_data::kv!(78) {
+        out = n.mul_add(Vec3::splat(delirium_data::kv!(78) - along), out);
     }
     out
 }
@@ -657,11 +659,11 @@ fn leg_ik(c: &mut LegIk, limb: &M34, knee: &mut Eff1, hip: &mut Eff3, foot: &Par
     let mut x = if c.lead > 0.0 { lead(c, hip, pelvis, vel) } else { c.target };
     if c.swing {
         let d = x - foot.m.d;
-        let m = slen(d, b"zxy").min(hip.damping / hip.strength * c.reach) + delirium_data::kv!(68);
-        let f0 = (1.0 - delirium_data::kv!(73) / m).max(0.0);
+        let m = slen(d, b"zxy").min(hip.damping / hip.strength * c.reach) + delirium_data::kv!(72);
+        let f0 = (1.0 - delirium_data::kv!(78) / m).max(0.0);
         let f12 = if c.lift > f0 { (c.lift + f0) * 0.5 } else { c.lift };
         x = (vnorm(d) * m).mul_add(Vec3::splat(1.0 - f12), foot.m.d);
-        f25 = 1.0 / (delirium_data::kv!(263) - f12);
+        f25 = 1.0 / (delirium_data::kv!(262) - f12);
         c.lead *= 1.0 - f12;
     }
     let kv = world(limb, local(&knee.child, foot.m.d - knee.child.d));
@@ -714,10 +716,10 @@ pub(crate) fn predict_knee(hip: &Eff3, knee: &Eff1, side: f32) -> Vec3 {
 
 pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
     let up = p.up;
-    let (lp, rp) = (f.flags & delirium_data::kv!(252 int) != 0, f.flags & delirium_data::kv!(254 int) != 0);
+    let (lp, rp) = (f.flags & delirium_data::kv!(251 int) != 0, f.flags & delirium_data::kv!(253 int) != 0);
     let r = p.pelvis_height;
     let drop = |x: Vec3| {
-        let e = ((slen(shz(x - f.centre, up, b"zxy"), b"zyx") - p.hip_dist) * delirium_data::kv!(193)).powi(2).min(r * r * delirium_data::kv!(54));
+        let e = ((slen(shz(x - f.centre, up, b"zxy"), b"zyx") - p.hip_dist) * delirium_data::kv!(80)).powi(2).min(r * r * delirium_data::kv!(57));
         r - (r * r - e).sqrt()
     };
     let low = (sdot(f.pos[0], up, b"yxz") - drop(f.pos[0])).min(sdot(f.pos[1], up, b"zxy") - drop(f.pos[1]));
@@ -728,9 +730,9 @@ pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
     if rp {
         t[1] = up.mul_add(Vec3::splat(-(pv.out[0] * p.hip_dist)), t[1]);
     }
-    let lean = pv.out[0].clamp(-delirium_data::kv!(57), delirium_data::kv!(57));
+    let lean = pv.out[0].clamp(-delirium_data::kv!(60), delirium_data::kv!(60));
     s.spine.desired[1] = lean;
-    s.height = r * p.leg_length - (sdot(f.centre, up, b"yzx") - low) + if lp && rp { 0.0 } else { delirium_data::kv!(126) };
+    s.height = r * p.leg_length - (sdot(f.centre, up, b"yzx") - low) + if lp && rp { 0.0 } else { delirium_data::kv!(131) };
     let mut target = t;
     let mut normal = p.normal;
     if lp || rp {
@@ -739,7 +741,7 @@ pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
         let cs = |a: f32| ((a as f64).cos() as f32, (a as f64).sin() as f32);
         let ((cy, sy), (cz, sz)) = (cs(-pv.acc), cs(-pv.out[0]));
         let e = [Vec3::new(cz * cy, sz * cy, -sy), Vec3::new(-sz, cz, 0.0), Vec3::new(cz * sy, sz * sy, cy)];
-        let q = rotvec_quat(s.pelvis.w * -delirium_data::kv!(73));
+        let q = rotvec_quat(s.pelvis.w * -delirium_data::kv!(78));
         let qm = quat_rows(q);
         let pd: [Vec3; 3] = e.map(|e| {
             let a = fwd.mul_add(Vec3::splat(e.z), side.mul_add(Vec3::splat(e.y), up * e.x));
@@ -769,8 +771,8 @@ pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
         let mut c = LegIk { target: target[i], lead: 0.0, yaw: pv.yaw[i], side: if i == 0 { 1.0 } else { -1.0 }, bend: -1.0,
                             w: 1.0, reach: 0.0, lift: 0.0, swing: !planted, free: false };
         if !planted {
-            let ahead = target[i] - (lfoot_v - p.gvel[0]).mul_add(Vec3::splat(delirium_data::kv!(64)), leg.foot.m.d);
-            (c.lead, c.reach, c.lift) = (p.p168, delirium_data::kv!(60), sdot(up, ahead, b"yxz").fma(delirium_data::kv!(108), delirium_data::kv!(73)).clamp(delirium_data::kv!(9), delirium_data::kv!(114)));
+            let ahead = target[i] - (lfoot_v - p.gvel[0]).mul_add(Vec3::splat(delirium_data::kv!(68)), leg.foot.m.d);
+            (c.lead, c.reach, c.lift) = (p.p168, delirium_data::kv!(64), sdot(up, ahead, b"yxz").fma(delirium_data::kv!(84), delirium_data::kv!(78)).clamp(delirium_data::kv!(9), delirium_data::kv!(119)));
         }
         let limb = leg.limb;
         leg_ik(&mut c, &limb, &mut leg.knee, &mut leg.hip, &leg.foot, &pelvis, vel);
@@ -781,11 +783,11 @@ pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
         let a = if !planted {
             let sh = &leg.shin;
             let a = (-sdot(sh.w, sh.m.a, b"yzx")).fma(leg.ankle.damping / leg.ankle.strength, sdot(sh.m.c, normal[i], b"yzx"));
-            let mut a = sdot(p.normal[i], vnorm(leg.foot.m.a.vx(up)), b"zyx").fma(delirium_data::kv!(20), a * delirium_data::kv!(57));
+            let mut a = sdot(p.normal[i], vnorm(leg.foot.m.a.vx(up)), b"zyx").fma(delirium_data::kv!(20), a * delirium_data::kv!(60));
             if sdot(leg.foot.v, s.m.c, b"yzx") < 0.0 {
-                a -= delirium_data::kv!(57);
+                a -= delirium_data::kv!(60);
             }
-            a + acos(p.leg_length.clamp(delirium_data::kv!(68), delirium_data::kv!(264)))
+            a + acos(p.leg_length.clamp(delirium_data::kv!(72), delirium_data::kv!(263)))
         } else {
             let k = predict_knee(&leg.hip, &leg.knee, side);
             asin(sdot(leg.knee.m.c, vnorm(k - target[i]).vx(normal[i]), b"xyz"))
@@ -795,7 +797,7 @@ pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
     let over = |h: &Eff3| {
         let (l1, l2) = ((h.desired[0] - h.mid_lean1) / h.half_lean1, (h.desired[1] - h.mid_lean2) / h.half_lean2);
         let e = l2.fma(l2, l1 * l1).sqrt();
-        (e - 1.0).max(0.0) / (e + delirium_data::kv!(47)) * (h.desired[1] - h.mid_lean2)
+        (e - 1.0).max(0.0) / (e + delirium_data::kv!(50)) * (h.desired[1] - h.mid_lean2)
     };
     let (ol, or) = (over(&s.legs[0].hip), over(&s.legs[1].hip));
     if lp {
@@ -832,12 +834,11 @@ pub fn own_rage(doll: &Ragdoll) -> Option<(Vec<crate::rigid::Link>, Vec3, Vec<M3
     if frames.len() != HOMER_PARTS() {
         return None;
     }
-    let links = frames.iter().enumerate().map(|(k, f)| {
+    let links = (0..frames.len()).map(|k| {
         let (v, w) = doll.motion(k);
-        crate::rigid::Link { r: doll.link_rows(k), d: f.translation, m: doll.part_mass(k), v, w }
+        crate::rigid::Link { r: doll.link_rows(k), d: doll.link_d(k).0, m: doll.part_mass(k), v, w }
     }).collect();
-    let parts = frames.iter().enumerate().map(|(k, f)| m34(f.rotation * link(doll.nm, k), f.translation)).collect();
-    Some((links, Vec3::ZERO, parts))
+    Some((links, doll.link_d(0).1, doll.parts()))
 }
 
 pub struct Body<'a> {
@@ -864,7 +865,7 @@ impl Body<'_> {
         let tw = tw.unwrap_or_else(|| crate::rigid::twist(c, p, l));
         let act = |k: usize, raw: f32| {
             let v = (jd.limits[k].1 + jd.limits[k].0).fma(0.5, raw);
-            if jd.flip[k] { -v } else { v }
+            if jd.flip[k] { fneg(v) } else { v }
         };
         [act(0, l1), act(1, l2), act(2, tw)]
     }
@@ -886,7 +887,7 @@ impl Body<'_> {
             let col = |i: usize| Vec3::new(l.r[0][i], l.r[1][i], l.r[2][i]);
             return Part { m: M34 { a: col(0), b: col(1), c: col(2), d: l.d + place }, v, w };
         }
-        let link = if self.build.parts.len() == HOMER_PARTS() { link(self.build.nm, k) } else { Quat::IDENTITY };
+        let link = if self.build.parts.len() == HOMER_PARTS() { link(&self.build.links, k) } else { Quat::IDENTITY };
         Part { m: m34(self.frames[k].rotation * link, self.frames[k].translation), v, w }
     }
 
@@ -962,7 +963,7 @@ impl Body<'_> {
                     if k == 0 { [m[2], m[1], -m[0]] } else { [m[0], m[1], m[2]] }
                 }).collect(),
             };
-            let (m, vel, angvel) = crate::rigid::block(l, &refs, *place, true);
+            let (m, vel, angvel) = crate::rigid::block(l, &refs, *place, true, self.ch.attached.map(|(_, p, m)| (p, m)));
             return Block { com: m.d, vel, angvel, m };
         }
         let (com, vel) = self.doll.com();
@@ -977,7 +978,7 @@ impl Body<'_> {
                     if k == 0 {
                         re = Mat3::from_cols(Vec3::new(0.0, 0.0, -1.0), Vec3::Y, Vec3::X) * re;
                     }
-                    Mat3::from_quat(self.frames[k].rotation * rage_link(self.build.nm, k)) * re.inverse()
+                    Mat3::from_quat(self.frames[k].rotation * rage_link(&self.build.links, k)) * re.inverse()
                 }
                 None => Mat3::from_quat(self.frames[k].rotation * p.bind.inverse()) * Mat3::from_rotation_z(std::f32::consts::PI),
             };
@@ -989,7 +990,7 @@ impl Body<'_> {
         let o = Mat3::from_cols(t.x_axis.normalize(), t.y_axis.normalize(), t.z_axis.normalize());
         let c = -o.row(1).normalize();
         let a = o.row(2).vx(c).normalize();
-        Block { com, vel, angvel: w / mass.max(delirium_data::kv!(47)), m: M34 { a, b: c.vx(a), c, d: com } }
+        Block { com, vel, angvel: w / mass.max(delirium_data::kv!(50)), m: M34 { a, b: c.vx(a), c, d: com } }
     }
 
     pub fn snap(&self, up: Vec3) -> Snap {
@@ -1075,22 +1076,22 @@ impl Lean {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn CHAR_LEGS() -> (f32, f32) { (delirium_data::kv!(265), delirium_data::kv!(266)) }
+pub fn CHAR_LEGS() -> (f32, f32) { (delirium_data::kv!(264), delirium_data::kv!(265)) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CHAR_YAW() -> (f32, f32) { (delirium_data::kv!(267), delirium_data::kv!(268)) }
+pub fn CHAR_YAW() -> (f32, f32) { (delirium_data::kv!(266), delirium_data::kv!(267)) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MARGE_LEGS() -> (f32, f32) { (delirium_data::kv!(269), delirium_data::kv!(270)) }
+pub fn MARGE_LEGS() -> (f32, f32) { (delirium_data::kv!(268), delirium_data::kv!(269)) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MARGE_YAW() -> (f32, f32) { (-delirium_data::kv!(271), -delirium_data::kv!(272)) }
+pub fn MARGE_YAW() -> (f32, f32) { (-delirium_data::kv!(270), -delirium_data::kv!(271)) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CHAR_HEAD() -> f32 { delirium_data::kv!(273) }
+pub fn CHAR_HEAD() -> f32 { delirium_data::kv!(272) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MARGE_HEAD() -> f32 { delirium_data::kv!(274) }
+pub fn MARGE_HEAD() -> f32 { delirium_data::kv!(273) }
 
 pub(crate) fn stance(up: Vec3, pelvis: &M34, l: &M34, r: &M34, head: &M34, zero: [Vec3; 3]) -> ((f32, f32), (f32, f32), f32) {
     let d = r.d - l.d;
@@ -1105,7 +1106,7 @@ pub(crate) fn stance(up: Vec3, pelvis: &M34, l: &M34, r: &M34, head: &M34, zero:
 
 pub(crate) fn zero_stance(ch: &Character, build: &Build, frames: &[Transform]) -> Option<((f32, f32), (f32, f32), f32)> {
     zero_stance_rows(ch, build, &|k: usize| {
-        let link = if build.parts.len() == HOMER_PARTS() { link(build.nm, k) } else { Quat::IDENTITY };
+        let link = if build.parts.len() == HOMER_PARTS() { link(&build.links, k) } else { Quat::IDENTITY };
         m34(frames[k].rotation * link, frames[k].translation)
     })
 }
@@ -1114,7 +1115,7 @@ pub(crate) fn zero_stance_rows(ch: &Character, build: &Build, row: &dyn Fn(usize
     let (pelvis, l, r) = (ch.joints[(*HIP())[0]].parent, ch.joints[(*ANKLE())[0]].child, ch.joints[(*ANKLE())[1]].child);
     let places = crate::nmrs::zero_places(build);
     let zero = |k: usize| ch.refs.as_ref().map_or(places.get(k).copied(), |r| r.get(k).map(|m| m[delirium_data::kv!(0 int)]));
-    Some(stance(ch.up, &row(pelvis), &row(l), &row(r), &row(delirium_data::kv!(52 int)), [zero(pelvis)?, zero(l)?, zero(r)?]))
+    Some(stance(ch.up, &row(pelvis), &row(l), &row(r), &row(delirium_data::kv!(55 int)), [zero(pelvis)?, zero(l)?, zero(r)?]))
 }
 
 impl Dbm {
@@ -1125,14 +1126,14 @@ impl Dbm {
         let (zero, foot) = (|k: usize| b.zero_place(k), (*ANKLE()).map(|j| b.ch.joints[j].child));
         let cu = b.ch.up;
         let p = Params {
-            up, gup: up, dt: 1.0 / delirium_data::kv!(196),
+            up, gup: up, dt: 1.0 / delirium_data::kv!(103),
             pelvis_height: match zero(0).zip(zero(foot[0])).zip(zero(foot[1])) {
                 Some(((p, l), r)) => sdot(up, p - (l + r) * 0.5, b"zyx"),
                 None => up.vd(pelvis - (l + r) * 0.5),
             },
             hip_dist: slen((b.eff3((*HIP())[0]).m.d - pelvis).vx(cu), b"zyx"),
             leg_length: c.legs.0, foot_width: c.legs.1, p148: c.hip_yaw.0, p152: c.hip_yaw.1,
-            step_offset: c.legs.1.fma(delirium_data::kv!(24), delirium_data::kv!(125)), abort: c.abort, lead: delirium_data::kv!(57), p168: 1.0, p172: 0.0, lean_bias: c.lean_bias,
+            step_offset: c.legs.1.fma(delirium_data::kv!(24), delirium_data::kv!(130)), abort: c.abort, lead: delirium_data::kv!(60), p168: 1.0, p172: 0.0, lean_bias: c.lean_bias,
             step_height: c.step_height, leg_stiffness: c.leg_stiffness, step_clamp: step_clamp(b, c), taper: c.taper,
             low_abort: c.taper, ..default()
         };
@@ -1142,10 +1143,10 @@ impl Dbm {
         let splay = asin(sdot(cu, fr.c.vx(fl.c), b"zyx")) * delirium_data::kv!(17);
         let turn = asin(sdot(cu, vnorm(fl.c + fr.c).vx(pm.c), b"zyx")) * 0.5;
         if std::env::var("NM_YAWINIT").is_ok() {
-            for k in 0..b.ch.joints.len().min(delirium_data::kv!(104 int)) { let m = b.part(k).m; let t = up.vd((fl.c + fr.c).normalize_or_zero().vx(m.c)).clamp(-1.0, 1.0).asin() * 0.5; eprintln!("YAWINIT part {k} turn {t:.4} -> [{:.4}, {:.4}]", t - splay, -t - splay); }
+            for k in 0..b.ch.joints.len().min(delirium_data::kv!(111 int)) { let m = b.part(k).m; let t = up.vd((fl.c + fr.c).normalize_or_zero().vx(m.c)).clamp(-1.0, 1.0).asin() * 0.5; eprintln!("YAWINIT part {k} turn {t:.4} -> [{:.4}, {:.4}]", t - splay, -t - splay); }
             eprintln!("YAWINIT splay {splay:.4} turn {turn:.4}");
         }
-        let pv = Pelvis { centre: f.centre, p52: p.lean_bias, p68: delirium_data::kv!(28), yaw: [turn - splay, -turn - splay], ..default() };
+        let pv = Pelvis { centre: f.centre, p52: p.lean_bias, p68: delirium_data::kv!(26), yaw: [turn - splay, -turn - splay], ..default() };
         let mut d = Dbm { p, f, pv, acc: 0.0, leg_offset: 0.0, knee_scale: 1.0, lean: Lean::default(), lean_vec: Vec3::ZERO, as_force: false, push: Vec3::ZERO, ratio: 0.0, event: None, success: false, held: false, last: (Vec3::Z, Vec3::ZERO),
             down: (0..2).any(|i| b.doll.touch[b.ch.joints[(*ANKLE())[i]].child] & delirium_data::kv!(7 int) != 0) };
         d.held = d.holding(&b.snap(up), l, r);
@@ -1176,7 +1177,7 @@ impl Dbm {
         let z = Vec3::Z;
         let u = vnorm(z + shz(self.lean_vec, z, b"yzx"));
         let g = -z * crate::ragdoll::GRAVITY() * mass;
-        horizontal(g - u * u.vd(g), z)
+        horizontal(g - u * sdot(u, g, b"zyx"), z)
     }
 
     fn lean_vector(&mut self, com: Vec3) -> Vec3 {
@@ -1189,8 +1190,8 @@ impl Dbm {
             LeanMode::Dir(d) => return d * l.amount,
             LeanMode::Pos(p) | LeanMode::Object(p, _) => p - com,
         };
-        if to.length_squared() > delirium_data::kv!(73) {
-            to.normalize_or_zero() * l.amount
+        if sdot(to, to, b"yxz") > delirium_data::kv!(78) {
+            vnorm(to) * l.amount
         } else {
             l.mode = LeanMode::None;
             to
@@ -1207,9 +1208,9 @@ impl Dbm {
             return false;
         }
         self.success = slen(s.vel, b"yxz") < delirium_data::kv!(17) && slen(s.angvel, b"yxz") < delirium_data::kv!(17);
-        let x = off / (h * delirium_data::kv!(135));
+        let x = off / (h * delirium_data::kv!(142));
         self.ratio = if x > self.ratio { x } else { (x - self.ratio) * delirium_data::kv!(17) + self.ratio };
-        if self.ratio < 1.0 && h > delirium_data::kv!(70) && self.f.countdown > 2 {
+        if self.ratio < 1.0 && h > delirium_data::kv!(74) && self.f.countdown > 2 {
             self.event = Some(self.ratio);
         }
         true
@@ -1223,7 +1224,7 @@ impl Dbm {
             let hit = world.segment(start, start - up);
             self.p.contact[i] = hit.is_some();
             (self.p.target[i], self.p.normal[i]) = match hit {
-                Some((at, n)) => (at + up * delirium_data::kv!(126), n),
+                Some((at, n)) => (at + up * delirium_data::kv!(131), n),
                 None => (start - up * (self.p.leg_length * self.p.pelvis_height), up),
             };
             let y = crate::estimate::vrefp(self.p.dt);
@@ -1243,7 +1244,7 @@ impl Dbm {
             return None;
         }
         self.pv.centre = self.f.centre;
-        self.pv.planted = [self.f.flags & delirium_data::kv!(252 int) != 0, self.f.flags & delirium_data::kv!(254 int) != 0];
+        self.pv.planted = [self.f.flags & delirium_data::kv!(251 int) != 0, self.f.flags & delirium_data::kv!(253 int) != 0];
         self.p.leg_stiffness = c.leg_stiffness;
         self.p.leg_length = c.legs.0 + self.leg_offset;
         self.pv.acc = self.acc;
@@ -1266,7 +1267,7 @@ impl Dbm {
         self.pv.p68 = s.height;
         for leg in &mut s.legs {
             let x = leg.ankle.desired[0];
-            leg.ankle.desired[0] = if x >= -delirium_data::kv!(275) { x.min(delirium_data::kv!(275)) } else { -delirium_data::kv!(275) };
+            leg.ankle.desired[0] = if x >= -delirium_data::kv!(274) { x.min(delirium_data::kv!(274)) } else { -delirium_data::kv!(274) };
         }
     }
 
@@ -1274,10 +1275,16 @@ impl Dbm {
         if !self.held {
             return;
         }
+        self.stiffen(ch);
+        for i in [(*HIP())[0], (*KNEE())[0], (*ANKLE())[0], (*HIP())[1], (*KNEE())[1], (*ANKLE())[1], (*SPINE())[0]] {
+            ch.eff[i].oppose_gravity = if (*ANKLE()).contains(&i) || (*KNEE()).contains(&i) { 2.0 } else { 1.0 };
+        }
+    }
+
+    pub fn stiffen(&self, ch: &mut Character) {
         let k = self.p.leg_stiffness;
         for i in [(*HIP())[0], (*KNEE())[0], (*ANKLE())[0], (*HIP())[1], (*KNEE())[1], (*ANKLE())[1], (*SPINE())[0]] {
             (ch.eff[i].strength, ch.eff[i].damping) = (k * k, 2.0 * k);
-            ch.eff[i].oppose_gravity = if (*ANKLE()).contains(&i) || (*KNEE()).contains(&i) { 2.0 } else { 1.0 };
         }
         for i in 0..2 {
             ch.eff[(*KNEE())[i]].muscle_stiffness = 2.0;
@@ -1300,15 +1307,15 @@ impl Dbm {
             2 => ch.support = [foot(0), -1],
             _ => {}
         }
-        let soft = self.p.dt.fma(delirium_data::kv!(196), -1.0).fma(delirium_data::kv!(108), 1.0).clamp(1.0, delirium_data::kv!(60));
+        let soft = self.p.dt.fma(delirium_data::kv!(103), -1.0).fma(delirium_data::kv!(84), 1.0).clamp(1.0, delirium_data::kv!(64));
         let k = self.p.leg_stiffness * self.knee_scale;
         for i in 0..2 {
-            let touching = s.flags & [delirium_data::kv!(252 int), delirium_data::kv!(7 int)][i] != 0;
-            ch.eff[(*ANKLE())[i]].muscle_stiffness = if touching { delirium_data::kv!(27) } else { soft };
-            let planted = self.f.flags & [delirium_data::kv!(252 int), delirium_data::kv!(254 int)][i] != 0;
+            let touching = s.flags & [delirium_data::kv!(251 int), delirium_data::kv!(7 int)][i] != 0;
+            ch.eff[(*ANKLE())[i]].muscle_stiffness = if touching { delirium_data::kv!(31) } else { soft };
+            let planted = self.f.flags & [delirium_data::kv!(251 int), delirium_data::kv!(253 int)][i] != 0;
             let knee = &mut ch.eff[(*KNEE())[i]];
             if planted {
-                let f = if self.p.taper { (-(-s.legs[i].knee.actual - delirium_data::kv!(12))).fma(delirium_data::kv!(276), 1.0).clamp(delirium_data::kv!(57), 1.0) } else { 1.0 };
+                let f = if self.p.taper { (-(-s.legs[i].knee.actual - delirium_data::kv!(12))).fma(delirium_data::kv!(275), 1.0).clamp(delirium_data::kv!(60), 1.0) } else { 1.0 };
                 (knee.strength, knee.muscle_stiffness) = ((f * k).powi(2), delirium_data::kv!(12));
             } else {
                 (knee.strength, knee.muscle_stiffness) = (k * k, 2.0);
@@ -1318,43 +1325,43 @@ impl Dbm {
     }
 }
 
-pub fn oppose_gravity(b: &Body, attached: Option<(usize, Vec3, f32)>) -> Vec<Vec3> {
+pub fn oppose_gravity(b: &Body, attached: Option<(usize, Vec3, f32)>, out: &mut [Vec3]) {
     #[allow(non_snake_case)]
     #[inline]
-    fn AHEAD() -> f32 { delirium_data::kv!(73) }
+    fn AHEAD() -> f32 { delirium_data::kv!(78) }
     #[allow(non_snake_case)]
     #[inline]
-    fn SCALE() -> f32 { delirium_data::kv!(57) }
+    fn SCALE() -> f32 { delirium_data::kv!(60) }
     let (ch, n) = (b.ch, b.build.parts.len());
-    let mut out = vec![Vec3::ZERO; n];
     let up = ch.up;
     let down: Vec<usize> = (0..2).filter_map(|i| match ch.support[i] {
         -2 => Some(ch.joints[(*ANKLE())[i]].child).filter(|&f| b.doll.touch[f] & delirium_data::kv!(7 int) != 0),
         k => usize::try_from(k).ok(),
     }).collect();
-    let lo = down.iter().map(|f| f - delirium_data::kv!(0 int)).min().unwrap_or(delirium_data::kv!(277 int)).min(delirium_data::kv!(277 int)) as i32;
-    let hi = down.iter().map(|f| f - 1).max().map_or(-delirium_data::kv!(277 int), |h| h as i32).max(-delirium_data::kv!(277 int));
+    let lo = down.iter().map(|f| f - delirium_data::kv!(0 int)).min().unwrap_or(delirium_data::kv!(276 int)).min(delirium_data::kv!(276 int)) as i32;
+    let hi = down.iter().map(|f| f - 1).max().map_or(-delirium_data::kv!(276 int), |h| h as i32).max(-delirium_data::kv!(276 int));
     let chain = |i: usize| (lo..=hi).contains(&(i as i32));
     let pair = hi > lo + delirium_data::kv!(0 int);
     let place = b.doll.rigid.as_ref().map_or(Vec3::ZERO, |r| r.0[0].d + r.1 - b.doll.centre(0));
     let com = b.doll.com().0 + place;
     let feet: Vec<M34> = down.iter().map(|&f| b.part(f).m).collect();
-    let mut g = -up * crate::ragdoll::GRAVITY();
+    let mut g = (Vec3::ZERO - up) * crate::ragdoll::GRAVITY();
     if let (Some(l), Some(r)) = (feet.first(), feet.last()) {
-        let sp = support_at(com, l, r, delirium_data::kv!(64), delirium_data::kv!(9), up).1;
-        let d = (sp - com).normalize_or_zero();
-        g = d * d.vd(g);
+        let sp = support_at(com, l, r, delirium_data::kv!(68), delirium_data::kv!(9), up).1;
+        let d = vnorm(sp - com);
+        g = d * sdot(g, d, b"yxz");
     } else {
         g = Vec3::ZERO;
     }
     let rel = |k: usize| b.doll.rigid.as_ref().map_or(b.doll.centre(k), |r| r.0[k].d);
+    let vw = |k: usize| b.doll.rigid.as_ref().map_or(b.doll.motion(k), |r| (r.0[k].v, r.0[k].w));
     let mut m: Vec<(f32, Vec3, Vec3)> = (0..n).map(|k| {
         let mk = b.doll.part_mass(k);
-        (mk, rel(k) * mk, b.doll.motion(k).0 * mk)
+        (mk, rel(k) * mk, vw(k).0 * mk)
     }).collect();
     if let Some((k, pos, mass)) = attached.filter(|a| a.0 < n) {
         let pos = pos - b.doll.rigid.as_ref().map_or(Vec3::ZERO, |r| r.1);
-        (m[k].0, m[k].1) = (m[k].0 + mass, m[k].1 + pos * mass);
+        (m[k].0, m[k].1) = (mass + m[k].0, pos.mul_add(Vec3::splat(mass), m[k].1));
     }
     let add = |m: &mut Vec<(f32, Vec3, Vec3)>, to: usize, from: usize| {
         let f = m[from];
@@ -1366,11 +1373,15 @@ pub fn oppose_gravity(b: &Body, attached: Option<(usize, Vec3, f32)>) -> Vec<Vec
     for i in (0..ch.joints.len()).filter(|&i| chain(i)) {
         add(&mut m, ch.joints[i].child, ch.joints[i].parent);
     }
-    let ahead = |k: usize| (m[k].1 + m[k].2 * AHEAD()) / m[k].0;
+    let ahead = |s: &(f32, Vec3, Vec3)| s.2.mul_add(Vec3::splat(AHEAD()), s.1) * crate::gjk::recip(s.0);
     let at = |i: usize, k: usize| {
         let p = b.rigid(i).map_or_else(|| b.joint_pos(i), |(c, _, l, _)| crate::rigid::pos(c, l, Vec3::ZERO));
-        let (v, w) = b.doll.motion(k);
-        p + (v + w.vx(p - rel(k))) * AHEAD()
+        let (v, w) = vw(k);
+        let r = rel(k);
+        let vo = b.doll.rage_vo.as_ref().and_then(|o| o.get(k).copied())
+            .unwrap_or_else(|| fneg(r.zxy().mul_add(w.yzx(), fneg(r.yzx().mul_add(w.zxy(), v)))));
+        let vp = fneg(p.yzx().mul_add(w.zxy(), fneg(p.zxy().mul_add(w.yzx(), vo))));
+        vp.mul_add(Vec3::splat(AHEAD()), p)
     };
     for (i, (j, e)) in ch.joints.iter().zip(&ch.eff).enumerate() {
         if e.oppose_gravity == 0.0 {
@@ -1379,40 +1390,44 @@ pub fn oppose_gravity(b: &Body, attached: Option<(usize, Vec3, f32)>) -> Vec<Vec
         let (lever, force) = if chain(i) && pair {
             let o = if (i as i32) < lo + delirium_data::kv!(0 int) { i + delirium_data::kv!(0 int) } else { i - delirium_data::kv!(0 int) };
             let (ka, kb) = (j.parent, ch.joints[o].parent);
-            let half = 0.5 * (m[ka].0 + m[kb].0);
-            let c = (m[ka].1 + m[ka].2 * AHEAD() + m[kb].1 + m[kb].2 * AHEAD()) * 0.5 / half;
+            let half = (m[kb].0 + m[ka].0) * 0.5;
+            let mb = m[kb].2.mul_add(Vec3::splat(AHEAD()), m[kb].1);
+            let ma = m[ka].2.mul_add(Vec3::splat(AHEAD()), m[ka].1);
+            let c = (ma - mb).mul_add(Vec3::splat(0.5), mb) * crate::gjk::recip(half);
             let (pa, pb) = (at(i, ka), at(o, kb));
             let d = pb - pa;
-            let s = (c - pa).vd(d) / d.length_squared();
+            let dn = vnorm(d);
+            let s = sdot(c - pa, dn, b"yxz") / sdot(d, dn, b"yxz");
             let f = g * half;
-            let dn = d.normalize_or_zero();
-            (pa + d * s - c, f - dn * f.vd(dn))
+            (d.mul_add(Vec3::splat(s), pa) - c, f - dn * sdot(f, dn, b"zyx"))
         } else {
             let k = if chain(i) { j.parent } else { j.child };
-            (at(i, k) - ahead(k), g * m[k].0)
+            (at(i, k) - ahead(&m[k]), g * m[k].0)
         };
-        let t = lever.vx(force) * if chain(i) { -1.0 } else { 1.0 };
+        let t = fneg(force.yzx().mul_add(lever.zxy(), -(force.zxy() * lever.yzx())));
+        let t = if chain(i) { Vec3::ZERO - t } else { t };
         let max = e.oppose_gravity * e.strength * SCALE();
         let t = if j.three {
             let mut t = clamp_length(t, 0.0, max);
             if (*ANKLE()).contains(&i) {
                 let f = b.part(j.child).m;
-                let x = t.vd(f.a);
-                if x > delirium_data::kv!(17) * max {
-                    t -= f.a * (x - delirium_data::kv!(17) * max);
+                let x = sdot(t, f.a, b"zyx");
+                if x > max * delirium_data::kv!(17) {
+                    t = fneg(f.a.mul_add(Vec3::splat(x - max * delirium_data::kv!(17)), -t));
                 }
-                let z = t.vd(f.c);
-                t -= f.c * if z > 0.5 * max { z - 0.5 * max } else if z < -0.5 * max { z + 0.5 * max } else { 0.0 };
+                let z = sdot(t, f.c, b"zyx");
+                let h = max * 0.5;
+                let s = if z > h { z - h } else if z < max * -0.5 { z + h } else { 0.0 };
+                t = fneg(f.c.mul_add(Vec3::splat(s), -t));
             }
             t
         } else {
             let axis = b.rigid(i).map_or_else(|| b.frames[j.parent].rotation * j.in_parent * Vec3::Z, |(c, _, l, _)| crate::rigid::hinge_axis(c, l));
-            axis * t.vd(axis).clamp(-max, max)
+            axis * sdot(axis, t, b"zyx").clamp(-max, max)
         };
         out[j.child] += t;
-        out[j.parent] -= t;
+        out[j.parent] += Vec3::ZERO - t;
     }
-    out
 }
 
 pub fn foot_yaw(b: &Body, yaw: &mut [f32; 2], dt: f32) -> Vec<Vec3> {
@@ -1425,8 +1440,11 @@ pub fn foot_yaw(b: &Body, yaw: &mut [f32; 2], dt: f32) -> Vec<Vec3> {
             continue;
         }
         let m = b.part(k).m;
-        let upright = up.vd(m.b).max(0.0);
-        let now = atan2(m.c.vd(Vec3::X), m.c.vd(up.vx(Vec3::X)));
+        let upright = sdot(up, m.b, b"zyx");
+        let upright = if -upright >= 0.0 { 0.0 } else { upright };
+        let x = Vec3::X;
+        let u = fneg(x.yzx().mul_add(up.zxy(), -(x.zxy() * up.yzx())));
+        let now = atan2((m.c.y + m.c.z).mul_add(0.0, m.c.x), sdot(m.c, u, b"zyx"));
         if t & delirium_data::kv!(1 int) == 0 {
             yaw[i] = now;
         }
@@ -1437,9 +1455,8 @@ pub fn foot_yaw(b: &Body, yaw: &mut [f32; 2], dt: f32) -> Vec<Vec3> {
         if d < -std::f32::consts::PI {
             d += std::f32::consts::TAU;
         }
-        let w = b.doll.motion(k).1.vd(up);
-        let t = (d * delirium_data::kv!(196) - w * delirium_data::kv!(27)) * upright / (dt * delirium_data::kv!(196));
-        out[k] = up * t;
+        let w = sdot(b.doll.motion(k).1, up, b"zyx");
+        out[k] = (up * (d.mul_add(delirium_data::kv!(103), -(w * delirium_data::kv!(31))) * upright)) * crate::gjk::recip(dt * delirium_data::kv!(103));
     }
     out
 }
@@ -1448,14 +1465,15 @@ pub fn stabilise(b: &Body, k: f32, dt: f32) -> Vec<Vec3> {
     let mut out = vec![Vec3::ZERO; b.build.parts.len()];
     let up = b.ch.up;
     let feet = [0, 1].map(|i| b.ch.joints[(*ANKLE())[i]].child);
-    if !feet.iter().any(|&f| b.doll.touch[f] & delirium_data::kv!(91 int) == delirium_data::kv!(7 int)) {
+    if !feet.iter().any(|&f| b.doll.touch[f] & delirium_data::kv!(95 int) == delirium_data::kv!(7 int)) {
         return out;
     }
-    let (com, vel) = b.doll.com(); if std::env::var("NM_SWDUMP").is_ok() { let h = |v: Vec3| format!("{:08x} {:08x} {:08x}", v.x.to_bits(), v.y.to_bits(), v.z.to_bits()); eprintln!("ostabin {:08x} {} {} {}", k.to_bits(), h(com), h(vel), h(up)); }
-    let mid = (b.doll.centre(feet[0]) + b.doll.centre(feet[1])) * 0.5;
-    let fv = (b.doll.motion(feet[0]).0 + b.doll.motion(feet[1]).0) * 0.5; if std::env::var("NM_SWDUMP").is_ok() { let h = |v: Vec3| format!("{:08x} {:08x} {:08x}", v.x.to_bits(), v.y.to_bits(), v.z.to_bits()); eprintln!("ostabc {} {} {} {} dt {:08x}", h(b.doll.centre(feet[0])), h(b.doll.centre(feet[1])), h(b.doll.motion(feet[0]).0), h(b.doll.motion(feet[1]).0), dt.to_bits()); }
+    let (com, vel) = b.doll.com();
+    let (cf, vf) = (|k: usize| b.doll.rigid.as_ref().map_or(b.doll.centre(k), |r| r.0[k].d + r.1), |k: usize| b.doll.rigid.as_ref().map_or(b.doll.motion(k).0, |r| r.0[k].v));
+    let mid = (cf(feet[0]) + cf(feet[1])) * 0.5;
+    let fv = (vf(feet[0]) + vf(feet[1])) * 0.5;
     let d = com - mid;
-    let x = d.dot(d);
+    let x = d.vd(d);
     let e = crate::estimate::vrsqrtefp(x);
     let e = if e.is_infinite() { 0.0 } else { e };
     let c = sdot(d * (-x).mul_add(e * e, 1.0).mul_add(0.5 * e, e), up, b"zyx");
@@ -1463,9 +1481,8 @@ pub fn stabilise(b: &Body, k: f32, dt: f32) -> Vec<Vec3> {
     let c = c * c;
     let s = c * c * k;
     let s = s * s;
-    let f = (vel.mul_add(Vec3::splat(delirium_data::kv!(73)), com) - mid).mul_add(Vec3::splat(s), (vel - fv) * (s * delirium_data::kv!(278 f32)));
-    if std::env::var("NM_SWDUMP").is_ok() { eprintln!("ostabi x {:08x} e {:08x} s {:08x} f {:08x} {:08x} {:08x}", x.to_bits(), e.to_bits(), s.to_bits(), f.x.to_bits(), f.y.to_bits(), f.z.to_bits()); }
-    let f = (f - up * sdot(f, up, b"zyx")) * (dt * delirium_data::kv!(196));
+    let f = (vel.mul_add(Vec3::splat(delirium_data::kv!(78)), com) - mid).mul_add(Vec3::splat(s), (vel - fv) * (s * delirium_data::kv!(277 f32)));
+    let f = (f - up * sdot(f, up, b"zyx")) * (dt * delirium_data::kv!(103));
     out[feet[0]] += f * 0.5;
     out[feet[1]] += f * 0.5;
     out[b.ch.joints[(*HIP())[0]].parent] -= f;

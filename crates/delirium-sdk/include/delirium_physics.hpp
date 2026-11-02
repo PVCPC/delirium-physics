@@ -55,6 +55,8 @@ public:
     }
     /// Moving boxes (cars, platforms), 13 floats each: centre, quaternion xyzw, half size, velocity. Set before each step.
     void set_boxes(const std::vector<std::array<float, 13>>& b) { check(nm_world_set_boxes(get(), b.empty() ? nullptr : b[0].data(), (int32_t)b.size())); }
+    /// The boxes' spins (rad/s, world axes), one per box of the last set_boxes. Set after them, before each step.
+    void set_box_spins(const std::vector<Vec3>& s) { check(nm_world_set_box_spins(get(), s.empty() ? nullptr : s[0].data(), (int32_t)s.size())); }
 };
 
 class Build {
@@ -116,6 +118,10 @@ public:
     void push(const Vec3& at, const Vec3& impulse) { check(nm_agent_apply_push(get(), at.data(), impulse.data())); }
     void shot(const World& w, const char* set, int part, const Vec3& at, const Vec3& dir, float health = 200.f) {
         check(nm_agent_task_shot(get(), w.get(), set, part, at.data(), dir.data(), health));
+    }
+    /// shot with the weapon's bullet speed (its weaponinfo force) in place of 400.
+    void shot(const World& w, const char* set, int part, const Vec3& at, const Vec3& dir, float health, float force) {
+        check(nm_agent_task_shot_force(get(), w.get(), set, part, at.data(), dir.data(), health, force));
     }
     /// RDR2's reactions to that shot (see nm_rdr2_set); how many started.
     int rdr2_shot(const World& w, int part, const Vec3& at, const Vec3& dir) { return check(nm_agent_rdr2_shot(get(), w.get(), part, at.data(), dir.data())); }

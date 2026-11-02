@@ -3,26 +3,26 @@ use bevy::prelude::*;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MEAT_DAMAGE() -> f32 { delirium_data::kv!(74) }
+pub fn MEAT_DAMAGE() -> f32 { delirium_data::kv!(136) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MEAT_RED() -> &'static LinearRgba { static V: std::sync::OnceLock<LinearRgba> = std::sync::OnceLock::new(); let f = || LinearRgba::rgb(delirium_data::kv!(20), delirium_data::kv!(64), 0.0); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn MEAT_RED() -> &'static LinearRgba { static V: std::sync::OnceLock<LinearRgba> = std::sync::OnceLock::new(); let f = || LinearRgba::rgb(delirium_data::kv!(20), delirium_data::kv!(68), 0.0); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHOT_EXIT() -> &'static Exit { static V: std::sync::OnceLock<Exit> = std::sync::OnceLock::new(); let f = || Exit { min: 1.0, max: delirium_data::kv!(27), speed: Some(delirium_data::kv!(57)), fail: false }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SHOT_EXIT() -> &'static Exit { static V: std::sync::OnceLock<Exit> = std::sync::OnceLock::new(); let f = || Exit { min: 1.0, max: delirium_data::kv!(31), speed: Some(delirium_data::kv!(60)), fail: false }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 pub const EXIT_SLOW: f32 = 2.0;
 
 pub fn exit(b: &str) -> Option<Exit> {
     let e = |min, max, speed, fail| Some(Exit { min, max, speed, fail });
     match b {
-        "balance" | "drunk" => e(1.0, delirium_data::kv!(27), Some(delirium_data::kv!(57)), true),
-        "highfall" => e(1.0, delirium_data::kv!(27), None, false),
-        "relax" => e(1.0, delirium_data::kv!(27), Some(delirium_data::kv!(73)), false),
-        "rollup" => e(2.0, delirium_data::kv!(5), Some(delirium_data::kv!(73)), false),
-        "brace" => e(2.0, delirium_data::kv!(80), None, false),
-        "flinch" => e(1.0, delirium_data::kv!(27), Some(delirium_data::kv!(57)), false),
-        "catchfall" | "stairs" => e(2.0, delirium_data::kv!(27), Some(delirium_data::kv!(57)), false),
+        "balance" | "drunk" => e(1.0, delirium_data::kv!(31), Some(delirium_data::kv!(60)), true),
+        "highfall" => e(1.0, delirium_data::kv!(31), None, false),
+        "relax" => e(1.0, delirium_data::kv!(31), Some(delirium_data::kv!(78)), false),
+        "rollup" => e(2.0, delirium_data::kv!(5), Some(delirium_data::kv!(78)), false),
+        "brace" => e(2.0, delirium_data::kv!(27), None, false),
+        "flinch" => e(1.0, delirium_data::kv!(31), Some(delirium_data::kv!(60)), false),
+        "catchfall" | "stairs" => e(2.0, delirium_data::kv!(31), Some(delirium_data::kv!(60)), false),
         _ => None,
     }
 }
@@ -32,19 +32,19 @@ pub fn exit(b: &str) -> Option<Exit> {
 pub fn LYING_HEAD() -> f32 { delirium_data::kv!(24) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DYING() -> f32 { delirium_data::kv!(28) }
+pub fn DYING() -> f32 { delirium_data::kv!(26) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn FATAL() -> f32 { delirium_data::kv!(76) }
+pub fn FATAL() -> f32 { delirium_data::kv!(79) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIGHFALL_SPEED() -> f32 { delirium_data::kv!(32) }
+pub fn HIGHFALL_SPEED() -> f32 { delirium_data::kv!(35) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BALANCE_ROLL() -> f32 { delirium_data::kv!(70) }
+pub fn BALANCE_ROLL() -> f32 { delirium_data::kv!(74) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BUMP_LEAN() -> f32 { delirium_data::kv!(110) }
+pub fn BUMP_LEAN() -> f32 { delirium_data::kv!(116) }
 pub const BUMP_LEAN_SECS: f32 = 1.0;
 #[allow(non_snake_case)]
 #[inline]
@@ -52,68 +52,68 @@ pub fn BULLET_BACK() -> f32 { delirium_data::kv!(5) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn ROCKET_SPEED() -> f32 { delirium_data::kv!(80) }
+pub fn ROCKET_SPEED() -> f32 { delirium_data::kv!(27) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn ROCKET_LIFE() -> f32 { delirium_data::kv!(108) }
+pub fn ROCKET_LIFE() -> f32 { delirium_data::kv!(84) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn PELLET_SPREAD() -> f32 { delirium_data::kv!(110) }
+pub fn PELLET_SPREAD() -> f32 { delirium_data::kv!(116) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BURN_DAMAGE() -> f32 { delirium_data::kv!(35) }
+pub fn BURN_DAMAGE() -> f32 { delirium_data::kv!(38) }
 
 pub fn gun_spread(kind: &str, held: f32, len: f32, acc: f32, mut rnd: impl FnMut() -> f32) -> (f32, f32) {
-    let full = match kind { "pistol" | "deagle" => delirium_data::kv!(839), "smg" => delirium_data::kv!(12), "ak47" => delirium_data::kv!(5), _ => f32::INFINITY };
+    let full = match kind { "pistol" | "deagle" => delirium_data::kv!(916), "smg" => delirium_data::kv!(12), "ak47" => delirium_data::kv!(5), _ => f32::INFINITY };
     let ped = 2.0 * (held / full).min(1.0);
-    let p = ped * (delirium_data::kv!(73) + rnd());
-    let w = rnd() * acc * if p < 0.5 { (2.0 * p).max(delirium_data::kv!(57)) } else { 1.0 };
-    let most = ped * delirium_data::kv!(132) + acc * if ped * delirium_data::kv!(132) < 0.5 { (delirium_data::kv!(533) * ped).max(delirium_data::kv!(57)) } else { 1.0 };
-    (delirium_data::kv!(113) * len * (p + w), delirium_data::kv!(113) * len * most)
+    let p = ped * (delirium_data::kv!(78) + rnd());
+    let w = rnd() * acc * if p < 0.5 { (2.0 * p).max(delirium_data::kv!(60)) } else { 1.0 };
+    let most = ped * delirium_data::kv!(138) + acc * if ped * delirium_data::kv!(138) < 0.5 { (delirium_data::kv!(531) * ped).max(delirium_data::kv!(60)) } else { 1.0 };
+    (delirium_data::kv!(118) * len * (p + w), delirium_data::kv!(118) * len * most)
 }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn GRAB_STRENGTH() -> f32 { delirium_data::kv!(171) }
+pub fn GRAB_STRENGTH() -> f32 { delirium_data::kv!(176) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn GRAB_STIFFNESS() -> f32 { delirium_data::kv!(27) }
+pub fn GRAB_STIFFNESS() -> f32 { delirium_data::kv!(31) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn GRAB_DIST() -> f32 { delirium_data::kv!(172) }
+pub fn GRAB_DIST() -> f32 { delirium_data::kv!(177) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn REACH_ANGLE() -> f32 { delirium_data::kv!(173) }
+pub fn REACH_ANGLE() -> f32 { delirium_data::kv!(178) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn ONE_SIDE_REACH() -> f32 { delirium_data::kv!(174) }
+pub fn ONE_SIDE_REACH() -> f32 { delirium_data::kv!(179) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHOVE_PART() -> i32 { delirium_data::kv!(77 int) }
+pub fn SHOVE_PART() -> i32 { delirium_data::kv!(81 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LIFT_IMPULSE() -> f32 { delirium_data::kv!(730) }
+pub fn LIFT_IMPULSE() -> f32 { delirium_data::kv!(739) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn STUN_MAG() -> f32 { delirium_data::kv!(110) }
+pub fn STUN_MAG() -> f32 { delirium_data::kv!(116) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DRUNK_TIMEOUT() -> f32 { delirium_data::kv!(983) }
+pub fn DRUNK_TIMEOUT() -> f32 { delirium_data::kv!(1064) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DRUNK_LEAN() -> f32 { delirium_data::kv!(57) }
+pub fn DRUNK_LEAN() -> f32 { delirium_data::kv!(60) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LEAN_BUTTON() -> f32 { delirium_data::kv!(110) }
+pub fn LEAN_BUTTON() -> f32 { delirium_data::kv!(116) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn STAYUP_STIFFNESS() -> f32 { delirium_data::kv!(5) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DODGE_LEAN() -> f32 { delirium_data::kv!(70) }
+pub fn DODGE_LEAN() -> f32 { delirium_data::kv!(74) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BRACE_LEAN() -> f32 { delirium_data::kv!(114) }
+pub fn BRACE_LEAN() -> f32 { delirium_data::kv!(119) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn ARMS_OUT_TIMEOUT() -> f32 { delirium_data::kv!(132) }
+pub fn ARMS_OUT_TIMEOUT() -> f32 { delirium_data::kv!(138) }

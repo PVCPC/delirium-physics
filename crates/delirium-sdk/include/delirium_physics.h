@@ -50,10 +50,12 @@ NM_API NmWorld* nm_world_create(void);
 NM_API void nm_world_destroy(NmWorld* w);
 /* Triangles: `positions` 3 floats per vertex, `triangles` 3 indices each, `materials` one byte per triangle (or null). */
 NM_API int32_t nm_world_add_mesh(NmWorld* w, const float* positions, int32_t vertices, const uint32_t* triangles, int32_t count, const uint8_t* materials);
-/* A flat floor at height `z`, `half` metres each way from (x, y). */
+/* A flat floor at height `z`, `half` metres each way from (x, y), at most 100. */
 NM_API int32_t nm_world_add_floor(NmWorld* w, float x, float y, float z, float half);
-/* The world's moving boxes (cars, platforms), in place of the last set: `count` boxes of 13 floats each, centre (3), rotation (quaternion x y z w), half size (3), velocity (3). The parts can't go into them and meet them at the box's velocity, with a car body's friction (0.2). The host moves them: set them again before each step. A box's instanceIndex (braceForImpact's, grab's) is its place in the array, its frame the box's centre and rotation. ponytail: no spin (a turning box's surface moves at its centre's velocity). */
+/* The world's moving boxes (cars, platforms), in place of the last set: `count` boxes of 13 floats each, centre (3), rotation (quaternion x y z w), half size (3), velocity (3). The parts can't go into them and meet them at the box's velocity, with a car body's friction (0.2). The host moves them: set them again before each step. A box's instanceIndex (braceForImpact's, grab's) is its place in the array, its frame the box's centre and rotation. A box turns only once nm_world_set_box_spins says so (set the boxes first: they come with no spin). */
 NM_API int32_t nm_world_set_boxes(NmWorld* w, const float* boxes, int32_t count);
+/* The boxes' spins (rad/s about their centres, world axes), `count` x 3 floats, for the boxes of the last nm_world_set_boxes (`count` is their number, else NM_E_ARG): a turning box's surface moves at the box's velocity plus the spin crossed with the point's offset from its centre. Set them again with the boxes before each step. */
+NM_API int32_t nm_world_set_box_spins(NmWorld* w, const float* spins, int32_t count);
 /* Surface row `material` (the byte per triangle of nm_world_add_mesh; with the game's materials.dat loaded, its row) takes `friction` (times the part's own) and `elasticity` (0-1), for every agent; ice is about 0.05. Rows past the table's end are added, the ones between at friction 1, elasticity 0.1. */
 NM_API int32_t nm_set_surface(int32_t material, float friction, float elasticity);
 NM_API int32_t nm_world_triangle_count(const NmWorld* w);
@@ -158,6 +160,8 @@ NM_API int32_t nm_agent_feedback_count(const NmAgent* a);
 NM_API int32_t nm_agent_feedback_get(const NmAgent* a, int32_t i, char* buf, int32_t len, int32_t* slot, float* value);
 /* TaskNMShot's start (a new task's first update, with the game's `rand` draws: one generator for every agent): hit on part `part` at `at` (world), the bullet going along `dir` (bulletVel 400 m/s along it, the normal its back); `set` a taskparams set (e.g. "POWERFUL_WEAPON", "SMG_WEAPON", "*" for the defaults), `health` the ped's (100-200). The bullet's push is the caller's (nm_agent_apply_push). Returns 0. */
 NM_API int32_t nm_agent_task_shot(NmAgent* a, const NmWorld* w, const char* set, int32_t part, const float* at, const float* dir, float health);
+/* nm_agent_task_shot with the bullet's speed `force` (the weapon's weaponinfo force, +144; over 0) in place of 400. */
+NM_API int32_t nm_agent_task_shot_force(NmAgent* a, const NmWorld* w, const char* set, int32_t part, const float* at, const float* dir, float health, float force);
 /* TaskNMBalance's start: stand and keep balance, looking at `look` (or null). */
 NM_API int32_t nm_agent_task_balance(NmAgent* a, const NmWorld* w, const char* set, const float* look);
 /* TaskNMRelax's catchFall. */

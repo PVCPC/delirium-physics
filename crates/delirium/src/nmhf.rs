@@ -1,3 +1,4 @@
+use crate::fneg;
 use bevy_math::{Mat3, Quat, Vec3};
 use crate::Vd;
 use crate::Vx;
@@ -45,10 +46,10 @@ pub struct HighFallParams {
 
 impl Default for HighFallParams {
     fn default() -> HighFallParams {
-        HighFallParams { body_stiffness: delirium_data::kv!(111), bodydamping: 1.0, catchfalltime: delirium_data::kv!(24), crash_or_land_cut_off: delirium_data::kv!(243), pd_strength: delirium_data::kv!(24),
-                         catch_fall_cut_off: 0.5, arms_up: 1.0, leg_radius: delirium_data::kv!(17), leg_ang_speed: delirium_data::kv!(198), arm_period: 1.0,
-                         arm_amplitude: 2.0, aim_angle_base: delirium_data::kv!(135), foward_vel_rotation: -delirium_data::kv!(113), foot_vel_comp_scale: delirium_data::kv!(64),
-                         leg_l: delirium_data::kv!(20), side_d: delirium_data::kv!(9), foward_offset_of_leg_ik: delirium_data::kv!(57), foward_vel_cut_off: delirium_data::kv!(60), leg_strength: delirium_data::kv!(21),
+        HighFallParams { body_stiffness: delirium_data::kv!(117), bodydamping: 1.0, catchfalltime: delirium_data::kv!(24), crash_or_land_cut_off: delirium_data::kv!(242), pd_strength: delirium_data::kv!(24),
+                         catch_fall_cut_off: 0.5, arms_up: 1.0, leg_radius: delirium_data::kv!(17), leg_ang_speed: delirium_data::kv!(201), arm_period: 1.0,
+                         arm_amplitude: 2.0, aim_angle_base: delirium_data::kv!(142), foward_vel_rotation: -delirium_data::kv!(118), foot_vel_comp_scale: delirium_data::kv!(68),
+                         leg_l: delirium_data::kv!(20), side_d: delirium_data::kv!(9), foward_offset_of_leg_ik: delirium_data::kv!(60), foward_vel_cut_off: delirium_data::kv!(64), leg_strength: delirium_data::kv!(21),
                          orientate_body_to_fall_direction: true, foward_roll: false, zero_pose_roll: false,
                          ignor_world_collisions: false }
     }
@@ -74,6 +75,7 @@ pub struct HighFallOut {
     pub stop_balance: bool,
     pub taper_off: bool,
     pub dbm_set: Option<(f32, f32)>,
+    pub neck_after: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -90,24 +92,20 @@ pub struct HighFall {
 
 impl Default for HighFall {
     fn default() -> HighFall {
-        HighFall { p: HighFallParams::default(), t: 0.0, land: delirium_data::kv!(76), fwd: 0.0, timer: 0.0, speed: 0.0, s: delirium_data::kv!(192 int), f: 0 }
+        HighFall { p: HighFallParams::default(), t: 0.0, land: delirium_data::kv!(79), fwd: 0.0, timer: 0.0, speed: 0.0, s: delirium_data::kv!(197 int), f: 0 }
     }
-}
-
-fn flat(v: Vec3, up: Vec3) -> Vec3 {
-    v - up * up.vd(v)
 }
 
 impl HighFall {
     pub fn active(&self) -> bool {
-        self.s & delirium_data::kv!(252 int) != 0
+        self.s & delirium_data::kv!(251 int) != 0
     }
 
     pub fn activate(&mut self, c: &mut Ctx, world: &Collision, obstacles: &[Obstacle], dt: f32) {
         if self.active() {
             return;
         }
-        self.s |= delirium_data::kv!(252 int);
+        self.s |= delirium_data::kv!(251 int);
         self.orient(c, world, obstacles, dt);
     }
 
@@ -135,40 +133,40 @@ impl HighFall {
         self.t += dt;
         let all: Vec<usize> = (0..c.b.build.parts.len()).collect();
         let contact = c.b.doll.collided(&all);
-        if self.f & delirium_data::kv!(254 int) != 0 {
-            if self.timer > delirium_data::kv!(73) && self.f & delirium_data::kv!(51 int) != 0 {
-                self.f = (self.f & delirium_data::kv!(253 int)) | delirium_data::kv!(252 int);
+        if self.f & delirium_data::kv!(253 int) != 0 {
+            if self.timer > delirium_data::kv!(78) && self.f & delirium_data::kv!(54 int) != 0 {
+                self.f = (self.f & delirium_data::kv!(252 int)) | delirium_data::kv!(251 int);
             }
-            if self.s & delirium_data::kv!(51 int) != 0 {
-                self.f = (self.f & delirium_data::kv!(373 int)) | delirium_data::kv!(7 int);
+            if self.s & delirium_data::kv!(54 int) != 0 {
+                self.f = (self.f & delirium_data::kv!(372 int)) | delirium_data::kv!(7 int);
             }
         }
         if self.s & 1 != 0 {
             let slow = contact && self.fwd < self.p.foward_vel_cut_off;
             let crash = contact && (self.f & delirium_data::kv!(23 int) != 0 || self.s & delirium_data::kv!(23 int) != 0);
             let landed = if self.p.foward_roll {
-                self.f |= delirium_data::kv!(254 int);
+                self.f |= delirium_data::kv!(253 int);
                 true
             } else if crash {
                 self.f |= delirium_data::kv!(7 int);
                 true
             } else if slow {
-                self.f |= delirium_data::kv!(359 int);
+                self.f |= delirium_data::kv!(358 int);
                 true
             } else {
                 false
             };
             if landed {
-                self.s &= delirium_data::kv!(298 int);
+                self.s &= delirium_data::kv!(297 int);
             }
         }
         if self.s & delirium_data::kv!(1 int) != 0 {
             let late = self.t > self.land - self.p.catchfalltime - delirium_data::kv!(9);
-            let go = (late && self.s & delirium_data::kv!(7 int) == 0) || (contact && self.t > delirium_data::kv!(110));
+            let go = (late && self.s & delirium_data::kv!(7 int) == 0) || (contact && self.t > delirium_data::kv!(116));
             if go && !self.p.ignor_world_collisions {
-                self.s = (self.s & delirium_data::kv!(431 int)) | 2;
+                self.s = (self.s & delirium_data::kv!(430 int)) | 2;
             } else if late {
-                self.s = (self.s & delirium_data::kv!(36 int)) | 1;
+                self.s = (self.s & delirium_data::kv!(39 int)) | 1;
             }
         }
         self.orient(c, world, obstacles, dt);
@@ -185,19 +183,19 @@ impl HighFall {
 
     fn orient(&mut self, c: &mut Ctx, world: &Collision, obstacles: &[Obstacle], dt: f32) {
         let p = self.p;
-        if self.f & delirium_data::kv!(252 int) == 0 && self.f & delirium_data::kv!(7 int) == 0 && self.s & 2 == 0 {
+        if self.f & delirium_data::kv!(251 int) == 0 && self.f & delirium_data::kv!(7 int) == 0 && self.s & 2 == 0 {
             c.ch.set_stiffness(p.body_stiffness, p.bodydamping, "fb", None);
         }
         let (up, vel) = (c.up, c.vel);
         let vz = crate::nmdbm::sdot(up, vel, b"zyx");
         let (mut rot, mut base) = (p.foward_vel_rotation, p.aim_angle_base);
         if p.foward_roll {
-            (rot, base) = (0.0, base + delirium_data::kv!(57));
+            (rot, base) = (0.0, base + delirium_data::kv!(60));
         }
         let feet = (c.b.part(limb(2).p[delirium_data::kv!(0 int)]).m.d + c.b.part(limb(delirium_data::kv!(0 int)).p[delirium_data::kv!(0 int)]).m.d) * 0.5;
-        let d = vel * delirium_data::kv!(60);
+        let d = vel * delirium_data::kv!(64);
         let hit = crate::nmcf::cast(world, obstacles, feet, d.normalize_or_zero(), d.length())
-            .filter(|&(_, n, _)| crate::nmdbm::sdot(n, up, b"zyx").abs() >= delirium_data::kv!(114));
+            .filter(|&(_, n, _)| crate::nmdbm::sdot(n, up, b"zyx").abs() >= delirium_data::kv!(119));
         let h = hit.map(|(t, _, _)| {
             let v = d.normalize_or_zero() * t;
             crate::nmdbm::slen(v - crate::nmdbm::shz(v, up, b"zyx"), b"yxz")
@@ -205,26 +203,29 @@ impl HighFall {
         let g = crate::ragdoll::GRAVITY();
         self.land = match h {
             Some(h) => ((vz.mul_add(vz, g * h * 2.0).sqrt() - vz.abs()) / g) + self.t,
-            None => self.t + delirium_data::kv!(80),
+            None => self.t + delirium_data::kv!(27),
         };
         let frac = 1.0 - (self.land - self.t) / self.land;
         let hv = crate::nmdbm::shz(vel, up, b"zyx");
-        self.fwd = crate::nmdbm::sdot(c.m.c, -hv, b"yxz");
+        self.fwd = crate::nmdbm::sdot(c.m.c, fneg(hv), b"yxz");
+        let (yzx, zxy) = (|v: Vec3| Vec3::new(v.y, v.z, v.x), |v: Vec3| Vec3::new(v.z, v.x, v.y));
         let (b, cc) = if self.fwd.abs() >= 1.0 && p.orientate_body_to_fall_direction {
-            let v = flat(-vel, up).normalize_or_zero();
-            (-up.vx(v), v)
+            let v = crate::nmdbm::vnorm(crate::nmdbm::shz(-vel, up, b"zyx"));
+            (fneg((-yzx(v)).mul_add(zxy(up), zxy(v) * yzx(up))), v)
         } else {
-            let ha = flat(c.m.a, up);
-            (-ha, ha.vx(up))
+            let ha = crate::nmdbm::shz(c.m.a, up, b"zyx");
+            (fneg(ha), (fneg(yzx(up))).mul_add(zxy(ha), zxy(up) * yzx(ha)))
         };
-        let th = (rot * self.fwd + base).clamp(-0.5, delirium_data::kv!(70));
-        let (sn, cs) = th.sin_cos();
-        let (a, cc) = (up * cs - cc * sn, cc * cs + up * sn);
+        let th = rot.mul_add(self.fwd, base).clamp(-0.5, delirium_data::kv!(74));
+        let (sn, cs) = (delirium_data::mathrt::sin(th as f64) as f32, delirium_data::mathrt::cos(th as f64) as f32);
+        let (a, cc) = ((-cc).mul_add(Vec3::splat(sn), up * cs), up.mul_add(Vec3::splat(sn), cc * cs));
         let pm = c.b.part(PELVIS).m;
-        let r = Mat3::from_cols(a, b, cc) * Mat3::from_cols(pm.a, pm.b, pm.c).transpose();
+        let inv = inverse3([pm.a, pm.b, pm.c]);
+        let col = |k: usize| cc.mul_add(Vec3::splat(inv[k].z), b.mul_add(Vec3::splat(inv[k].y), a * inv[k].x));
+        let r = Mat3::from_cols(col(0), col(1), col(2));
         let (mut axis, angle) = axis_angle(quat_of(&r));
-        if self.fwd.abs() < delirium_data::kv!(70) {
-            axis = b * b.vd(axis);
+        if self.fwd.abs() < delirium_data::kv!(74) {
+            axis = b * crate::nmdbm::sdot(b, axis, b"zyx");
         }
         self.s |= delirium_data::kv!(7 int);
         if (angle * frac).abs() > p.crash_or_land_cut_off {
@@ -235,8 +236,8 @@ impl HighFall {
         } else {
             self.s &= !delirium_data::kv!(23 int);
         }
-        if self.s & delirium_data::kv!(254 int) != 0 {
-            let k = (angle * delirium_data::kv!(509) - c.angvel.vd(axis) * delirium_data::kv!(196)) * p.pd_strength / (dt * delirium_data::kv!(196));
+        if self.s & delirium_data::kv!(253 int) != 0 {
+            let k = angle.mul_add(delirium_data::kv!(508), -(crate::nmdbm::sdot(c.angvel, axis, b"zyx") * delirium_data::kv!(103))) * p.pd_strength / (dt * delirium_data::kv!(103));
             c.out.torque(PELVIS, axis * k);
         }
     }
@@ -244,7 +245,7 @@ impl HighFall {
     fn flail(&mut self, c: &mut Ctx, k: &mut Kids) {
         let p = self.p;
         if self.s & delirium_data::kv!(1 int) == 0 {
-            if k.head.active && self.f & delirium_data::kv!(252 int) == 0 && self.f & delirium_data::kv!(7 int) == 0 {
+            if k.head.active && self.f & delirium_data::kv!(251 int) == 0 && self.f & delirium_data::kv!(7 int) == 0 {
                 k.head.deactivate();
             }
             k.pedal.deactivate();
@@ -257,7 +258,7 @@ impl HighFall {
         }
         if !k.pedal.active {
             let pd = &mut *k.pedal;
-            (pd.random_seed, pd.pedal_offset, pd.left, pd.right, pd.speed_asymmetry) = (delirium_data::kv!(192 int), delirium_data::kv!(73), true, true, delirium_data::kv!(108));
+            (pd.random_seed, pd.pedal_offset, pd.left, pd.right, pd.speed_asymmetry) = (delirium_data::kv!(197 int), delirium_data::kv!(78), true, true, delirium_data::kv!(84));
             (pd.radius, pd.angular_speed, pd.back_pedal, pd.leg_stiffness, pd.adaptive) =
                 (p.leg_radius, p.leg_ang_speed, false, p.body_stiffness, false);
             pd.activate(c);
@@ -273,7 +274,7 @@ impl HighFall {
         (h.stiffness, h.damping, h.vel) = (p.body_stiffness, p.bodydamping, c.vel);
         let w = &mut *k.windmill;
         (w.body_stiffness, w.arm_stiffness, w.period, w.amplitude, w.phase) =
-            (p.body_stiffness, p.body_stiffness * delirium_data::kv!(510), p.arm_period, p.arm_amplitude, 1.0);
+            (p.body_stiffness, p.body_stiffness * delirium_data::kv!(509), p.arm_period, p.arm_amplitude, 1.0);
     }
 
     fn roll_up(&mut self, c: &mut Ctx, k: &mut Kids) {
@@ -285,10 +286,10 @@ impl HighFall {
             k.ru.activate(c.ch);
             let r = &mut *k.ru;
             (r.use_arm_to_slow_down, r.arm_reach_amount, r.stiffness, r.leg_push, r.asymmetrical_legs, r.mask) =
-                (delirium_data::kv!(181), delirium_data::kv!(511), self.p.body_stiffness, 0.0, delirium_data::kv!(18), "fb");
+                (delirium_data::kv!(186), delirium_data::kv!(510), self.p.body_stiffness, 0.0, delirium_data::kv!(18), "fb");
         }
-        if slen(c.vel, b"zyx") < delirium_data::kv!(64) && self.s & delirium_data::kv!(51 int) == 0 {
-            self.s |= delirium_data::kv!(51 int);
+        if slen(c.vel, b"zyx") < delirium_data::kv!(68) && self.s & delirium_data::kv!(54 int) == 0 {
+            self.s |= delirium_data::kv!(54 int);
             c.out.send(delirium_data::kv!(23 int), "HighFall", 0.0);
         }
     }
@@ -299,42 +300,43 @@ impl HighFall {
             c.ch.eff[limb(i).e[2]].muscle_stiffness = 1.0;
         }
         for i in 2..delirium_data::kv!(1 int) {
-            c.ch.eff[limb(i).e[1]].muscle_stiffness = delirium_data::kv!(512);
+            c.ch.eff[limb(i).e[1]].muscle_stiffness = delirium_data::kv!(511);
         }
-        let up = c.up.normalize_or_zero();
-        c.ch.eff[(*NECK())[0]].desired[0] = delirium_data::kv!(110);
+        let up = crate::nmdbm::vnorm(c.up);
+        c.ch.eff[(*NECK())[0]].desired[0] = delirium_data::kv!(116);
         c.ch.eff[(*NECK())[1]].desired[0] = delirium_data::kv!(24);
         c.spine_lean(0.0, 0.0);
         let pv = c.b.part(PELVIS).v;
         let head = c.b.part(c.ch.joints[(*NECK())[1]].child).m;
-        let side = head.a.normalize_or_zero();
-        let t = head.d + up * p.arms_up + side * delirium_data::kv!(24);
+        let side = crate::nmdbm::vnorm(head.a);
+        let t = side.mul_add(Vec3::splat(delirium_data::kv!(24)), up.mul_add(Vec3::splat(p.arms_up), head.d));
         let (l0, l1) = (limb(0), limb(1));
         crate::nmdbm::limb_ik(c.b, c.ch, l1.e[1], l1.e[2], l1.p[0], l1.p[delirium_data::kv!(0 int)], t, 0.0, 0.0, -1.0, 1.0, Vec3::ZERO, None);
-        crate::nmdbm::limb_ik(c.b, c.ch, l0.e[1], l0.e[2], l0.p[0], l0.p[delirium_data::kv!(0 int)], t - side * delirium_data::kv!(114), 0.0, 0.0, 1.0, 1.0, Vec3::ZERO, None);
+        crate::nmdbm::limb_ik(c.b, c.ch, l0.e[1], l0.e[2], l0.p[0], l0.p[delirium_data::kv!(0 int)], side.mul_add(Vec3::splat(-delirium_data::kv!(119)), t), 0.0, 0.0, 1.0, 1.0, Vec3::ZERO, None);
         for j in Character::mask("uw") {
             let jd = c.ch.joints[j].clone();
             c.ch.eff[j].reset(&jd);
             c.ch.eff[j].desired = [0.0; 3];
         }
         let cu = c.up;
-        let side = flat(c.m.a, cu).normalize_or_zero();
-        let front = flat(-c.m.c, cu).normalize_or_zero();
+        use crate::nmdbm::{shz, vnorm};
+        let side = vnorm(shz(c.m.a, cu, b"yzx"));
+        let front = vnorm(shz(-c.m.c, cu, b"zyx"));
         let (l2, l3) = (limb(2), limb(delirium_data::kv!(0 int)));
         let mid = (c.b.joint_pos(l2.e[1]) + c.b.joint_pos(l3.e[1])) * 0.5;
-        let at = (mid - flat(mid, cu)) + flat(c.com, cu);
-        let ahead = at + c.vel.normalize_or_zero() * p.leg_l + front * p.foward_offset_of_leg_ik;
-        let t = at + (ahead - at).normalize_or_zero() * p.leg_l - side * p.side_d;
+        let at = (mid - shz(mid, cu, b"zyx")) + shz(c.com, cu, b"zyx");
+        let ahead = front.mul_add(Vec3::splat(p.foward_offset_of_leg_ik), vnorm(c.vel).mul_add(Vec3::splat(p.leg_l), at));
+        let t = side.mul_add(Vec3::splat(-p.side_d), vnorm(ahead - at).mul_add(Vec3::splat(p.leg_l), at));
         crate::nmdbm::limb_ik(c.b, c.ch, l2.e[1], l2.e[2], l2.p[0], l2.p[delirium_data::kv!(0 int)], t, 0.0, 0.0, 1.0, -1.0, pv, None);
-        crate::nmdbm::limb_ik(c.b, c.ch, l3.e[1], l3.e[2], l3.p[0], l3.p[delirium_data::kv!(0 int)], t + side * (p.side_d * 2.0), 0.0, 0.0, -1.0, -1.0, pv,
-                              None);
-        let x = self.fwd.abs() * -delirium_data::kv!(73);
+        crate::nmdbm::limb_ik(c.b, c.ch, l3.e[1], l3.e[2], l3.p[0], l3.p[delirium_data::kv!(0 int)], side.mul_add(Vec3::splat(p.side_d * 2.0), t), 0.0, 0.0,
+                              -1.0, -1.0, pv, None);
+        let x = self.fwd.abs() * -delirium_data::kv!(78);
         c.ch.eff[l3.e[delirium_data::kv!(0 int)]].desired[0] = x;
         c.ch.eff[l2.e[delirium_data::kv!(0 int)]].desired[0] = x;
     }
 
     fn balance(&mut self, c: &mut Ctx, k: &mut Kids, out: &mut HighFallOut, dt: f32) {
-        if self.f & delirium_data::kv!(252 int) == 0 {
+        if self.f & delirium_data::kv!(251 int) == 0 {
             return;
         }
         if !k.balancing {
@@ -344,15 +346,15 @@ impl HighFall {
             }
             let s = c.ch.random_bits() & 1 != 0;
             out.balance = Some(crate::nmbb::Params {
-                body_stiffness: self.p.body_stiffness * delirium_data::kv!(513), elbow: delirium_data::kv!(74), shoulder: delirium_data::kv!(112), damping: delirium_data::kv!(70), max_steps: delirium_data::kv!(192 int),
-                head_look_pos: Vec3::new(0.0, 0.0, -delirium_data::kv!(108)), head_look_instance_index: c.ch.inst_id, head_look_always_timeout: delirium_data::kv!(27),
-                head_look_at_vel_prob: delirium_data::kv!(112), somersault_angle: 1.0, somersault_angle_threshold: delirium_data::kv!(17), side_somersault_angle: 1.0,
-                side_somersault_angle_threshold: delirium_data::kv!(17), ang_vel_multiplier: Vec3::new(delirium_data::kv!(30), delirium_data::kv!(112), delirium_data::kv!(30)),
-                ang_vel_threshold: Vec3::new(delirium_data::kv!(74), delirium_data::kv!(5), delirium_data::kv!(74)), arms_out_on_push_multiplier: 1.0, arms_out_on_push_timeout: 1.0,
-                returning_to_balance_arms_out: delirium_data::kv!(73), arms_out_straighten_elbows: 0.0, arms_out_min_lean2: -delirium_data::kv!(27),
-                body_turn_timeout: 1.0, turn_off_prob: delirium_data::kv!(64), turn2_target_prob: delirium_data::kv!(64), turn2_vel_prob: delirium_data::kv!(70), turn_away_prob: 0.0,
-                turn_left_prob: delirium_data::kv!(73), turn_right_prob: delirium_data::kv!(73), elbow_angle_on_contact: delirium_data::kv!(70), bend_elbows_time: 0.0,
-                bend_elbows_gait: delirium_data::kv!(70), use_head_look: true, arms_out_on_push: true, use_body_turn: s,
+                body_stiffness: self.p.body_stiffness * delirium_data::kv!(512), elbow: delirium_data::kv!(136), shoulder: delirium_data::kv!(28), damping: delirium_data::kv!(74), max_steps: delirium_data::kv!(197 int),
+                head_look_pos: Vec3::new(0.0, 0.0, -delirium_data::kv!(84)), head_look_instance_index: c.ch.inst_id, head_look_always_timeout: delirium_data::kv!(31),
+                head_look_at_vel_prob: delirium_data::kv!(28), somersault_angle: 1.0, somersault_angle_threshold: delirium_data::kv!(17), side_somersault_angle: 1.0,
+                side_somersault_angle_threshold: delirium_data::kv!(17), ang_vel_multiplier: Vec3::new(delirium_data::kv!(33), delirium_data::kv!(28), delirium_data::kv!(33)),
+                ang_vel_threshold: Vec3::new(delirium_data::kv!(136), delirium_data::kv!(5), delirium_data::kv!(136)), arms_out_on_push_multiplier: 1.0, arms_out_on_push_timeout: 1.0,
+                returning_to_balance_arms_out: delirium_data::kv!(78), arms_out_straighten_elbows: 0.0, arms_out_min_lean2: -delirium_data::kv!(31),
+                body_turn_timeout: 1.0, turn_off_prob: delirium_data::kv!(68), turn2_target_prob: delirium_data::kv!(68), turn2_vel_prob: delirium_data::kv!(74), turn_away_prob: 0.0,
+                turn_left_prob: delirium_data::kv!(78), turn_right_prob: delirium_data::kv!(78), elbow_angle_on_contact: delirium_data::kv!(74), bend_elbows_time: 0.0,
+                bend_elbows_gait: delirium_data::kv!(74), use_head_look: true, arms_out_on_push: true, use_body_turn: s,
             });
             self.timer = 0.0;
         }
@@ -360,22 +362,22 @@ impl HighFall {
         if !k.fallen || out.balance.is_some() {
             out.taper_off = true;
             let acc = (self.timer - 0.5).clamp(-0.5, 0.0);
-            let (ls, t) = (self.p.leg_strength.clamp(1.0, delirium_data::kv!(21)) * delirium_data::kv!(514), self.timer + 1.0);
+            let (ls, t) = (self.p.leg_strength.clamp(1.0, delirium_data::kv!(21)) * delirium_data::kv!(513), self.timer + 1.0);
             let knee = (ls * crate::Fma::fma(t, t, -0.5)).clamp(0.5, 1.0);
             match k.dbm.as_deref_mut() {
                 Some(d) => (d.p.taper, d.acc, d.knee_scale) = (false, acc, knee),
                 None => out.dbm_set = Some((acc, knee)),
             }
         }
-        if self.s & delirium_data::kv!(51 int) == 0 && slen(c.vel, b"zyx") < delirium_data::kv!(9) {
-            self.s |= delirium_data::kv!(51 int);
-            c.out.send(if k.fallen && out.balance.is_none() { delirium_data::kv!(23 int) } else { delirium_data::kv!(52 int) }, "HighFall", 0.0);
+        if self.s & delirium_data::kv!(54 int) == 0 && slen(c.vel, b"zyx") < delirium_data::kv!(9) {
+            self.s |= delirium_data::kv!(54 int);
+            c.out.send(if k.fallen && out.balance.is_none() { delirium_data::kv!(23 int) } else { delirium_data::kv!(55 int) }, "HighFall", 0.0);
         }
     }
 
     fn roll(&mut self, c: &mut Ctx, k: &mut Kids, dt: f32) {
         let p = self.p;
-        if self.f & delirium_data::kv!(254 int) == 0 {
+        if self.f & delirium_data::kv!(253 int) == 0 {
             k.rds.deactivate(k.ru);
             return;
         }
@@ -384,35 +386,35 @@ impl HighFall {
         for j in (*SPINE()).into_iter().rev() {
             ch.eff[j].desired[0] = 1.0;
         }
-        for (i, elbow) in [(1, delirium_data::kv!(174)), (0, delirium_data::kv!(487))] {
+        for (i, elbow) in [(1, delirium_data::kv!(179)), (0, delirium_data::kv!(486))] {
             let l = limb(i);
             ch.eff[l.e[0]].desired = [0.0; 3];
             ch.eff[l.e[1]].desired = [2.0, -2.0, -delirium_data::kv!(20)];
             ch.eff[l.e[2]].desired[0] = elbow;
         }
         let (l2, l3) = (limb(2), limb(delirium_data::kv!(0 int)));
-        ch.eff[l2.e[1]].desired[0] = delirium_data::kv!(134);
-        ch.eff[l3.e[1]].desired[0] = delirium_data::kv!(496);
+        ch.eff[l2.e[1]].desired[0] = delirium_data::kv!(141);
+        ch.eff[l3.e[1]].desired[0] = delirium_data::kv!(495);
         ch.eff[l2.e[2]].desired[0] = -2.0;
         ch.eff[l3.e[2]].desired[0] = -2.0;
         for j in (*NECK()) {
             ch.eff[j].desired = [delirium_data::kv!(5), 0.0, 0.0];
         }
-        let s = (p.body_stiffness - self.timer * delirium_data::kv!(21)).clamp(delirium_data::kv!(61), delirium_data::kv!(21));
-        self.speed = self.speed.mul_add(delirium_data::kv!(131), slen(c.vel, b"zyx")) * delirium_data::kv!(73);
+        let s = (p.body_stiffness - self.timer * delirium_data::kv!(21)).clamp(delirium_data::kv!(65), delirium_data::kv!(21));
+        self.speed = self.speed.mul_add(delirium_data::kv!(137), slen(c.vel, b"zyx")) * delirium_data::kv!(78);
         c.ch.set_stiffness(s, p.bodydamping, "fb", None);
         let x = c.up.vd(c.m.b);
         c.ch.eff[l2.e[2]].desired[0] = x - delirium_data::kv!(13);
-        c.ch.eff[l3.e[2]].desired[0] = x - delirium_data::kv!(515);
+        c.ch.eff[l3.e[2]].desired[0] = x - delirium_data::kv!(514);
         if p.zero_pose_roll {
             c.relax(1.0, "fb");
         }
-        if !k.rds.active && self.f & delirium_data::kv!(51 int) == 0 {
+        if !k.rds.active && self.f & delirium_data::kv!(54 int) == 0 {
             (k.rds.forcemag, k.rds.spin_when_in_air, k.rds.helper_only) = (1.0, false, true);
             k.rds.activate(c, k.ru);
         }
-        if self.timer > delirium_data::kv!(487) && self.s & delirium_data::kv!(51 int) == 0 {
-            self.s |= delirium_data::kv!(51 int);
+        if self.timer > delirium_data::kv!(486) && self.s & delirium_data::kv!(54 int) == 0 {
+            self.s |= delirium_data::kv!(54 int);
             c.out.send(delirium_data::kv!(23 int), "HighFall", 0.0);
         }
     }
@@ -423,25 +425,31 @@ impl HighFall {
         }
         if !k.catching {
             let s = self.p.body_stiffness;
-            out.catch_fall = Some(crate::nmcf::Params { legs_stiffness: s * delirium_data::kv!(114), torso_stiffness: s * delirium_data::kv!(119), arms_stiffness: s * delirium_data::kv!(516),
-                                                        forward_max_arm_offset: delirium_data::kv!(63), backwards_min_arm_offset: -delirium_data::kv!(17),
+            out.catch_fall = Some(crate::nmcf::Params { legs_stiffness: s * delirium_data::kv!(119), torso_stiffness: s * delirium_data::kv!(124), arms_stiffness: s * delirium_data::kv!(515),
+                                                        forward_max_arm_offset: delirium_data::kv!(140), backwards_min_arm_offset: -delirium_data::kv!(17),
                                                         z_axis_spin_reduction: 0.0, use_head_look: true });
+            out.neck_after = true;
+        } else {
+            catch_neck(c);
         }
-        let (n, up) = (c.b.part(c.ch.joints[(*NECK())[0]].child).m, c.up);
-        for j in (*NECK()) {
-            c.ch.eff[j].desired[0] = -2.0 * n.c.vd(up);
-            c.ch.eff[j].desired[1] = -2.0 * n.a.vd(up);
-        }
-        if self.s & delirium_data::kv!(51 int) == 0 {
+        if self.s & delirium_data::kv!(54 int) == 0 {
             c.out.send(delirium_data::kv!(23 int), "HighFall", 0.0);
         }
-        self.s |= delirium_data::kv!(51 int);
+        self.s |= delirium_data::kv!(54 int);
+    }
+}
+
+pub(crate) fn catch_neck(c: &mut Ctx) {
+    let (n, up) = (c.b.pmat(c.ch.joints[(*NECK())[0]].child).m, c.up);
+    for j in (*NECK()) {
+        c.ch.eff[j].desired[0] = -(crate::nmdbm::sdot(n.c, up, b"xyz") * 2.0);
+        c.ch.eff[j].desired[1] = -(crate::nmdbm::sdot(n.a, up, b"xyz") * 2.0);
     }
 }
 
 pub(crate) fn axis_angle(q: Quat) -> (Vec3, f32) {
     let v = Vec3::new(q.x, q.y, q.z);
-    let axis = if v.vd(v) > delirium_data::kv!(47) { crate::nmdbm::vnorm(v) } else { Vec3::ZERO };
+    let axis = if v.vd(v) > delirium_data::kv!(50) { crate::nmdbm::vnorm(v) } else { Vec3::ZERO };
     let angle = if q.w <= -1.0 {
         std::f32::consts::PI
     } else if q.w >= 1.0 {
@@ -450,6 +458,22 @@ pub(crate) fn axis_angle(q: Quat) -> (Vec3, f32) {
         ((q.w as f64).acos() as f32 * 2.0).abs()
     };
     (axis, angle)
+}
+
+fn inverse3(m: [Vec3; 3]) -> [Vec3; 3] {
+    let [r0, r1, r2] = m;
+    let c0 = r1.y.mul_add(r2.z, -(r1.z * r2.y));
+    let c1 = r1.x.mul_add(r2.z, -(r2.x * r1.z));
+    let c2 = r1.x.mul_add(r2.y, -(r2.x * r1.y));
+    let det = r0.z.mul_add(c2, r0.x.mul_add(c0, fneg(r0.y * c1)));
+    let i = 1.0 / det;
+    let d0 = r0.y.mul_add(r2.z, -(r2.y * r0.z));
+    let d1 = r2.y.mul_add(r0.x, -(r0.y * r2.x));
+    let d2 = r2.z.mul_add(r0.x, -(r0.z * r2.x));
+    let e0 = r1.z.mul_add(r0.x, -(r1.x * r0.z));
+    let e1 = r1.y.mul_add(r0.x, -(r1.x * r0.y));
+    let e2 = r1.z.mul_add(r0.y, -(r1.y * r0.z));
+    [Vec3::new(i * c0, fneg(d0 * i), e2 * i), Vec3::new(fneg(i * c1), i * d2, fneg(i * e0)), Vec3::new(i * c2, fneg(i * d1), i * e1)]
 }
 
 pub(crate) fn quat_of(r: &Mat3) -> Quat {

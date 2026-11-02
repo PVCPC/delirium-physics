@@ -51,12 +51,15 @@ namespace Delirium
         /// <summary>Triangles: `positions` 3 floats per vertex, `triangles` 3 indices each, `materials` one byte per triangle (or null).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_world_add_mesh(IntPtr w, float[] positions, int vertices, uint[] triangles, int count, byte[] materials);
-        /// <summary>A flat floor at height `z`, `half` metres each way from (x, y).</summary>
+        /// <summary>A flat floor at height `z`, `half` metres each way from (x, y), at most 100.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_world_add_floor(IntPtr w, float x, float y, float z, float half);
-        /// <summary>The world's moving boxes (cars, platforms), in place of the last set: `count` boxes of 13 floats each, centre (3), rotation (quaternion x y z w), half size (3), velocity (3). The parts can't go into them and meet them at the box's velocity, with a car body's friction (0.2). The host moves them: set them again before each step. A box's instanceIndex (braceForImpact's, grab's) is its place in the array, its frame the box's centre and rotation. ponytail: no spin (a turning box's surface moves at its centre's velocity).</summary>
+        /// <summary>The world's moving boxes (cars, platforms), in place of the last set: `count` boxes of 13 floats each, centre (3), rotation (quaternion x y z w), half size (3), velocity (3). The parts can't go into them and meet them at the box's velocity, with a car body's friction (0.2). The host moves them: set them again before each step. A box's instanceIndex (braceForImpact's, grab's) is its place in the array, its frame the box's centre and rotation. A box turns only once nm_world_set_box_spins says so (set the boxes first: they come with no spin).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_world_set_boxes(IntPtr w, float[] boxes, int count);
+        /// <summary>The boxes' spins (rad/s about their centres, world axes), `count` x 3 floats, for the boxes of the last nm_world_set_boxes (`count` is their number, else NM_E_ARG): a turning box's surface moves at the box's velocity plus the spin crossed with the point's offset from its centre. Set them again with the boxes before each step.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_world_set_box_spins(IntPtr w, float[] spins, int count);
         /// <summary>Surface row `material` (the byte per triangle of nm_world_add_mesh; with the game's materials.dat loaded, its row) takes `friction` (times the part's own) and `elasticity` (0-1), for every agent; ice is about 0.05. Rows past the table's end are added, the ones between at friction 1, elasticity 0.1.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_set_surface(int material, float friction, float elasticity);
@@ -226,6 +229,9 @@ namespace Delirium
         /// <summary>TaskNMShot's start (a new task's first update, with the game's `rand` draws: one generator for every agent): hit on part `part` at `at` (world), the bullet going along `dir` (bulletVel 400 m/s along it, the normal its back); `set` a taskparams set (e.g. "POWERFUL_WEAPON", "SMG_WEAPON", "*" for the defaults), `health` the ped's (100-200). The bullet's push is the caller's (nm_agent_apply_push). Returns 0.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_task_shot(IntPtr a, IntPtr w, [MarshalAs(UnmanagedType.LPUTF8Str)] string set, int part, float[] at, float[] dir, float health);
+        /// <summary>nm_agent_task_shot with the bullet's speed `force` (the weapon's weaponinfo force, +144; over 0) in place of 400.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_task_shot_force(IntPtr a, IntPtr w, [MarshalAs(UnmanagedType.LPUTF8Str)] string set, int part, float[] at, float[] dir, float health, float force);
         /// <summary>TaskNMBalance's start: stand and keep balance, looking at `look` (or null).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_task_balance(IntPtr a, IntPtr w, [MarshalAs(UnmanagedType.LPUTF8Str)] string set, float[] look);

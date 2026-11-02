@@ -6,12 +6,12 @@ use delirium_data::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-fn PUSH() -> f32 { delirium_data::kv!(113) }
+fn PUSH() -> f32 { delirium_data::kv!(118) }
 
 pub fn stick_axis(raw: u8) -> i32 {
-    let v = ((raw as f32 - delirium_data::kv!(564)) * delirium_data::kv!(565)).clamp(-1.0, 1.0);
+    let v = ((raw as f32 - delirium_data::kv!(563)) * delirium_data::kv!(564)).clamp(-1.0, 1.0);
     let v = if v > delirium_data::kv!(17) { (v - delirium_data::kv!(17)) / (1.0 - delirium_data::kv!(17)) } else if v < -delirium_data::kv!(17) { (v + delirium_data::kv!(17)) / (1.0 - delirium_data::kv!(17)) } else { 0.0 };
-    (v * delirium_data::kv!(564)) as i32
+    (v * delirium_data::kv!(563)) as i32
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -23,7 +23,7 @@ pub struct Wander {
 
 fn wrap(mut h: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
-    h = h.clamp(-delirium_data::kv!(35), delirium_data::kv!(35));
+    h = h.clamp(-delirium_data::kv!(38), delirium_data::kv!(38));
     while h > PI {
         h -= TAU;
     }
@@ -43,9 +43,9 @@ pub fn frame(stick: (i32, i32), camera: f32, ped: Vec3, mass: f32, wander: &mut 
     let (mut x, mut y) = (stick.0 as f32, -(stick.1 as f32));
     if y.mul_add(y, x * x) <= 0.0 {
         if wander.frames <= 0 {
-            wander.x = rand.float_in_range(-delirium_data::kv!(61), delirium_data::kv!(61));
-            wander.y = rand.float_in_range(-delirium_data::kv!(566), delirium_data::kv!(566));
-            wander.frames = rand.int_in_range(delirium_data::kv!(77 int), delirium_data::kv!(301 int));
+            wander.x = rand.float_in_range(-delirium_data::kv!(65), delirium_data::kv!(65));
+            wander.y = rand.float_in_range(-delirium_data::kv!(565), delirium_data::kv!(565));
+            wander.frames = rand.int_in_range(delirium_data::kv!(81 int), delirium_data::kv!(300 int));
         }
         wander.frames -= 1;
         (x, y) = (wander.x, wander.y);

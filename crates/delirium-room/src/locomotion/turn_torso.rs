@@ -10,7 +10,7 @@ fn weight(finite:bool,t:f32,g:f32)->f32 {if finite {g*(t-8.).clamp(0.,1.)}else{0
 pub(super) fn apply(a:&mut Agent,target:&[Transform],finite:bool,t:f32) {
     let w=weight(finite,t,gain());if w==0. {return;}
     let ch=a.character().expect("native spine effectors required");
-    let rows=delirium::nmrs::incoming_rows(a.doll.nm,target);
+    let rows=delirium::nmrs::incoming_rows(&a.doll.links,target);
     let effectors:Vec<_>=ch.eff.iter().enumerate().map(|(i,e)|{
         let desired=if (*delirium::nmrs::SPINE()).contains(&i) {
             let l=ch.limits(i);let goal=ch.incoming_angle(i,&rows);

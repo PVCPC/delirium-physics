@@ -425,7 +425,7 @@ pub struct Impulse {
 }
 impl Default for Impulse {
     fn default() -> Impulse {
-        Impulse { part_index: 0, hit_point: None, impulse: Vec3::new(0.0, -delirium_data::kv!(76), 0.0), equalize_amount: 0.0 }
+        Impulse { part_index: 0, hit_point: None, impulse: Vec3::new(0.0, -delirium_data::kv!(79), 0.0), equalize_amount: 0.0 }
     }
 }
 
@@ -438,7 +438,7 @@ pub struct BodyRelax {
 }
 impl Default for BodyRelax {
     fn default() -> BodyRelax {
-        BodyRelax { mask: None, hold_pose: false, relaxation: delirium_data::kv!(76), damping: None }
+        BodyRelax { mask: None, hold_pose: false, relaxation: delirium_data::kv!(79), damping: None }
     }
 }
 
@@ -465,7 +465,7 @@ pub struct HeadLookMsg {
 }
 impl Default for HeadLookMsg {
     fn default() -> HeadLookMsg {
-        HeadLookMsg { pos: Vec3::ZERO, vel: Vec3::ZERO, stiffness: delirium_data::kv!(27), damping: 1.0, always_look: false, always_eyes_horizontal: true }
+        HeadLookMsg { pos: Vec3::ZERO, vel: Vec3::ZERO, stiffness: delirium_data::kv!(31), damping: 1.0, always_look: false, always_eyes_horizontal: true }
     }
 }
 
@@ -477,7 +477,7 @@ pub struct Lean {
 }
 impl Default for Lean {
     fn default() -> Lean {
-        Lean { lean_amount: delirium_data::kv!(57), apply_as_force: false, dir: Vec3::Z }
+        Lean { lean_amount: delirium_data::kv!(60), apply_as_force: false, dir: Vec3::Z }
     }
 }
 
@@ -489,7 +489,7 @@ pub struct LeanTo {
 }
 impl Default for LeanTo {
     fn default() -> LeanTo {
-        LeanTo { lean_amount: delirium_data::kv!(57), apply_as_force: false, pos: Vec3::ZERO }
+        LeanTo { lean_amount: delirium_data::kv!(60), apply_as_force: false, pos: Vec3::ZERO }
     }
 }
 
@@ -501,7 +501,7 @@ pub struct LeanTowards {
 }
 impl Default for LeanTowards {
     fn default() -> LeanTowards {
-        LeanTowards { lean_amount: delirium_data::kv!(57), apply_as_force: false, offset: Vec3::ZERO }
+        LeanTowards { lean_amount: delirium_data::kv!(60), apply_as_force: false, offset: Vec3::ZERO }
     }
 }
 
@@ -638,8 +638,8 @@ pub fn send(a: &mut Agent, build: &Build, world: &Collision, st: &mut State, msg
         "configureBalanceReset" => { st.configure_balance = Default::default(); a.configure_balance(Default::default()); }
         "defineAttachedObject" => { let p = &st.define_attached_object; if p.part_index >= 0 { a.define_attached_object(p.part_index as usize, p.world_pos, p.object_mass); } }
         "leanInDirection" => { let p = &st.lean_in_direction; a.lean_in_direction(p.dir, p.lean_amount, f32::INFINITY, p.apply_as_force); }
-        "leanToPosition" => { let p = &st.lean_to_position; a.lean_in_direction(p.pos - a.doll.com().0, p.lean_amount, f32::INFINITY, p.apply_as_force); }
-        "leanTowardsObject" => { let p = &st.lean_towards_object; a.lean_in_direction(p.offset - a.doll.com().0, p.lean_amount, f32::INFINITY, p.apply_as_force); }
+        "leanToPosition" => { let p = &st.lean_to_position; a.lean_to(crate::nmdbm::LeanMode::Pos(p.pos), p.lean_amount, p.apply_as_force); }
+        "leanTowardsObject" => { let p = &st.lean_towards_object; a.lean_to(crate::nmdbm::LeanMode::Object(p.offset, -1), p.lean_amount, p.apply_as_force); }
         "setStiffness" => { let p = &st.set_stiffness; a.set_stiffness_mask(p.body_stiffness, p.damping, &p.mask); }
         "shotRelax" => a.shot_relax(st.shot_relax.relax_period),
         "stopAllBehaviours" => a.stop_all_behaviours(),
@@ -662,7 +662,10 @@ pub fn send(a: &mut Agent, build: &Build, world: &Collision, st: &mut State, msg
         "pedalLegs" => if on { a.pedal_legs(st.pedal_legs.clone()) } else { a.stop_pedal() },
         "pointArm" => a.point_arm(on.then_some(st.point_arm)),
         "rollDownStairs" => if on { a.roll_down_stairs(st.roll_down_stairs.clone()) } else { a.stop_roll_down_stairs() },
-        "shot" => if on { a.shot_start(st.shot) },
+        "shot" => if on {
+            a.shot_start(st.shot);
+            a.nm_hit_hold = params.iter().any(|(n, _)| *n == "bodyPart");
+        },
         "upperBodyFlinch" => if on { a.upper_body_flinch(build, st.upper_body_flinch.clone()); st.upper_body_flinch.new_hit = None; },
         _ => {}
     }
@@ -702,7 +705,7 @@ fn set(st: &mut State, msg: &str, name: &str, v: &Value) -> Result<(), Error> {
         ("armsWindmillAdaptive", "phase") => { let p = &mut st.arms_windmill_adaptive; p.phase = v.f()?; }
         ("armsWindmillAdaptive", "disableOnImpact") => { let p = &mut st.arms_windmill_adaptive; p.disable_on_impact = v.b()?; }
         ("armsWindmillAdaptive", "period") => { let p = &mut st.arms_windmill_adaptive; p.period = v.f()?; }
-        ("armsWindmillAdaptive", "armStiffness") => { let p = &mut st.arms_windmill_adaptive; p.arm_stiffness = v.f()?; }
+        ("armsWindmillAdaptive", "armStiffness") => { let p = &mut st.arms_windmill_adaptive; p.arm_stiffness = v.f()?; p.body_stiffness = p.arm_stiffness; }
         ("bodyBalance", "bodyStiffness") => { let p = &mut st.body_balance; p.body_stiffness = v.f()?; }
         ("bodyBalance", "headLookAtVelProb") => { let p = &mut st.body_balance; p.head_look_at_vel_prob = v.f()?; }
         ("bodyBalance", "armsOutStraightenElbows") => { let p = &mut st.body_balance; p.arms_out_straighten_elbows = v.f()?; }
@@ -1076,7 +1079,7 @@ pub fn get(st: &State, msg: &str, name: &str) -> Option<Value> {
         ("defineAttachedObject", "partIndex") => { let p = &st.define_attached_object; Value::Int(p.part_index) }
         ("defineAttachedObject", "worldPos") => { let p = &st.define_attached_object; Value::Vec3(p.world_pos) }
         ("defineAttachedObject", "objectMass") => { let p = &st.define_attached_object; Value::Float(p.object_mass) }
-        ("fallOverWall", "bodyTwist") => { let p = &st.fall_over_wall; Value::Float(p.twist_max / delirium_data::kv!(184)) }
+        ("fallOverWall", "bodyTwist") => { let p = &st.fall_over_wall; Value::Float(p.twist_max / delirium_data::kv!(189)) }
         ("fallOverWall", "useSpecifiedPoint") => { let p = &st.fall_over_wall; Value::Bool(p.use_specified_point) }
         ("fallOverWall", "maxDistanceFromPelToHitPoint") => { let p = &st.fall_over_wall; Value::Float(p.max_distance_from_pel_to_hit_point) }
         ("fallOverWall", "fallOverEdge") => { let p = &st.fall_over_wall; Value::Vec3(p.fall_over_edge) }

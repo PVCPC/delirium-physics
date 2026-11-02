@@ -75,7 +75,7 @@ pub fn hex_text(s: &str) -> u32 {
     if digits.is_empty() {
         0
     } else {
-        u32::from_str_radix(&digits, crate::kv!(51 int)).unwrap_or(u32::MAX)
+        u32::from_str_radix(&digits, crate::kv!(54 int)).unwrap_or(u32::MAX)
     }
 }
 
@@ -139,19 +139,19 @@ pub fn weapon_type_index(name: &str, default: i32) -> i32 {
 }
 
 pub fn aiming(el: &Element, row: &mut Row) {
-    putf(row, crate::kv!(380 int), float_attr(el, "accuracy", 1.0));
-    putf(row, crate::kv!(318 int), float_attr(el, "accuracyfps", 1.0));
-    putf(row, crate::kv!(408 int), float_attr(el, "accuracyTime", 0.0));
-    put32(row, crate::kv!(307 int), int_attr(el, "pellets", 0) as u32);
+    putf(row, crate::kv!(379 int), float_attr(el, "accuracy", 1.0));
+    putf(row, crate::kv!(317 int), float_attr(el, "accuracyfps", 1.0));
+    putf(row, crate::kv!(407 int), float_attr(el, "accuracyTime", 0.0));
+    put32(row, crate::kv!(306 int), int_attr(el, "pellets", 0) as u32);
     for c in &el.children {
         match hash(&c.name) {
-            OFFSET => vector(c, row, crate::kv!(254 int)),
-            CROUCHED_OFFSET => vector(c, row, crate::kv!(359 int)),
-            AIM_PITCH => putf(row, crate::kv!(286 int), float_attr(c, "pitch", 0.0)),
+            OFFSET => vector(c, row, crate::kv!(253 int)),
+            CROUCHED_OFFSET => vector(c, row, crate::kv!(358 int)),
+            AIM_PITCH => putf(row, crate::kv!(285 int), float_attr(c, "pitch", 0.0)),
             AIM_STANCE => {
-                putf(row, crate::kv!(192 int), float_attr(c, "standing", 0.0));
-                putf(row, crate::kv!(433 int), float_attr(c, "ducked", 0.0));
-                putf(row, crate::kv!(425 int), float_attr(c, "scale", 0.0));
+                putf(row, crate::kv!(197 int), float_attr(c, "standing", 0.0));
+                putf(row, crate::kv!(432 int), float_attr(c, "ducked", 0.0));
+                putf(row, crate::kv!(424 int), float_attr(c, "scale", 0.0));
             }
             _ => {}
         }
@@ -162,20 +162,20 @@ pub fn projectile(el: &Element, row: &mut Row) {
     if get32(row, crate::kv!(23 int)) != crate::kv!(0 int) {
         return;
     }
-    put32(row, crate::kv!(84 int), projectile_type_index(attr_or_empty(el, "type")) as u32);
-    put32(row, crate::kv!(375 int), int_attr(el, "fusetime", 0) as u32);
+    put32(row, crate::kv!(88 int), projectile_type_index(attr_or_empty(el, "type")) as u32);
+    put32(row, crate::kv!(374 int), int_attr(el, "fusetime", 0) as u32);
     for c in &el.children {
         match hash(&c.name) {
-            TYPE_TO_CREATE => put32(row, crate::kv!(324 int), weapon_type_index(attr_or_empty(c, "type"), 0) as u32),
-            OFFSET => vector(c, row, crate::kv!(87 int)),
-            EXPLOSION => put32(row, crate::kv!(420 int), explosion_index(attr_or_empty(c, "type")) as u32),
+            TYPE_TO_CREATE => put32(row, crate::kv!(323 int), weapon_type_index(attr_or_empty(c, "type"), 0) as u32),
+            OFFSET => vector(c, row, crate::kv!(91 int)),
+            EXPLOSION => put32(row, crate::kv!(419 int), explosion_index(attr_or_empty(c, "type")) as u32),
             PHYSICS => {
-                putf(row, crate::kv!(100 int), float_attr(c, "force", 0.0));
-                putf(row, crate::kv!(365 int), float_attr(c, "explodeimpactthreshold", 0.0));
-                putf(row, crate::kv!(393 int), float_attr(c, "explodeimpactwithvehiclethreshold", 0.0));
-                putf(row, crate::kv!(358 int), float_attr(c, "vehiclevelocity", 0.0));
+                putf(row, crate::kv!(107 int), float_attr(c, "force", 0.0));
+                putf(row, crate::kv!(364 int), float_attr(c, "explodeimpactthreshold", 0.0));
+                putf(row, crate::kv!(392 int), float_attr(c, "explodeimpactwithvehiclethreshold", 0.0));
+                putf(row, crate::kv!(357 int), float_attr(c, "vehiclevelocity", 0.0));
             }
-            PROJECTILE_VECTOR => vector(c, row, crate::kv!(455 int)),
+            PROJECTILE_VECTOR => vector(c, row, crate::kv!(454 int)),
             _ => {}
         }
     }
@@ -200,8 +200,8 @@ pub fn flags(el: &Element, row: &mut Row) {
 pub fn controller(el: &Element, row: &mut Row) {
     for c in &el.children {
         if c.name.eq_ignore_ascii_case("rumble") {
-            put32(row, crate::kv!(432 int), int_attr(c, "duration", 0) as u32);
-            putf(row, crate::kv!(371 int), float_attr(c, "intensity", 0.0));
+            put32(row, crate::kv!(431 int), int_attr(c, "duration", 0) as u32);
+            putf(row, crate::kv!(370 int), float_attr(c, "intensity", 0.0));
         }
     }
 }
@@ -209,36 +209,36 @@ pub fn controller(el: &Element, row: &mut Row) {
 pub fn load(el: &Element, row: &mut Row) {
     put32(row, crate::kv!(1 int), weapons::slot_index(attr_or_empty(el, "slot")) as u32);
     put32(row, crate::kv!(23 int), fire_type_index(attr_or_empty(el, "firetype")) as u32);
-    put32(row, crate::kv!(52 int), weapons::damage_type_index(attr_or_empty(el, "damagetype")) as u32);
-    put32(row, crate::kv!(51 int), weapons::group_index(attr_or_empty(el, "group")) as u32);
-    putf(row, crate::kv!(122 int), float_attr(el, "targetrange", 0.0));
-    putf(row, crate::kv!(100 int), float_attr(el, "weaponrange", 0.0));
-    put32(row, crate::kv!(81 int), weapon_type_index(attr_or_empty(el, "stattype"), -1) as u32);
-    put16(row, crate::kv!(330 int), int_attr(el, "clipsize", 0) as u16);
-    let ammo = ((int_attr(el, "ammomax", crate::kv!(979 int)) as i16) as i32).clamp(0, crate::kv!(979 int));
-    put16(row, crate::kv!(322 int), ammo as u16);
-    put32(row, crate::kv!(291 int), int_attr(el, "timebetweenshots", 0) as u32);
+    put32(row, crate::kv!(55 int), weapons::damage_type_index(attr_or_empty(el, "damagetype")) as u32);
+    put32(row, crate::kv!(54 int), weapons::group_index(attr_or_empty(el, "group")) as u32);
+    putf(row, crate::kv!(127 int), float_attr(el, "targetrange", 0.0));
+    putf(row, crate::kv!(107 int), float_attr(el, "weaponrange", 0.0));
+    put32(row, crate::kv!(85 int), weapon_type_index(attr_or_empty(el, "stattype"), -1) as u32);
+    put16(row, crate::kv!(329 int), int_attr(el, "clipsize", 0) as u16);
+    let ammo = ((int_attr(el, "ammomax", crate::kv!(1060 int)) as i16) as i32).clamp(0, crate::kv!(1060 int));
+    put16(row, crate::kv!(321 int), ammo as u16);
+    put32(row, crate::kv!(290 int), int_attr(el, "timebetweenshots", 0) as u32);
     for c in &el.children {
         match hash(&c.name) {
             RELOAD => {
-                put32(row, crate::kv!(299 int), int_attr(c, "time", 0) as u32);
-                put32(row, crate::kv!(409 int), int_attr(c, "fasttime", 0) as u32);
-                put32(row, crate::kv!(486 int), int_attr(c, "crouchtime", 0) as u32);
+                put32(row, crate::kv!(298 int), int_attr(c, "time", 0) as u32);
+                put32(row, crate::kv!(408 int), int_attr(c, "fasttime", 0) as u32);
+                put32(row, crate::kv!(485 int), int_attr(c, "crouchtime", 0) as u32);
             }
             DAMAGE => {
-                put16(row, crate::kv!(370 int), int_attr(c, "base", 0) as u16);
-                put16(row, crate::kv!(363 int), int_attr(c, "fps", 0) as u16);
-                putf(row, crate::kv!(297 int), float_attr(c, "networkplayermod", 0.0));
-                putf(row, crate::kv!(353 int), float_attr(c, "networkpedmod", 0.0));
+                put16(row, crate::kv!(369 int), int_attr(c, "base", 0) as u16);
+                put16(row, crate::kv!(362 int), int_attr(c, "fps", 0) as u16);
+                putf(row, crate::kv!(296 int), float_attr(c, "networkplayermod", 0.0));
+                putf(row, crate::kv!(352 int), float_attr(c, "networkpedmod", 0.0));
             }
             AIMING => aiming(c, row),
             PROJECTILE => projectile(c, row),
             FLAGS => flags(c, row),
             PICKUP => {
-                put32(row, crate::kv!(301 int), int_attr(c, "regentime", 0) as u32);
-                put16(row, crate::kv!(252 int), int_attr(c, "ammoonstreet", 0) as u16);
+                put32(row, crate::kv!(300 int), int_attr(c, "regentime", 0) as u32);
+                put16(row, crate::kv!(251 int), int_attr(c, "ammoonstreet", 0) as u16);
             }
-            PHYSICS => putf(row, crate::kv!(83 int), float_attr(c, "force", 0.0)),
+            PHYSICS => putf(row, crate::kv!(87 int), float_attr(c, "force", 0.0)),
             CONTROLLER => controller(c, row),
             _ => {}
         }

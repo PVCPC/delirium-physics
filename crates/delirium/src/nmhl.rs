@@ -1,3 +1,4 @@
+use crate::fneg;
 use std::f32::consts::FRAC_PI_2;
 use crate::Vx;
 
@@ -10,10 +11,10 @@ use crate::nmrs::{Character, NECK, SPINE};
 
 #[allow(non_snake_case)]
 #[inline]
-fn SPINE3() -> usize { delirium_data::kv!(77 int) }
+fn SPINE3() -> usize { delirium_data::kv!(81 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn HEAD() -> usize { delirium_data::kv!(52 int) }
+fn HEAD() -> usize { delirium_data::kv!(55 int) }
 
 #[derive(Clone, Debug)]
 pub struct HeadLook {
@@ -32,7 +33,7 @@ pub struct HeadLook {
 
 impl Default for HeadLook {
     fn default() -> HeadLook {
-        HeadLook { pos: Vec3::ZERO, vel: Vec3::ZERO, stiffness: delirium_data::kv!(27), damping: 1.0, always_look: false, always_eyes_horizontal: true,
+        HeadLook { pos: Vec3::ZERO, vel: Vec3::ZERO, stiffness: delirium_data::kv!(31), damping: 1.0, always_look: false, always_eyes_horizontal: true,
                    active: false, visible: false, cone: 0.0, len: 0.0, local: None }
     }
 }
@@ -74,7 +75,7 @@ impl HeadLook {
         let (nl, hl) = (ch.limits(neck), ch.limits(head));
         let sp = b.pmat(SPINE3());
         let m = sp.m;
-        let q = q_scaled(m.b * -delirium_data::kv!(517));
+        let q = q_scaled(m.b * -delirium_data::kv!(516));
         let (a, c) = (qrot(q, m.a, false), qrot(q, m.c, false));
         let h = a.mul_add(Vec3::splat(self.len), b.at(SPINE3()));
         let t = (((self.pos - m.d).vx(sp.w) - sp.v) + self.vel).mul_add(Vec3::splat(damping / strength), self.pos);
@@ -88,7 +89,7 @@ impl HeadLook {
         let mut n = nrm((t - h) * -1.0);
         let p = nrm(a.vx(n).vx(a));
         let tw = acos(sdot(p, c, b"zyx"));
-        let max = (nl[delirium_data::kv!(2 int)] + hl[delirium_data::kv!(2 int)]) * delirium_data::kv!(74);
+        let max = (nl[delirium_data::kv!(2 int)] + hl[delirium_data::kv!(2 int)]) * delirium_data::kv!(136);
         let mut over = 0.0;
         if tw > max {
             over = max - tw;
@@ -101,7 +102,7 @@ impl HeadLook {
         let ua = sdot(up, a, b"zyx");
         let s = if ua * ua <= delirium_data::kv!(17) && !self.always_eyes_horizontal {
             a.vx(n)
-        } else if sdot(up, n, b"zyx").abs() < delirium_data::kv!(112) {
+        } else if sdot(up, n, b"zyx").abs() < delirium_data::kv!(28) {
             up.vx(n)
         } else {
             (Vec3::ONE - up) * b.pmat(HEAD()).m.a
@@ -112,20 +113,20 @@ impl HeadLook {
         let n2 = nrm(qrot(r, n, false));
         let sign = |x: f32| if x < 0.0 { -1.0 } else { 1.0 };
         let twist = acos(sdot(n2, c, b"zyx")) * sign(-sdot(n2, m.b, b"zyx"));
-        let u1 = nrm(w.vx(m.b).vx(m.b) * -1.0);
+        let u1 = nrm(fneg(w.vx(m.b).vx(m.b)));
         let lean1 = acos(sdot(u1, a, b"zyx")) * sign(-sdot(u1, c, b"zyx"));
-        let u2 = nrm(w.vx(c).vx(c) * -1.0);
+        let u2 = nrm(fneg(w.vx(c).vx(c)));
         let lean2 = acos(sdot(u2, a, b"zyx")) * sign(sdot(u2, m.b, b"zyx"));
         let (s2, s3) = ((*SPINE())[2], (*SPINE())[delirium_data::kv!(0 int)]);
         let (l2, l3) = (ch.limits(s2), ch.limits(s3));
         let x3 = over.fma(delirium_data::kv!(8), ch.eff[s3].desired[2]);
-        ch.eff[s3].desired[2] = x3.max(l3[delirium_data::kv!(1 int)] * delirium_data::kv!(518)).min(l3[delirium_data::kv!(2 int)] * delirium_data::kv!(518));
-        let x2 = over.fma(delirium_data::kv!(63), ch.eff[s2].desired[2]);
-        ch.eff[s2].desired[2] = x2.max(l2[delirium_data::kv!(1 int)] * delirium_data::kv!(518)).min(l2[delirium_data::kv!(2 int)] * delirium_data::kv!(518));
+        ch.eff[s3].desired[2] = x3.max(l3[delirium_data::kv!(1 int)] * delirium_data::kv!(517)).min(l3[delirium_data::kv!(2 int)] * delirium_data::kv!(517));
+        let x2 = over.fma(delirium_data::kv!(140), ch.eff[s2].desired[2]);
+        ch.eff[s2].desired[2] = x2.max(l2[delirium_data::kv!(1 int)] * delirium_data::kv!(517)).min(l2[delirium_data::kv!(2 int)] * delirium_data::kv!(517));
         for (n, x, lo, hi) in [(2, twist, delirium_data::kv!(1 int), delirium_data::kv!(2 int)), (0, lean1, 0, 1), (1, lean2, 2, delirium_data::kv!(0 int))] {
             let (xn, xh) = split(x, nl[lo], nl[hi], hl[lo], hl[hi]);
-            ch.eff[neck].desired[n] = xn.clamp(-delirium_data::kv!(131), delirium_data::kv!(131));
-            ch.eff[head].desired[n] = xh.clamp(-delirium_data::kv!(131), delirium_data::kv!(131));
+            ch.eff[neck].desired[n] = xn.clamp(-delirium_data::kv!(137), delirium_data::kv!(137));
+            ch.eff[head].desired[n] = xh.clamp(-delirium_data::kv!(137), delirium_data::kv!(137));
         }
     }
 }

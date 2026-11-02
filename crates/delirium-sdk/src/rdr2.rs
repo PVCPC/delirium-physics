@@ -144,6 +144,7 @@ impl Character {
                 strength: num(b, "defaultMuscleStrength").unwrap_or(bj.strength),
                 max_torque: [num(b, "defaultLeanForceCap").unwrap_or(bj.max_torque[0]),
                              num(b, "defaultTwistForceCap").unwrap_or(bj.max_torque[1])],
+                centred: bj.centred,
             });
         }
         let parts_out = base.parts.iter().enumerate().map(|(d, bp)| {

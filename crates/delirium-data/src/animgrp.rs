@@ -39,6 +39,13 @@ impl Group {
     }
 }
 
+const KIND_AT: [(&[u8], usize, u32); 11] = [
+    (b"WeaponGroup", 0x20, 0), (b"Version", 0x2C, 0), (b"VehicleDrivebyGroup", 0x30, 0),
+    (b"GestureGroup", 0x34, 0), (b"VehicleGroup", 0x3C, 0), (b"FacialGroup", 0x40, 0),
+    (b"MovementGroup", 0x44, 0), (b"%d", 0x48, 0), (b"BikeGroup", 0x4C, 0),
+    (b"WeaponProjectileGroup", 0x50, 0), (b"VehicleToDrivebyLink", 0x54, 0),
+];
+
 const ADDS: [&[u8]; 7] =
     [b"MovementGroup", b"WeaponGroup", b"WeaponProjectileGroup", b"GestureGroup", b"FacialGroup", b"VehicleGroup", b"BikeGroup"];
 
@@ -71,25 +78,75 @@ pub(crate) fn tokens(line: &[u8]) -> impl Iterator<Item = &[u8]> {
     line.split(|c| b" ,\t()".contains(c)).filter(|t| !t.is_empty())
 }
 
-pub fn read(file: &[u8]) -> Vec<Group> {
+fn format(token: &[u8]) -> Option<Vec<u8>> {
+    #[derive(PartialEq, Clone, Copy)]
+    enum St { Normal, Percent, Flag, Width, Dot, Precis, Size }
+    let (mut out, mut st, mut i) = (vec![], St::Normal, 0);
+    while i < token.len() {
+        let c = token[i];
+        i += 1;
+        st = match (st, c) {
+            (St::Normal, b'%') => St::Percent,
+            (St::Percent | St::Flag, b' ' | b'+' | b'-' | b'#' | b'0') => St::Flag,
+            (St::Percent | St::Flag | St::Width, b'1'..=b'9') | (St::Width, b'0') => St::Width,
+            (St::Dot | St::Precis, b'0'..=b'9') => St::Precis,
+            (St::Percent | St::Flag | St::Width, b'.') => St::Dot,
+            (St::Percent | St::Flag | St::Dot, b'*') => return None,
+            (St::Normal, _) => {
+                out.push(c);
+                St::Normal
+            }
+            (_, b'h' | b'l' | b'L' | b'w' | b'F' | b'N') => St::Size,
+            (_, b'I') if token[i..].starts_with(b"64") || token[i..].starts_with(b"32") => {
+                i += 2;
+                St::Size
+            }
+            (_, b'I') if token.get(i).is_some_and(|n| b"diouxX".contains(n)) => St::Size,
+            (_, b'c' | b'C' | b'd' | b'i' | b'o' | b'u' | b'x' | b'X' | b'e' | b'E' | b'f' | b'g' | b'G' | b'a' | b'A' | b'n'
+               | b'p' | b's' | b'S' | b'Z') => return None,
+            _ => {
+                out.push(c);
+                St::Normal
+            }
+        };
+    }
+    Some(out)
+}
+
+fn scan_int(t: &[u8], old: i32) -> i32 {
+    let t = t.trim_ascii_start();
+    let (neg, t) = match t.first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let digits = t.iter().take_while(|c| c.is_ascii_digit()).count();
+    if digits == 0 {
+        return old;
+    }
+    let n = t[..digits].iter().fold(0i32, |n, d| n.wrapping_mul(10).wrapping_add((d - b'0') as i32));
+    if neg { n.wrapping_neg() } else { n }
+}
+
+pub fn read(file: &[u8], exe: (u32, &[u8])) -> Option<Vec<Group>> {
     let mut lines = Lines { buf: [0; 512], at: 0 };
     let mut out: Vec<Group> = vec![];
-    let slot = |k: &[u8]| -> Option<usize> {
-        Some(match k {
-            b"WeaponGroup" => 0x20,
-            b"Version" => 0x2C,
-            b"VehicleDrivebyGroup" => 0x30,
-            b"GestureGroup" => 0x34,
-            b"VehicleGroup" => 0x3C,
-            b"FacialGroup" => 0x40,
-            b"MovementGroup" => 0x44,
-            b"BikeGroup" => 0x4C,
-            b"WeaponProjectileGroup" => 0x50,
-            _ => return None,
-        })
-    };
+    let mut stack = [0u8; 0x60];
+    for (_, s, at) in KIND_AT {
+        stack[s..s + 4].copy_from_slice(&at.to_be_bytes());
+    }
     let mut written = 0;
-    let is = |kind: &[u8], k: &[u8], written: usize| kind == k && slot(k).is_none_or(|s| written <= s);
+    let mut version = 0;
+    let is = |stack: &[u8; 0x60], kind: &[u8], k: &[u8]| -> Option<bool> {
+        let Some(&(_, s, at)) = KIND_AT.iter().find(|e| e.0 == k) else { return Some(kind == k) };
+        let p = u32::from_be_bytes(stack[s..s + 4].try_into().unwrap());
+        if p == at {
+            return Some(kind == k);
+        }
+        let from = exe.1.get(p.checked_sub(exe.0)? as usize..)?;
+        let n = from.iter().position(|&c| c == 0)?;
+        Some(kind == &from[..n])
+    };
     while let Some(line) = lines.next(file) {
         if written > 0x38 {
             break;
@@ -98,26 +155,51 @@ pub fn read(file: &[u8]) -> Vec<Group> {
             continue;
         }
         let mut t = tokens(&line);
-        let kind = t.next().unwrap_or_default().to_vec();
-        if is(&kind, b"Version", written) {
+        let kind = format(t.next()?)?;
+        if is(&stack, &kind, b"Version")? {
+            version = scan_int(t.next()?, version);
             continue;
         }
-        t.next();
-        let name = t.next().unwrap_or_default().to_vec();
+        t.next()?;
+        let name = format(t.next()?)?;
         written = written.max(name.len() + 1);
+        for (d, s) in stack.iter_mut().zip(name.iter().chain([&0])) {
+            *d = *s;
+        }
         let kind = if name.len() >= 0x60 { name[0x60..].to_vec() } else { kind };
-        if ADDS.iter().any(|k| is(&kind, k, written)) {
+        let known = |out: &[Group], n: &[u8]| {
+            BUILT_IN.iter().map(|n| n.as_bytes()).chain(out.iter().map(|g| &g.name[..])).any(|g| g.eq_ignore_ascii_case(n))
+        };
+        let mut adds = false;
+        for k in ADDS {
+            if is(&stack, &kind, k)? {
+                adds = true;
+                break;
+            }
+        }
+        if adds {
             out.push(Group::stored(&name, &name));
-        } else if kind == b"VehicleDrivebyGroupV2" || is(&kind, b"VehicleDrivebyGroup", written) {
-            let known = BUILT_IN.iter().map(|n| n.as_bytes()).chain(out.iter().map(|g| &g.name[..]))
-                .any(|n| n.eq_ignore_ascii_case(&name));
-            let dictionary = if kind == b"VehicleDrivebyGroupV2" { t.next().unwrap_or_default().to_vec() } else { name.clone() };
-            if !known {
+            if kind == b"BikeGroup" {
+                for _ in 0..6 {
+                    t.next()?;
+                }
+            }
+        } else if is(&stack, &kind, b"VehicleToDrivebyLink")? {
+            let other = format(t.next()?)?;
+            if known(&out, &name) && known(&out, &other) {
+                format(t.next()?)?;
+            }
+        } else if kind == b"VehicleDrivebyGroupV2" || is(&stack, &kind, b"VehicleDrivebyGroup")? {
+            let dictionary = if kind == b"VehicleDrivebyGroupV2" { format(&name).and(format(t.next()?))? } else { format(&name)? };
+            if !known(&out, &name) {
                 out.push(Group::stored(&name, &dictionary));
+            }
+            for _ in 0..if version > 1 { 8 } else { 6 } {
+                t.next()?;
             }
         }
     }
-    out
+    Some(out)
 }
 
 pub fn group_of(groups: &[Group], anims: &[u8]) -> i32 {
@@ -129,5 +211,33 @@ pub fn group_of(groups: &[Group], anims: &[u8]) -> i32 {
         }
     }
     groups.iter().position(|g| Some(hash_bytes(&g.dictionary, 0)) == slot).map_or(-1, |i| (BUILT_IN.len() + i) as i32)
+}
+
+pub fn ambient_groups(file: &[u8], before: &[Vec<u8>]) -> Option<Vec<Group>> {
+    const HEADERS: [(&[u8], Option<u8>); 6] = [(b"PROP_SETS:", Some(2)), (b"AMBIENT_GROUP_SETS:", Some(3)), (b"AMBIENT_GROUPS:", Some(0)),
+                                               (b"MOVEMENT_GROUPS:", Some(1)), (b"ANIM_GROUP_DEFIN", Some(4)), (b"SetTiming_", None)];
+    let mut lines = Lines { buf: [0; 512], at: 0 };
+    let (mut mode, mut out) = (0, Vec::<Group>::new());
+    while let Some(line) = lines.next(file) {
+        if line.first().is_none_or(|&c| c == b'#') {
+            continue;
+        }
+        if let Some(&(_, m)) = HEADERS.iter().find(|h| line.starts_with(h.0)) {
+            mode = m.unwrap_or(mode);
+            continue;
+        }
+        let mut t = tokens(&line);
+        match mode {
+            0 => {
+                let name = t.next()?;
+                if !before.iter().chain(out.iter().map(|g| &g.name)).any(|n| n.eq_ignore_ascii_case(name)) {
+                    out.push(Group::stored(name, name));
+                }
+            }
+            4 => out.push(Group::stored(t.next()?, t.next()?)),
+            _ => {}
+        }
+    }
+    Some(out)
 }
 

@@ -14,5 +14,6 @@ portal = []
 delirium-data = { path = "../delirium-data" }
 bevy_math = { version = "=0.20.0", default-features = false, features = ["std"] }
 bevy_transform = { version = "=0.20.0", default-features = false, features = ["std"] }
+bevy_tasks = { version = "=0.20.0", default-features = false, features = ["multi_threaded"] }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 bevy_ecs = { version = "=0.20.0", optional = true }

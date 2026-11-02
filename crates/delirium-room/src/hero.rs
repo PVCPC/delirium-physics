@@ -23,7 +23,7 @@ pub struct Hero {
     clip: usize,
     phase: f32,
     fight: melee::Melee,
-    pad: melee::Pad,
+    pub pad: melee::Pad,
     press: u32,
     pub keys: u32,
     pub scripted: u32,
@@ -39,6 +39,7 @@ pub struct Hero {
     pub hold: Option<(usize, f32, Vec3)>,
     pub hand: Vec3,
     pub grip: Quat,
+    pub fist: (Vec3, Vec3),
     pub homer: Vec<Transform>,
     #[cfg(feature = "portal")]
     pub chell: Option<Quat>,
@@ -46,6 +47,9 @@ pub struct Hero {
     pub fall: f32,
     pub foe: melee::Foe,
     pub swimming: bool,
+    pub ai: Option<melee::Me>,
+    pub foe_pad: Option<melee::Pad>,
+    pub foe_task: Option<melee::FoeTask>,
 }
 
 pub enum Hit {
@@ -58,10 +62,10 @@ impl Hero {
         let speed = |c: usize| (clips.pose(c, 1.0)[0].0 - clips.pose(c, 0.0)[0].0).truncate().length() / clips.duration(c).max(0.01);
         let feet = (homer + fwd * 1.5).with_z(0.0);
         let mut n = Hero { feet, yaw: (-fwd.y).atan2(-fwd.x), vel: Vec3::ZERO, clip: getup::IDLE, phase: 0.0, fight: Default::default(), pad: Default::default(),
-                           press: 0, keys: 0, scripted: 0, clock: 0.0, rand: Default::default(), bones: vec![],
+                           press: 0, keys: 0, scripted: 0, clock: 0.0, ai: None, foe_pad: None, foe_task: None, rand: Default::default(), bones: vec![],
                            speeds: [speed(getup::WALK()), speed(getup::WALK() + 1), speed(getup::WALK() + 2)],
                            caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
-                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, homer: vec![], foe: Default::default(),
+                           hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, fist: (feet + Vec3::Z * 1.0, Vec3::Z), homer: vec![], foe: Default::default(),
                            #[cfg(feature = "portal")] chell: None, #[cfg(feature = "portal")] fall: 0.0, swimming: false, drift: Vec3::ZERO };
         n.pose(clips);
         n
@@ -72,8 +76,8 @@ impl Hero {
     }
 
     pub fn held_axis(&self, (back, ahead, big): Held) -> (Vec3, Vec3, f32, f32) {
-        let d = self.grip * Vec3::X;
-        (self.hand - d * back, self.hand + d * ahead, big, back / (back + ahead))
+        let (at, d) = self.fist;
+        (at - d * back, at + d * ahead, big, back / (back + ahead))
     }
 
     pub fn playing(&self) -> bool {
@@ -83,6 +87,22 @@ impl Hero {
     pub fn as_foe(&self, clips: &Clips, weapon: Option<&delirium_data::weapons::Weapon>) -> melee::Foe {
         let f = melee::Foe { weapon: weapon.map(melee::held), ..Default::default() };
         clips.fight.as_ref().map_or(f, |d| f.with_move(&d.0, self.fight.mv.as_ref()))
+    }
+
+    pub fn task(&self, clips: &Clips) -> Option<melee::FoeTask> {
+        let d = &clips.fight.as_ref()?.0;
+        let mv = self.fight.mv.as_ref();
+        self.fight.on.then(|| melee::FoeTask { target: melee::TaskTarget::Me, lock: self.pad.value(melee::LOCK_LT()) >= melee::LOCK_FULL(),
+                                               given: mv.is_some_and(|m| m.given), block: mv.is_some_and(|m| d.table.results[m.result].is_a_block),
+                                               struck: mv.is_some_and(|m| m.struck) })
+    }
+
+    pub fn points(&self, clips: &Clips) -> [Option<Vec3>; 5] {
+        (*melee::POINT_BONES()).map(|t| clips.tagged(&self.bones, t))
+    }
+
+    pub fn began(&self) -> bool {
+        self.fight.started || self.fight.took
     }
 
     pub fn disarmed(&self) -> bool {
@@ -101,7 +121,7 @@ impl Hero {
         let blow = melee::Blow { by: from, player: false, res, clip };
         let me = melee::Foe { feet: self.feet, heading: self.yaw - std::f32::consts::FRAC_PI_2, health: 200.0, ..Default::default() };
         let rand = &mut self.rand;
-        let r = melee::react(d, &me, true, Some(weapon), self.fight.mv.as_ref(), &blow, false, [false; 2], false, &mut || rand.next());
+        let r = melee::react(d, &me, true, Some(weapon), self.fight.mv.as_ref(), &blow, false, [false; 2], melee::Pick::Dispatcher, &mut || rand.next());
         melee::play_result(&mut self.fight.mv, d, r.action?, true, &|k| clips.fight_clip(k).map(|c| c.1.duration));
         self.fight.on |= self.fight.mv.is_some();
         r.result.and_then(|r| d.clip(r))
@@ -133,8 +153,10 @@ impl Hero {
             let reach = if weapon.target_range > 0.0 { weapon.target_range } else { 10.0 };
             let foe = homer.map(|(p, heading, health, bones)| melee::Foe { feet: p.with_z(self.feet.z), heading, health, bones, ..self.foe })
                 .filter(|f| f.feet.distance(self.feet) <= reach);
-            locked = foe.is_some() && self.pad.value(melee::LOCK_LT()) >= melee::LOCK_FULL();
-            let c = melee::Ctx { pad: &self.pad, pos: self.feet + Vec3::Z, health: 200.0, weapon, foe, me: None, lock_on: locked };
+            locked = foe.is_some() && (self.ai.is_some() || self.pad.value(melee::LOCK_LT()) >= melee::LOCK_FULL());
+            let c = melee::Ctx { pad: &self.pad, pos: self.feet + Vec3::Z, health: 200.0, weapon, foe, me: self.ai, lock_on: locked, flags_240: 0,
+                                 on_stairs: melee::on_stairs(world, self.feet), bones: [None; 5], lies: 4, foe_pad: self.foe_pad.as_ref(),
+                                 foe_task: self.foe_task, in_hand: true };
             let mut heading = self.yaw - std::f32::consts::FRAC_PI_2;
             let rand = &mut self.rand;
             self.fight.step(d, &c, &mut heading, dt, &|k| clips.fight_clip(k).map(|c| c.1), &mut || rand.next());
@@ -236,6 +258,11 @@ impl Hero {
         }
         if let Some((at, q)) = clips.bone(&p, body, "Char_R_Hand") {
             (self.hand, self.grip) = (at, q);
+            let knuckle = |b| clips.bone(&p, body, b).map(|(k, _)| k);
+            self.fist = match (knuckle("Char_R_Finger4"), knuckle("Char_R_Finger1")) {
+                (Some(a), Some(b)) => ((a + b) / 2.0, (b - a).normalize_or(q * Vec3::X)),
+                _ => (at, q * Vec3::X),
+            };
         }
         self.posed(clips, &p, body);
     }

@@ -1,3 +1,5 @@
+use crate::estimate::fneg;
+
 fn be32(d: &[u8], at: usize) -> Option<u32> {
     d.get(at..at + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap()))
 }
@@ -929,7 +931,7 @@ impl MathOperation {
             27 => {
                 let part = a - floor(a);
                 let past_half = part - 0.5;
-                fsel(past_half, -past_half.mul_add(2.0, -1.0), part * 2.0)
+                fsel(past_half, fneg(past_half.mul_add(2.0, -1.0)), part * 2.0)
             }
             28 => a - floor(a),
             29 => fsel((a - floor(a)) - 0.5, 0.0, 1.0),
@@ -937,7 +939,7 @@ impl MathOperation {
                 let d = b - a;
                 let sign = fsel(d, fsel(-d, 0.0, 1.0), -1.0);
                 let step = fsel(d.abs() - c, c, d.abs());
-                -sign.mul_add(step, -b)
+                fneg(sign.mul_add(step, -b))
             }
             31 => {
                 let x = (time_ms as f32 / a) * 0.001;

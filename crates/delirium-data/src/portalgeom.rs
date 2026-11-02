@@ -1,3 +1,5 @@
+use crate::estimate::fneg;
+
 pub fn closest_on_segment(a: [f32; 3], b: [f32; 3], p: [f32; 3]) -> (f32, [f32; 3]) {
     let d: [f32; 3] = std::array::from_fn(|l| b[l] - a[l]);
     let q: [f32; 3] = std::array::from_fn(|l| p[l] - a[l]);
@@ -16,7 +18,7 @@ pub fn in_front(c: &[[f32; 3]; 4], p: [f32; 3]) -> bool {
     let yzx = |v: [f32; 3]| [v[1], v[2], v[0]];
     let zxy = |v: [f32; 3]| [v[2], v[0], v[1]];
     let m: [f32; 3] = std::array::from_fn(|l| zxy(e2)[l] * yzx(e1)[l]);
-    let n: [f32; 3] = std::array::from_fn(|l| -(yzx(e2)[l].mul_add(zxy(e1)[l], -m[l])));
+    let n: [f32; 3] = std::array::from_fn(|l| fneg(yzx(e2)[l].mul_add(zxy(e1)[l], -m[l])));
     let dot = d[2].mul_add(n[2], d[1].mul_add(n[1], d[0] * n[0]));
     !(dot < 0.0)
 }

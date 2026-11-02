@@ -69,7 +69,7 @@ pub fn pace(ped: [f32; 3], target: [f32; 3], leader: Option<&Leader>, flags: u32
     let hold = |r: f32| if r < 0.5 { 0.5 } else if r > crate::kv!(5) { crate::kv!(5) } else { r };
     if let Some(l) = leader {
         let v2 = l.vel[0].mul_add(l.vel[0], l.vel[1] * l.vel[1]);
-        if v2 > crate::kv!(129) {
+        if v2 > crate::kv!(134) {
             let m = hold(ratio_for_speed(speeds, v2.sqrt()));
             let mut f = 0.0;
             if dist > near {
@@ -79,9 +79,9 @@ pub fn pace(ped: [f32; 3], target: [f32; 3], leader: Option<&Leader>, flags: u32
             return hold(f + m);
         }
     }
-    if dist2 > crate::kv!(566) {
+    if dist2 > crate::kv!(565) {
         crate::kv!(5)
-    } else if dist2 > crate::kv!(759) {
+    } else if dist2 > crate::kv!(773) {
         2.0
     } else {
         1.0
@@ -167,7 +167,7 @@ pub struct MoveBeInFormation {
 impl MoveBeInFormation {
     pub fn new(group: usize) -> MoveBeInFormation {
         let stand = Move { kind: kind::MOVE_STAND_STILL, target: [0.0; 3], pace: 0.0, near: 0.0, heading: 0.0, timer: Timer::default(), mover: Mover::new(0.0) };
-        MoveBeInFormation { group, target: [0.0; 3], heading: 0.0, near: 0.0, last: [crate::kv!(760); 3], state: 1, stopped: false, sub: stand, mover: Mover::new(0.0) }
+        MoveBeInFormation { group, target: [0.0; 3], heading: 0.0, near: 0.0, last: [crate::kv!(774); 3], state: 1, stopped: false, sub: stand, mover: Mover::new(0.0) }
     }
 
     fn place(&mut self, v: &View) -> bool {
@@ -194,9 +194,9 @@ impl MoveBeInFormation {
         let pace = self.pace(v, target);
         let mut near = self.near;
         if kind == kind::MOVE_GO_TO_POINT
-            && v.leader.is_some_and(|l| l.vel[2].mul_add(l.vel[2], l.vel[0].mul_add(l.vel[0], l.vel[1] * l.vel[1])) > crate::kv!(48))
+            && v.leader.is_some_and(|l| l.vel[2].mul_add(l.vel[2], l.vel[0].mul_add(l.vel[0], l.vel[1] * l.vel[1])) > crate::kv!(51))
         {
-            near = crate::kv!(73);
+            near = crate::kv!(78);
         }
         if kind == kind::MOVE_CROWD_AROUND_LOCATION {
             target = v.leader.map_or(target, |l| l.pos);
@@ -220,7 +220,7 @@ impl MoveBeInFormation {
                 match v.leader.filter(|l| v.flags & CROWD() != 0 && l.pos[2] - v.pos[2] <= 2.0) {
                     Some(l) if l.mbr == 0.0 => kind::MOVE_CROWD_AROUND_LOCATION,
                     Some(_) => kind::MOVE_FOLLOW_NAV_MESH_ROUTE,
-                    None if wrap(v.heading - self.heading).abs() > crate::kv!(761 f32) => kind::MOVE_ACHIEVE_HEADING,
+                    None if wrap(v.heading - self.heading).abs() > crate::kv!(775 f32) => kind::MOVE_ACHIEVE_HEADING,
                     None => kind::MOVE_STAND_STILL,
                 }
             }
@@ -234,16 +234,16 @@ impl MoveBeInFormation {
             return None;
         }
         let m = diff(target, self.last);
-        if !(m[1].mul_add(m[1], m[0] * m[0]) > 1.0 / crate::kv!(762)) {
+        if !(m[1].mul_add(m[1], m[0] * m[0]) > 1.0 / crate::kv!(776)) {
             return None;
         }
         self.last = target;
         let d = diff(v.pos, target);
         let (xy, near) = (d[1].mul_add(d[1], d[0] * d[0]), self.near * self.near);
-        let k = if xy >= crate::kv!(32) {
-            (xy > near || d[2].abs() > crate::kv!(108)).then_some(kind::MOVE_FOLLOW_NAV_MESH_ROUTE)
+        let k = if xy >= crate::kv!(35) {
+            (xy > near || d[2].abs() > crate::kv!(84)).then_some(kind::MOVE_FOLLOW_NAV_MESH_ROUTE)
         } else {
-            (xy > crate::kv!(763) && xy > near && d[2].abs() < crate::kv!(108)).then_some(kind::MOVE_GO_TO_POINT)
+            (xy > crate::kv!(77) && xy > near && d[2].abs() < crate::kv!(84)).then_some(kind::MOVE_GO_TO_POINT)
         }?;
         Some(self.make(k, v))
     }
@@ -253,19 +253,19 @@ impl MoveBeInFormation {
         match sub {
             kind::MOVE_FOLLOW_NAV_MESH_ROUTE => {
                 let d = diff(m.target, target);
-                if self.stopped || d[1].mul_add(d[1], d[0] * d[0]) >= crate::kv!(32) || d[2].abs() > crate::kv!(108) {
+                if self.stopped || d[1].mul_add(d[1], d[0] * d[0]) >= crate::kv!(35) || d[2].abs() > crate::kv!(84) {
                     m.target = target;
                 }
             }
             kind::MOVE_GO_TO_POINT => {
                 if let Some(l) = v.leader.filter(|_| self.state == 1) {
                     let d = diff(l.pos, m.target);
-                    if d[0].mul_add(d[0], d[1].mul_add(d[1], d[2] * d[2])) < crate::kv!(57) {
+                    if d[0].mul_add(d[0], d[1].mul_add(d[1], d[2] * d[2])) < crate::kv!(60) {
                         return self.after(sub, v);
                     }
                 }
                 let d = diff(target, v.pos);
-                if d[1].mul_add(d[1], d[0] * d[0]) >= crate::kv!(61) || d[2].abs() > crate::kv!(108) {
+                if d[1].mul_add(d[1], d[0] * d[0]) >= crate::kv!(65) || d[2].abs() > crate::kv!(84) {
                     return Some(self.make(kind::MOVE_FOLLOW_NAV_MESH_ROUTE, v));
                 }
                 m.target = target;
@@ -347,12 +347,12 @@ impl<P: Follower> Task<P> for Move {
             }
             kind::MOVE_ACHIEVE_HEADING => {
                 ped.order(Order::Face(self.heading));
-                wrap(self.heading - v.heading).abs() <= crate::kv!(113)
+                wrap(self.heading - v.heading).abs() <= crate::kv!(118)
             }
             kind::MOVE_STAND_STILL => {
                 ped.order(Order::Stand);
                 if !self.timer.set {
-                    self.timer = Timer::start(ped.now(), crate::kv!(40 int));
+                    self.timer = Timer::start(ped.now(), crate::kv!(43 int));
                 }
                 self.timer.done(ped.now())
             }
@@ -365,6 +365,15 @@ impl<P: Follower> Task<P> for Move {
 
     fn mover(&mut self) -> Option<&mut Mover> {
         Some(&mut self.mover)
+    }
+
+    fn set_target(&mut self, _: &mut P, at: [f32; 3]) {
+        self.target = at;
+    }
+
+    fn set_move_state(&mut self, _: &mut P, state: u32) {
+        self.mover.set_state(state);
+        self.pace = crate::movement::mbr_for_state(state);
     }
 }
 

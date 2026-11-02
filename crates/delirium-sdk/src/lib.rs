@@ -185,6 +185,9 @@ pub unsafe extern "C" fn nm_world_add_mesh(w: *mut NmWorld, positions: *const f3
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_add_floor(w: *mut NmWorld, x: f32, y: f32, z: f32, half: f32) -> i32 {
     let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
+    if !(half <= 100.0) {
+        return fail(NM_E_ARG, "floor half over 100 m");
+    }
     w.0.add_floor(x, y, z, half, 0);
     0
 }
@@ -199,8 +202,21 @@ pub unsafe extern "C" fn nm_world_set_boxes(w: *mut NmWorld, boxes: *const f32, 
     w.1 = f.chunks(13).enumerate().map(|(k, b)| {
         let c = Vec3::new(b[0], b[1], b[2]);
         let (rot, half, vel) = (Quat::from_xyzw(b[3], b[4], b[5], b[6]).normalize(), Vec3::new(b[7], b[8], b[9]), Vec3::new(b[10], b[11], b[12]));
-        Obstacle { id: k as i32, at: c, rot, centre: c, half, vel, spin: Vec3::ZERO, com: c, parts: &[], last: None, entity: 0, first: false, inv_mass: 0.0, force: Vec3::ZERO }
+        Obstacle { frame_end: false, id: k as i32, at: c, rot, centre: c, half, vel, spin: Vec3::ZERO, com: c, parts: &[], last: None, entity: 0, first: false, inv_mass: 0.0, inv_inertia: None, force: Vec3::ZERO, turn: None }
     }).collect();
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_world_set_box_spins(w: *mut NmWorld, spins: *const f32, count: i32) -> i32 {
+    let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
+    if count < 0 || count as usize != w.1.len() || (count > 0 && spins.is_null()) {
+        return fail(NM_E_ARG, "nm_world_set_box_spins: count is not the boxes' number");
+    }
+    let f = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(spins, count as usize * 3) } };
+    for (o, s) in w.1.iter_mut().zip(f.chunks(3)) {
+        o.spin = Vec3::new(s[0], s[1], s[2]);
+    }
     0
 }
 
@@ -918,6 +934,14 @@ pub unsafe extern "C" fn nm_agent_feedback_get(a: *const NmAgent, i: i32, buf: *
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_task_shot(a: *mut NmAgent, w: *const NmWorld, set: *const c_char, part: i32, at: *const f32, dir: *const f32, health: f32) -> i32 {
+    unsafe { nm_agent_task_shot_force(a, w, set, part, at, dir, health, SHOT_FORCE) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_task_shot_force(a: *mut NmAgent, w: *const NmWorld, set: *const c_char, part: i32, at: *const f32, dir: *const f32, health: f32, force: f32) -> i32 {
+    if !(force > 0.0 && force.is_finite()) {
+        return fail(NM_E_ARG, "nm_agent_task_shot_force: force over 0");
+    }
     let a = agent!(a);
     let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
     if at.is_null() || dir.is_null() || !(0..a.build.parts.len() as i32).contains(&part) {
@@ -927,7 +951,7 @@ pub unsafe extern "C" fn nm_agent_task_shot(a: *mut NmAgent, w: *const NmWorld, 
     let hit = nm::Hit { health, ..nm::Hit::ragdoll(&a.agent) };
     let dir = unsafe { v3(dir) }.normalize_or_zero();
     with_tp(|tp| nm::task_shot(&mut a.agent, &a.build, &w.0, tp, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), set, hit, part as usize,
-                               unsafe { v3(at) }, dir * SHOT_FORCE, -dir, false));
+                               unsafe { v3(at) }, dir * force, -dir, false));
     0
 }
 
@@ -960,3 +984,4 @@ pub unsafe extern "C" fn nm_agent_task_flinch(a: *mut NmAgent, w: *const NmWorld
     with_tp(|tp| nm::task_flinch(&mut a.agent, &a.build, &w.0, tp, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), set, unsafe { v3(from) }));
     0
 }
+

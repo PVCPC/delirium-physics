@@ -1,3 +1,4 @@
+use crate::fneg;
 use crate::Fma;
 use crate::Vx;
 use crate::prelude::*;
@@ -46,15 +47,15 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Params {
         Params {
-            body_stiffness: delirium_data::kv!(131), elbow: delirium_data::kv!(13), shoulder: 1.0, damping: delirium_data::kv!(70), max_steps: delirium_data::kv!(192 int), head_look_pos: Vec3::ZERO,
-            head_look_instance_index: -1, head_look_always_timeout: delirium_data::kv!(27), head_look_at_vel_prob: -1.0,
+            body_stiffness: delirium_data::kv!(137), elbow: delirium_data::kv!(13), shoulder: 1.0, damping: delirium_data::kv!(74), max_steps: delirium_data::kv!(197 int), head_look_pos: Vec3::ZERO,
+            head_look_instance_index: -1, head_look_always_timeout: delirium_data::kv!(31), head_look_at_vel_prob: -1.0,
             somersault_angle: 1.0, somersault_angle_threshold: delirium_data::kv!(17), side_somersault_angle: 1.0,
-            side_somersault_angle_threshold: delirium_data::kv!(17), ang_vel_multiplier: Vec3::new(delirium_data::kv!(108), 1.0, delirium_data::kv!(108)),
-            ang_vel_threshold: Vec3::new(delirium_data::kv!(74), delirium_data::kv!(5), delirium_data::kv!(74)), arms_out_on_push_multiplier: 0.0, arms_out_on_push_timeout: 1.0,
-            returning_to_balance_arms_out: 0.0, arms_out_straighten_elbows: 0.0, arms_out_min_lean2: -delirium_data::kv!(183),
-            body_turn_timeout: 1.0, turn_off_prob: delirium_data::kv!(73), turn2_target_prob: delirium_data::kv!(57), turn2_vel_prob: delirium_data::kv!(24), turn_away_prob: delirium_data::kv!(9),
-            turn_left_prob: delirium_data::kv!(182), turn_right_prob: delirium_data::kv!(182), elbow_angle_on_contact: delirium_data::kv!(181), bend_elbows_time: 0.5,
-            bend_elbows_gait: delirium_data::kv!(70), use_head_look: false, arms_out_on_push: false, use_body_turn: false,
+            side_somersault_angle_threshold: delirium_data::kv!(17), ang_vel_multiplier: Vec3::new(delirium_data::kv!(84), 1.0, delirium_data::kv!(84)),
+            ang_vel_threshold: Vec3::new(delirium_data::kv!(136), delirium_data::kv!(5), delirium_data::kv!(136)), arms_out_on_push_multiplier: 0.0, arms_out_on_push_timeout: 1.0,
+            returning_to_balance_arms_out: 0.0, arms_out_straighten_elbows: 0.0, arms_out_min_lean2: -delirium_data::kv!(188),
+            body_turn_timeout: 1.0, turn_off_prob: delirium_data::kv!(78), turn2_target_prob: delirium_data::kv!(60), turn2_vel_prob: delirium_data::kv!(24), turn_away_prob: delirium_data::kv!(9),
+            turn_left_prob: delirium_data::kv!(187), turn_right_prob: delirium_data::kv!(187), elbow_angle_on_contact: delirium_data::kv!(186), bend_elbows_time: 0.5,
+            bend_elbows_gait: delirium_data::kv!(74), use_head_look: false, arms_out_on_push: false, use_body_turn: false,
         }
     }
 }
@@ -102,7 +103,7 @@ impl BodyBalance {
             ch.eff[i].blend_to_zero(1.0);
         }
         let mut s = BodyBalance {
-            p, arms_out: p.arms_out_on_push_timeout, floor: delirium_data::kv!(126), euler: [0.0; 3], bend: 0.0, cut: ch.random() * delirium_data::kv!(20),
+            p, arms_out: p.arms_out_on_push_timeout, floor: delirium_data::kv!(131), euler: [0.0; 3], bend: 0.0, cut: ch.random() * delirium_data::kv!(20),
             stepping: 0, look_time: 0.0, look_rand: 0.0, turn_rand: 0.0, turn_time: 0.0, look_vel: false,
             use_char_frame: false, frame: [Vec3::ZERO; 3],
         };
@@ -141,15 +142,15 @@ impl BodyBalance {
             if !catching {
                 ch.stabilise = None;
                 let k = p.body_stiffness;
-                out.catch_fall = Some([k * delirium_data::kv!(216), k * delirium_data::kv!(217), k * delirium_data::kv!(218)]);
+                out.catch_fall = Some([k * delirium_data::kv!(218), k * delirium_data::kv!(219), k * delirium_data::kv!(220)]);
             }
             return out;
         }
         if stepping != 0 && self.stepping != stepping {
             self.stepping = stepping;
             self.cut = ch.random() * delirium_data::kv!(20);
-            if p.arms_out_on_push_timeout > delirium_data::kv!(219) && p.arms_out_on_push_timeout < delirium_data::kv!(220) {
-                out.step_clamp = Some(ch.random() * delirium_data::kv!(74) + delirium_data::kv!(24));
+            if p.arms_out_on_push_timeout > delirium_data::kv!(221) && p.arms_out_on_push_timeout < delirium_data::kv!(222) {
+                out.step_clamp = Some(ch.random() * delirium_data::kv!(136) + delirium_data::kv!(24));
             }
         }
         for i in (*SPINE()).into_iter().chain((*NECK())) {
@@ -158,8 +159,8 @@ impl BodyBalance {
         ch.set_stiffness(p.head_look_always_timeout, p.body_turn_timeout, "ub", None);
         ch.set_stiffness(p.body_stiffness, p.damping, "ua", None);
         ch.set_stiffness(p.body_stiffness, 1.0, "un", None);
-        ch.set_stiffness(delirium_data::kv!(131), 1.0, "uc", None);
-        let k = p.body_stiffness * delirium_data::kv!(112);
+        ch.set_stiffness(delirium_data::kv!(137), 1.0, "uc", None);
+        let k = p.body_stiffness * delirium_data::kv!(28);
         for i in (*ELBOW()) {
             ch.eff[i].damping = p.damping * delirium_data::kv!(20) * k * 2.0;
             ch.eff[i].strength = k * k;
@@ -172,8 +173,8 @@ impl BodyBalance {
             if stepping != 0 {
                 self.look_time -= dt;
                 if self.look_time < 0.0 {
-                    self.look_time = ch.random() * delirium_data::kv!(57) + delirium_data::kv!(57);
-                    if p.head_look_at_vel_prob < -delirium_data::kv!(129) {
+                    self.look_time = ch.random() * delirium_data::kv!(60) + delirium_data::kv!(60);
+                    if p.head_look_at_vel_prob < -delirium_data::kv!(134) {
                         self.p.head_look_at_vel_prob = self.look_rand;
                     }
                     self.look_vel = self.p.head_look_at_vel_prob > ch.random();
@@ -188,16 +189,16 @@ impl BodyBalance {
             }
             out.head_look = Some(look);
         }
-        let f19 = speed.clamp(delirium_data::kv!(129), 1.0);
+        let f19 = speed.clamp(delirium_data::kv!(134), 1.0);
         if p.use_body_turn {
             self.turn_time -= dt;
             if self.turn_time < 0.0 {
-                self.turn_time = ch.random() * delirium_data::kv!(114) + delirium_data::kv!(110);
+                self.turn_time = ch.random() * delirium_data::kv!(119) + delirium_data::kv!(116);
                 self.turn_rand = ch.random();
             }
             let probs = [p.turn2_target_prob, p.turn2_vel_prob, p.turn_away_prob, p.turn_left_prob, p.turn_right_prob];
             let sum = probs.iter().fold(p.turn_off_prob, |s, x| s + x);
-            if sum > delirium_data::kv!(68) {
+            if sum > delirium_data::kv!(72) {
                 let inv = 1.0 / sum;
                 let mut edge = 0.0;
                 let edges = probs.map(|x| { edge = inv.fma(x, edge); edge });
@@ -221,7 +222,7 @@ impl BodyBalance {
                 }
             }
         }
-        if f19 < delirium_data::kv!(140) {
+        if f19 < delirium_data::kv!(146) {
             out.turn = None;
         }
         for i in (*NECK()) {
@@ -232,13 +233,13 @@ impl BodyBalance {
         let sin = |x: f32| (x as f64).sin() as f32;
         let pitch = sin(sdot(side, m.a, b"yzx")) * -2.0;
         let roll = sin(sdot(side, m.c, b"yzx")) * 2.0;
-        for (i, l1) in (*SPINE()).into_iter().zip([-delirium_data::kv!(105), delirium_data::kv!(17), -delirium_data::kv!(105), delirium_data::kv!(105)]) {
+        for (i, l1) in (*SPINE()).into_iter().zip([-delirium_data::kv!(112), delirium_data::kv!(17), -delirium_data::kv!(112), delirium_data::kv!(112)]) {
             ch.eff[i].desired[0] = l1;
             ch.eff[i].desired[1] = 0.0;
         }
         let hip = |side: usize, des: bool| if des { ch.eff[(*HIP())[side]].desired[0] } else { b.ch.actual((*HIP())[side], b.frames)[0] };
         let tw = (hip(0, true) - hip(1, true)).fma(delirium_data::kv!(9), hip(0, false) - hip(1, false));
-        for (i, k) in (*SPINE()).into_iter().zip([delirium_data::kv!(63), delirium_data::kv!(24), delirium_data::kv!(57), delirium_data::kv!(9)]) {
+        for (i, k) in (*SPINE()).into_iter().zip([delirium_data::kv!(140), delirium_data::kv!(24), delirium_data::kv!(60), delirium_data::kv!(9)]) {
             ch.eff[i].desired[2] = tw * k;
         }
         let over = |x: f32, thr: f32| x.abs().max(thr).min(delirium_data::kv!(20)) - thr;
@@ -250,7 +251,7 @@ impl BodyBalance {
         self.euler = now;
         let f5 = if rate[1] * pitch < 0.0 { p.returning_to_balance_arms_out } else { 1.0 };
         let f4 = if rate[0] * roll < 0.0 { 1.0 } else { p.returning_to_balance_arms_out };
-        let spin = |x: f32, thr: f32| x.abs().max(thr).min(delirium_data::kv!(29)) - thr;
+        let spin = |x: f32, thr: f32| x.abs().max(thr).min(delirium_data::kv!(32)) - thr;
         let (t, m) = (p.ang_vel_threshold, p.ang_vel_multiplier);
         let f27 = (-(p.side_somersault_angle * f4)).fma(side_tilt, -(p.somersault_angle * f5 * tilt));
         let f28 = (-(spin(rate[1], t.x) * m.x)).fma(f5, f27);
@@ -278,10 +279,10 @@ impl BodyBalance {
             let other = 1 - side;
             let act = |j: usize| b.ch.actual(j, b.frames);
             let (ho_des, ho_act, hs_act) = (ch.eff[(*HIP())[other]].desired, act((*HIP())[other]), act((*HIP())[side]));
-            let x = (-ho_act[0]).fma(delirium_data::kv!(74), ho_des[0]);
-            let x = (-ho_act[0].fma(delirium_data::kv!(132), -hs_act[0])).fma(delirium_data::kv!(114), x);
+            let x = (-ho_act[0]).fma(delirium_data::kv!(136), ho_des[0]);
+            let x = (fneg(ho_act[0].fma(delirium_data::kv!(138), fneg(hs_act[0])))).fma(delirium_data::kv!(119), x);
             ch.eff[(*SHOULDER())[side]].desired[0] = x.fma(p.shoulder, act((*SHOULDER())[side])[0]);
-            ch.eff[(*SHOULDER())[side]].desired[2] = -delirium_data::kv!(63);
+            ch.eff[(*SHOULDER())[side]].desired[2] = -delirium_data::kv!(140);
             let mut elbow = (ho_des[0] - ho_act[0]).fma(p.elbow, act((*ELBOW())[side])[0]);
             if p.arms_out_on_push {
                 elbow = p.arms_out_straighten_elbows.fma(if side == 0 { f28 } else { f30 + f28 }, elbow);
@@ -297,12 +298,12 @@ impl BodyBalance {
                     cut = self.cut;
                 }
             }
-            ch.eff[(*ELBOW())[side]].desired[0] = elbow.max(p.bend_elbows_gait).min(delirium_data::kv!(32));
+            ch.eff[(*ELBOW())[side]].desired[0] = elbow.max(p.bend_elbows_gait).min(delirium_data::kv!(35));
             let hs_l2 = act((*HIP())[side])[1];
             let mut l2 = hs_l2.fma(delirium_data::kv!(24), 0.5);
             if p.arms_out_on_push {
                 let max = l2 - cut;
-                let c = |x: f32| x.abs().max(self.floor).min(delirium_data::kv!(27)) - self.floor;
+                let c = |x: f32| x.abs().max(self.floor).min(delirium_data::kv!(31)) - self.floor;
                 let (a, bb) = (c(ch.eff[(*HIP())[side]].desired[1]) * push, c(hs_l2) * push);
                 let (cc, d) = (c(ch.eff[(*HIP())[other]].desired[1]) * push, c(act((*HIP())[other])[1]) * push);
                 let o = cc.fma(-0.5, -(a * delirium_data::kv!(17)));
@@ -318,11 +319,11 @@ impl BodyBalance {
         for i in (*WRIST()) {
             ch.eff[i].desired = [0.0; 3];
         }
-        let k = (1.0 - f19).fma(delirium_data::kv!(20), delirium_data::kv!(57));
+        let k = (1.0 - f19).fma(delirium_data::kv!(20), delirium_data::kv!(60));
         for i in Character::mask("ub") {
             ch.eff[i].blend_to_zero(k);
         }
-        ch.stabilise = Some((2.0, delirium_data::kv!(221)));
+        ch.stabilise = Some((2.0, delirium_data::kv!(223)));
         out
     }
 }
@@ -338,19 +339,16 @@ pub fn look_at(p: &Params, b: &Body, obstacles: &[crate::ragdoll::Obstacle]) -> 
     })
 }
 
-#[allow(non_snake_case)]
-#[inline]
-fn OWN_AT() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || Vec3::new(-delirium_data::kv!(222), -delirium_data::kv!(223), delirium_data::kv!(224)); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 fn own(b: &Body) -> (Vec3, Quat) {
     let f = b.frames[0];
-    (f.translation, f.rotation * crate::nmdbm::rage_link(b.build.nm, 0))
+    (f.translation, f.rotation * crate::nmdbm::rage_link(&b.build.links, 0))
 }
 
 pub fn from_own(x: Vec3, b: &Body) -> (Vec3, Vec3) {
     let ((o, r), (v, w)) = (own(b), b.doll.motion(0));
     let at = match b.doll.inst {
         Some([a, bb, c, d]) => crate::vm4(a, bb, c, d, x),
-        None => o + r * (x - (*OWN_AT())),
+        None => o + r * (x - crate::nmrs::cg(b.build.nm)),
     };
     let r = at - if b.doll.rigid.is_some() { b.at(0) } else { o };
     (at, (-r.yzx()).mul_add(w.zxy(), r.zxy().mul_add(w.yzx(), v)))
@@ -359,7 +357,7 @@ pub fn from_own(x: Vec3, b: &Body) -> (Vec3, Vec3) {
 pub fn inst_place(doll: &crate::ragdoll::Ragdoll, nm: usize) -> Vec3 {
     match doll.inst {
         Some(m) => m[delirium_data::kv!(0 int)],
-        None => doll.frames().next().map_or(Vec3::ZERO, |f| f.translation - f.rotation * crate::nmdbm::rage_link(nm, 0) * (*OWN_AT())),
+        None => doll.frames().next().map_or(Vec3::ZERO, |f| f.translation - f.rotation * crate::nmdbm::rage_link(&doll.links, 0) * crate::nmrs::cg(nm)),
     }
 }
 
@@ -368,6 +366,6 @@ pub fn to_own(at: Vec3, b: &Body) -> Vec3 {
         return crate::rigid::to_frame(m, at);
     }
     let (o, r) = own(b);
-    r.inverse() * (at - o) + (*OWN_AT())
+    r.inverse() * (at - o) + crate::nmrs::cg(b.build.nm)
 }
 
