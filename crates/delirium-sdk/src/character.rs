@@ -78,6 +78,8 @@ pub struct BuildPart {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boxed: Option<[f32; 3]>,
     pub inertia: [f32; 3],
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub length: f32,
     pub frame: Frame,
 }
 
@@ -109,7 +111,7 @@ impl Character {
                 Limit::Locked => JointLimit::Locked,
             },
             lower: p.lower, reach: p.reach, bind: p.bind.to_array(), boxed: p.boxed.map(|e| e.to_array()),
-            inertia: p.inertia.to_array(), frame: fr(f),
+            inertia: p.inertia.to_array(), length: p.length, frame: fr(f),
         }).collect());
         Character { format: FORMAT.into(), joints, parts, self_collision: nm_asset::self_collision(d).into_iter().map(|(a, b)| [a, b]).collect(), build }
     }
@@ -154,7 +156,7 @@ impl Character {
                 JointLimit::Locked => Limit::Locked,
             },
             lower: p.lower, reach: p.reach, name: p.name.clone(), bind: q(p.bind), boxed: p.boxed.map(Vec3::from_array),
-            inertia: Vec3::from_array(p.inertia), size: 1.0, heft: 1.0, grown: 1.0, length: 0.0,
+            inertia: Vec3::from_array(p.inertia), size: 1.0, heft: 1.0, grown: 1.0, length: p.length,
         }).collect();
         let mut build = Build { parts, nm: delirium::nmrs::HOMER, links: delirium::nmdbm::asset_links(delirium::nmrs::HOMER) };
         delirium::nmrs::asset_layout(&mut build, &mut frames);
@@ -195,7 +197,7 @@ pub unsafe extern "C" fn nm_build_from_character(json: *const c_char) -> *mut Nm
         return std::ptr::null_mut();
     };
     match Character::parse(t).map(|c| c.build()) {
-        Ok(Some((build, frames))) => Box::into_raw(Box::new(NmBuild { build, frames })),
+        Ok(Some((build, frames))) => Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] })),
         Ok(None) => {
             fail(NM_E_PARSE, "nm_build_from_character: the file has no build");
             std::ptr::null_mut()
@@ -233,3 +235,4 @@ pub unsafe extern "C" fn nm_character_from_xrt(xrt_path: *const c_char, build_pa
     }
 }
 
+fn is_zero(x: &f32) -> bool { *x == 0.0 }

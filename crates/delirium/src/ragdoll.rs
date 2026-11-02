@@ -216,6 +216,17 @@ impl Build {
 
     pub fn fit(&self, frames: &[Transform], joints: &[Vec3]) -> (Build, Vec<Transform>) {
         let n = self.parts.len();
+        let mut j = joints.to_vec();
+        if n == delirium_data::kv!(111 int) {
+        let leg = (j[1].distance(j[2]) + j[2].distance(j[delirium_data::kv!(0 int)]) + j[delirium_data::kv!(1 int)].distance(j[delirium_data::kv!(2 int)]) + j[delirium_data::kv!(2 int)].distance(j[delirium_data::kv!(6 int)])) / 2.0;
+        if j[delirium_data::kv!(22 int)].distance(j[0]) > delirium_data::kv!(125) * leg {
+            j[delirium_data::kv!(22 int)] = j[0] + (j[delirium_data::kv!(22 int)] - j[0]).normalize_or_zero() * delirium_data::kv!(125) * leg;
+        }
+        if j[delirium_data::kv!(55 int)].distance(j[delirium_data::kv!(113 int)]) > delirium_data::kv!(125) * leg {
+            j[delirium_data::kv!(55 int)] = j[delirium_data::kv!(113 int)] + (j[delirium_data::kv!(55 int)] - j[delirium_data::kv!(113 int)]).normalize_or_zero() * delirium_data::kv!(125) * leg;
+        }
+        }
+        let joints = &j[..];
         let pivot = |k: usize| match self.parts[k].parent {
             Some(_) => frames[k].translation + frames[k].rotation * self.parts[k].anchor,
             None => frames[k].translation,
@@ -253,9 +264,12 @@ impl Build {
             };
         }
         let mut build = self.clone();
+        let mid = { let mut v = size.clone(); v.sort_by(f32::total_cmp); v[n / 2] };
         for (k, p) in build.parts.iter_mut().enumerate() {
             let s = size[k];
-            (p.size, p.radius, p.half, p.length, p.anchor) = (p.size * s, p.radius * s, p.half * s, p.length * s, p.anchor * s);
+            let z = s.clamp(mid * delirium_data::kv!(119), mid * delirium_data::kv!(486));
+            (p.size, p.radius, p.half, p.length, p.anchor) = (p.size * s, p.radius * z, p.half * s, p.length * s, p.anchor * s);
+            p.heft *= (mid / s).powi(3);
             p.offset.translation *= s;
             (p.boxed, p.inertia) = (p.boxed.map(|e| e * s), p.inertia * s * s);
             p.anchor_parent *= p.parent.map_or(1.0, |q| size[q]);
@@ -1517,6 +1531,10 @@ fn box_meets_tri(c: Vec3, m: Mat3, e: Vec3, t: [Vec3; 3]) -> bool {
     ![(v[1] - v[0]).cross(v[2] - v[0]), m.x_axis, m.y_axis, m.z_axis].into_iter().any(apart)
 }
 
+#[allow(non_snake_case)]
+#[inline]
+fn LIGHTEST() -> f32 { delirium_data::kv!(68) }
+
 fn part_shape(p: &PartDef) -> gjk::Shape {
     match p.boxed {
         Some(e) => gjk::Shape::Box(e - Vec3::splat(BOX_MARGIN()), BOX_MARGIN()),
@@ -1721,7 +1739,8 @@ impl Ragdoll {
                 _ => p.moments() * s,
             };
             let i = if nm.is_some() && k == 0 { Vec3::new(i.y, i.x, i.z) } else { i };
-            let mut b = Body { x: f.translation - o, r: [Vec3::ZERO; 3], q: f.rotation, v, w: Vec3::ZERO, m: nm.map_or(m, |n| n[k]) * z.powi(3) * p.heft, i: i * z.powi(3) * p.heft, l, att };
+            let (z, heft) = if z.powi(3) * p.heft < LIGHTEST() { (1.0, LIGHTEST()) } else { (z, p.heft) };
+            let mut b = Body { x: f.translation - o, r: [Vec3::ZERO; 3], q: f.rotation, v, w: Vec3::ZERO, m: nm.map_or(m, |n| n[k]) * z.powi(3) * heft, i: i * z.powi(3) * heft, l, att };
             b.set_q(f.rotation);
             b
         }).collect::<Vec<Body>>();
@@ -3054,7 +3073,11 @@ impl Ragdoll {
     }
 
     fn jconst(&self, build: &Build, k: usize, j: &Joint, rigid: Option<&Rigid>) -> crate::rigid::JointConst {
-        rigid.and_then(|r| r.jc).unwrap_or_else(|| {
+        let grown = |jc: crate::rigid::JointConst| {
+            let (ps, cs) = (build.parts[j.parent].size, build.parts[k].size);
+            if ps == 1.0 && cs == 1.0 { jc } else { crate::rigid::JointConst { pa: jc.pa * ps, ca: jc.ca * cs, ..jc } }
+        };
+        rigid.and_then(|r| r.jc).map(grown).unwrap_or_else(|| {
             let (lp, lc, part) = (self.bodies[j.parent].l.inverse(), self.bodies[k].l.inverse(), &build.parts[k]);
             let rows = |q: Quat| { let m = Mat3::from_quat(q); [m.row(0), m.row(1), m.row(2)] };
             crate::rigid::JointConst { pm: rows(lp * j.pf), pa: lp * part.anchor_parent, ca: lc * part.anchor, cm: rows(lc * j.cf) }

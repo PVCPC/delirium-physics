@@ -1,0 +1,9 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.5
+reloadable = false
+
+[libraries]
+windows.x86_64 = "res://addons/delirium/delirium_godot.dll"
+linux.x86_64 = "res://addons/delirium/libdelirium_godot.so"
+macos = "res://addons/delirium/libdelirium_godot.dylib"

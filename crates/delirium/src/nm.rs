@@ -1016,6 +1016,10 @@ impl Agent {
         self.nm_hf_msg = Some(Some(h));
     }
 
+    pub fn full(&self) -> bool {
+        self.ch.is_some()
+    }
+
     pub fn high_falling(&self) -> bool {
         self.nm_hf.active() || matches!(self.nm_hf_msg, Some(Some(_)))
     }
@@ -2247,11 +2251,18 @@ pub fn task_shot(a: &mut Agent, build: &Build, world: &Collision, tp: &TaskParam
                  part: usize, at: Vec3, vel: Vec3, normal: Vec3, next: bool) -> Option<f32> {
     let mut t = crate::shottask::ShotTask::new(&hit, set, part, at, vel, normal);
     let msgs = if next { t.next_hit(rand, tp, &hit, 0, set, part, at, vel, normal) } else { t.update(rand, tp, &hit, 0).msgs };
+    task_shot_msgs(a, build, world, tp, &hit, &t, &msgs, next)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn task_shot_msgs(a: &mut Agent, build: &Build, world: &Collision, tp: &TaskParams, hit: &Hit, t: &crate::shottask::ShotTask,
+                      msgs: &[crate::shottask::Msg], next: bool) -> Option<f32> {
+    let set = t.set.as_str();
     let mut st = std::mem::take(&mut a.msgs);
     if next {
         a.hold(hit.gun, hit.two_handed);
     }
-    for m in &msgs {
+    for m in msgs {
         if m.0 == "shot" && a.ch.is_none() {
             let st = |n: &str, or: f32| tp.get("NMShot_Standing", set, n, or);
             a.body_balance(build, world, BodyBalance { body_stiffness: st("shotBodyStiffness", delirium_data::kv!(202)), damping: delirium_data::kv!(74), elbow: delirium_data::kv!(13), shoulder: 1.0,
@@ -2455,7 +2466,7 @@ pub fn task_jump_roll_up(a: &mut Agent, build: &Build, world: &Collision, tp: &T
     send_task_msgs(a, build, world, &crate::jumproll::roll_up(&crate::jumproll::Set::read(tp), vel));
 }
 
-fn send_task_msgs(a: &mut Agent, build: &Build, world: &Collision, m: &[crate::shottask::Msg]) {
+pub fn send_task_msgs(a: &mut Agent, build: &Build, world: &Collision, m: &[crate::shottask::Msg]) {
     let mut st = std::mem::take(&mut a.msgs);
     crate::shottask::apply(a, build, world, &mut st, m);
     a.msgs = st;

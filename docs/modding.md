@@ -22,15 +22,6 @@ The SDK produces `delirium_physics.dll` (Windows), `libdelirium_physics.so`
 (Linux) or `libdelirium_physics.dylib` (macOS) in `target/release/`. The crates
 are not published to crates.io; use path dependencies.
 
-32-bit games (Windows): build the same library for 32-bit and load that one instead; it behaves the same as the
-64-bit one.
-
-```
-rustup target add i686-pc-windows-msvc
-cargo build --release -p delirium-sdk --target i686-pc-windows-msvc
-# target/i686-pc-windows-msvc/release/delirium_physics.dll
-```
-
 Files you will use:
 
 | File | Purpose |
@@ -40,6 +31,8 @@ Files you will use:
 | `crates/delirium-sdk/bindings/python/delirium_physics.py` | Python (ctypes). |
 | `crates/delirium-sdk/bindings/csharp/Delirium.cs` | C# (P/Invoke). |
 | `crates/delirium-sdk/bindings/unity/` | Unity package `com.delirium_physics.bridge` (Unity 2022.3). |
+| `crates/delirium-sdk/bindings/godot/` | Godot 4.5+ extension: the `DeliriumRagdoll` node. |
+| `crates/delirium-sdk/bindings/unreal/` | Unreal Engine 5 plugin: the Delirium Ragdoll component. |
 | `crates/delirium-sdk/examples/` | Rust, C++ and Python examples. |
 
 On Windows the header declares functions `dllimport` unless you define
@@ -240,6 +233,15 @@ Console.WriteLine($"pelvis {p[0]:F2} {p[1]:F2} {p[2]:F2}");
 
 ### Unity
 
+**The easy way:** the package's `DeliriumRagdolls` component, the same
+ragdolls as the BepInEx mod for your own game: add it to one object, set the
+player's game exe, and call `Ragdoll`, `ShootAlong`, `MeleeHit`, `Explode`,
+`OnFire`, `Sever`, `Kill`, `GetUp` with the character's root. Any humanoid
+skeleton, no snaps in or out, nearby ragdolls share a world. Set up and
+examples: `crates/delirium-sdk/bindings/unity/README.md`.
+
+**The low-level way** (`NmCharacter`, one character you wire up yourself):
+
 1. Build the SDK library and copy it where Unity loads native plugins (for
    example `Assets/Plugins/x86_64/`).
 2. In the Package Manager choose "Add package from disk" and pick
@@ -272,6 +274,157 @@ capsule rigidbodies with `ConfigurableJoint`s from `nm_agent_get_joint`; parts
 collide with the world but not with each other. Level geometry is added with
 `nm_world_add_mesh`.
 
+### Another game: any skeleton (start here)
+
+Putting it into another game comes down to three things, and the SDK does each:
+
+1. **Your data files**: run the Playroom once with `--export <folder>`
+   (`delirium-room --game "<your game folder or .iso>" --export mod-files`). It
+   writes `character.xrt`, `build.txt` and `taskparams.txt`, ready to load.
+   They come from the player's own game: never ship them with a mod; each
+   player exports their own (and the SDK won't start without their game).
+2. **Your character's size**: `nm_build_fit` resizes the body to your
+   skeleton's joints in its standing pose.
+3. **Your skeleton's bones**: `nm_rig_create` once (your bones' parents, their
+   world frames in that same standing pose, and each bone's part:
+   `nm_rig_part_for_name` guesses it from names like Hips, LeftUpLeg,
+   upperarm_l, Bip01 L Thigh), then `nm_rig_pose` every frame. It gives each
+   bone a rotation under its parent, and the hips a position. Set only those:
+   bones never move apart, so nothing stretches, and each bone's own roll is
+   kept, so elbows and knees bend right. Any bone count works: extra bones
+   (twist, fingers, tails) ride along, missing parts are left out.
+
+For Mono Unity games there's a ready-made BepInEx plugin doing all of this
+(aim, press F9): `crates/delirium-sdk/bindings/bepinex/` and its README.
+
+### Godot 4
+
+`crates/delirium-sdk/bindings/godot/`: a GDExtension (Godot 4.5+, GDScript or
+C#). Add a `DeliriumRagdoll` node under the character's `Skeleton3D`, point
+the `[delirium]` project settings at the player's own files, and call
+`shoot_along`, `push`, `melee_hit`, `explode`, `on_fire`, `sever`, `kill`,
+`get_up`. No snaps in or out; it reads the level's box and mesh colliders.
+Set up and examples: its `README.md`.
+
+### Unreal Engine 5
+
+A ready plugin: `bindings/unreal/DeliriumRagdoll` (its README has the steps). Add the **Delirium Ragdoll** component
+to a character, then call `Shoot`, `Push`, `Explode`, `MeleeHit`, `Sever`, `Kill` and `GetUp` from Blueprint or C++.
+Tested on UE 5.8 with the Third Person template's mannequin.
+
+### Any engine, step by step (Unreal, Source, your own)
+
+The C library does the thinking; your engine's side only reads its bones and
+level and moves its bones. The Unity plugin is this list in about 700 lines of
+C#: read it alongside (`bindings/unity/Runtime/DeliriumRagdolls.cs`).
+
+**Space.** NM is metres, Z up, right-handed. Unity: metres, Y up, left-handed
+(swap y and z both ways; a rotation (x, y, z, w) becomes (-x, -z, -y, w)).
+Unreal: centimetres, Z up, left-handed (divide by 100, flip y; rotation
+(x, y, z, w) becomes (-x, y, -z, w)). Source: inches, Z up, right-handed
+(times 0.0254, nothing else).
+
+**Once, at start:** `nm_unlock` (the player's own game exe), `nm_init`
+(character.xrt), `nm_load_task_params`, `nm_build_load` (build.txt): the base
+build.
+
+**Taking a character** (when it's hit, or a key):
+
+1. *Its bones.* Every bone under the hips, parents before children; each
+   one's part with `nm_rig_part_for_name` (your own map for names it misses;
+   the hips bone on 0). Use the bind pose (the mesh's neutral pose), not the
+   pose it's in now: a body fitted to a mid-stride pose comes out bent against
+   its joint limits.
+2. *Its joints.* `nm_rig_joints(bones, parents, places, map, joints)`: the 21
+   joints, missing knees, spine, neck and collarbones filled in, jaws named
+   "spine" under the head dropped. If it fails, `nm_last_error` names the
+   bone to add to your map.
+3. *Its size and body.* `b = nm_build_fit_sized(base, joints, NM_SIZE_AUTO)`.
+   The balancer only stands bodies with legs within about 0.9-1.1 of a
+   person's; outside that it runs a person-sized body with the world and clock
+   scaled to it, so a giant keeps its balance and still falls at a giant's
+   pace. You never see the scaling: every place, speed, push, force and dt you
+   pass in or read back stays in your own units. (NM_SIZE_REAL: always its own
+   size; NM_SIZE_BASE: always person-sized. Message parameters stay NM's.)
+   *Odd shapes (optional):* `nm_build_tune(b, 24)` searches the game's own
+   balance settings (step height, leg stiffness and so on) for ones that body
+   stands with, and its agents start with them. A normal-shaped body keeps the
+   game's. It takes up to ~10 s, so run it once per kind of character off the
+   main thread, and give later builds of that kind its result with
+   `nm_build_copy_tune(new, tuned)`. `nm_build_set_weight(b, kg)` makes a body
+   heavier or lighter by its thickness; `nm_build_weigh_skin(b, joints,
+   verts, parts, n)` sets it from the skin (bind pose, the same space as the
+   joints): a fat belly makes a heavy body.
+4. *Its world.* `nm_world_create`, then `nm_world_set_scale(w,
+   nm_build_get_scale(b))` before anything else, `nm_world_add_floor` under its
+   feet, and the level around it
+   (`nm_world_add_mesh` with triangles within ~15 m, `nm_world_set_boxes` for
+   moving things), then `nm_agent_create(build, feet, yaw, seed)` and
+   `nm_rig_create(agent, bones, parents, rest, map)` with the same bind pose. Any
+   facing works: the fitted body takes your skeleton's own facing, so create
+   the agent with yaw 0. (Skipping the fit and using the base build with a
+   skeleton that faces another way twists the limbs: the base body faces -Y.)
+5. *Hand it over.* Pause your engine's animation on it, and stop your AI or
+   path agent from moving it: keep its root where it was until you hand it
+   back (otherwise the AI walks the root away and the body ends up inside
+   walls). Freeze its own rigidbodies.
+
+**No snap on takeover:** right after creating the agent and rig, call
+`nm_rig_take(rig, agent, now, before, dt)` with your bones' world frames now
+(and, for motion, last frame's and the time between; or null and 0). The body
+starts in the animated pose, moving as it moved. Add the character's walking
+speed with `nm_agent_add_velocity`. On getting up, blend from the last ragdoll
+pose into your get-up animation over a few tenths of a second (the Unity and
+Unreal plugins do both).
+
+**Each frame:** `nm_agent_step(agent, world, dt)` at 60 a second,
+then `nm_rig_pose(rig, agent, out)`: set each bone's local rotation, and the
+hips bone's world place.
+
+**Hitting it** (your health stays yours; pass it in):
+
+| Hit | Call |
+|---|---|
+| Bullet | `nm_agent_aim_hit(a, from, dir, point)` for the part, then `nm_agent_task_shot(a, w, set, part, point, dir, health)`; 100+ staggers and fights to stay up, under 100 goes down, under 50 is a kill, a head hit kills (`nm_set_headshot_kills`) |
+| Punch, kick, club | `nm_agent_task_melee_hit(a, w, at, impulse, attacker_head, timid)` |
+| Explosion | `nm_agent_task_explosion(a, w, at, radius, speed)` |
+| Fire | `nm_agent_task_on_fire(a, w, health)`, then `nm_agent_set_on_fire(a, burning, health)` |
+| Long fall | `nm_agent_task_high_fall(a, w, set, player)` |
+| Out of a moving car | `nm_agent_task_jump_roll(a, w)` |
+| Car about to hit | `nm_agent_task_brace(a, w, set)`, then `nm_agent_task_brace_control` each frame |
+| Car hits it | give your cars as boxes (`nm_world_set_boxes`), then `nm_agent_car_hit(a, w, health, agility, player_driver, &damage, &box)` each frame: it reacts (brace, roll up the bonnet, stay up or go down) and returns the damage to take |
+| Dragged from a car | `nm_agent_task_car_door(a, w, box, at)`: hands on the door, dragged once the car moves, lets go at speed |
+| Grabs a ledge or rail | `nm_agent_task_grab(a, w, left, right, seconds)` |
+| Falls over (no hit) | `nm_agent_task_fall_down(a, w, heading)` |
+| Tackled | from the tackler: `nm_agent_task_tackle(tackler, w, target, low, keep)` (within 4 m; both must be in the same world) |
+| Limb cut off | `nm_agent_sever(a, w, part, at, impulse)`: the piece flies off on its own and its parts read as before; a leg gone, it stays down |
+| Killed by your own damage | `nm_agent_set_dead(a, 1)` and `nm_agent_task_relax(a, -1, -1)` |
+
+Shots, explosions and fire run on their own each step until they end
+(`nm_agent_task_running`).
+
+**Handled for you each step:** pushed down stairs it gives up after two steps
+and tumbles; bodies stepped in one world push each other (crowds); a burning
+body sets others it touches alight (`nm_agent_is_burning` tells you, so you can
+draw flames and take health); water you declare with
+`nm_agent_set_water(a, w, level)` makes it float face up once it's down in it
+(`nm_agent_in_water`). `nm_agent_set_strength(a, k)` makes it tougher (1.5-2
+for a boss or a movie-style giant).
+
+**Your engine's own movement stays out while it's ragdolled.** Two systems
+moving one body fight: pause its animation, AI movement (nav agents, character
+controllers) and any physics capsule on the character for as long as the
+ragdoll has it, and keep its root on the ragdoll's hips. When it gets up, put
+the AI where the body is before you unpause it, or it snaps back to where it
+was hit.
+
+**Handing it back:** once `nm_agent_should_get_up(a, seconds)` (alive, lying
+still that long), `nm_agent_get_lying(a, head, face_up)` says which way it
+lies: move its root to the hips on the floor facing `-head` when face up (else
+`head`), unpause your animation, start your own get-up animation, and blend
+from the ragdoll's last pose into it over a fraction of a second. Then free
+the rig, agent, build and world.
+
 ### Driving another physics engine (FOLLOW mode)
 
 ```
@@ -296,7 +449,9 @@ Do not add gravity compensation: gravity is not included in the drive.
 | Body stats | `nm_agent_get_com`, `get_mass`, `get_kinetic_energy`, `get_stance` |
 | Push | `nm_agent_apply_impulse(a, part, at, impulse)`, `nm_agent_apply_push(a, at, impulse)` (nearest part), `nm_agent_add_velocity` |
 | Find a part | `nm_agent_nearest_part`, `nm_agent_raycast` |
-| Reactions | `nm_agent_task_shot`, `task_balance`, `task_catch_fall`, `task_flinch` |
+| Reactions | `nm_agent_task_shot`, `task_balance`, `task_catch_fall`, `task_flinch`, `task_melee_hit`, `task_explosion`, `task_on_fire`, `task_high_fall`, `task_jump_roll`, `task_brace`, `task_relax`, `task_fall_down`, `task_grab`, `task_car_door`, `task_tackle`, `nm_agent_car_hit` |
+| Body changes | `nm_agent_sever`, `is_severed`, `set_strength`, `set_water`, `in_water`, `is_burning`, `tackle_state` |
+| Health and get-up | `nm_agent_aim_hit`, `nm_agent_is_dead`, `set_dead`, `nm_set_headshot_kills`, `nm_agent_get_lying`, `should_get_up` |
 | Animation pose | `nm_agent_set_incoming_transforms(a, transforms, parts)` (7 floats per part; `parts = 0` clears), used by `activePose` and `incomingTransforms` |
 | Events | `nm_agent_feedback_count`, `nm_agent_feedback_get` |
 | World | `nm_world_add_floor`, `nm_world_add_mesh`, `nm_world_set_boxes`, `nm_world_raycast`, `nm_set_surface(material, friction, elasticity)` |
@@ -575,8 +730,21 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 - Moving boxes must be set again before every step, or they stand still.
 - Mesh triangles carry a material number 0 to 255. Set its friction and
   elasticity with `nm_set_surface` (ice is about 0.05 friction).
-- The tuning is made for about 1.8 m. Very tall, short or heavy bodies behave
-  worse; use `nm_build_fit` or the body presets.
+- The tuning is made for about 1.8 m. Very tall or short bodies only keep
+  their balance with legs within about 0.9-1.1 of that; `nm_size_scale` says
+  when to run them scaled (see "Any engine, step by step").
+- It contorts instead of bending: run `nm_rig_check` with the same inputs as
+  `nm_rig_joints`. It lists bones under the wrong part, left and right
+  swapped, missing parts, and a bent rest pose (the animated pose passed in
+  place of the bind pose). Fix the map and pass the bind pose.
+- It only ragdolls, no reactions: `nm_agent_check` says why (agent made
+  before `nm_unlock`/`nm_init`, no task params, FOLLOW mode without applying
+  the drives, nothing started, asleep).
+- Mod loaders: if your mod hooks the game's startup and another loader (an
+  .asi loader, modloader) hooks the same call, only one of you runs. Don't
+  start the SDK from a startup hook: start it lazily on the first frame you
+  need it (or from your loader's own "after load" event), and never patch a
+  function another mod already patched without calling on to it.
 - Last-error text is per thread. Read it on the thread that failed.
 - The `send` return value is the count of parameters kept but unused. A
   nonzero count is not an error.

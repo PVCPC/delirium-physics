@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A BepInEx 5 plugin for Mono Unity games: dotnet build -c Release, then copy bin/Release/net471/DeliriumRagdoll.dll
+       and the SDK library (delirium_physics.dll) into the game's BepInEx/plugins/DeliriumRagdoll/ folder. -->
+  <PropertyGroup>
+    <TargetFramework>net471</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>DeliriumRagdoll</AssemblyName>
+    <DefineConstants>$(DefineConstants);BEPINEX</DefineConstants>
+    <RestoreAdditionalProjectSources>https://nuget.bepinex.dev/v3/index.json</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../csharp/Delirium.cs" />
+    <Compile Include="../unity/Runtime/DeliriumRagdolls.cs" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" />
+    <PackageReference Include="UnityEngine.Modules" Version="2022.3.9" IncludeAssets="compile" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 
 mod car;
+mod crash;
 mod gamenums;
 use gamenums::*;
 mod fire;
@@ -639,9 +640,57 @@ const TAXI_AXLE: Vec2 = Vec2::new(0.73, 1.326);
 const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916, 2.466, 1.05)];
 const TAXI_BELT: f32 = 0.62;
 const TAXI_ID: i32 = 100;
+const CABIN_ID: i32 = 150;
+
+fn taxi_of(id: i32) -> i32 {
+    if id >= CABIN_ID { id - CABIN_ID } else { id - TAXI_ID }
+}
 const PLANK_ID: i32 = 200;
-const BODIES: [(&str, &str, f32, f32, f32); 6] = [("S", "Small", 1.60, 55.0, 1.0), ("A", "Average", 1.75, 77.0, 1.0), ("L", "Large", 1.90, 110.0, 1.0),
-                                                 ("K", "Lanky", 1.90, 64.0, 1.12), ("F", "Fat", 1.72, 125.0, 0.95), ("T", "Stocky", 1.63, 88.0, 0.9)];
+const BODIES: [(&str, &str, f32, f32, f32); 10] = [("S", "Small", 1.60, 55.0, 1.0), ("A", "Average", 1.75, 77.0, 1.0), ("L", "Large", 1.90, 110.0, 1.0),
+                                                 ("K", "Lanky", 1.90, 64.0, 1.12), ("F", "Fat", 1.72, 125.0, 0.95), ("T", "Stocky", 1.63, 88.0, 0.9),
+                                                 ("W", "Waddler", HW.0, HW.1, 1.0), ("G", "Guard", HG.0, HG.1, 1.0), ("B", "Brute", HB.0, HB.1, 1.0),
+                                                 ("R", "Random", 0.0, 0.0, 1.0)];
+const RANDOM: usize = 9;
+static SYMMETRIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static VARIANCE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x4040_0000);
+
+fn spread(v: f32) -> ((f32, f32), (f32, f32)) {
+    let t = v.clamp(1.0, 4.0).ln() / 4f32.ln();
+    ((0.2f32.powf(t), 4f32.powf(t)), (0.5f32.powf(t), 2f32.powf(t)))
+}
+
+fn roll_body(build: &Build) -> (Vec<f32>, Vec<f32>) {
+    let ((l0, l1), (g0, g1)) = spread(f32::from_bits(VARIANCE.load(std::sync::atomic::Ordering::Relaxed)));
+    let draw = |u: f32, lo: f32, hi: f32| lo * (hi / lo).powf(u);
+    let mut x = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
+    let mut u = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        (x >> 40) as f32 / (1u64 << 24) as f32
+    };
+    let n = build.parts.len();
+    let (mut len, mut girth): (Vec<f32>, Vec<f32>) = (0..n).map(|_| (draw(u(), l0, l1), draw(u(), g0, g1))).unzip();
+    if SYMMETRIC.load(std::sync::atomic::Ordering::Relaxed) {
+        for k in 0..n {
+            let twin = build.parts[k].name.replace("_R_", "_L_");
+            if let Some(l) = (twin != build.parts[k].name).then(|| build.parts.iter().position(|p| p.name == twin)).flatten() {
+                (len[k], girth[k]) = (len[l], girth[l]);
+            }
+        }
+    }
+    (len, girth)
+}
+
+thread_local! {
+    static ROLLED: std::cell::RefCell<Option<(Vec<f32>, Vec<f32>)>> = Default::default();
+    static TUNED: std::cell::RefCell<std::collections::HashMap<usize, Vec<(&'static str, f32)>>> = Default::default();
+    static TUNING: std::cell::RefCell<Vec<(usize, usize, std::sync::mpsc::Receiver<(Vec<(&'static str, f32)>, i32)>)>> = Default::default();
+}
+const SHAPES: [(f32, f32, f32, f32, f32); 3] = [(0.6, 1.3, 1.2, 1.8, 300.0), (1.3, 0.9, 1.1, 0.8, 60.0), (1.3, 1.8, 1.0, 1.3, 160.0)];
+const HW: (f32, f32) = (2.68, 300.0);
+const HG: (f32, f32) = (1.61, 60.0);
+const HB: (f32, f32) = (1.63, 160.0);
 const PLAT_ID: i32 = 300;
 const INJURY_MAX: f32 = 0.8;
 const CRUSH_SPEED: f32 = 2.5;
@@ -1255,6 +1304,62 @@ fn hero_task(tp: &TaskParams, task: &str, set: &str, head: Vec3, me: Vec3, fwd: 
 
 fn body_of(build: &Build, frames: &[Transform], body: usize) -> (Build, Vec<Transform>, Option<(Vec<f32>, f32)>) {
     let (_, name, h, m, l) = BODIES[body];
+    let pivot = |k: usize| build.parts[k].parent.map_or(frames[k].translation, |_| frames[k].translation + frames[k].rotation * build.parts[k].anchor);
+    if body == RANDOM {
+        let (len, girth) = ROLLED.with_borrow_mut(|r| r.get_or_insert_with(|| roll_body(build)).clone());
+        let mut j = vec![pivot(0); build.parts.len()];
+        for (c, p) in build.parts.iter().enumerate() {
+            if let Some(q) = p.parent {
+                j[c] = j[q] + (pivot(c) - pivot(q)) * len[c];
+            }
+        }
+        let legs = |j: &dyn Fn(usize) -> Vec3| (j(1).distance(j(2)) + j(2).distance(j(3)) + j(4).distance(j(5)) + j(5).distance(j(6))) / 2.0;
+        let k = legs(&pivot) / legs(&|i| j[i]);
+        let j: Vec<Vec3> = j.iter().map(|v| pivot(0) + (*v - pivot(0)) * k).collect();
+        let (mut b, f) = build.fit(frames, &j);
+        for (p, g) in b.parts.iter_mut().zip(&girth) {
+            (p.radius, p.heft) = (p.radius * g, p.heft * g * g);
+        }
+        let low = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
+        let top = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z + p.radius + p.half).fold(f32::MIN, f32::max);
+        eprintln!("body  {name}: {:.2} m, {:.0} kg", top - low, Ragdoll::new(&b, &f, Vec3::ZERO).mass());
+        return (b, f, None);
+    }
+    if let Some(&(leg, arm, torso, w, kg)) = body.checked_sub(6).and_then(|i| SHAPES.get(i)) {
+        let o = pivot(0);
+        let f: Vec<Vec3> = (0..build.parts.len()).map(|k| pivot(k) - o).collect();
+        let mut j = f.clone();
+        let wide = |v: Vec3| (v * w).with_z(v.z);
+        for (hip, kids) in [(1, [2, 3]), (4, [5, 6])] {
+            for k in kids {
+                j[k] = wide(f[hip]) + (f[k] - f[hip]) * leg;
+            }
+            j[hip] = wide(f[hip]);
+        }
+        for v in &mut j[7..] {
+            v.z *= torso;
+        }
+        for (sh, kids) in [(14, [15, 16]), (18, [19, 20])] {
+            let s = j[sh];
+            for k in kids {
+                j[k] = wide(s) + (j[k] - s) * arm;
+            }
+            j[sh] = wide(s);
+        }
+        let j: Vec<Vec3> = j.iter().map(|v| o + *v / leg).collect();
+        let (mut b, f) = build.fit(frames, &j);
+        for p in &mut b.parts {
+            p.radius *= w;
+        }
+        let k = kg / Ragdoll::new(&b, &f, Vec3::ZERO).mass();
+        for p in &mut b.parts {
+            p.heft *= k;
+        }
+        let low = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
+        let top = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z + p.radius + p.half).fold(f32::MIN, f32::max);
+        eprintln!("body  {name}: {:.2} m, {:.0} kg", top - low, Ragdoll::new(&b, &f, Vec3::ZERO).mass());
+        return (b, f, None);
+    }
     if body == 1 {
         return (build.clone(), frames.to_vec(), None);
     }
@@ -1528,7 +1633,10 @@ impl Sim {
     }
 
     fn spawn(&mut self, key: &str) {
-        let Some(body) = BODIES.iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  spawn: no body {key} (S A L K F T)")) };
+        let Some(body) = BODIES.iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  spawn: no body {key} (S A L K F T W G B R)")) };
+        if body == RANDOM {
+            ROLLED.set(Some(roll_body(&self.base.0)));
+        }
         if self.bench.len() + 1 >= HOMERS {
             return self.say(format!("room  spawn: {HOMERS} Homers at most"));
         }
@@ -1571,13 +1679,59 @@ impl Sim {
         let _ = msg::send(&mut a, &build, &self.world, &mut st, "bodyBalance", &[("start", Value::Bool(true))]);
         let id = (0..).find(|n| *n != self.homer_id && self.bench.iter().all(|b| b.homer_id != *n)).unwrap_or(0);
         self.crowd.insert(self.bench.len(), (a, st));
+        self.tune_homer(id, body, &build, &frames);
         self.crowd_hp.insert(self.bench.len(), 200.0);
         self.bench.push(Benched::new(id, body, build, fr, scale));
         (self.bench.len() - 1, to)
     }
 
+    fn tune_homer(&mut self, id: usize, body: usize, build: &Build, frames: &[Transform]) {
+        if body < 6 {
+            return;
+        }
+        if let Some(t) = (body != RANDOM).then(|| TUNED.with_borrow(|m| m.get(&body).cloned())).flatten() {
+            return self.retune(id, &t);
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (b, f) = (build.clone(), frames.to_vec());
+        std::thread::spawn(move || tx.send(delirium_physics::tune(b, f, 200)));
+        TUNING.with_borrow_mut(|t| t.push((id, body, rx)));
+    }
+
+    fn tunes_in(&mut self) {
+        let mut done = vec![];
+        TUNING.with_borrow_mut(|t| t.retain(|(id, body, rx)| match rx.try_recv() {
+            Ok(r) => {
+                done.push((*id, *body, r));
+                false
+            }
+            Err(e) => e == std::sync::mpsc::TryRecvError::Empty,
+        }));
+        for (id, body, (tune, got)) in done {
+            if body != RANDOM {
+                TUNED.with_borrow_mut(|m| m.insert(body, tune.clone()));
+            }
+            self.retune(id, &tune);
+            self.say(format!("room  Homer {}: balance tuned, stands through {got} of 3 pushes", id + 1));
+        }
+    }
+
+    fn retune(&mut self, id: usize, tune: &[(&'static str, f32)]) {
+        for (m, ps) in delirium_physics::tune_msgs(tune) {
+            if id == self.homer_id {
+                let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, m, &ps);
+            } else if let Some(i) = self.bench.iter().position(|b| b.homer_id == id) {
+                let (a, st) = &mut self.crowd[i];
+                let _ = msg::send(a, &self.bench[i].build, &self.world, st, m, &ps);
+            }
+        }
+    }
+
     fn rebody(&mut self, key: &str) {
-        let Some(body) = BODIES.iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  body: no body {key} (S A L K F T)")) };
+        let Some(body) = BODIES.iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  body: no body {key} (S A L K F T W G B R)")) };
+        if body == RANDOM {
+            ROLLED.set(Some(roll_body(&self.base.0)));
+        }
         self.spawn_body = body;
         let (s, id) = (self.ours(), self.homer_id);
         let (i, _) = self.stand_homer(body, (s.p(THIGH_L) + s.p(THIGH_R)) * 0.5, s.fwd);
@@ -1908,7 +2062,7 @@ impl Sim {
         let mut pressing = None;
         for (i, a) in std::iter::once(&mut self.agent).chain(self.crowd.iter_mut().map(|c| &mut c.0)).enumerate() {
             for (id, j, at) in std::mem::take(&mut a.doll.ob_hits) {
-                let Some(t) = self.taxis.get_mut((id - TAXI_ID) as usize) else { continue };
+                let Some(t) = self.taxis.get_mut(taxi_of(id) as usize) else { continue };
                 t.ped_hit(j, at);
                 if i == 0 && !self.dead && (0.2..CRUSH_SPEED).contains(&t.speed.abs()) {
                     pressing = Some(id);
@@ -1919,13 +2073,13 @@ impl Sim {
                 if self.steps < self.car_reacts[i] + 60 {
                     continue;
                 }
-                let h = self.car_hit[i].get_or_insert((id - TAXI_ID, Vec3::ZERO, at, self.steps));
+                let h = self.car_hit[i].get_or_insert((taxi_of(id), Vec3::ZERO, at, self.steps));
                 h.1 += j;
             }
         }
         match (pressing, self.crush) {
             (Some(id), None) if self.room.stage != "cab" => {
-                self.say(format!("room  taxi {} pressing on Homer: crushReaction", id - TAXI_ID + 1));
+                self.say(format!("room  taxi {} pressing on Homer: crushReaction", taxi_of(id) + 1));
                 self.send_ours(vec![format!("crushReaction start=true flinchMode=1 obstacleID={id} useInjuries=true")]);
                 self.crush = Some((id, self.steps));
             }
@@ -4593,6 +4747,13 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     if let Ok(p) = std::env::var("NM_DUMP") {
         let _ = std::fs::write(p, build.dump(&frames));
     }
+    if let Some(dir) = a.iter().position(|x| x == "--export").and_then(|i| a.get(i + 1)) {
+        let put = |n: &str, d: &[u8]| std::fs::create_dir_all(dir).and_then(|_| std::fs::write(format!("{dir}/{n}"), d)).map_err(|e| eprintln!("{n}: {e}")).is_ok();
+        let tp = from_game("common.rpf", "data/taskparams.txt");
+        let ok = put("character.xrt", &d) & put("build.txt", build.dump(&frames).as_bytes()) & tp.is_some_and(|t| put("taskparams.txt", &t));
+        println!("{} {dir}", if ok { "exported to" } else { "export incomplete:" });
+        std::process::exit(if ok { 0 } else { 1 });
+    }
     let body = a.iter().position(|x| x == "--body").and_then(|i| a.get(i + 1)).and_then(|n| BODIES.iter().position(|b| b.0 == n)).unwrap_or(1);
     let base = (build, frames);
     let (build, frames, grow) = body_of(&base.0, &base.1, body);
@@ -4641,6 +4802,11 @@ fn nm() -> usize {
 }
 
 fn main() {
+    crash::install();
+    if let Some(p) = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join("tunes.txt"))) {
+        let p = std::ffi::CString::new(p.to_string_lossy().into_owned()).unwrap_or_default();
+        unsafe { delirium_physics::nm_tune_file(p.as_ptr()) };
+    }
     let mut a: Vec<String> = std::env::args().collect();
     let args = a.clone();
     let safe = a.iter().any(|x| x == "--safe");
@@ -8811,6 +8977,7 @@ impl Sim {
     }
 
     fn tick(&mut self) {
+        self.tunes_in();
         self.extras_frame();
         self.bridge();
         self.trampoline();
@@ -8872,7 +9039,7 @@ impl Sim {
         let car: Vec<_> = self.cars.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
             half: Vec3::new(0.92, 2.54, 0.6), vel: v, com: c, ..Default::default() })
             .chain(self.pusher.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
-                half: Vec3::new(0.7, 0.25, 0.9), vel: v, com: c, ..Default::default() })).chain(self.taxis.iter().enumerate().flat_map(|(k, t)| [t.obstacle(TAXI_ID + k as i32, TAXI_BELT), t.cabin(TAXI_ID + k as i32, TAXI_BELT)]))
+                half: Vec3::new(0.7, 0.25, 0.9), vel: v, com: c, ..Default::default() })).chain(self.taxis.iter().enumerate().flat_map(|(k, t)| [t.obstacle(TAXI_ID + k as i32, TAXI_BELT), t.cabin(CABIN_ID + k as i32, TAXI_BELT)]))
             .chain(self.room.bridge.iter().flat_map(|b| (0..b.planks.len()).map(|i| b.plank(&self.room.w[0], i)).enumerate().map(|(i, t)| delirium::ragdoll::Obstacle {
                 id: PLANK_ID + i as i32, at: t.translation, rot: t.rotation, centre: t.translation - Vec3::Z * 1000.0, ..Default::default() })))
             .chain(world::plat(&self.room.stage, self.room.shook).zip(world::plat(&self.room.stage, self.room.shook + 1.0 / 60.0)).map(|((at, rot), (next, turn))| {
@@ -9570,6 +9737,17 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     ui.selectable_value(&mut sim.spawn_body, i, *n).on_hover_text(format!("{h:.2} m, {m:.0} kg"));
                 }
             }).response.on_hover_text("The body the next spawned Homer has");
+            if sim.spawn_body == RANDOM {
+                let mut on = SYMMETRIC.load(std::sync::atomic::Ordering::Relaxed);
+                if ui.checkbox(&mut on, "Symmetric").on_hover_text("Random bodies alike on both sides; off, each side drawn on its own").changed() {
+                    SYMMETRIC.store(on, std::sync::atomic::Ordering::Relaxed);
+                }
+                let mut v = f32::from_bits(VARIANCE.load(std::sync::atomic::Ordering::Relaxed));
+                let ((l0, l1), _) = spread(v);
+                if ui.add(egui::Slider::new(&mut v, 1.0..=4.0).text("Variance").suffix("x")).on_hover_text(format!("How far the random body strays from his: bones {l0:.2}x to {l1:.2}x his length (1x: his own; 4x: 0.2x to 4x)")).changed() {
+                    VARIANCE.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                }
+            }
             if ui.add_enabled(sim.bench.len() + 1 < HOMERS, egui::Button::new("Spawn Homer"))
                 .on_hover_text(format!("Another Homer of this body, 2 m in front of the one you control (Shift+N); up to {HOMERS}")).clicked() {
                 pressed = Some(format!("spawn {}", BODIES[sim.spawn_body].0));
@@ -9999,6 +10177,17 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                         ui.selectable_value(&mut sim.spawn_body, i, *n).on_hover_text(format!("{h:.2} m, {m:.0} kg"));
                     }
                 });
+                if sim.spawn_body == RANDOM {
+                    let mut on = SYMMETRIC.load(std::sync::atomic::Ordering::Relaxed);
+                    if ui.checkbox(&mut on, "Symmetric").on_hover_text("Random bodies alike on both sides; off, each side drawn on its own").changed() {
+                        SYMMETRIC.store(on, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    let mut v = f32::from_bits(VARIANCE.load(std::sync::atomic::Ordering::Relaxed));
+                    let ((l0, l1), _) = spread(v);
+                    if ui.add(egui::Slider::new(&mut v, 1.0..=4.0).text("Variance").suffix("x")).on_hover_text(format!("How far the random body strays from his: bones {l0:.2}x to {l1:.2}x his length (1x: his own; 4x: 0.2x to 4x)")).changed() {
+                        VARIANCE.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
                 if ui.add_enabled(sim.bench.len() + 1 < HOMERS, egui::Button::new("Spawn Homer")).on_hover_text("Another Homer of this body, 2 m in front of the one you control, balancing (Shift+N)").clicked() {
                     pressed = Some(format!("spawn {}", BODIES[sim.spawn_body].0));
                 }
@@ -10558,6 +10747,46 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
 
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[test]
+#[ignore = "needs the game: cargo test --release odd_shapes_stand -- --ignored --nocapture"]
+fn odd_shapes_stand() {
+    let mut sim = crate::load(&["sandbox".into()], &[], saved_game().as_deref(), Default::default(), None);
+    for k in ["W", "G", "B"] {
+        sim.spawn(k);
+    }
+    let z0: Vec<f32> = sim.crowd.iter().map(|c| c.0.doll.com().0.z).collect();
+    for _ in 0..240 {
+        sim.tick();
+    }
+    let up: Vec<bool> = sim.crowd.iter().zip(&z0).map(|(c, z)| c.0.doll.com().0.z > z * 0.5).collect();
+    eprintln!("odd_shapes_stand: {up:?}");
+    assert!(up.iter().all(|u| *u));
+}
+
+#[test]
+#[ignore = "needs the game: cargo test --release random_bodies -- --ignored --nocapture"]
+fn random_bodies() {
+    let mut sim = crate::load(&["sandbox".into()], &[], saved_game().as_deref(), Default::default(), None);
+    for sym in [true, false, true, false, true, false] {
+        SYMMETRIC.store(sym, std::sync::atomic::Ordering::Relaxed);
+        sim.spawn("R");
+    }
+    let t = std::time::Instant::now();
+    while TUNING.with_borrow(|t| !t.is_empty()) && t.elapsed().as_secs() < 120 {
+        sim.tunes_in();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(TUNING.with_borrow(|t| t.is_empty()), "tunes still searching after 120 s");
+    eprintln!("random_bodies: tuned in {:.1} s", t.elapsed().as_secs_f32());
+    let z0: Vec<f32> = sim.crowd.iter().map(|c| c.0.doll.com().0.z).collect();
+    for _ in 0..240 {
+        sim.tick();
+    }
+    let up: Vec<bool> = sim.crowd.iter().zip(&z0).map(|(c, z)| c.0.doll.com().0.z > z * 0.5).collect();
+    assert!(sim.crowd.iter().all(|c| c.0.doll.com().0.is_finite()));
+    eprintln!("random_bodies: standing {up:?}");
+}
 
 #[test]
 #[ignore = "needs the game; timing: cargo test --release stress_50 -- --ignored --nocapture"]

@@ -1,0 +1,5 @@
+Binaries/
+Intermediate/
+Source/ThirdParty/delirium_physics/*.dll
+Source/ThirdParty/delirium_physics/*.lib
+Source/ThirdParty/delirium_physics/*.h
