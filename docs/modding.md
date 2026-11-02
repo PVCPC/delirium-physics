@@ -48,7 +48,9 @@ On Windows the header declares functions `dllimport` unless you define
   Without it `nm_init` fails. Never ship the game or its files.
 - A **character**: either a character file (`.xrt`) plus a **build dump**
   (text), or one JSON file in the `nm-character-1` format. Load them with
-  `nm_init` + `nm_build_load`, or `nm_init_character_file`.
+  `nm_init` + `nm_build_load`, or `nm_init_character_file`. On the Steam PC version the character file is
+  `GTAIV/pc/data/naturalmotion/Fred.art`; you can point `nm_init` at it directly, or run
+  `delirium-room --export` to get `character.xrt`.
 - Optionally a **tuning file** (`nm_load_task_params`) for the shot, balance and
   flinch task helpers. Without it, defaults are used.
 - **World geometry**: a flat floor, triangle meshes, and moving boxes.

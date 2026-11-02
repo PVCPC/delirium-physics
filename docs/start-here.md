@@ -32,6 +32,9 @@ delirium-room --game "C:\path\to\your\game" --export mod-files
 Give it your game's folder, or the disc image (`.iso`). It writes three files into `mod-files`: `character.xrt`,
 `build.txt` and `taskparams.txt`. Keep them on your computer; your game or mod loads them from there.
 
+On the Steam PC version the character file is `GTAIV/pc/data/naturalmotion/Fred.art`. You can point the SDK at it
+directly instead of `character.xrt`.
+
 **2. Install the plugin** for your engine, as its README says (a few minutes: copy a folder, set where your game
 and the three files are).
 
