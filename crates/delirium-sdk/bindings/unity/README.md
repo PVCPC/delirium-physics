@@ -12,6 +12,12 @@ The same ragdolls as the BepInEx mod, for your own Unity game.
 4. **Add `DeliriumRagdolls`** to one object in your first scene and set `Game Exe` to the player's game exe.
    The Console says `[Delirium] ready`, or why not.
 
+## Try it: click to fight
+
+Package Manager > Delirium ragdolls > Samples > **Click to fight** > Import. Put `ClickToFight` on your camera and
+press Play: aim at a character and left click to shoot (the fourth shot kills), F to punch, G for a blast. Downed
+characters get up after 3 s. Its ~80 lines are the starting point for your own weapons.
+
 ## Use
 
 ```csharp

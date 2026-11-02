@@ -6,7 +6,7 @@ public class DeliriumRagdoll : ModuleRules
 	public DeliriumRagdoll(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "DeveloperSettings", "Chaos", "PhysicsCore", "Projects" });
+		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "DeveloperSettings", "Chaos", "PhysicsCore", "Projects", "InputCore" });
 		// The SDK: delirium_physics.h, delirium_physics.dll and delirium_physics.dll.lib in Source/ThirdParty/delirium_physics (from the release, or rust/target/release).
 		string Sdk = Path.Combine(ModuleDirectory, "..", "ThirdParty", "delirium_physics");
 		PublicIncludePaths.Add(Sdk);

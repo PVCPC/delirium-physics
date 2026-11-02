@@ -57,6 +57,9 @@ nm.ShootAlong(enemy.transform, cam.position, cam.forward, health: 60);   // shot
 
 Godot spells them `shoot_along`, `push`, `get_up` and so on.
 
+**Quickest way to see it work:** each plugin comes with a small **click to fight** example (left click shoots, F
+punches, G throws a blast). Its README says how to add it; then build your own weapons from it.
+
 ## When it doesn't work
 
 Every plugin says why in its log (Unity's Console, BepInEx's `LogOutput.log`, Unreal's Output Log, Godot's Output):

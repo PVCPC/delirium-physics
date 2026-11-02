@@ -6720,7 +6720,10 @@ impl Sim {
         self.upscaling() || self.bloom > 0.0 || self.sky == 2 || self.room.stage == "pttest" && self.water_caustics
     }
     fn fsr1(&self) -> bool {
-        self.render_scale < 0.999 && !self.upscaling() && self.upscaler == UP_FSR1
+        self.render_scale < 0.999 && !self.fixed_size() && self.upscaler == UP_FSR1
+    }
+    fn fixed_size(&self) -> bool {
+        self.upscaling() || self.rt > 0
     }
 }
 
@@ -7973,7 +7976,7 @@ fn viewports(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, windows: Quer
     let rect = match ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(VIEW_RECT))) { Some(r) if sim.show_ui => r, _ => ctx.content_rect() };
     if rect.width() < 2.0 || rect.height() < 1.0 || window.physical_width() == 0 || window.physical_height() == 0 { return; }
     let win = window.physical_size();
-    let s = if (sim.render_scale - 1.0).abs() > 0.001 && !sim.upscaling() { sim.render_scale } else { 1.0 };
+    let s = if (sim.render_scale - 1.0).abs() > 0.001 && !sim.fixed_size() { sim.render_scale } else { 1.0 };
     let size = (win.as_vec2() * s).as_uvec2().clamp(UVec2::ONE, UVec2::splat(8192));
     let want = (s != 1.0).then_some(size);
     let mut bound = want.unwrap_or(win);
@@ -10523,7 +10526,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let wants = !sim.gpu.is_empty() && !sim.gpu_now.to_lowercase().contains(&sim.gpu.to_lowercase());
             info(ui, &format!("In use: {}.{}", sim.gpu_now, if wants { " Restart the room to switch." } else { "" }));
             sub(ui, "Display");
-            let up = sim.upscaling();
+            let up = sim.fixed_size();
             ui.add_enabled(!up, egui::Slider::new(&mut sim.render_scale, RENDER_SCALE_MIN..=RENDER_SCALE_MAX).text(gpu("Resolution", 3)).custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
                 .on_hover_text("How sharp the 3D view is drawn, as a share of the window's pixels. Lower is blurrier and much faster on a slow graphics card; above 100% it draws more pixels than the window has and shrinks them down, the smoothest edges there are (200% costs about four times 100%).");
             if sim.render_scale < 0.999 && !up {

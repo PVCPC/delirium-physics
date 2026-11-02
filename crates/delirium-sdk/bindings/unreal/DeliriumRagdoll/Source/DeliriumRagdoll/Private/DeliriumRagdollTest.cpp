@@ -1,4 +1,5 @@
 #include "DeliriumRagdollComponent.h"
+#include "DeliriumClickToFight.h"
 #include "Animation/SkeletalMeshActor.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
@@ -62,6 +63,52 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	const FVector Cut = Run(TEXT("leg cut"), [this](UDeliriumRagdollComponent* D)
 		{ TestTrue(TEXT("cut"), D->Sever(D->GetHips() + FVector(0, 10, -60), FVector(0, 0, 20))); }, 5.f);
 	TestTrue(TEXT("down without a leg"), Cut.Z < 40.f);
+	GEngine->DestroyWorldContext(W);
+	W->DestroyWorld(false);
+	return true;
+}
+
+/** The click-to-fight example: the fourth shot kills, a punch only lands within 3 m, a blast throws only who's near. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeliriumClickToFightTest, "Delirium.ClickToFight", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDeliriumClickToFightTest::RunTest(const FString&)
+{
+	FString Path = FPlatformMisc::GetEnvironmentVariable(TEXT("DELIRIUM_TEST_MESH"));
+	if (Path.IsEmpty()) Path = TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple");
+	USkeletalMesh* Asset = LoadObject<USkeletalMesh>(nullptr, *Path);
+	if (!TestNotNull(TEXT("mesh"), Asset)) return false;
+	UWorld* W = UWorld::CreateWorld(EWorldType::Game, false);
+	FWorldContext& Ctx = GEngine->CreateNewWorldContext(EWorldType::Game);
+	Ctx.SetCurrentWorld(W);
+	AStaticMeshActor* Floor = W->SpawnActor<AStaticMeshActor>(FVector(0, 0, -50), FRotator::ZeroRotator);
+	Floor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+	Floor->SetActorScale3D(FVector(40, 40, 1));
+	auto Man = [&](FVector At)
+	{
+		ASkeletalMeshActor* A = W->SpawnActor<ASkeletalMeshActor>(At, FRotator::ZeroRotator);
+		A->GetSkeletalMeshComponent()->SetSkeletalMeshAsset(Asset);
+		auto* D = NewObject<UDeliriumRagdollComponent>(A);
+		D->RegisterComponent();
+		return D;
+	};
+	UDeliriumRagdollComponent* A = Man(FVector::ZeroVector);
+	UDeliriumRagdollComponent* B = Man(FVector(0, 800, 0));
+	AActor* Player = W->SpawnActor<AActor>();
+	auto* Fight = NewObject<UDeliriumClickToFight>(Player);
+	Fight->RegisterComponent();
+	auto Wait = [&](float S) { for (int32 F = 0; F < S * 60; F++) { A->Step(1.f / 60.f); B->Step(1.f / 60.f); } };
+	const FVector Eye(-600, 0, 150), Aim(1, 0, -0.1f);
+	for (int32 I = 0; I < 4; I++) { TestTrue(TEXT("shot"), Fight->Fire(Eye, Aim)); Wait(1.5f); }
+	Wait(3.f);
+	AddInfo(FString::Printf(TEXT("after 4 shots: hips at %.0f cm"), A->GetHips().Z));
+	TestTrue(TEXT("down after four"), A->GetHips().Z < 40.f);
+	TestFalse(TEXT("punch out of reach misses"), Fight->Punch(FVector(-600, 800, 150), FVector(1, 0, 0)));
+	TestTrue(TEXT("punch in reach"), Fight->Punch(FVector(-200, 800, 150), FVector(1, 0, -0.2f)));
+	Wait(2.f);
+	TestEqual(TEXT("blast hits one"), Fight->Blast(FVector(-400, 800, 150), FVector(1, 0, -1)), 1);
+	Wait(2.f);
+	AddInfo(FString::Printf(TEXT("after blast: hips at %.0f cm"), B->GetHips().Z));
+	TestTrue(TEXT("blast throws him down"), B->GetHips().Z < 50.f);
 	GEngine->DestroyWorldContext(W);
 	W->DestroyWorld(false);
 	return true;

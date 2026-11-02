@@ -34,6 +34,13 @@ call `GetUp`. Or set `Get Up After` (seconds) and it hands itself back.
 
 Places are Unreal's (cm); impulses are N s. Ragdolls within 5 m share one world, so they push and pile on each other.
 
+## Try it: click to fight
+
+Add a **Delirium Click To Fight** component to your player pawn and press Play: aim at a character and left click
+to shoot (the fourth shot kills), F to punch, G for a blast. Downed characters get up after 3 s. `Fire`, `Punch`
+and `Blast` take any view (From, Aim), from Blueprint too; its source (`DeliriumClickToFight.cpp`) is the starting
+point for your own weapons.
+
 ## How it works
 
 While ragdolled, the character's skeletal mesh is hidden, its animation paused and its movement stopped; a posed copy

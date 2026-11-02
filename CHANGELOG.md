@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.5.0 - The Modders Guide
+## 0.5.1
+
+### Fixed
+- The Playroom quit at the start with ray tracing on and Resolution not at 100%. Resolution now steps aside while
+  ray tracing is on, as it does for DLSS, FSR 3 and XeSS.
+
+### Added
+- **Click to fight** examples for each engine: aim at a character, click to shoot, F to punch, G for a blast.
+  Unity: the package's Click to fight sample. Godot: `examples/click_to_fight.gd`. Unreal: the Delirium Click To
+  Fight component. Each plugin's README says how to add it.
+- [Modding: start here](docs/start-here.md): which download to use, your first ragdoll in three steps, and what
+  to do when the log shows an error.
+- `llms.txt`, so AI tools can find the docs and the API.
+
+### Changed
+- The modding guide's examples start the SDK with the player's own copy of the game, as the public build needs.
+
 
 Delirium in other games and engines: Unity, Unreal, Godot, or your own.
 

@@ -23,6 +23,12 @@ Works from GDScript and C#.
    Paths are absolute or under the project folder. Optional: `size` (Auto, Real, Homer), `balance`, `adaptive`,
    `strength`, `headshot_kills`, `shot_force`, `melee_force`, `explosion_force`.
 
+## Try it: click to fight
+
+Attach `examples/click_to_fight.gd` to your Camera3D and run: aim at a character and left click to shoot (the fourth
+shot kills), F to punch, G for a blast. Downed characters get up after 3 s. Its ~70 lines are the starting point for
+your own weapons.
+
 ## Use
 
 Add a **DeliriumRagdoll** node as a child of the character's `Skeleton3D`, set `character` to the character's root
