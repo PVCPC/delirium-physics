@@ -637,6 +637,8 @@ fn lasso_on(part: usize) -> (usize, i32) {
 const LASSO_HOLD: f32 = 4.0;
 /// Rope slack: it only pulls once the part is this far from the pointer, m.
 const ROPE_SLACK: f32 = 0.25;
+/// s a pull takes to build to its full strength.
+const ROPE_RAMP: f32 = 0.5;
 const DYNAMITE_FUSE: f32 = 3.0;
 
 const LEAN_SECS: f32 = 1.5;
@@ -671,6 +673,8 @@ struct Gun {
     rope: Option<Vec3>,
     rope_plane: Option<(Vec3, Vec3)>,
     rope_end: Vec3,
+    /// s the rope has been pulled: the pull builds up over ROPE_RAMP rather than yanking
+    rope_t: f32,
     fires: Vec<(Vec3, f32)>,
     swing: f32,
 }
@@ -3935,7 +3939,9 @@ impl Sim {
                 Some(to) => {
                     self.gun.lasso = Some((part, LASSO_HOLD));
                     self.gun.rope_end = to;
-                    self.rope_pull(part, to, dt);
+                    self.gun.rope_t += dt;
+                    let ramp = (self.gun.rope_t / ROPE_RAMP).min(1.0);
+                    self.rope_pull(part, to, dt * ramp);
                 }
                 None if left - dt <= 0.0 => {
                     self.gun.lasso = None;
@@ -8489,14 +8495,26 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         }
     }
     sim.pop_screen = sim.pops.iter().filter_map(|&(p, n, age, small)| camera.world_to_viewport(gt, p + Vec3::Z * POP_RISE * age / POP_LIFE).ok().map(|c| (c, n, age, small))).collect();
-    // a lasso round him: holding the left button pulls the rope towards the pointer (as a grab pulls), in a plane
-    // through the roped part facing the camera, instead of throwing again
+    // a lasso round him: a click on him takes it off (and throws a new one there); holding the left button off him
+    // pulls the rope towards the pointer (as a grab pulls), in a plane through the roped part facing the camera
     if let (Some((part, _)), None) = (sim.gun.lasso, sim.hero.as_ref()) {
         let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok());
-        let down = buttons.pressed(MouseButton::Left) && !sim.over_ui;
         if buttons.just_pressed(MouseButton::Left) && let Some(r) = ray {
-            sim.gun.rope_plane = Some((sim.ours().p(part), -*r.direction));
+            if sim.agent.doll.probe(&sim.build, r.origin, r.origin + *r.direction * 60.0).is_some() {
+                // a click on him: the loop comes off, and this click throws a new one at the part clicked
+                sim.gun.lasso = None;
+                (sim.gun.rope, sim.gun.rope_plane) = (None, None);
+                sim.send("rdr2Lasso start=false");
+            } else {
+                // a click off him: pull the rope
+                sim.gun.rope_plane = Some((sim.ours().p(part), -*r.direction));
+                sim.gun.rope_t = 0.0;
+            }
         }
+    }
+    if let (Some(_), None) = (sim.gun.lasso, sim.hero.as_ref()) {
+        let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok());
+        let down = buttons.pressed(MouseButton::Left) && !sim.over_ui;
         if let (true, Some(r), Some((p, n))) = (down, ray, sim.gun.rope_plane) && r.direction.dot(n).abs() > 1e-4 {
             sim.gun.rope = Some(r.origin + *r.direction * ((p - r.origin).dot(n) / r.direction.dot(n)));
         }

@@ -433,8 +433,9 @@ Hero:
 
 - Lasso: it locks onto the part nearest where you aim, as RDR2's does, and catches it even if it lands on the floor
   beside it: head or neck, round the neck; legs, round the feet; otherwise round the chest and arms (`rdr2Lasso`'s
-  type). Then hold the left button to pull the rope towards the pointer, as a grab pulls but only while the rope is
-  taut; let go and it goes slack, and 4 s later the loop slips off.
+  type). Then hold the left button away from him to pull the rope towards the pointer, as a grab pulls but only
+  while the rope is taut, building up over half a second; let go and it goes slack, and 4 s later the loop slips off.
+  Clicking on him takes the loop off and throws a new one at the part clicked.
 - Bolas: `rdr2Bolas`, his legs wrapped.
 - Dynamite: rolls, and goes off after 3 s.
 - Fire bottle: a fire where it breaks. In Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`
