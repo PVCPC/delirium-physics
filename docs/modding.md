@@ -449,8 +449,29 @@ common_0.rpf, data/naturalmotion), Bring the horse puts a physics horse 2.5 m be
 off` takes it away; the path is kept in settings.txt as `rdr2_horse`). It's built from where RDR2's file puts its
 parts, with Delirium's own shapes and masses (about 600 kg, the trunk one rigid barrel). While it's sound it stands, as
 RDR2's horses do on their animation: muscles hold its pose and a lift on the barrel carries most of its weight. Shoot,
-blast, tomahawk or arrow it: a leg hit twice gives and it goes down; killed (400 health) it goes down; down, it's a
-ragdoll. It meets Homer, the room's floor and walls.
+blast, tomahawk or arrow it: a leg hit twice gives and it goes down; tipped past `failangle` it goes down; killed (400
+health) it goes down limp. It meets Homer, the room's floor and walls.
+
+Down and alive it does what RDR2's `quadrupedbase` behaviour does on the ground, with its names and defaults (from
+RDR2's own table; what each does here is read from its name, not RDR2's code). Under "On the ground" in the horse's
+section, or `!horse set <name> <value>`:
+
+| Setting | What it does (default) |
+|---|---|
+| `alwayslifthead` | holds its head up off the ground, its neck bent toward the sky (on) |
+| `scrabbleonside` | on its side its legs paddle, diagonal pairs together (on) |
+| `minscrabblespeed`, `maxscrabblespeed` | how fast they paddle, rad/s, fresh to faded (11, 3) |
+| `writheonground`, `writhespeed` | its neck writhes, this many times a second (on, 0.5) |
+| `legStiffness`, `legStiffnessMin`, `spineStiffness`, `spinestiffnessmin` | its legs' and neck's strength, fresh and faded; 15 is full (15, 7, 15, 7) |
+| `strengthdecay` | how fast, per s, it fades from fresh to faded (0.5) |
+| `initialWeaknessZeroDuration`, `initialWeaknessRampDuration` | after a hit, s it's limp, then s to recover (0, 0.4) |
+| `snap`, `snapMag` | a hit jolts its whole body too (on, 1) |
+| `failangle` | standing, tipped till its back's up is this cosine from the sky's, it goes down (0.6) |
+| `rollonground`, `rollvelocity`, `rollscale` | it heaves to roll onto its chest every other second (off, 0.7, 0.7) |
+| `rightingTorque` | a steady turn toward lying on its chest (0) |
+
+Rolling onto its chest doesn't get there yet: lying on its side, its legs stick out and hold it, so getting up is for
+later (with balance).
 
 No part of it weighs under 10 kg: Delirium's joint solver blows up with a very light part on the end of a chain under
 a heavy one (RDR2's 1 kg tail tip on the barrel), which a person never has.
@@ -592,6 +613,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!aim gun\|camera` | Aim mode. |
 | `!gunat dx,dy,dz`, `!gunreach K [up]`, `!gun dx,dy,dz`, `!gunfire` | Floating-gun controls: aim, reach, aim off the chest and fire, fire. |
 | `!horse [path]`, `!horse off` | Bring Red Dead Redemption 2's horse (from your horse.xml) beside him; take it away. |
+| `!horse set name value` | Set one of the horse's quadrupedbase settings by RDR2's name (yes/no as 1/0). |
 | `!rope dx,dy,dz` | With a lasso round him: pull the rope to that far from the roped part (`!rope off` lets go). |
 | `!portal gun` | Pick the portal gun (needs portal mode). |
 | `!skate` | J: Homer on the skateboard or off it (needs Skate 3 linked). |

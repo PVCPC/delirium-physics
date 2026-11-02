@@ -16,7 +16,9 @@
   reactions to a hit by where it landed, one call per hit. In the playroom, a "Reaction style" switch in Reactions:
   GTA IV (the default, unchanged) or Red Dead Redemption 2 (`!rdr2`).
 - Playroom: Red Dead Redemption 2's horse, from your own horse.xml: a physics horse that stands, takes hits, and goes
-  down as a ragdoll when a leg is lamed or it's killed (Character, `!horse`).
+  down as a ragdoll when a leg is lamed or it's killed (Character, `!horse`). Down and alive it does RDR2's
+  `quadrupedbase` on the ground, by its names and defaults: lifts its head, paddles its legs on its side, writhes its
+  neck, its strength fading; a hit weakens it a moment, and tipped past `failangle` it goes down (`!horse set`).
 - Playroom: Red Dead Redemption 2 weapons (lasso, bolas, dynamite, fire bottle, tomahawk, bow), each with its own
   reaction; in Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`.
 - Playroom: a Parameters tab to change any behaviour's parameters (GTA IV's, the extras, RDR2's), with what each one

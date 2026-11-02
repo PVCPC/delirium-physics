@@ -3784,7 +3784,11 @@ impl Sim {
         let ground = self.world.ground(at + Vec3::Z * 2.0, 4.0).unwrap_or(0.0);
         let facing = ours.fwd.y.atan2(ours.fwd.x);
         match horse::Horse::new(&text, at.with_z(ground), facing) {
-            Ok(h) => {
+            Ok(mut h) => {
+                // a new horse keeps the last one's settings
+                if let Some(old) = self.horse.take() {
+                    h.q = old.q;
+                }
                 self.horse = Some(h);
                 self.say("room  horse: Red Dead Redemption 2's, from your horse.xml".into());
             }
@@ -9058,6 +9062,12 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                     sim.horse = None;
                     sim.say("room  horse: gone".into());
                 }
+                Some(d) if d.starts_with("set ") => {
+                    let mut w = d[4..].split_whitespace();
+                    let (name, v) = (w.next().unwrap_or(""), w.next().unwrap_or(""));
+                    let ok = sim.horse.as_mut().is_some_and(|h| h.q.set(name, v));
+                    sim.say(format!("room  horse: {name} {}", if ok { v } else { "? (no horse, no such setting, or not a value)" }));
+                }
                 d => {
                     if let Some(path) = d.filter(|p| !p.is_empty()) {
                         sim.horse_file = path.into();
@@ -9457,16 +9467,21 @@ fn headless(mut sim: Sim, n: usize) {
     sim.button("balance");
     // HORSE_TEST=<horse.xml>: Red Dead Redemption 2's horse beside him, its barrel's height and how far its joints are
     // from their pose printed every half second; at 2 s, HORSE_DIE kills it, HORSE_SHOOT=k,k,... hits those parts (40
-    // damage and a 40 N s push each; two on a leg lame it)
+    // damage and a 40 N s push each; two on a leg lame it); HORSE_SET=name=value,... sets its quadrupedbase settings
     if let Ok(f) = std::env::var("HORSE_TEST") {
         sim.horse_file = f;
         sim.spawn_horse();
+        for kv in std::env::var("HORSE_SET").unwrap_or_default().split(',').filter_map(|kv| kv.split_once('=')) {
+            if let Some(h) = sim.horse.as_mut() && !h.q.set(kv.0, kv.1) {
+                eprintln!("horse: no setting {kv:?}");
+            }
+        }
         for i in 0..n {
             sim.tick();
             if let (Some(h), 0) = (sim.horse.as_ref(), i % 30) {
                 let fr: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
                 let low = fr.iter().map(|p| p.z).fold(f32::MAX, f32::min);
-                eprintln!("horse t {:.1}  body z {:.3}  head z {:.3}  lowest {:.3}  body at {:+.2} {:+.2}", i as f32 / 60.0, fr[0].z, fr[horse::HEAD].z, low, fr[0].x, fr[0].y);
+                eprintln!("horse t {:.1}  body z {:.3}  head z {:.3}  lowest {:.3}  body at {:+.2} {:+.2}  {}", i as f32 / 60.0, fr[0].z, fr[horse::HEAD].z, low, fr[0].x, fr[0].y, h.state());
                 let e = h.errors();
                 let leg = |l: usize| horse::LEGS[l].iter().map(|&k| e[k]).fold(0.0f32, f32::max);
                 eprintln!("      most off  legs {:.2} {:.2} {:.2} {:.2}  neck/head {:.2}", leg(0), leg(1), leg(2), leg(3), e[13..=horse::HEAD].iter().copied().fold(0.0f32, f32::max));
@@ -10467,10 +10482,24 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                         pressed = Some("#horse off".into());
                     }
                 });
-                if let Some(h) = sim.horse.as_ref() {
+                if let Some(h) = sim.horse.as_mut() {
                     let legs: Vec<String> = h.legs.iter().zip(["hind right", "hind left", "fore right", "fore left"]).filter(|(l, _)| **l > 0.0).map(|(l, n)| format!("{n} {:.0}%", l / 60.0 * 100.0)).collect();
-                    info(ui, &format!("Health {:.0} / 400{}{}", h.health.max(0.0), if h.dead { ", dead" } else { "" },
+                    info(ui, &format!("Health {:.0} / 400 · {}{}", h.health.max(0.0), h.state(),
                                       if legs.is_empty() { String::new() } else { format!(" · legs hurt: {}", legs.join(", ")) }));
+                    ui.collapsing("On the ground (RDR2's quadrupedbase)", |ui| {
+                        info(ui, "RDR2's names and defaults. Down and alive, it lifts its head, paddles its legs on its side and writhes its neck, weaker as its strength fades; hit, it goes weak a moment; tipped past failangle it goes down. Dead, it's limp. (`!horse set name value` from a script.)");
+                        ui.horizontal_wrapped(|ui| {
+                            for (n, f) in h.q.flags() {
+                                ui.checkbox(f, n);
+                            }
+                        });
+                        for (n, f, lo, hi) in h.q.fields() {
+                            ui.add(egui::Slider::new(f, lo..=hi).text(n));
+                        }
+                        if ui.button("RDR2's defaults").clicked() {
+                            h.q = horse::Quadruped::default();
+                        }
+                    });
                 }
             });
             ui.horizontal_wrapped(|ui| {
