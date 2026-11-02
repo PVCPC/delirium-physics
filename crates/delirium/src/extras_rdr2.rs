@@ -11,7 +11,39 @@ use crate::ragdoll::GRAVITY;
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 26] = [
+pub static MESSAGES: [Message; 27] = [
+    Message { name: "rdr2Sit", params: &[
+        Param { name: "seatPos", kind: Kind::Vec3, used: true, doc: "where his pelvis sits, world; send rdr2Sit again without start to move it with the horse (zero: where his pelvis is)" },
+        Param { name: "seatUp", kind: Kind::Vec3, used: true, doc: "the seat's up, world (0,0,1). RDR2 gives the seat as a part of its horse with seatuplocal and seatrightlocal in that part's frame" },
+        Param { name: "seatForward", kind: Kind::Vec3, used: true, doc: "which way the horse faces, world (zero: his facing)" },
+        Param { name: "stirrupL", kind: Kind::Vec3, used: true, doc: "where his left foot goes, world (zero: 0.55 m under the seat, 0.26 m to the side)" },
+        Param { name: "stirrupR", kind: Kind::Vec3, used: true, doc: "his right foot (zero: likewise)" },
+        Param { name: "mountTime", kind: Kind::Float, used: true, doc: "s he takes to get from where he is into the seat, swung up over it (0.6)" },
+        Param { name: "constrain", kind: Kind::Bool, used: true, doc: "hold his pelvis in the seat (true; false: only his pose, he sits on whatever's under him)" },
+        Param { name: "constrainstrength", kind: Kind::Float, used: true, doc: "how hard his hips are held square to the seat (40)" },
+        Param { name: "constrainstrengthstirrup", kind: Kind::Float, used: true, doc: "how hard his feet are held in the stirrups: a spring of 10 times this, N per m (40; 0: they aren't)" },
+        Param { name: "hippitchstart", kind: Kind::Float, used: true, doc: "his hips tip back (less than 0) or forward, -1..1 of half a radian (-0.5)" },
+        Param { name: "hippitchramp", kind: Kind::Float, used: true, doc: "s they take to get there (0.25)" },
+        Param { name: "straightnessstart", kind: Kind::Float, used: true, doc: "his back slouches (less than 0) or arches, -1..1 (-0.1)" },
+        Param { name: "straightnessramp", kind: Kind::Float, used: true, doc: "s it takes (0.35)" },
+        Param { name: "failangle", kind: Kind::Float, used: true, doc: "he's thrown once his body leans this far from the seat's up, a cosine (0.71)" },
+        Param { name: "seatfailangle", kind: Kind::Float, used: true, doc: "or the seat tips this far from the sky's up (0.71)" },
+        Param { name: "softweight", kind: Kind::Float, used: true, doc: "how hard his chest is held upright in the seat, as RDR2 holds riders to their animation, 0..1 (0.8; slumped: none)" },
+        Param { name: "Slump", kind: Kind::Bool, used: true, doc: "he sits slumped, his back and arms loose, the reins let go; leaning doesn't throw him (false)" },
+        Param { name: "drag", kind: Kind::Bool, used: true, doc: "thrown, a foot stays caught in its stirrup and he's dragged by it (false)" },
+        Param { name: "dragTime", kind: Kind::Float, used: true, doc: "s until the foot comes free (10)" },
+        Param { name: "dragreach", kind: Kind::Bool, used: true, doc: "dragged, his arms reach back toward the caught foot (true)" },
+        Param { name: "dragreachdelay", kind: Kind::Float, used: true, doc: "s after he's thrown that he starts reaching (0.2)" },
+        Param { name: "dragstiffness", kind: Kind::Float, used: true, doc: "his stiffness while dragged (9)" },
+        Param { name: "knockSpeed", kind: Kind::Float, used: true, doc: "a hit that moves his chest this fast against his hips knocks him off, m/s (4; 0: none)" },
+        Param { name: "throwSpeed", kind: Kind::Float, used: true, doc: "thrown, how hard he's flung off to the side he leans to, and up, m/s (3)" },
+        Param { name: "throw", kind: Kind::Bool, used: true, doc: "sent without start: throw him now, as if he'd failed (false)" },
+        Param { name: "posefailangle", kind: Kind::Float, used: false, doc: "RDR2's (0.71)" },
+        Param { name: "standfailangle", kind: Kind::Float, used: false, doc: "RDR2's (0.71)" },
+        Param { name: "rolldelay", kind: Kind::Float, used: false, doc: "RDR2's (0.3)" },
+        Param { name: "rollspeedthreshold", kind: Kind::Float, used: false, doc: "RDR2's (2)" },
+        Param { name: "healthfaildelay", kind: Kind::Float, used: false, doc: "RDR2's (0)" },
+    ] },
     Message { name: "keyframe", params: &[
         Param { name: "blendTime", kind: Kind::Float, used: true, doc: "s to blend into the neutral stand (0.3)" },
         Param { name: "holdTime", kind: Kind::Float, used: true, doc: "s it then holds it (0.5)" },
@@ -334,6 +366,7 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "onFire" => Some(OnFire::new(p).map(|e| Box::new(e) as _)),
         "rdr2Lasso" => Some(Lasso::new(p).map(|e| Box::new(e) as _)),
         "rdr2Bolas" => Some(Bolas::new(p).map(|e| Box::new(e) as _)),
+        "rdr2Sit" => Some(Sit::new(p).map(|e| Box::new(e) as _)),
         "leanRandom" | "hipsLeanInDirection" | "hipsLeanToPosition" | "hipsLeanTowardsObject" | "hipsLeanRandom" | "forceLeanInDirection"
         | "forceLeanToPosition" | "forceLeanTowardsObject" | "forceLeanRandom" => Some(Lean::new(name, p).map(|e| Box::new(e) as _)),
         _ => None,
@@ -2311,6 +2344,225 @@ impl Extra for Lasso {
                 c.out.force(k, up * self.bump.0 * w);
             }
         }
+    }
+}
+
+/// RDR2's sit: riding, written from its parameters' names and how riders look (none of RDR2's code). He's swung up
+/// into the seat over mountTime, then his pelvis is held there and his feet in the stirrups (hard constraints, which
+/// the game moves with the horse by sending rdr2Sit again without start), his hips square to the seat, tipped by
+/// hippitchstart, his back by straightnessstart, his hands forward on the reins. Thrown when his body leans past
+/// failangle from the seat's up, when the seat itself tips past seatfailangle, when a hit moves his chest faster than
+/// knockSpeed against his hips, or when sent throw=true: he's flung off (throwSpeed) and everything
+/// lets go and he falls (catchFall), or with drag a foot stays caught and he's dragged by it for dragTime, reaching
+/// back for it.
+pub struct Sit {
+    seat: Vec3, up: Vec3, fwd: Vec3, stirrups: [Vec3; 2], given: [bool; 4], mount: f32, constrain: bool, square: f32,
+    feet: bool, stirrup_k: f32, soft: f32, hip: (f32, f32), straight: (f32, f32), fail: f32, seat_fail: f32, slump: bool,
+    drag: (bool, f32, bool, f32, f32), t: f32, from: Option<[Vec3; 3]>, thrown: Option<(f32, Option<usize>)>,
+    throw: bool, knock: f32, fling: (f32, Vec3), cons: Vec<(usize, Option<Vec3>, Option<bevy_math::Quat>)>, out: Vec<String>,
+}
+
+/// s after he's in the seat before leaning or the seat tipping can throw him.
+const SETTLE: f32 = 0.6;
+/// s he's flung over when thrown, and roughly what he weighs, kg.
+const FLING: f32 = 0.15;
+const FLUNG_MASS: f32 = 80.0;
+/// His chest held upright at softweight 1, N m per radian.
+const CHEST_HOLD: f32 = 900.0;
+/// The pelvis and the feet.
+const SIT_PARTS: [usize; 3] = [0, 3, 6];
+
+impl Sit {
+    fn new(p: &mut P) -> Result<Sit, Error> {
+        let mut s = Sit {
+            seat: Vec3::ZERO, up: Vec3::Z, fwd: Vec3::ZERO, stirrups: [Vec3::ZERO; 2], given: [false; 4],
+            mount: p.f("mountTime", 0.6)?.max(0.0), constrain: p.b("constrain", true)?, square: p.f("constrainstrength", 40.0)?.max(0.0),
+            feet: false, stirrup_k: 0.0, soft: p.f("softweight", 0.8)?.clamp(0.0, 1.0),
+            hip: (p.f("hippitchstart", -0.5)?.clamp(-1.0, 1.0), p.f("hippitchramp", 0.25)?.max(0.0)),
+            straight: (p.f("straightnessstart", -0.1)?.clamp(-1.0, 1.0), p.f("straightnessramp", 0.35)?.max(0.0)),
+            fail: p.f("failangle", 0.71)?, seat_fail: p.f("seatfailangle", 0.71)?, slump: p.b("Slump", false)?,
+            drag: (p.b("drag", false)?, p.f("dragTime", 10.0)?.max(0.0), p.b("dragreach", true)?, p.f("dragreachdelay", 0.2)?.max(0.0),
+                   p.f("dragstiffness", 9.0)?),
+            t: 0.0, from: None, thrown: None, throw: false, knock: p.f("knockSpeed", 4.0)?.max(0.0), fling: (p.f("throwSpeed", 3.0)?.max(0.0), Vec3::ZERO), cons: vec![], out: vec![],
+        };
+        let stirrup = p.f("constrainstrengthstirrup", 40.0)?;
+        (s.feet, s.stirrup_k) = (stirrup > 0.0, stirrup * 10.0);
+        for n in ["posefailangle", "standfailangle", "rolldelay", "rollspeedthreshold", "healthfaildelay"] {
+            p.f(n, 0.0)?;
+        }
+        s.update(p)?;
+        Ok(s)
+    }
+
+    fn seat_frame(&self) -> (Vec3, Vec3, Vec3) {
+        let up = self.up.normalize_or(Vec3::Z);
+        let fwd = (self.fwd - up * self.fwd.dot(up)).normalize_or(Vec3::X);
+        (up, fwd, up.cross(fwd))
+    }
+
+    /// Where each foot goes: given, or under the seat to each side.
+    fn stirrup(&self, i: usize) -> Vec3 {
+        let (up, fwd, left) = self.seat_frame();
+        if self.given[2 + i] { self.stirrups[i] } else { self.seat - up * 0.6 + left * (0.26 - 0.52 * i as f32) + fwd * 0.18 }
+    }
+}
+
+impl Extra for Sit {
+    fn update(&mut self, p: &mut P) -> Result<(), Error> {
+        for (i, n) in ["seatPos", "seatForward", "stirrupL", "stirrupR"].iter().enumerate() {
+            let v = p.v(n, Vec3::ZERO)?;
+            if v != Vec3::ZERO {
+                match i {
+                    0 => self.seat = v,
+                    1 => self.fwd = v,
+                    _ => self.stirrups[i - 2] = v,
+                }
+                self.given[i] = true;
+            }
+        }
+        self.up = p.v("seatUp", self.up)?;
+        self.throw |= p.b("throw", false)?;
+        Ok(())
+    }
+
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        self.t += dt;
+        let at = |k: usize| c.b.part(k).m.d;
+        let (pelvis, l_foot, r_foot) = (at(0), at(3), at(6));
+        let from = *self.from.get_or_insert([pelvis, l_foot, r_foot]);
+        if !self.given[0] {
+            self.seat = from[0];
+            self.given[0] = true;
+        }
+        if !self.given[1] {
+            let left = (at(13) - at(17)).normalize_or(Vec3::Y);
+            self.fwd = left.cross(c.up);
+            self.given[1] = true;
+        }
+        let (up, fwd, left) = self.seat_frame();
+        c.out.dbm = Some(false);
+        if let Some((t0, caught)) = self.thrown {
+            // thrown: let go, or dragged by a caught foot
+            let since = self.t - t0;
+            self.cons.clear();
+            // flung off: pelvis and chest pushed for FLING s, enough to move his whole body at throwSpeed
+            if since < FLING && self.fling.1 != Vec3::ZERO {
+                let f = self.fling.1 * (self.fling.0 * FLUNG_MASS / FLING * 0.5);
+                c.out.force(0, f);
+                c.out.force(10, f);
+            }
+            if caught.is_some() && since >= self.drag.1 && since - dt < self.drag.1 {
+                self.out.push("#say rdr2Sit: the foot came free".into());
+                self.out.push("catchFall start=true".into());
+            }
+            if let Some(i) = caught.filter(|_| since < self.drag.1) {
+                self.cons.push((SIT_PARTS[1 + i], Some(self.stirrup(i)), None));
+                c.ch.set_stiffness(self.drag.4, 1.0, "fb", None);
+                if self.drag.2 && since > self.drag.3 {
+                    let foot = at(SIT_PARTS[1 + i]);
+                    for a in 0..2 {
+                        let l = crate::nmshot::limb(a);
+                        crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], foot, 0.0, 0.0, 1.0 - 2.0 * a as f32, 1.0, Vec3::ZERO, None);
+                    }
+                }
+            }
+            return;
+        }
+        // into the seat: swung up and over it
+        let s = if self.mount > 0.0 { (self.t / self.mount).min(1.0) } else { 1.0 };
+        let ease = s * s * (3.0 - 2.0 * s);
+        let arc = up * 0.7 * (std::f32::consts::PI * s).sin();
+        // fairly in the seat: swung in and settled (his upper body still swings as he lands)
+        let seated = s >= 1.0 && self.t > self.mount + SETTLE;
+        // thrown?
+        let body = (at(12) - pelvis).normalize_or(up);
+        let why = if self.throw {
+            Some("thrown")
+        } else if seated && up.dot(Vec3::Z) < self.seat_fail {
+            Some("the seat tipped")
+        } else if seated && !self.slump && body.dot(up) < self.fail {
+            Some("leant too far")
+        } else if seated && self.knock > 0.0 && (c.b.part(10).v - c.b.part(0).v).length() > self.knock {
+            Some("knocked off")
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            // the foot that's dragged: the lower one
+            let caught = self.drag.0.then(|| if l_foot.dot(Vec3::Z) < r_foot.dot(Vec3::Z) { 0 } else { 1 });
+            self.thrown = Some((self.t, caught));
+            let side = if (at(12) - pelvis).dot(left) >= 0.0 { left } else { -left };
+            self.fling.1 = (side + up * 0.6 - fwd * 0.2).normalize();
+            self.cons.clear();
+            self.out.push(format!("#say rdr2Sit: {why}{}", if caught.is_some() { ", a foot caught" } else { "" }));
+            if caught.is_none() {
+                self.out.push("catchFall start=true".into());
+            }
+            return;
+        }
+        self.cons.clear();
+        if self.constrain {
+            self.cons.push((0, Some(from[0].lerp(self.seat, ease) + arc), None));
+        }
+        // the feet: springs into the stirrups (held hard, his legs levered him over)
+        if self.feet {
+            for i in 0..2 {
+                let k = SIT_PARTS[1 + i];
+                let to = from[1 + i].lerp(self.stirrup(i), ease) + arc;
+                let f = (to - at(k)) * self.stirrup_k - c.b.part(k).v * 2.0 * self.stirrup_k.sqrt();
+                c.out.force(k, f.clamp_length_max(self.stirrup_k * 0.5));
+            }
+        }
+        // hips square to the seat, tipped by hippitchstart
+        let w = |ramp: f32| if ramp > 0.0 { (self.t / ramp).min(1.0) } else { 1.0 };
+        let pitch = self.hip.0 * 0.5 * w(self.hip.1);
+        // (a turn about his left tips his top forward)
+        let want_up = bevy_math::Quat::from_axis_angle(left, pitch) * up;
+        let hips_up = (at(7) - pelvis).normalize_or(up);
+        let hips_left = (at(1) - at(4)).normalize_or(left);
+        let k = self.square * 4.0 * 3.0;
+        let tq = hips_up.cross(want_up) * k + hips_left.cross(left) * k - c.b.part(0).w * 2.0 * (k * 3.0).sqrt();
+        c.out.torque(0, tq);
+        // his chest held upright over the hips, softly
+        if !self.slump && self.soft > 0.0 {
+            let lean = bevy_math::Quat::from_axis_angle(left, -self.straight.0 * 0.3 * w(self.straight.1));
+            let chest = (at(10) - pelvis).normalize_or(up);
+            let k = self.soft * CHEST_HOLD;
+            c.out.torque(10, chest.cross(lean * want_up) * k - c.b.part(10).w * 2.0 * (k * 4.0).sqrt());
+        }
+        // his back
+        let n = SPINE().len() as f32;
+        for &j in SPINE().iter() {
+            c.ch.eff[j].offset[0] += self.straight.0 * 0.4 * w(self.straight.1) / n;
+        }
+        if self.slump {
+            c.ch.set_stiffness(6.0, 0.8, "us", None);
+            c.ch.set_stiffness(3.0, 0.8, "ul", None);
+            c.ch.set_stiffness(3.0, 0.8, "ur", None);
+            return;
+        }
+        c.ch.set_stiffness(11.0, 1.0, "us", None);
+        c.ch.set_stiffness(9.0, 1.0, "ll", None);
+        c.ch.set_stiffness(9.0, 1.0, "lr", None);
+        // hands forward on the reins
+        for i in 0..2 {
+            let l = crate::nmshot::limb(i);
+            let to = self.seat + fwd * 0.38 + up * 0.32 + left * (0.1 - 0.2 * i as f32);
+            crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], to, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+        }
+    }
+
+    fn constraints(&self) -> Vec<(usize, Option<Vec3>, Option<bevy_math::Quat>)> {
+        self.cons.clone()
+    }
+
+    fn lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.out)
+    }
+
+    fn done(&self) -> bool {
+        // (flung first)
+        self.thrown.is_some_and(|(t0, caught)| self.t - t0 >= if caught.is_none() { FLING } else { self.drag.1 })
     }
 }
 

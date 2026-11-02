@@ -81,6 +81,10 @@ const GIVE: f32 = 0.2;
 const CARRY: f32 = 0.85;
 const HEIGHT: (f32, f32) = (20.0, 10.0);
 const LEVEL: (f32, f32) = (20.0, 9.0);
+/// The saddle: how far along the barrel from its back end (a share of its length), and how high a rider's pelvis sits
+/// over the barrel's top, m.
+const SADDLE: f32 = 0.6;
+const SEAT: f32 = 0.15;
 /// Down, with alwayslifthead: the share of its neck and head's weight lifted, fresh (0.6 of it once faded).
 const HEAD_LIFT: f32 = 1.3;
 
@@ -189,6 +193,9 @@ pub struct Horse {
     /// s since its last hit, and since it went down alive
     since_hit: f32,
     pub down: f32,
+    /// a rider's weight, kg, carried at the saddle (he doesn't collide with it: held in the seat, he'd press it
+    /// into the ground as if he weighed everything)
+    pub rider: f32,
 }
 
 /// The numbers in a tag's text, or an attribute's value.
@@ -273,7 +280,7 @@ impl Horse {
         let stand = (frames[0].translation.z, at.z, frames[0].rotation.inverse() * Vec3::Z);
         let left = frames[0].rotation.inverse() * (turn * Vec3::Y);
         Ok(Horse { build, doll, targets, health: HEALTH, legs: [0.0; 4], dead: false, sunk: 0.0, kept: Default::default(), stand,
-                   left, q: Quadruped::default(), fell: false, since_hit: f32::MAX, down: 0.0 })
+                   left, q: Quadruped::default(), fell: false, since_hit: f32::MAX, down: 0.0, rider: 0.0 })
     }
 
     /// One physics step. While it's sound it stands, as RDR2's horses do on their animation: the muscles hold the legs,
@@ -322,6 +329,12 @@ impl Horse {
             let tilt = (fr[0].rotation * level).cross(Vec3::Z);
             // scaled by its turning inertia, roughly its mass at 0.6 m
             torque[0] += (tilt * LEVEL.0 - (w - Vec3::Z * w.z) * LEVEL.1) * m * 0.36;
+        }
+        if self.rider > 0.0 {
+            let (seat, ..) = self.saddle();
+            let f = Vec3::NEG_Z * self.rider * GRAVITY();
+            force[0] += f;
+            torque[0] += (seat - fr[0].translation).cross(f);
         }
         let mut targets = self.targets.clone();
         let ground = !up && !dead;
@@ -395,6 +408,24 @@ impl Horse {
         }).collect();
         let drive: Drive = self.kept.drive();
         self.doll.step(&self.build, world, dt, drive, obstacles, others);
+    }
+
+    /// Still on its feet.
+    pub fn standing(&self) -> bool {
+        self.sunk <= GIVE
+    }
+
+    /// Its saddle: where a rider's pelvis sits, the barrel's up and which way it faces, and the stirrups (left,
+    /// right), all world.
+    pub fn saddle(&self) -> (Vec3, Vec3, Vec3, [Vec3; 2]) {
+        let f = self.doll.frames().next().unwrap_or_default();
+        let fwd = f.rotation * Vec3::Y;
+        let up = f.rotation * self.stand.2;
+        let left = up.cross(fwd);
+        let back = f.translation - fwd * self.build.parts[0].half;
+        let seat = back + fwd * (2.0 * self.build.parts[0].half * SADDLE) + up * (self.build.parts[0].radius + SEAT);
+        let stirrup = |side: f32| seat - up * 0.62 + left * (0.42 * side) + fwd * 0.15;
+        (seat, up, fwd, [stirrup(1.0), stirrup(-1.0)])
     }
 
     /// What it's doing, for the panel.

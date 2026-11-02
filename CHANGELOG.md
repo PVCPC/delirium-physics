@@ -15,6 +15,10 @@
 - An optional RDR2 reactions mode: `nm_agent_rdr2_shot` / `nm_agent_rdr2_melee` (and `nm_rdr2_set`) start RDR2's
   reactions to a hit by where it landed, one call per hit. In the playroom, a "Reaction style" switch in Reactions:
   GTA IV (the default, unchanged) or Red Dead Redemption 2 (`!rdr2`).
+- `rdr2Sit`: RDR2's riding. The rider's pelvis is held in a seat the game moves each frame (rdr2Sit sent again without
+  start), feet in the stirrups, chest upright, hands on the reins; he's thrown when he or the seat tips too far, a hit
+  knocks him, or on `throw`, optionally dragged by a caught foot. Extras can now take updates sent without start.
+- Playroom: Homer can ride the horse (Ride it, `!horse ride`).
 - Playroom: Red Dead Redemption 2's horse, from your own horse.xml: a physics horse that stands, takes hits, and goes
   down as a ragdoll when a leg is lamed or it's killed (Character, `!horse`). Down and alive it does RDR2's
   `quadrupedbase` on the ground, by its names and defaults: lifts its head, paddles its legs on its side, writhes its

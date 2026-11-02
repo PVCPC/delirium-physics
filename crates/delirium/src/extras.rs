@@ -72,6 +72,10 @@ pub trait Extra: Send + Sync {
     fn let_go(&mut self, _hand: usize) {}
     fn objects(&mut self, _obs: &[crate::ragdoll::Obstacle]) {}
     fn stop(&mut self, _c: &mut Ctx) {}
+    /// The message sent again without start: new values for whatever it follows (rdr2Sit's seat).
+    fn update(&mut self, _p: &mut P) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -103,6 +107,11 @@ impl Extras {
             }
             if let Some(h) = params.iter().find(|(n, _)| *n == "letGo").and_then(|(_, v)| v.i().ok()) {
                 self.on.iter_mut().filter(|(n, _)| *n == name).for_each(|(_, e)| e.let_go(h.clamp(0, 1) as usize));
+            }
+            for (_, e) in self.on.iter_mut().filter(|(n, _)| *n == name) {
+                if let Err(e) = e.update(&mut P { params, used: vec![] }) {
+                    return Some(Err(e));
+                }
             }
             return Some(Ok(0));
         }

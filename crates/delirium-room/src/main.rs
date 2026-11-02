@@ -1051,6 +1051,8 @@ struct Sim {
     /// Red Dead Redemption 2's horse, when one is in the room, and the player's horse.xml it's made from
     horse: Option<horse::Horse>,
     horse_file: String,
+    /// Homer's riding the horse (rdr2Sit, its seat moved with the saddle every step)
+    riding: bool,
     /// Which RDR2 reactions a hit starts (the Parameters tab's picker)
     rdr2_pick: delirium::extras_rdr2::Reactions,
     /// Behaviour parameters changed in the Parameters tab, sent with every message of that behaviour
@@ -3796,6 +3798,36 @@ impl Sim {
         }
     }
 
+    /// Homer gets on the horse: RDR2's sit (rdr2Sit), swung up into its saddle.
+    fn ride(&mut self) {
+        let Some(h) = self.horse.as_ref().filter(|h| h.standing()) else {
+            return self.say("room  ride: no horse on its feet".into());
+        };
+        let (seat, up, fwd, st) = h.saddle();
+        let v = |p: Vec3| format!("{},{},{}", p.x, p.y, p.z);
+        self.send(&format!("rdr2Sit start=true mountTime=1.2 seatPos={} seatUp={} seatForward={} stirrupL={} stirrupR={}", v(seat), v(up), v(fwd), v(st[0]), v(st[1])));
+        self.riding = true;
+    }
+
+    /// While he rides, the seat follows the saddle (sent quietly, every step); the horse going down throws him.
+    fn ride_frame(&mut self) {
+        if !self.riding {
+            return;
+        }
+        if !self.agent.extras.on.iter().any(|(n, _)| *n == "rdr2Sit") {
+            self.riding = false;
+            return;
+        }
+        let Some(h) = self.horse.as_ref() else {
+            self.riding = false;
+            return self.send("rdr2Sit throw=true");
+        };
+        let (seat, up, fwd, st) = h.saddle();
+        let ps = [("seatPos", Value::Vec3(seat)), ("seatUp", Value::Vec3(up)), ("seatForward", Value::Vec3(fwd)), ("stirrupL", Value::Vec3(st[0])),
+                  ("stirrupR", Value::Vec3(st[1])), ("throw", Value::Bool(!h.standing()))];
+        let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "rdr2Sit", &ps);
+    }
+
     /// A bullet that hits the horse before anyone and anything else: it takes it (true).
     fn horse_shot(&mut self, from: Vec3, dir: Vec3) -> bool {
         let Some(h) = self.horse.as_ref() else { return false };
@@ -4978,7 +5010,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, rdr2: false, rdr2_after: vec![], rdr2_fire: false, horse: None, horse_file: String::new(), rdr2_pick: Default::default(), param_edits: Default::default(), param_search: String::new(), param_changed_only: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, rdr2: false, rdr2_after: vec![], rdr2_fire: false, horse: None, horse_file: String::new(), riding: false, rdr2_pick: Default::default(), param_edits: Default::default(), param_search: String::new(), param_changed_only: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
@@ -9062,6 +9094,8 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                     sim.horse = None;
                     sim.say("room  horse: gone".into());
                 }
+                Some("ride") => sim.ride(),
+                Some("off ride") | Some("getoff") => sim.send("rdr2Sit throw=true"),
                 Some(d) if d.starts_with("set ") => {
                     let mut w = d[4..].split_whitespace();
                     let (name, v) = (w.next().unwrap_or(""), w.next().unwrap_or(""));
@@ -9306,6 +9340,7 @@ impl Sim {
         }
         self.pops.retain_mut(|p| { p.2 += 1.0 / 60.0; p.2 < POP_LIFE });
         self.meat_tick(1.0 / 60.0);
+        self.ride_frame();
         let mut hero = self.hero.as_ref().zip(self.getup.as_ref()).filter(|_| !self.driving && self.hero_doll.is_none()).map_or(vec![], |(n, c)| n.capsules(c));
         hero.extend(self.horse.iter().flat_map(|h| h.capsules()));
         self.taxi_frame(1.0 / 60.0);
@@ -9375,7 +9410,11 @@ impl Sim {
             .chain(doll).enumerate().map(|(i, (a, o, b))| (a, i, b, &car[..], o)).collect();
         Agent::step_group(&mut all, &self.world, 1.0 / 60.0, &mut self.group, &mut |_, _, _| {});
         if let Some(h) = self.horse.as_mut() {
-            h.step(&self.world, 1.0 / 60.0, &car, &caps_of(&self.build, &self.agent.doll));
+            // ridden, Homer's weight is put on it at the saddle instead of his body pressing on it
+            let riding = self.riding && self.agent.extras.on.iter().any(|(n, _)| *n == "rdr2Sit");
+            h.rider = if riding { self.agent.doll.mass() } else { 0.0 };
+            let homer = if riding { vec![] } else { caps_of(&self.build, &self.agent.doll) };
+            h.step(&self.world, 1.0 / 60.0, &car, &homer);
         }
         self.car_hits();
         self.sever_frame(1.0 / 60.0, &car);
@@ -9477,7 +9516,29 @@ fn headless(mut sim: Sim, n: usize) {
             }
         }
         for i in 0..n {
+            // HORSE_RIDE: Homer gets on at 0.5 s; =throw throws him off at 4 s, =push shoves his chest sideways then,
+            // =drag gets on with drag=true and throws him off at 4 s
+            if let Ok(r) = std::env::var("HORSE_RIDE") {
+                if i == 30 {
+                    if r == "drag" {
+                        sim.param_edits.insert(("rdr2Sit", "drag"), Value::Bool(true));
+                    }
+                    sim.ride();
+                }
+                if i == 240 && matches!(r.as_str(), "throw" | "drag") {
+                    sim.send("rdr2Sit throw=true");
+                }
+                if i == 240 && r == "push" {
+                    let at = sim.agent.doll.frames().nth(10).map_or(Vec3::ZERO, |f| f.translation);
+                    sim.agent.doll.impulse(10, at, Vec3::Y * std::env::var("HORSE_PUSH").ok().and_then(|v| v.parse().ok()).unwrap_or(120.0));
+                }
+            }
             sim.tick();
+            if let (Some(h), 0, true) = (sim.horse.as_ref(), i % 30, std::env::var("HORSE_RIDE").is_ok()) {
+                let p = sim.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
+                let head = sim.agent.doll.frames().nth(12).map_or(Vec3::ZERO, |f| f.translation);
+                eprintln!("ride  t {:.1}  riding {}  pelvis {:+.2} {:+.2} {:.2}  from seat {:.2}  head above pelvis {:.2}", i as f32 / 60.0, sim.riding, p.x, p.y, p.z, p.distance(h.saddle().0), head.z - p.z);
+            }
             if let (Some(h), 0) = (sim.horse.as_ref(), i % 30) {
                 let fr: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
                 let low = fr.iter().map(|p| p.z).fold(f32::MAX, f32::min);
@@ -9497,7 +9558,7 @@ fn headless(mut sim: Sim, n: usize) {
             }
         }
         for (t, l, _) in &sim.log {
-            if l.contains("horse") { eprintln!("{t:.2} {l}"); }
+            if l.contains("horse") || l.contains("rdr2Sit") || l.contains("ride") { eprintln!("{t:.2} {}", l.chars().take(160).collect::<String>()); }
         }
         return;
     }
@@ -10481,6 +10542,14 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     if ui.add_enabled(sim.horse.is_some(), egui::Button::new("Remove it")).clicked() {
                         pressed = Some("#horse off".into());
                     }
+                    let can = sim.horse.as_ref().is_some_and(|h| h.standing());
+                    if sim.riding {
+                        if ui.button("Throw him off").on_hover_text("rdr2Sit throw=true: he's thrown, as if he'd lost his seat").clicked() {
+                            pressed = Some("#horse getoff".into());
+                        }
+                    } else if ui.add_enabled(can, egui::Button::new("Ride it")).on_hover_text("Homer gets on: RDR2's sit (rdr2Sit). Shoot or blast him, or the horse, to throw him; its settings are in Parameters").clicked() {
+                        pressed = Some("#horse ride".into());
+                    }
                 });
                 if let Some(h) = sim.horse.as_mut() {
                     let legs: Vec<String> = h.legs.iter().zip(["hind right", "hind left", "fore right", "fore left"]).filter(|(l, _)| **l > 0.0).map(|(l, n)| format!("{n} {:.0}%", l / 60.0 * 100.0)).collect();
@@ -11019,6 +11088,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 }
             }
             (Some("#weak"), _) => sim.weak = !sim.weak,
+            (Some("#horse"), Some("ride")) => sim.ride(),
+            (Some("#horse"), Some("getoff")) => sim.send("rdr2Sit throw=true"),
             (Some("#horse"), Some("off")) => {
                 sim.horse = None;
                 sim.say("room  horse: gone".into());
