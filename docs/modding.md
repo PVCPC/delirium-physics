@@ -22,6 +22,15 @@ The SDK produces `delirium_physics.dll` (Windows), `libdelirium_physics.so`
 (Linux) or `libdelirium_physics.dylib` (macOS) in `target/release/`. The crates
 are not published to crates.io; use path dependencies.
 
+32-bit games (Windows): build the same library for 32-bit and load that one instead; it behaves the same as the
+64-bit one.
+
+```
+rustup target add i686-pc-windows-msvc
+cargo build --release -p delirium-sdk --target i686-pc-windows-msvc
+# target/i686-pc-windows-msvc/release/delirium_physics.dll
+```
+
 Files you will use:
 
 | File | Purpose |
