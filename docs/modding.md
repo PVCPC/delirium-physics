@@ -44,7 +44,7 @@ On Windows the header declares functions `dllimport` unless you define
 ### What you feed it
 
 - **The player's own copy of the game**: call `nm_unlock` with its exe (the
-  Steam PC one, or the console disc's `default.xex`) before anything else.
+  Steam PC one, or the Xbox 360 disc's `default.xex`) before anything else.
   Without it `nm_init` fails. Never ship the game or its files.
 - A **character**: either a character file (`.xrt`) plus a **build dump**
   (text), or one JSON file in the `nm-character-1` format. Load them with

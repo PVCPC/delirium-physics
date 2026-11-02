@@ -6,7 +6,7 @@ ragdoll. Everything else is in the [full reference](modding.md).
 
 ## What you need
 
-- **Your own copy of the original game** (the PC version from Steam, or the console disc). Delirium reads its
+- **Your own copy of the original game** (the PC version from Steam, or the Xbox 360 disc). Delirium reads its
   numbers from your copy, so it won't start without one. This also means:
   **never ship the game's files, or the files you export from it, with your game or mod.** Each player uses their own.
 - **One of these**, depending on where you want ragdolls:
