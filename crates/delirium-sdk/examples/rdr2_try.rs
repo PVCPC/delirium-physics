@@ -57,7 +57,11 @@ fn main() {
                     nm_msg_set_bool(g, c("start").as_ptr(), 1);
                     for kv in it {
                         let (n, v) = kv.split_once('=').unwrap();
-                        nm_msg_set_float(g, c(n).as_ptr(), v.parse().unwrap());
+                        match (v, v.parse::<i32>()) {
+                            ("true" | "false", _) => drop(nm_msg_set_bool(g, c(n).as_ptr(), (v == "true") as i32)),
+                            (_, Ok(i)) => drop(nm_msg_set_int(g, c(n).as_ptr(), i)),
+                            _ => drop(nm_msg_set_float(g, c(n).as_ptr(), v.parse().unwrap())),
+                        }
                     }
                     println!("sent {m} -> {}", nm_msg_send(g, w));
                 }

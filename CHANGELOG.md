@@ -5,7 +5,7 @@
 ### Added
 - Behaviours from Red Dead Redemption 2's Euphoria, as extra messages: `duck`, `shotSnap`, `shotSpin`,
   `shotFallToKnees`, `meleeReact`, `shotFromBehind`, `shotInGuts`, `shotInjuredLeg`, `shotInjuredArm`,
-  `reachForWound`, `wallCollision`, `setFallingReaction`, `rdr2Balance`, `keyframe`, `onFire` and the lean family
+  `reachForWound`, `wallCollision`, `setFallingReaction`, `rdr2Balance`, `keyframe`, `onFire`, `rdr2Lasso` and the lean family
   (`leanRandom`, `hipsLeanInDirection`, `hipsLeanToPosition`, `hipsLeanTowardsObject`, `hipsLeanRandom`,
   `forceLeanInDirection`, `forceLeanToPosition`, `forceLeanTowardsObject`, `forceLeanRandom`) (see docs/modding.md). They do
   nothing until sent with `start=true`, so the existing behaviours are unchanged, bit for bit.

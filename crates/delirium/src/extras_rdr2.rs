@@ -11,7 +11,7 @@ use crate::ragdoll::GRAVITY;
 use crate::nmshot::Ctx;
 use bevy_math::Vec3;
 
-pub static MESSAGES: [Message; 24] = [
+pub static MESSAGES: [Message; 25] = [
     Message { name: "keyframe", params: &[
         Param { name: "blendTime", kind: Kind::Float, used: true, doc: "s to blend into the neutral stand (0.3)" },
         Param { name: "holdTime", kind: Kind::Float, used: true, doc: "s it then holds it (0.5)" },
@@ -207,6 +207,32 @@ pub static MESSAGES: [Message; 24] = [
         Param { name: "snapNeck", kind: Kind::Bool, used: true, doc: "(true)" },
         Param { name: "snapPhasedLegs", kind: Kind::Bool, used: true, doc: "the right leg kicks the other way (true)" },
     ] },
+    Message { name: "rdr2Lasso", params: &[
+        Param { name: "grabPart", kind: Kind::Int, used: true, doc: "the part the rope is round, his hands claw at it (11, the neck; -1: they don't)" },
+        Param { name: "grabposl", kind: Kind::Vec3, used: true, doc: "where the left hand claws, from that part: forward, left, up (0.07,0.05,-0.051)" },
+        Param { name: "grabposr", kind: Kind::Vec3, used: true, doc: "the right hand (0.09,-0.05,-0.051)" },
+        Param { name: "grabpointamp", kind: Kind::Vec3, used: true, doc: "how far the hands claw about it, m (zero: they hold)" },
+        Param { name: "grabpointfreq", kind: Kind::Vec3, used: true, doc: "how fast, Hz per axis (4,5,3)" },
+        Param { name: "legAmplitude", kind: Kind::Float, used: true, doc: "down, how hard the legs kick (0.4)" },
+        Param { name: "spinefreq", kind: Kind::Float, used: true, doc: "down, the spine writhes forwards and back this often, Hz (2.5)" },
+        Param { name: "spineAmplitude", kind: Kind::Float, used: true, doc: "that much (1)" },
+        Param { name: "spsidefreq", kind: Kind::Float, used: true, doc: "and side to side this often, Hz (2)" },
+        Param { name: "spsideamp", kind: Kind::Float, used: true, doc: "that much (1)" },
+        Param { name: "groundLegStiffness", kind: Kind::Float, used: true, doc: "down (11)" },
+        Param { name: "groundArmStiffness", kind: Kind::Float, used: true, doc: "down (11)" },
+        Param { name: "groundSpineStiffness", kind: Kind::Float, used: true, doc: "down (11)" },
+        Param { name: "groundneckstiffness", kind: Kind::Float, used: true, doc: "down (11)" },
+        Param { name: "groundLegDamping", kind: Kind::Float, used: true, doc: "down (0.5)" },
+        Param { name: "groundArmDamping", kind: Kind::Float, used: true, doc: "down (0.5)" },
+        Param { name: "groundSpineDamping", kind: Kind::Float, used: true, doc: "down (0.5)" },
+        Param { name: "bumpsim", kind: Kind::Float, used: true, doc: "down, a bump off the ground now and then, N for a step (400; 0: none)" },
+        Param { name: "bumpsimprob", kind: Kind::Float, used: true, doc: "chance of a bump each tenth of a second (0.08)" },
+        Param { name: "stunnedtime", kind: Kind::Float, used: true, doc: "s he lies stunned, limp, once down (0)" },
+        Param { name: "stunnedblendout", kind: Kind::Float, used: true, doc: "s coming out of it (0)" },
+        Param { name: "groundFriction", kind: Kind::Float, used: false, doc: "the ground's grip on him (1)" },
+        Param { name: "ropeendfriction", kind: Kind::Float, used: false, doc: "the roped part's grip (0.5)" },
+        Param { name: "otherendfriction", kind: Kind::Float, used: false, doc: "the other end's grip (2)" },
+    ] },
     Message { name: "leanRandom", params: LEAN_RANDOM },
     Message { name: "hipsLeanInDirection", params: &[
         Param { name: "leanAmount", kind: Kind::Float, used: true, doc: "how far the hips go; less than 0 away (0.5)" },
@@ -299,6 +325,7 @@ pub fn build(name: &str, p: &mut P) -> Option<Result<Box<dyn Extra>, Error>> {
         "rdr2Balance" => Some(BalanceRdr2::new(p).map(|e| Box::new(e) as _)),
         "keyframe" => Some(Keyframe::new(p).map(|e| Box::new(e) as _)),
         "onFire" => Some(OnFire::new(p).map(|e| Box::new(e) as _)),
+        "rdr2Lasso" => Some(Lasso::new(p).map(|e| Box::new(e) as _)),
         "leanRandom" | "hipsLeanInDirection" | "hipsLeanToPosition" | "hipsLeanTowardsObject" | "hipsLeanRandom" | "forceLeanInDirection"
         | "forceLeanToPosition" | "forceLeanTowardsObject" | "forceLeanRandom" => Some(Lean::new(name, p).map(|e| Box::new(e) as _)),
         _ => None,
@@ -2122,6 +2149,103 @@ impl Extra for OnFire {
                     c.out.torque(0, tq * 0.5);
                     c.out.torque(10, tq * 0.5);
                 }
+            }
+        }
+    }
+}
+
+/// RDR2's lassoed reactions (its yanked's, while dragged on a rope; Delirium's `dragged`, with ropedBodyPart, does the
+/// pulling): on his feet nothing; down, his hands claw at the rope where it's round grabPart (grabposl / grabposr from
+/// it, clawing about by grabpointamp at grabpointfreq), his legs kick (legAmplitude), his spine writhes forwards and
+/// back (spinefreq, spineAmplitude) and side to side (spsidefreq, spsideamp), at the ground stiffnesses, and the ground
+/// bumps him now and then (bumpsim, bumpsimprob). With stunnedtime he first lies limp that long, coming out of it over
+/// stunnedblendout. It runs until stopped. Its defaults are RDR2's.
+pub struct Lasso {
+    part: i32, grab: [Vec3; 2], claw: Vec3, claw_freq: Vec3, legs: f32, spine: [f32; 4], stiff: [(f32, f32); 4],
+    bump: (f32, f32), stunned: (f32, f32), t: f32, down: Option<f32>, bump_t: f32,
+}
+
+impl Lasso {
+    fn new(p: &mut P) -> Result<Lasso, Error> {
+        let _ = (p.f("groundFriction", 1.0)?, p.f("ropeendfriction", 0.5)?, p.f("otherendfriction", 2.0)?);
+        let (leg_d, arm_d, spine_d) = (p.f("groundLegDamping", 0.5)?, p.f("groundArmDamping", 0.5)?, p.f("groundSpineDamping", 0.5)?);
+        Ok(Lasso {
+            part: p.i("grabPart", 11)?.clamp(-1, 20),
+            grab: [p.v("grabposl", Vec3::new(0.07, 0.05, -0.051))?, p.v("grabposr", Vec3::new(0.09, -0.05, -0.051))?],
+            claw: p.v("grabpointamp", Vec3::ZERO)?, claw_freq: p.v("grabpointfreq", Vec3::new(4.0, 5.0, 3.0))?,
+            legs: p.f("legAmplitude", 0.4)?.max(0.0),
+            spine: [p.f("spinefreq", 2.5)?.max(0.0), p.f("spineAmplitude", 1.0)?.max(0.0), p.f("spsidefreq", 2.0)?.max(0.0), p.f("spsideamp", 1.0)?.max(0.0)],
+            stiff: [(p.f("groundLegStiffness", 11.0)?, leg_d), (p.f("groundArmStiffness", 11.0)?, arm_d),
+                    (p.f("groundSpineStiffness", 11.0)?, spine_d), (p.f("groundneckstiffness", 11.0)?, spine_d)],
+            bump: (p.f("bumpsim", 400.0)?.max(0.0), p.f("bumpsimprob", 0.08)?.clamp(0.0, 1.0)),
+            stunned: (p.f("stunnedtime", 0.0)?.max(0.0), p.f("stunnedblendout", 0.0)?.max(0.0)),
+            t: 0.0, down: None, bump_t: 0.0,
+        })
+    }
+}
+
+impl Extra for Lasso {
+    fn tick(&mut self, c: &mut Ctx, dt: f32) {
+        use std::f32::consts::TAU;
+        self.t += dt;
+        let up = c.up;
+        let pelvis = c.b.part(0).m.d;
+        if self.down.is_none() && pelvis.dot(up) < 0.45 {
+            self.down = Some(self.t);
+        }
+        let Some(t0) = self.down else { return };
+        let since = self.t - t0;
+        // stunned: limp, then coming out of it
+        let (st, blend) = self.stunned;
+        let w = if since < st { 0.0 } else if blend > 0.0 { ((since - st) / blend).min(1.0) } else { 1.0 };
+        let scale = |k: f32| 1.0 + (k - 1.0) * w;
+        for (mask, (k, d)) in ["ll", "lr"].iter().map(|m| (m, self.stiff[0])).chain(["ul", "ur"].iter().map(|m| (m, self.stiff[1])))
+            .chain(std::iter::once((&"us", self.stiff[2]))).chain(std::iter::once((&"un", self.stiff[3]))) {
+            c.ch.set_stiffness(scale(k), d, mask, None);
+        }
+        if w == 0.0 {
+            return;
+        }
+        // the spine writhes, forwards and back and side to side
+        let n = SPINE().len() as f32;
+        let [f1, a1, f2, a2] = self.spine;
+        let bend = 0.3 * a1 * (TAU * f1 * since).sin() * w;
+        let side = 0.25 * a2 * (TAU * f2 * since + 1.0).sin() * w;
+        for &j in SPINE().iter() {
+            c.ch.eff[j].offset[0] += bend / n;
+            c.ch.eff[j].offset[1] += side / n;
+        }
+        // the legs kick, out of step
+        for s in 0..2 {
+            let (hip, knee) = (HIP()[s], KNEE()[s]);
+            let kd = knee_dir(c, knee);
+            let ph = TAU * 1.8 * since + s as f32 * std::f32::consts::PI;
+            c.ch.eff[hip].offset[0] += self.legs * 1.2 * ph.sin() * w;
+            c.ch.eff[knee].offset[0] += self.legs * (1.0 + 1.5 * (ph + 0.6).sin()).max(0.0) * kd * w;
+        }
+        // the hands claw at the rope round grabPart
+        if self.part >= 0 {
+            let at = c.b.part(self.part as usize).m.d;
+            let clav = |i: usize| c.b.part(crate::nmshot::limb(i).p[0]).m.d;
+            // his own frame at the neck (lying, his up runs along his spine)
+            let along = (c.b.part(12).m.d - pelvis).normalize_or(up);
+            let left = (clav(0) - clav(1)).normalize_or_zero();
+            let fwd = left.cross(along).normalize_or_zero();
+            let claw = Vec3::new((TAU * self.claw_freq.x * since).sin(), (TAU * self.claw_freq.y * since).sin(), (TAU * self.claw_freq.z * since).sin()) * self.claw;
+            for i in 0..2 {
+                let g = self.grab[i] + claw;
+                let to = at + fwd * g.x + left * g.y + along * g.z;
+                let l = crate::nmshot::limb(i);
+                crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], to, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+            }
+        }
+        // now and then the ground bumps him
+        self.bump_t += dt;
+        if self.bump.0 > 0.0 && self.bump_t >= 0.1 {
+            self.bump_t -= 0.1;
+            if c.ch.random() < self.bump.1 {
+                let k = [0, 8, 10][(c.ch.random() * 2.99) as usize];
+                c.out.force(k, up * self.bump.0 * w);
             }
         }
     }
