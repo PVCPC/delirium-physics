@@ -208,7 +208,8 @@ pub static MESSAGES: [Message; 25] = [
         Param { name: "snapPhasedLegs", kind: Kind::Bool, used: true, doc: "the right leg kicks the other way (true)" },
     ] },
     Message { name: "rdr2Lasso", params: &[
-        Param { name: "grabPart", kind: Kind::Int, used: true, doc: "the part the rope is round, his hands claw at it (11, the neck; -1: they don't)" },
+        Param { name: "lassoedtype", kind: Kind::Int, used: true, doc: "where the rope is: 0 round his neck (his hands claw at it), 1 round his chest and arms (arms pinned, he wriggles), 2 round his feet (legs held together, his arms reach out past his head clawing at the ground) (0)" },
+        Param { name: "grabPart", kind: Kind::Int, used: true, doc: "round the neck: the part his hands claw at (11, the neck; -1: they don't)" },
         Param { name: "grabposl", kind: Kind::Vec3, used: true, doc: "where the left hand claws, from that part: forward, left, up (0.07,0.05,-0.051)" },
         Param { name: "grabposr", kind: Kind::Vec3, used: true, doc: "the right hand (0.09,-0.05,-0.051)" },
         Param { name: "grabpointamp", kind: Kind::Vec3, used: true, doc: "how far the hands claw about it, m (zero: they hold)" },
@@ -2087,13 +2088,37 @@ impl Extra for OnFire {
             let s = i as f32 * PI;
             let ed = knee_dir(c, el);
             let writhe = [0.85 * (1.7 * ph + s).sin(), 0.8 * (1.3 * ph + 2.0 * s + 0.5).sin(), 0.5 * (1.1 * ph + s).sin(), 0.3 + 0.6 * (2.3 * ph + s).sin()];
-            let (other, w) = if ground { ([0.5, 0.0, 0.0, 0.8], self.down_blend[0]) }
-                             else { ([1.0 * (ph + s).sin(), 1.0 * (ph + s).cos(), 0.0, 0.1], self.up_blend[0]) };
-            let mix = |k: usize| other[k] * (1.0 - w) + writhe[k] * w;
-            for k in 0..3 {
-                drive(c, sh, k, mix(k));
+            // the windmill: big circles, arms near straight, the writhe laid over it rather than shrinking it
+            let windmill = [(ph + s).sin(), 0.6 * (ph + s).cos(), 0.0, -0.6];
+            let wu = self.up_blend[0] * 0.5;
+            let stand: [f32; 4] = std::array::from_fn(|k| windmill[k] * (1.0 - wu) + writhe[k] * wu);
+            let wd = self.down_blend[0];
+            let lying: [f32; 4] = std::array::from_fn(|k| [0.5, 0.0, 0.0, 0.8][k] * (1.0 - wd) + writhe[k] * wd);
+            // he keeps windmilling as he goes down, into the ground's writhe over a moment
+            let g = self.down.map_or(0.0, |(t0, _)| ((self.t - t0 - 0.8) / 0.6).clamp(0.0, 1.0));
+            let mix = |k: usize| stand[k] * (1.0 - g) + lying[k] * g;
+            if g < 0.5 && self.up_blend[0] < 1.0 {
+                // the windmill: the hand goes round a big circle in front of him, up past his head and down, the
+                // arms half a turn apart; the writhe then shakes it about
+                let at = c.b.part(l.p[0]).m.d;
+                let clav = |i: usize| c.b.part(crate::nmshot::limb(i).p[0]).m.d;
+                let face = (clav(0) - clav(1)).cross(up);
+                let face = (face - up * face.dot(up)).normalize_or_zero();
+                let a = self.t * 2.0 * PI / 0.8 + s;
+                let to = at + face * (0.15 + 0.5 * a.cos()) + up * (0.6 * a.sin() + 0.1);
+                for j in [l.e[0], sh, el] {
+                    c.ch.eff[j].oppose_gravity = 1.0;
+                }
+                crate::nmdbm::limb_ik(c.b, c.ch, sh, el, l.p[0], l.p[delirium_data::kv!(0 int)], to, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+                for k in 0..3 {
+                    c.ch.eff[sh].offset[k] += writhe[k] * wu * 0.6;
+                }
+            } else {
+                for k in 0..3 {
+                    drive(c, sh, k, mix(k));
+                }
+                drive(c, el, 0, mix(3) * ed);
             }
-            drive(c, el, 0, mix(3) * ed);
             c.ch.set_stiffness(15.0, 0.8, ["ul", "ur"][i], None);
         }
         // spine: hunched forward (more when down), and a writhe
@@ -2155,13 +2180,15 @@ impl Extra for OnFire {
 }
 
 /// RDR2's lassoed reactions (its yanked's, while dragged on a rope; Delirium's `dragged`, with ropedBodyPart, does the
-/// pulling): on his feet nothing; down, his hands claw at the rope where it's round grabPart (grabposl / grabposr from
+/// pulling). By lassoedtype: round the neck (0), round the chest and arms (1: arms pinned to his sides, more wriggle),
+/// round the feet (2: legs held straight, arms reaching past his head clawing at the ground). On his feet nothing;
+/// down, round the neck his hands claw at the rope where it's round grabPart (grabposl / grabposr from
 /// it, clawing about by grabpointamp at grabpointfreq), his legs kick (legAmplitude), his spine writhes forwards and
 /// back (spinefreq, spineAmplitude) and side to side (spsidefreq, spsideamp), at the ground stiffnesses, and the ground
 /// bumps him now and then (bumpsim, bumpsimprob). With stunnedtime he first lies limp that long, coming out of it over
 /// stunnedblendout. It runs until stopped. Its defaults are RDR2's.
 pub struct Lasso {
-    part: i32, grab: [Vec3; 2], claw: Vec3, claw_freq: Vec3, legs: f32, spine: [f32; 4], stiff: [(f32, f32); 4],
+    kind: i32, part: i32, grab: [Vec3; 2], claw: Vec3, claw_freq: Vec3, legs: f32, spine: [f32; 4], stiff: [(f32, f32); 4],
     bump: (f32, f32), stunned: (f32, f32), t: f32, down: Option<f32>, bump_t: f32,
 }
 
@@ -2170,6 +2197,7 @@ impl Lasso {
         let _ = (p.f("groundFriction", 1.0)?, p.f("ropeendfriction", 0.5)?, p.f("otherendfriction", 2.0)?);
         let (leg_d, arm_d, spine_d) = (p.f("groundLegDamping", 0.5)?, p.f("groundArmDamping", 0.5)?, p.f("groundSpineDamping", 0.5)?);
         Ok(Lasso {
+            kind: p.i("lassoedtype", 0)?.clamp(0, 2),
             part: p.i("grabPart", 11)?.clamp(-1, 20),
             grab: [p.v("grabposl", Vec3::new(0.07, 0.05, -0.051))?, p.v("grabposr", Vec3::new(0.09, -0.05, -0.051))?],
             claw: p.v("grabpointamp", Vec3::ZERO)?, claw_freq: p.v("grabpointfreq", Vec3::new(4.0, 5.0, 3.0))?,
@@ -2209,34 +2237,62 @@ impl Extra for Lasso {
         // the spine writhes, forwards and back and side to side
         let n = SPINE().len() as f32;
         let [f1, a1, f2, a2] = self.spine;
+        // arms pinned, he wriggles side to side more
+        let wriggle = if self.kind == 1 { 1.8 } else { 1.0 };
         let bend = 0.3 * a1 * (TAU * f1 * since).sin() * w;
-        let side = 0.25 * a2 * (TAU * f2 * since + 1.0).sin() * w;
+        let side = 0.25 * a2 * wriggle * (TAU * f2 * since + 1.0).sin() * w;
         for &j in SPINE().iter() {
             c.ch.eff[j].offset[0] += bend / n;
             c.ch.eff[j].offset[1] += side / n;
         }
-        // the legs kick, out of step
+        // the legs kick, out of step; tied at the feet they're held together, straight
         for s in 0..2 {
+            if self.kind == 2 {
+                let knee = KNEE()[s];
+                let kd = knee_dir(c, knee);
+                drive(c, knee, 0, -0.9 * kd);
+                continue;
+            }
             let (hip, knee) = (HIP()[s], KNEE()[s]);
             let kd = knee_dir(c, knee);
             let ph = TAU * 1.8 * since + s as f32 * std::f32::consts::PI;
             c.ch.eff[hip].offset[0] += self.legs * 1.2 * ph.sin() * w;
             c.ch.eff[knee].offset[0] += self.legs * (1.0 + 1.5 * (ph + 0.6).sin()).max(0.0) * kd * w;
         }
-        // the hands claw at the rope round grabPart
-        if self.part >= 0 {
+        let clav = |i: usize| c.b.part(crate::nmshot::limb(i).p[0]).m.d;
+        let along = (c.b.part(12).m.d - pelvis).normalize_or(up);
+        let left = (clav(0) - clav(1)).normalize_or_zero();
+        let reach = |c: &mut Ctx, i: usize, to: Vec3| {
+            let l = crate::nmshot::limb(i);
+            crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], to, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+        };
+        if self.kind == 1 {
+            // round his chest and arms: they're pinned to his sides
+            for i in 0..2 {
+                let side = if i == 0 { 1.0 } else { -1.0 };
+                reach(c, i, pelvis + left * (0.22 * side) + along * 0.15);
+            }
+            c.ch.set_stiffness(14.0, 1.0, "ul", None);
+            c.ch.set_stiffness(14.0, 1.0, "ur", None);
+        } else if self.kind == 2 {
+            // round his feet, dragged feet first: his arms reach out past his head, clawing at the ground in turn
+            let ground = c.b.part(3).m.d.dot(up).min(c.b.part(6).m.d.dot(up));
+            let head = c.b.part(12).m.d;
+            for i in 0..2 {
+                let side = if i == 0 { 1.0 } else { -1.0 };
+                let to = head + along * (0.4 + 0.2 * (TAU * 1.2 * since + i as f32 * std::f32::consts::PI).sin()) + left * (0.22 * side);
+                reach(c, i, to - up * (to.dot(up) - ground - 0.05));
+            }
+        }
+        // round the neck: the hands claw at the rope round grabPart
+        if self.kind == 0 && self.part >= 0 {
             let at = c.b.part(self.part as usize).m.d;
-            let clav = |i: usize| c.b.part(crate::nmshot::limb(i).p[0]).m.d;
             // his own frame at the neck (lying, his up runs along his spine)
-            let along = (c.b.part(12).m.d - pelvis).normalize_or(up);
-            let left = (clav(0) - clav(1)).normalize_or_zero();
             let fwd = left.cross(along).normalize_or_zero();
             let claw = Vec3::new((TAU * self.claw_freq.x * since).sin(), (TAU * self.claw_freq.y * since).sin(), (TAU * self.claw_freq.z * since).sin()) * self.claw;
             for i in 0..2 {
                 let g = self.grab[i] + claw;
-                let to = at + fwd * g.x + left * g.y + along * g.z;
-                let l = crate::nmshot::limb(i);
-                crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], to, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0, Vec3::ZERO, None);
+                reach(c, i, at + fwd * g.x + left * g.y + along * g.z);
             }
         }
         // now and then the ground bumps him

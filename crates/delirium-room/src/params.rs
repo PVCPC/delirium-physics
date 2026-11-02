@@ -90,7 +90,7 @@ const ABOUT: &[(&str, &str)] = &[
     ("forceLeanTowardsObject", "Towards a point (as leanTowardsObject): push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
     ("forceLeanRandom", "A random way, changing every changeTimeMin..changeTimeMax s: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
     ("onFire", "On fire: on his feet for staggerTime he staggers, his lean swinging forwards and back, arms flailing between a windmill and a writhe; then he goes down, writhes between curled up and thrashing, and (rollOverFlag) rolls back and forth to put the flames out. Runs until stopped."),
-    ("rdr2Lasso", "Lassoed, with dragged pulling the rope (ropedBodyPart 11 for the neck): down, his hands claw at the rope at his neck, his legs kick, his spine writhes, the ground bumps him; optionally stunned first. Runs until stopped."),
+    ("rdr2Lasso", "Lassoed, with dragged pulling the rope (ropedBodyPart 11 neck, 10 chest, 3 a foot). lassoedtype 0 neck: down, his hands claw at the rope at his neck; 1 chest and arms: arms pinned, he wriggles; 2 feet: legs held straight, arms reaching past his head clawing at the ground. His legs kick, his spine writhes, the ground bumps him; optionally stunned first. Runs until stopped."),
     ("keyframe", "Before handing the body back to animation: blends spine and neck straight and the hands to his sides over blendTime, damping the upper body, and holds it for holdTime, so the animation picks up from a pose close to its own. The legs stay the balancer's."),
 ];
 
