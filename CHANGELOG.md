@@ -18,6 +18,8 @@
 - The modding guide's examples start the SDK with the player's own copy of the game, as the public build needs.
 
 
+## 0.5.0 - The Modders Guide
+
 Delirium in other games and engines: Unity, Unreal, Godot, or your own.
 
 ### Added
