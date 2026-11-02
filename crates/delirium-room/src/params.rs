@@ -67,31 +67,31 @@ const ABOUT: &[(&str, &str)] = &[
     ("shootDodge", "Dodge a shot."),
     ("armHang", "Hang by the arms."),
     ("crushReaction", "React to a crushing object."),
-    ("duck", "Short flinch away: after timeBeforeDuck the spine and neck bend into a random share of their remaining range, each at its own rate, and the legs crouch through the balancer, for duckTime; it fades out over blendTime."),
-    ("shotSpin", "A hit off his centre spins him round: a damped yaw torque pulls him onto a heading that swings round by the hit's spin and holds it, the balancer told to face it; then, with stepTurnType=1, he turns to face attackerPos. The feet stay planted, so after the hold he eases part way back."),
-    ("shotFallToKnees", "Sinks to his knees: after ftkBalanceTime the balancer lets go, knees and hips bend at ftkBendRate; once the knees are down he kneels upright for ftkKneelTime, his centre held over his knees; then he topples forwards (or back) and goes loose."),
-    ("meleeReact", "A punch or melee blow: the upper body goes loose for csPeriod, a push leans him away, he flinches (hands up to guard his face with armsType=1), the hit part snaps along the blow, then a hand reaches for the spot hit."),
-    ("shotSnap", "A sharp kick across the chosen joints along the bullet's path, then a smaller counter-kick back (send it with shot). Sized by his state (moving, standing, airborne) and per joint; the hit part's joints get their own kick."),
-    ("shotFromBehind", "Hit in the back: the spine arches back, the neck goes back, the hips push forward and the knees give a little; it swells and goes over sfbPeriod."),
-    ("shotInGuts", "Hit in the belly: he hunches forward, knees and hips bent, for sigPeriod, then eases off over sigBlend."),
-    ("shotInjuredLeg", "Hit in the leg: it jerks up, then stays weak for legInjuryTime while he sags and leans onto it."),
-    ("shotInjuredArm", "Hit in the arm: the trunk turns with the bullet and the hit shoulder drops, then the arm hangs loose for armLooseTime."),
-    ("reachForWound", "A hand goes to the wound and holds it for grabHoldTime (both hands for a trunk wound with reachWithOneHand=false); for a leg wound he bends down to it."),
-    ("wallCollision", "Run into a wall: a snap away from it and weak legs at the impact; his back to it: he slumps down it; facing it: both hands brace on it, then he pushes off; side on: a spin away. Can make the wall solid for his body (a plane, or wallHalfWidth wide)."),
-    ("setFallingReaction", "Down onto hands and knees: the balancer lets go, he folds and puts his hands to the ground; once hands and a knee are down (or after 1.5 s) he holds there on all fours, head up, for hkHoldTime, then his strength fades and he sinks onto his front."),
-    ("rdr2Balance", "Balancer extras while it runs: stiffer legs when he moves faster than runningThresh, and a foot stepping up onto something only a little higher is turned flat on it. Runs until stopped (start=false)."),
-    ("leanRandom", "Lean his whole balance this way (as leanInDirection); a new way, gliding to it, every changeTimeMin..changeTimeMax s. Runs until stopped."),
-    ("hipsLeanInDirection", "In a direction: the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
-    ("hipsLeanToPosition", "Towards a point: the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
-    ("hipsLeanTowardsObject", "Towards a point (as leanTowardsObject): the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
-    ("hipsLeanRandom", "A random way, changing every changeTimeMin..changeTimeMax s: the hips swing out that way (pushed one way, the chest the other) while his feet stay under him; a sustained lean makes the balancer step after it. Runs until stopped."),
-    ("forceLeanInDirection", "In a direction: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
-    ("forceLeanToPosition", "Towards a point: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
-    ("forceLeanTowardsObject", "Towards a point (as leanTowardsObject): push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
-    ("forceLeanRandom", "A random way, changing every changeTimeMin..changeTimeMax s: push bodyPart that way, leanAmount times his weight, while he's on his feet (he leans and steps along). Runs until stopped."),
-    ("onFire", "On fire: on his feet for staggerTime he staggers, his lean swinging forwards and back, arms flailing between a windmill and a writhe; then he goes down, writhes between curled up and thrashing, and (rollOverFlag) rolls back and forth to put the flames out. Runs until stopped."),
-    ("rdr2Lasso", "Lassoed, with dragged pulling the rope (ropedBodyPart 11 neck, 10 chest, 3 a foot). lassoedtype 0 neck: down, his hands claw at the rope at his neck; 1 chest and arms: arms pinned, he wriggles; 2 feet: legs held straight, arms reaching past his head clawing at the ground. His legs kick, his spine writhes, the ground bumps him; optionally stunned first. Runs until stopped."),
-    ("keyframe", "Before handing the body back to animation: blends spine and neck straight and the hands to his sides over blendTime, damping the upper body, and holds it for holdTime, so the animation picks up from a pose close to its own. The legs stay the balancer's."),
+    ("duck", "A short flinch away.\n• After timeBeforeDuck, his spine and neck curl into a random share of their range.\n• His legs crouch a little.\n• Holds for duckTime, then fades out over blendTime."),
+    ("shotSpin", "A hit off his centre spins him round.\n• He turns by the hit's spin and holds that heading.\n• With stepTurnType=1 he then turns to face attackerPos.\n• His feet stay planted, so he eases part way back after."),
+    ("shotFallToKnees", "He sinks to his knees.\n• After ftkBalanceTime his balance lets go and his knees and hips bend.\n• He kneels upright for ftkKneelTime.\n• Then he topples forwards (or back) and goes limp."),
+    ("meleeReact", "A punch or melee blow.\n• His upper body goes loose for csPeriod and he leans away.\n• He flinches (hands up to guard his face with armsType=1).\n• The part hit snaps along the blow, then a hand goes to the spot."),
+    ("shotSnap", "A sharp kick along the bullet's path, then a smaller kick back.\n• Sized by what he's doing: moving, standing or in the air.\n• The joints by the part hit get their own kick.\n• Send it with shot."),
+    ("shotFromBehind", "Hit in the back.\n• His spine and neck arch back.\n• His hips push forward and his knees give a little.\n• It swells and fades over sfbPeriod."),
+    ("shotInGuts", "Hit in the belly.\n• He hunches forward, knees and hips bent, for sigPeriod.\n• Then eases off over sigBlend."),
+    ("shotInjuredLeg", "Hit in the leg.\n• The leg jerks up.\n• Then it stays weak for legInjuryTime while he sags and leans onto it."),
+    ("shotInjuredArm", "Hit in the arm.\n• His trunk turns with the bullet and the shoulder drops.\n• Then the arm hangs loose for armLooseTime."),
+    ("reachForWound", "A hand goes to the wound.\n• Holds it for grabHoldTime.\n• Both hands for a trunk wound with reachWithOneHand=false.\n• For a leg wound he bends down to it."),
+    ("wallCollision", "Running into a wall.\n• At the impact: a snap away from it and weak legs.\n• Back to the wall: he slumps down it.\n• Facing it: both hands brace on it, then he pushes off.\n• Side on: he spins away.\n• Can make the wall solid for him (wallHalfWidth wide)."),
+    ("setFallingReaction", "Down onto hands and knees.\n• His balance lets go and he puts his hands to the ground.\n• He holds on all fours, head up, for hkHoldTime.\n• Then his strength fades and he sinks onto his front."),
+    ("rdr2Balance", "Extras for his balance, while it runs.\n• Stiffer legs when he moves faster than runningThresh.\n• A foot stepping onto something a little higher is set down flat.\n• Runs until stopped (start=false)."),
+    ("leanRandom", "Leans his balance a random way.\n• Glides to a new way every changeTimeMin..changeTimeMax s.\n• Runs until stopped."),
+    ("hipsLeanInDirection", "Swings his hips out in a direction.\n• The hips are pushed that way and the chest the other.\n• His feet stay under him; held long, he steps after it.\n• Runs until stopped."),
+    ("hipsLeanToPosition", "Swings his hips out towards a point.\n• The hips are pushed that way and the chest the other.\n• His feet stay under him; held long, he steps after it.\n• Runs until stopped."),
+    ("hipsLeanTowardsObject", "Swings his hips out towards a point (as leanTowardsObject).\n• The hips are pushed that way and the chest the other.\n• His feet stay under him; held long, he steps after it.\n• Runs until stopped."),
+    ("hipsLeanRandom", "Swings his hips out a random way.\n• A new way every changeTimeMin..changeTimeMax s.\n• The hips are pushed that way and the chest the other.\n• Runs until stopped."),
+    ("forceLeanInDirection", "Pushes bodyPart in a direction.\n• leanAmount times his weight, while he's on his feet.\n• He leans and steps along with it.\n• Runs until stopped."),
+    ("forceLeanToPosition", "Pushes bodyPart towards a point.\n• leanAmount times his weight, while he's on his feet.\n• He leans and steps along with it.\n• Runs until stopped."),
+    ("forceLeanTowardsObject", "Pushes bodyPart towards a point (as leanTowardsObject).\n• leanAmount times his weight, while he's on his feet.\n• He leans and steps along with it.\n• Runs until stopped."),
+    ("forceLeanRandom", "Pushes bodyPart a random way.\n• A new way every changeTimeMin..changeTimeMax s.\n• leanAmount times his weight, while he's on his feet.\n• Runs until stopped."),
+    ("onFire", "On fire.\n• On his feet for staggerTime: he staggers, windmilling his arms over his head.\n• He keeps windmilling as he goes down.\n• Down: he thrashes, and with rollOverFlag rolls back and forth to put the flames out.\n• Runs until stopped."),
+    ("rdr2Lasso", "Lassoed and dragged. Send it with dragged, which pulls the rope (ropedBodyPart: 11 neck, 10 chest, 3 a foot).\nBy lassoedtype:\n• 0, the neck: his hands claw at the rope at his throat.\n• 1, the chest and arms: arms pinned to his sides, he wriggles.\n• 2, the feet: legs held straight, arms reaching past his head, clawing at the ground.\nDown, his legs kick and spine writhes, and the ground bumps him; optionally he's stunned first. Runs until stopped."),
+    ("keyframe", "Before handing him back to animation.\n• Straightens his spine and neck and brings his hands to his sides over blendTime.\n• Holds it for holdTime, so the animation picks up from a close pose.\n• His legs stay on his balance."),
 ];
 
 /// When Red Dead Redemption 2 style starts a behaviour by itself.
@@ -214,25 +214,60 @@ fn kind_name(k: Kind) -> &'static str {
     }
 }
 
+/// What a behaviour does, and when RDR2 style starts it.
 fn about(m: &str) -> String {
-    let mut s = format!("{m}: {}", ABOUT.iter().find(|a| a.0 == m).map_or("", |a| a.1));
+    let mut s = ABOUT.iter().find(|a| a.0 == m).map_or("", |a| a.1).to_string();
     if let Some(u) = RDR2_USE.iter().find(|u| u.0 == m) {
-        s += &format!("\nIn Red Dead Redemption 2 reaction style, started by {}.", u.1);
+        s += &format!("
+
+In Red Dead Redemption 2 reaction style, started by {}.", u.1);
     }
     s
 }
 
-fn tip(m: &Message, p: &Param, def: &Option<Value>) -> String {
-    let mut s = format!("{}\n{}\n\nIt is {}. Default: {}.", p.name, if p.doc.is_empty() { "No description yet." } else { p.doc },
-                        kind_name(p.kind), def.as_ref().map_or("not listed".into(), show));
-    if !p.used {
-        s += "\nAccepted, but Delirium doesn't use it (yet): changing it does nothing.";
-    } else if PER_HIT.contains(&p.name) {
-        s += "\nSet by the room for each hit (the part hit); send it from the console to choose one.";
-    } else if matches!(p.kind, Kind::Vec3 | Kind::Str) {
-        s += "\nSet by the room each time (where, which way, which parts); send it from the console to choose one.";
+/// A hover box: the title in bold, then each section, a line at a time ("• " lines indented), kept narrow.
+fn hover(ui: &mut egui::Ui, title: &str, sections: &[String]) {
+    ui.set_max_width(380.0);
+    ui.label(egui::RichText::new(title).strong().size(15.0));
+    for s in sections.iter().filter(|s| !s.is_empty()) {
+        ui.add_space(6.0);
+        for line in s.lines() {
+            match line.strip_prefix("• ") {
+                Some(b) => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(8.0);
+                        ui.label("•");
+                        ui.label(b);
+                    });
+                }
+                None => {
+                    ui.label(line);
+                }
+            }
+        }
     }
-    s + "\n\nBehaviour: " + &about(m.name)
+}
+
+fn behaviour_hover(ui: &mut egui::Ui, m: &str) {
+    hover(ui, m, &[about(m)]);
+}
+
+fn param_hover(ui: &mut egui::Ui, m: &Message, p: &Param, def: &Option<Value>) {
+    let doc = if p.doc.is_empty() { "No description yet.".to_string() } else { p.doc.to_string() };
+    let mut kind = format!("Type: {}
+Default: {}", kind_name(p.kind), def.as_ref().map_or("not listed".into(), show));
+    if !p.used {
+        kind += "
+Accepted, but Delirium doesn't use it (yet): changing it does nothing.";
+    } else if PER_HIT.contains(&p.name) {
+        kind += "
+Set by the room for each hit (the part hit); send it from the console to choose one.";
+    } else if matches!(p.kind, Kind::Vec3 | Kind::Str) {
+        kind += "
+Set by the room each time (where, which way, which parts); send it from the console to choose one.";
+    }
+    hover(ui, p.name, &[doc, kind, format!("Part of {}:
+{}", m.name, about(m.name))]);
 }
 
 /// The Parameters tab.
@@ -305,7 +340,7 @@ pub fn tab(ui: &mut egui::Ui, edits: &mut Edits, search: &mut String, changed_on
                         }
                     });
                 });
-                header.header_response.on_hover_text(about(m.name));
+                header.header_response.on_hover_ui(|ui| behaviour_hover(ui, m.name));
             }
         });
     }
@@ -316,10 +351,10 @@ fn row(ui: &mut egui::Ui, edits: &mut Edits, m: &'static Message, p: &'static Pa
     let def = default(m, p);
     let changed = edits.contains_key(&key);
     let name = egui::RichText::new(p.name);
-    ui.label(if changed { name.color(HI) } else if editable(p) { name } else { name.color(DIM) }).on_hover_text(tip(m, p, &def));
+    ui.label(if changed { name.color(HI) } else if editable(p) { name } else { name.color(DIM) }).on_hover_ui(|ui| param_hover(ui, m, p, &def));
     if !editable(p) {
         let why = if !p.used { "not used" } else if PER_HIT.contains(&p.name) { "set per hit" } else { "set by the room" };
-        ui.label(egui::RichText::new(why).small().color(DIM)).on_hover_text(tip(m, p, &def));
+        ui.label(egui::RichText::new(why).small().color(DIM)).on_hover_ui(|ui| param_hover(ui, m, p, &def));
         ui.label("");
         return;
     }
