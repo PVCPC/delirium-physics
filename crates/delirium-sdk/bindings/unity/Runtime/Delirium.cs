@@ -32,10 +32,10 @@ namespace Delirium
         /// <summary>The calling thread's last error message.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_last_error(byte[] buf, int len);
-        /// <summary>NM's character (fred.xrt's bytes): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1).</summary>
+        /// <summary>NM's character (character.xrt's bytes, from `delirium-room --export`): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_init_memory(byte[] xrt, int len);
-        /// <summary>nm_init_memory from a file (the game's `naturalmotion/fred.xrt`).</summary>
+        /// <summary>nm_init_memory from a file (the `character.xrt` that `delirium-room --export` writes; on PC the game keeps it loose, as a .art file).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_init([MarshalAs(UnmanagedType.LPUTF8Str)] string xrt_path);
         /// <summary>Opens the numbers: they're read from the player's own game's program, `exe_path` the PC GTAIV.exe or the disc's default.xex (or the folder either is in; the disc's key is fetched from the internet the first time). Call first, before nm_init or nm_init_character.</summary>
@@ -367,7 +367,7 @@ namespace Delirium
         /// <summary>TaskNMFlinch's start: flinch from a threat at `from`.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_task_flinch(IntPtr a, IntPtr w, [MarshalAs(UnmanagedType.LPUTF8Str)] string set, float[] from);
-        /// <summary>The character (an nm-character-1 JSON text) in place of fred.xrt: as `nm_init_memory`, once (later calls, and calls after nm_init, are ignored and return 1).</summary>
+        /// <summary>The character (an nm-character-1 JSON text) in place of character.xrt: as `nm_init_memory`, once (later calls, and calls after nm_init, are ignored and return 1).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_init_character([MarshalAs(UnmanagedType.LPUTF8Str)] string json);
         /// <summary>nm_init_character from a file.</summary>
@@ -376,7 +376,7 @@ namespace Delirium
         /// <summary>The character file's build (call after nm_init_character: it's laid out on the loaded character); NULL if the file has none.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr nm_build_from_character([MarshalAs(UnmanagedType.LPUTF8Str)] string json);
-        /// <summary>A character file from a the game fred.xrt (and a build dump, or NULL for none), into `buf` as usual. Load fred.xrt (nm_init) first when a build is given: the build is laid out on it.</summary>
+        /// <summary>A character file from character.xrt (and a build dump, or NULL for none), into `buf` as usual. Load character.xrt (nm_init) first when a build is given: the build is laid out on it.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_character_from_xrt([MarshalAs(UnmanagedType.LPUTF8Str)] string xrt_path, [MarshalAs(UnmanagedType.LPUTF8Str)] string build_path, byte[] buf, int len);
         /// <summary>Why a skeleton might contort: one line per problem into `buf`, the same inputs as `nm_rig_joints` (`map` isn't changed); returns how many (0: it should fit). Finds missing parts, bones under the wrong part (a shin not under its thigh), left and right swapped, and a bent rest pose (the animated pose passed in place of the bind pose).</summary>

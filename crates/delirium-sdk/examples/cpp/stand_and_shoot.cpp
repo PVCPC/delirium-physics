@@ -1,9 +1,9 @@
-// A ped stands under bodyBalance, then takes a POWERFUL_WEAPON shot. usage: stand_and_shoot <fred.xrt> <build.txt> [taskparams.txt]
+// A ped stands under bodyBalance, then takes a POWERFUL_WEAPON shot. usage: stand_and_shoot <character.xrt> <build.txt> [taskparams.txt]
 #include "delirium_physics.hpp"
 #include <cstdio>
 
 int main(int argc, char** argv) try {
-    if (argc < 3) { std::puts("usage: stand_and_shoot <fred.xrt> <build.txt> [taskparams.txt]"); return 2; }
+    if (argc < 3) { std::puts("usage: stand_and_shoot <character.xrt> <build.txt> [taskparams.txt]"); return 2; }
     nm::init(argv[1]);
     if (argc > 3) nm::load_task_params(argv[3]);
     nm::Build build(argv[2]);

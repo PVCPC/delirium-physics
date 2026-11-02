@@ -27,7 +27,7 @@ namespace Delirium.Ragdoll
     using Plugin = DeliriumRagdolls;
 #endif
 #if BEPINEX
-    [BepInPlugin("delirium_physics.ragdoll", "NM Ragdoll", "0.5.1")]
+    [BepInPlugin("delirium_physics.ragdoll", "NM Ragdoll", "0.5.2")]
     public class Plugin : BaseUnityPlugin
     {
         string gameExe, xrt, buildFile, taskParams, boneMap, getUpFront, getUpBack, sizeMode;

@@ -4961,6 +4961,10 @@ fn main() {
     portal::plugin(&mut app);
     fire::plugin(&mut app);
     water::plugin(&mut app);
+    if std::env::var_os("GPU_LOG").is_some() {
+        app.add_plugins((bevy::render::diagnostic::RenderDiagnosticsPlugin, bevy::diagnostic::LogDiagnosticsPlugin::default()));
+        app.add_systems(Last, gpu_uploads);
+    }
     fluid_gpu::plugin(&mut app);
     app.add_systems(Update, (flood::view, fluid_gpu::real_water, sky_pool_shade, fluid_gpu::sky_caustics, fluid_gpu::faucet_shown));
     #[cfg(windows)]
@@ -6770,7 +6774,7 @@ fn ray_tracing(mut commands: Commands, mut sim: NonSendMut<Sim>, device: Option<
 }
 
 fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Image>>, assets: Res<AssetServer>,
-       mut media: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>, mut cam: Query<(Entity, &mut Camera), Or<(With<OursCam>, With<water::Mirror>, With<SkyCam>)>>, new: Query<(), Added<SkyCam>>,
+       mut media: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>, mut cam: Query<(Entity, &mut Camera, Has<SkyCam>), Or<(With<OursCam>, With<water::Mirror>, With<SkyCam>)>>, new: Query<(), Added<SkyCam>>,
        planet: Query<Entity, With<bevy::light::Atmosphere>>, mut last: Local<Option<(u8, u8, [f32; 3], f32)>>) {
     use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, GeneratedEnvironmentMapLight, Skybox};
     let now = match sim.sky {
@@ -6791,7 +6795,7 @@ fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Imag
     if sim.sky == 2 && planet.is_empty() {
         commands.spawn((Atmosphere::earth(media.add(bevy::light::atmosphere::ScatteringMedium::default())), Transform::from_xyz(0.0, 0.0, -6_360_000.0)));
     }
-    for (e, mut camera) in &mut cam {
+    for (e, mut camera, view_only) in &mut cam {
         camera.clear_color = if sim.sky == 2 { ClearColorConfig::Custom(Color::BLACK) } else { ClearColorConfig::Default };
         let mut c = commands.entity(e);
         c.remove::<(Skybox, EnvironmentMapLight, GeneratedEnvironmentMapLight, AtmosphereEnvironmentMapLight, bevy::pbr::AtmosphereSettings)>();
@@ -6799,11 +6803,16 @@ fn sky(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Imag
             1 => {
                 let rotation = Quat::from_rotation_z((sim.sun_dir[0] + 55.8).to_radians()) * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
                 let image = assets.load("embedded://sky.ktx2");
-                c.insert((Skybox { image: Some(image.clone()), brightness: k * sim.sky_k, rotation },
-                          GeneratedEnvironmentMapLight { environment_map: image, intensity: k * sim.sky_k, rotation, ..default() }));
+                c.insert(Skybox { image: Some(image.clone()), brightness: k * sim.sky_k, rotation });
+                if !view_only {
+                    c.insert(GeneratedEnvironmentMapLight { environment_map: image, intensity: k * sim.sky_k, rotation, ..default() });
+                }
             }
             2 => {
-                c.insert((bevy::pbr::AtmosphereSettings::default(), AtmosphereEnvironmentMapLight::default(), bevy::camera::Hdr));
+                c.insert((bevy::pbr::AtmosphereSettings::default(), bevy::camera::Hdr));
+                if !view_only {
+                    c.insert(AtmosphereEnvironmentMapLight::default());
+                }
             }
             _ if now.1 > 0 => {
                 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension};
@@ -6893,6 +6902,32 @@ fn in_front(_: &Query<&mut Window, With<bevy::window::PrimaryWindow>>) -> bool {
 #[cfg(not(windows))]
 fn in_front(win: &Query<&mut Window, With<bevy::window::PrimaryWindow>>) -> bool {
     win.iter().any(|w| w.focused)
+}
+
+fn gpu_uploads(mut im: MessageReader<AssetEvent<Image>>, mut me: MessageReader<AssetEvent<Mesh>>, mut ma: MessageReader<AssetEvent<StandardMaterial>>,
+               images: Res<Assets<Image>>, meshes: Res<Assets<Mesh>>, mut acc: Local<([usize; 3], f64, Option<std::time::Instant>, std::collections::HashMap<String, usize>)>) {
+    for e in im.read() {
+        if let AssetEvent::Modified { id } = e && let Some(i) = images.get(*id) {
+            acc.0[0] += 1;
+            let mb = i.data.as_ref().map_or(0, |d| d.len()) as f64 / 1e6;
+            acc.1 += mb;
+            *acc.3.entry(format!("image {}x{}", i.width(), i.height())).or_default() += 1;
+        }
+    }
+    for e in me.read() {
+        if let AssetEvent::Modified { id } = e && let Some(m) = meshes.get(*id) {
+            acc.0[1] += 1;
+            *acc.3.entry(format!("mesh {} verts", m.count_vertices())).or_default() += 1;
+        }
+    }
+    acc.0[2] += ma.read().filter(|e| matches!(e, AssetEvent::Modified { .. })).count();
+    let now = std::time::Instant::now();
+    if acc.2.is_none_or(|t| now - t >= std::time::Duration::from_secs(1)) {
+        let mut top: Vec<_> = acc.3.drain().collect();
+        top.sort_by_key(|x| std::cmp::Reverse(x.1));
+        eprintln!("uploads {:?} (images, meshes, materials), images {:.1} MB, most: {:?}", acc.0, acc.1, &top[..top.len().min(5)]);
+        (acc.0, acc.1, acc.2) = ([0; 3], 0.0, Some(now));
+    }
 }
 
 fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::PrimaryWindow>>, mut next: Local<Option<std::time::Instant>>) {
@@ -7206,7 +7241,7 @@ fn apply_look(sim: NonSend<Sim>, mut last: Local<Option<(Look, Entity, bool, f32
         if fill {
             s.shadow_maps_enabled = false;
         }
-        s.contact_shadows_enabled = !fill && sim.contact > 0.0;
+        s.contact_shadows_enabled = !fill && sim.contact > 0.0 && sim.shadows;
     }
     if sim.room.stage != "street" {
         if let Some(mut m) = mats.get_mut(&m.0) {
@@ -10464,7 +10499,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     .on_hover_text("A soft glow around bright things, like a camera lens.");
                 ui.add(egui::Slider::new(&mut sim.dof, 0.0..=1.0).text(gpu("Depth of field", 2)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0}%", x * 100.0) }))
                     .on_hover_text("Blurs what's nearer or further than what the camera orbits, like a real lens; more blurs more.");
-                ui.add(egui::Slider::new(&mut sim.contact, 0.0..=1.0).text(gpu("Contact shadows", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0} cm", x * 100.0) }))
+                ui.add_enabled(sim.shadows, egui::Slider::new(&mut sim.contact, 0.0..=1.0).text(gpu("Contact shadows", 1)).custom_formatter(|x, _| if x <= 0.0 { "off".into() } else { format!("{:.0} cm", x * 100.0) }))
                     .on_hover_text("Fine sun shadows where things touch, which the shadow map is too coarse for: between the fingers, under the feet. The number is how far they reach.");
                 ui.add_enabled(sim.contact > 0.0, egui::Slider::new(&mut sim.contact_k, 0.0..=1.0).text("Contact shadow strength").custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
                     .on_hover_text("How dark the contact shadows are.");

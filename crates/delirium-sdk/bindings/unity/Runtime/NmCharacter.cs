@@ -17,8 +17,8 @@ namespace Delirium
 
         [Tooltip("The player's own PC game's GTAIV.exe, or its folder (absolute): the numbers are read from it.")]
         public string gameExePath = "";
-        [Tooltip("the game's naturalmotion/fred.xrt (absolute, or under StreamingAssets).")]
-        public string xrtPath = "fred.xrt";
+        [Tooltip("character.xrt from `delirium-room --export` (absolute, or under StreamingAssets).")]
+        public string xrtPath = "character.xrt";
         [Tooltip("A character build dump (the viewer's NM_DUMP).")]
         public string buildPath = "ped_build.txt";
         [Tooltip("the game's taskparams.txt (optional).")]

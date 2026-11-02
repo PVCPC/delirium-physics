@@ -2,7 +2,7 @@
 60 Hz step and returns per-part forces and torques, which MuJoCo applies while it steps. The ped stands under
 bodyBalance, then takes a chest hit.
 
-usage: GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python mujoco_follow.py <fred.xrt> <build.txt> [taskparams.txt] [--view]
+usage: GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python mujoco_follow.py <character.xrt> <build.txt> [taskparams.txt] [--view]
 """
 import ctypes, math, os, sys
 import numpy as np

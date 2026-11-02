@@ -7,7 +7,7 @@ joint's articulated inertia), which resists every load on the joint. Bullet's bt
 parts' inertia and NM's torques applied as joint motor torques (16 substeps), the ped holds together but sinks to the
 floor in ~1 s (with them as per-part external torques, or 4 substeps, it blows up). See docs/nm/sdk-recipes.md.
 
-usage: GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python bullet_follow.py <fred.xrt> <build.txt> [taskparams.txt] [--view]
+usage: GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python bullet_follow.py <character.xrt> <build.txt> [taskparams.txt] [--view]
 """
 import ctypes, math, os, sys
 import pybullet as pb

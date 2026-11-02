@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.2
+
+### Fixed
+- **About 3.5 times the frame rate with a sky on** (the Bevy sky is the default): the room's portal views each
+  worked out the sky's lighting every frame, even when no portal was open. On an RTX 3090 at low settings with the
+  Bevy sky: 72 FPS before, 268 now.
+- Shadows all the way off (Shadow quality "off") now turns off contact shadows too; they still drew a grainy
+  shadow. Their slider greys out while shadows are off.
+
+### Changed
+- `LICENSE`: an added permission to combine Delirium with Unreal Engine and share the result, free of charge only.
+  No selling, and never any game data.
+- The SDK's comments and examples load the exported `character.xrt`. On PC the game keeps it loose, as a `.art`
+  file; `delirium-room --export` writes it out for you.
+
 ## 0.5.1
 
 ### Fixed

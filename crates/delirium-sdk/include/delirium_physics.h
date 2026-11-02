@@ -40,9 +40,10 @@ typedef struct NmRig NmRig;
 NM_API int32_t nm_version(void);
 /* The calling thread's last error message. */
 NM_API int32_t nm_last_error(char* buf, int32_t len);
-/* NM's character (fred.xrt's bytes): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
+/* NM's character (character.xrt's bytes, from `delirium-room --game <your game> --export <folder>`): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
 NM_API int32_t nm_init_memory(const uint8_t* xrt, int32_t len);
-/* nm_init_memory from a file (the game's `naturalmotion/fred.xrt`). */
+/* nm_init_memory from a file: the `character.xrt` that `delirium-room --export` writes. (On PC the game keeps it loose, as a .art
+   file; on the disc it's packed in an archive. The export works for both.) */
 NM_API int32_t nm_init(const char* xrt_path);
 /* Opens the numbers: they're read from the player's own game's program, `exe_path` the PC GTAIV.exe or the disc's default.xex (or the folder either is in; the disc's key is fetched from the internet the first time). Call first, before nm_init or nm_init_character. */
 NM_API int32_t nm_unlock(const char* exe_path);
@@ -254,13 +255,13 @@ NM_API int32_t nm_agent_in_water(const NmAgent* a);
 NM_API int32_t nm_agent_is_burning(const NmAgent* a);
 /* TaskNMFlinch's start: flinch from a threat at `from`. */
 NM_API int32_t nm_agent_task_flinch(NmAgent* a, const NmWorld* w, const char* set, const float* from);
-/* The character (an nm-character-1 JSON text) in place of fred.xrt: as `nm_init_memory`, once (later calls, and calls after nm_init, are ignored and return 1). */
+/* The character (an nm-character-1 JSON text) in place of character.xrt: as `nm_init_memory`, once (later calls, and calls after nm_init, are ignored and return 1). */
 NM_API int32_t nm_init_character(const char* json);
 /* nm_init_character from a file. */
 NM_API int32_t nm_init_character_file(const char* path);
 /* The character file's build (call after nm_init_character: it's laid out on the loaded character); NULL if the file has none. */
 NM_API NmBuild* nm_build_from_character(const char* json);
-/* A character file from a the game fred.xrt (and a build dump, or NULL for none), into `buf` as usual. Load fred.xrt (nm_init) first when a build is given: the build is laid out on it. */
+/* A character file from character.xrt (and a build dump, or NULL for none), into `buf` as usual. Load character.xrt (nm_init) first when a build is given: the build is laid out on it. */
 NM_API int32_t nm_character_from_xrt(const char* xrt_path, const char* build_path, char* buf, int32_t len);
 /* Why a skeleton might contort: one line per problem into `buf`, the same inputs as `nm_rig_joints` (`map` isn't changed); returns how many (0: it should fit). Finds missing parts, bones under the wrong part (a shin not under its thigh), left and right swapped, and a bent rest pose (the animated pose passed in place of the bind pose). */
 NM_API int32_t nm_rig_check(int32_t bones, const int32_t* parents, const float* rest, const int32_t* map, char* buf, int32_t len);
