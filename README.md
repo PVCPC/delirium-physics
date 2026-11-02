@@ -98,7 +98,7 @@ The Playroom is one application built on Delirium. For a mod, use the engine and
 
 Build by hand: `cargo build --release -p delirium-room`.
 
-Full guides: [How it works](docs/how-it-works.md) (the engine, body, step loop and behaviours) and [Modding](docs/modding.md) (each language's quick start, every message and its parameters, Playroom scripting and settings).
+Modders: start with [Modding: start here](docs/start-here.md) (the Unity, Unreal and Godot plugins, your first ragdoll in three steps). Full guides: [How it works](docs/how-it-works.md) (the engine, body, step loop and behaviours) and [Modding](docs/modding.md) (each language's quick start, every message and its parameters, Playroom scripting and settings).
 
 Maintainers' to-do list: [delirium-todo](https://github.com/PVCPC/delirium-todo) (private; only the maintainers can open it).
 

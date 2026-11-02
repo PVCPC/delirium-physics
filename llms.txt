@@ -1,0 +1,15 @@
+# Delirium Physics
+
+> Active ragdoll and character physics (balance, stagger, catch the fall, get up) as a C library with C++, C#, Python, Unity, Unreal Engine 5 and Godot 4 bindings. It needs each user's own copy of the original game (nm_unlock with its exe); never ship the game or files exported from it.
+
+## Docs
+
+- [Modding: start here](docs/start-here.md): which plugin to use, exporting the three data files, first calls, common errors
+- [Modding reference](docs/modding.md): build, per-language quick starts, any engine step by step (coordinate spaces, rig, level, hand back), every message and parameter, troubleshooting
+- [How it works](docs/how-it-works.md): the engine, body, step loop and behaviours
+
+## API
+
+- [C header](crates/delirium-sdk/include/delirium_physics.h): every function, documented; the source of truth
+- [Unity plugin source](crates/delirium-sdk/bindings/unity/Runtime/DeliriumRagdolls.cs): a complete engine integration to copy from
+- [Plugin READMEs](crates/delirium-sdk/bindings/): unity, unreal, godot, bepinex

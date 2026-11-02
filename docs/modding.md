@@ -1,8 +1,11 @@
 # Using and scripting Delirium Physics
 
-A practical guide: build the library, drive a character from your language of
-choice, look up every message, and script the playroom. For the concepts behind
-it, read [how-it-works.md](how-it-works.md) first.
+**New to this? Read [Modding: start here](start-here.md) first**: the ready-made plugins for Unity, Unreal and
+Godot, and your first ragdoll in three steps.
+
+This is the full reference: build the library, drive a character from your
+language of choice, look up every message, and script the playroom. For the
+concepts behind it, read [how-it-works.md](how-it-works.md).
 
 Contents: [Build](#build) - [Quick start per language](#quick-start-per-language) -
 [Message reference](#message-reference) - [Playroom scripting](#playroom-scripting) -
@@ -40,6 +43,9 @@ On Windows the header declares functions `dllimport` unless you define
 
 ### What you feed it
 
+- **The player's own copy of the game**: call `nm_unlock` with its exe (the
+  Steam PC one, or the console disc's `default.xex`) before anything else.
+  Without it `nm_init` fails. Never ship the game or its files.
 - A **character**: either a character file (`.xrt`) plus a **build dump**
   (text), or one JSON file in the `nm-character-1` format. Load them with
   `nm_init` + `nm_build_load`, or `nm_init_character_file`.
@@ -79,6 +85,8 @@ use delirium::ragdoll::{Build, Ragdoll};
 use delirium::prelude::*;
 
 fn main() {
+    // the player's own game exe first: the engine's numbers come from it
+    assert!(delirium_data::kv::unlock(&std::fs::read("C:/Games/game/GTAIV.exe").unwrap()));
     // build dump text -> Build + its rest frames
     let text = std::fs::read_to_string("build.txt").unwrap();
     let (build, frames) = Build::undump(&text);
@@ -117,6 +125,7 @@ use delirium_physics::*;
 use std::ffi::CString;
 
 unsafe {
+    nm_unlock(c"C:/Games/game/GTAIV.exe".as_ptr());   // the player's own game exe, first
     let c = CString::new("character.xrt").unwrap();
     nm_init(c.as_ptr());
     let b = CString::new("build.txt").unwrap();
@@ -141,6 +150,7 @@ code and `what()`).
 #include "delirium_physics.hpp"
 
 int main() {
+    nm::unlock("C:/Games/game/GTAIV.exe");     // the player's own game exe, first
     nm::init("character.xrt");
     nm::Build build("build.txt");
     nm::World world;
@@ -171,6 +181,7 @@ module otherwise looks beside itself, then in the system loader path.
 import ctypes
 from delirium_physics import lib, vec, text, check
 
+check(lib.nm_unlock(b"C:/Games/game/GTAIV.exe"))   # the player's own game exe, first
 check(lib.nm_init(b"character.xrt"))
 build = lib.nm_build_load(b"build.txt")
 world = lib.nm_world_create()
@@ -212,6 +223,7 @@ Put `delirium_physics.dll` next to your executable (or on `PATH`). Add
 using Delirium;
 using static Delirium.Native;
 
+nm_unlock("C:/Games/game/GTAIV.exe");   // the player's own game exe, first
 nm_init("character.xrt");
 var build = nm_build_load("build.txt");
 var world = nm_world_create();
