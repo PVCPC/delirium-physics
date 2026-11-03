@@ -18,8 +18,8 @@
 - `rdr2Sit`: RDR2's riding. The rider's pelvis is held in a seat the game moves each frame (rdr2Sit sent again without
   start), feet in the stirrups, chest upright, hands on the reins; he's thrown when he or the seat tips too far, a hit
   knocks him, or on `throw`, optionally dragged by a caught foot. Extras can now take updates sent without start.
-- Playroom: Homer can ride the horse (Ride it, `!horse ride`).
-- Playroom: Red Dead Redemption 2's horse, built from your own copies of its Euphoria body (horse.xml) and its ragdoll
+- Playroom (experimental): Homer can ride the horse (Ride it, `!horse ride`).
+- Playroom (experimental): Red Dead Redemption 2's horse, built from your own copies of its Euphoria body (horse.xml) and its ragdoll
   (an OpenIV export of meta_base_horse_01.yft): RDR2's capsules, masses, inertias, joint frames, limits, muscles and
   self-collision. Held in its pose while sound, as RDR2's animation holds it; lamed or killed, it falls as that
   ragdoll (Character, `!horse`). Down and alive it does RDR2's

@@ -10592,52 +10592,6 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.add_space(6.0);
             ui.label(section_title("Character"));
             info(ui, "Control Homer, change his reactions, or play as the Hero.");
-            ui.collapsing("Red Dead Redemption 2 horse", |ui| {
-                info(ui, "RDR2's horse, built from your own copies of its two files: its Euphoria body (horse.xml: common_0.rpf, data/naturalmotion) and its ragdoll (packs_0.rpf, packs/base/models/metaped_fragments.rpf, meta_base_horse_01.yft: in OpenIV right-click it, Save content, and pick the .yft.sys it writes). Shoot or blast it: a hurt leg gives and it goes down, and killed it collapses.");
-                ui.horizontal(|ui| {
-                    ui.label("horse.xml");
-                    ui.add(egui::TextEdit::singleline(&mut sim.horse_file).hint_text("path to your horse.xml").desired_width(260.0));
-                });
-                ui.horizontal(|ui| {
-                    ui.label("ragdoll");
-                    ui.add(egui::TextEdit::singleline(&mut sim.horse_frag).hint_text("path to your meta_base_horse_01.yft.sys").desired_width(260.0));
-                });
-                ui.horizontal(|ui| {
-                    if ui.add_enabled(!sim.horse_file.is_empty() && !sim.horse_frag.is_empty(), egui::Button::new(if sim.horse.is_some() { "New horse" } else { "Bring the horse" })).clicked() {
-                        pressed = Some("#horse".into());
-                    }
-                    if ui.add_enabled(sim.horse.is_some(), egui::Button::new("Remove it")).clicked() {
-                        pressed = Some("#horse off".into());
-                    }
-                    let can = sim.horse.as_ref().is_some_and(|h| h.standing());
-                    if sim.riding {
-                        if ui.button("Throw him off").on_hover_text("rdr2Sit throw=true: he's thrown, as if he'd lost his seat").clicked() {
-                            pressed = Some("#horse getoff".into());
-                        }
-                    } else if ui.add_enabled(can, egui::Button::new("Ride it")).on_hover_text("Homer gets on: RDR2's sit (rdr2Sit). Shoot or blast him, or the horse, to throw him; its settings are in Parameters").clicked() {
-                        pressed = Some("#horse ride".into());
-                    }
-                });
-                if let Some(h) = sim.horse.as_mut() {
-                    let legs: Vec<String> = h.legs.iter().zip(["hind right", "hind left", "fore right", "fore left"]).filter(|(l, _)| **l > 0.0).map(|(l, n)| format!("{n} {:.0}%", l / 60.0 * 100.0)).collect();
-                    info(ui, &format!("Health {:.0} / 400 · {}{}", h.health.max(0.0), h.state(),
-                                      if legs.is_empty() { String::new() } else { format!(" · legs hurt: {}", legs.join(", ")) }));
-                    ui.collapsing("On the ground (RDR2's quadrupedbase)", |ui| {
-                        info(ui, "RDR2's names and defaults. Down and alive, it lifts its head, paddles its legs on its side and writhes its neck, weaker as its strength fades; hit, it goes weak a moment; tipped past failangle it goes down. Dead, it's limp. (`!horse set name value` from a script.)");
-                        ui.horizontal_wrapped(|ui| {
-                            for (n, f) in h.q.flags() {
-                                ui.checkbox(f, n);
-                            }
-                        });
-                        for (n, f, lo, hi) in h.q.fields() {
-                            ui.add(egui::Slider::new(f, lo..=hi).text(n));
-                        }
-                        if ui.button("RDR2's defaults").clicked() {
-                            h.q = horse::Quadruped::default();
-                        }
-                    });
-                }
-            });
             ui.horizontal_wrapped(|ui| {
                 ui.label("Body");
                 for (i, (_, n, h, m, _)) in BODIES.iter().enumerate() {
@@ -10756,6 +10710,52 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 None => "Watch the trainer's latest generation live.".into(),
             });
             }
+            ui.collapsing("Red Dead Redemption 2 horse (experimental)", |ui| {
+                info(ui, "Experimental: still being worked on. RDR2's horse, built from your own copies of its two files: its Euphoria body (horse.xml: common_0.rpf, data/naturalmotion) and its ragdoll (packs_0.rpf, packs/base/models/metaped_fragments.rpf, meta_base_horse_01.yft: in OpenIV right-click it, Save content, and pick the .yft.sys it writes). Shoot or blast it: a hurt leg gives and it goes down, and killed it collapses.");
+                ui.horizontal(|ui| {
+                    ui.label("horse.xml");
+                    ui.add(egui::TextEdit::singleline(&mut sim.horse_file).hint_text("path to your horse.xml").desired_width(260.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("ragdoll");
+                    ui.add(egui::TextEdit::singleline(&mut sim.horse_frag).hint_text("path to your meta_base_horse_01.yft.sys").desired_width(260.0));
+                });
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!sim.horse_file.is_empty() && !sim.horse_frag.is_empty(), egui::Button::new(if sim.horse.is_some() { "New horse" } else { "Bring the horse" })).clicked() {
+                        pressed = Some("#horse".into());
+                    }
+                    if ui.add_enabled(sim.horse.is_some(), egui::Button::new("Remove it")).clicked() {
+                        pressed = Some("#horse off".into());
+                    }
+                    let can = sim.horse.as_ref().is_some_and(|h| h.standing());
+                    if sim.riding {
+                        if ui.button("Throw him off").on_hover_text("rdr2Sit throw=true: he's thrown, as if he'd lost his seat").clicked() {
+                            pressed = Some("#horse getoff".into());
+                        }
+                    } else if ui.add_enabled(can, egui::Button::new("Ride it")).on_hover_text("Homer gets on: RDR2's sit (rdr2Sit). Shoot or blast him, or the horse, to throw him; its settings are in Parameters").clicked() {
+                        pressed = Some("#horse ride".into());
+                    }
+                });
+                if let Some(h) = sim.horse.as_mut() {
+                    let legs: Vec<String> = h.legs.iter().zip(["hind right", "hind left", "fore right", "fore left"]).filter(|(l, _)| **l > 0.0).map(|(l, n)| format!("{n} {:.0}%", l / 60.0 * 100.0)).collect();
+                    info(ui, &format!("Health {:.0} / 400 · {}{}", h.health.max(0.0), h.state(),
+                                      if legs.is_empty() { String::new() } else { format!(" · legs hurt: {}", legs.join(", ")) }));
+                    ui.collapsing("On the ground (RDR2's quadrupedbase)", |ui| {
+                        info(ui, "RDR2's names and defaults. Down and alive, it lifts its head, paddles its legs on its side and writhes its neck, weaker as its strength fades; hit, it goes weak a moment; tipped past failangle it goes down. Dead, it's limp. (`!horse set name value` from a script.)");
+                        ui.horizontal_wrapped(|ui| {
+                            for (n, f) in h.q.flags() {
+                                ui.checkbox(f, n);
+                            }
+                        });
+                        for (n, f, lo, hi) in h.q.fields() {
+                            ui.add(egui::Slider::new(f, lo..=hi).text(n));
+                        }
+                        if ui.button("RDR2's defaults").clicked() {
+                            h.q = horse::Quadruped::default();
+                        }
+                    });
+                }
+            });
         }
 
         if sim.tab & (1 << 4) != 0 {

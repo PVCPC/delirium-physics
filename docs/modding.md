@@ -443,9 +443,11 @@ Hero:
   in place of GTA IV's.
 - Tomahawk and bow: hit as shots, so RDR2 reaction style adds RDR2's reactions by where they hit.
 
-#### RDR2 horse (playroom)
+#### RDR2 horse (playroom, experimental)
 
-Character, "Red Dead Redemption 2 horse": RDR2's horse, built from your own copies of its two files.
+Experimental: still being worked on, and its settings may change.
+
+Character, at the bottom, "Red Dead Redemption 2 horse (experimental)": RDR2's horse, built from your own copies of its two files.
 - **horse.xml**, its Euphoria body: common_0.rpf, data/naturalmotion (`rdr2_horse` in settings.txt).
 - **Its ragdoll**, the fragment meta_base_horse_01.yft: packs_0.rpf, packs/base/models/metaped_fragments.rpf. In
   OpenIV right-click it, Save content, and give the `.yft.sys` it writes (`rdr2_horse_frag`; `!horse frag <path>`).
