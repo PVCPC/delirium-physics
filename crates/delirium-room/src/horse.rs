@@ -516,6 +516,33 @@ impl Horse {
         self.doll.step(&self.build, world, dt, drive, obstacles, others);
     }
 
+    /// Let go of the pose it's held in: it falls as a ragdoll, alive (dragged, say).
+    pub fn let_go(&mut self) {
+        if self.held {
+            self.fell = true;
+            self.sunk = self.sunk.max(GIVE + 1e-3);
+        }
+    }
+
+    /// A pull on `part` at `at` (the mouse's drag): it's let go, and pulled.
+    pub fn pull(&mut self, part: usize, at: Vec3, impulse: Vec3) {
+        self.let_go();
+        if !self.held {
+            self.doll.impulse(part, at, impulse);
+        } else {
+            self.pushes.push((part, at, impulse));
+        }
+    }
+
+    /// A poke (a click): a push, kept for when it goes down while it's held in its pose.
+    pub fn poke(&mut self, part: usize, at: Vec3, impulse: Vec3) {
+        if self.held {
+            self.pushes.push((part, at, impulse));
+        } else {
+            self.doll.impulse(part, at, impulse);
+        }
+    }
+
     /// Still on its feet.
     pub fn standing(&self) -> bool {
         self.sunk <= GIVE
@@ -595,21 +622,31 @@ impl Horse {
     }
 }
 
-/// The horse's look: a capsule per part, following its body.
+/// The horse's look: a capsule per part, following its body, as see-through as Homer's (See-through) so its skeleton
+/// shows, solid in the clean view.
 #[derive(Component)]
 pub struct HorsePart(pub usize);
 
 pub fn view(mut commands: Commands, sim: NonSend<crate::Sim>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
-            mut parts: Query<(Entity, &HorsePart, &mut Transform)>) {
+            mut parts: Query<(Entity, &HorsePart, &mut Transform)>, mut looks: Local<Option<[Handle<StandardMaterial>; 2]>>) {
     let Some(h) = sim.horse.as_ref() else {
         for (e, ..) in &parts {
             commands.entity(e).despawn();
         }
         return;
     };
+    let alpha = if sim.clean { 1.0 } else { sim.body_alpha };
+    let [coat, hoof] = looks.get_or_insert_with(|| {
+        let mut m = |c: Color, r: f32| mats.add(StandardMaterial { base_color: c, perceptual_roughness: r, alpha_mode: AlphaMode::Blend, ..default() });
+        [m(Color::srgb(0.42, 0.27, 0.16), 0.8), m(Color::srgb(0.12, 0.1, 0.09), 0.6)]
+    }).clone();
+    for (m, c) in [(&coat, Color::srgb(0.42, 0.27, 0.16)), (&hoof, Color::srgb(0.12, 0.1, 0.09))] {
+        if let Some(mut m) = mats.get_mut(m).filter(|m| m.base_color.alpha() != alpha) {
+            m.base_color = c.with_alpha(alpha);
+            m.alpha_mode = if alpha < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque };
+        }
+    }
     if parts.is_empty() {
-        let coat = mats.add(StandardMaterial { base_color: Color::srgb(0.42, 0.27, 0.16), perceptual_roughness: 0.8, ..default() });
-        let hoof = mats.add(StandardMaterial { base_color: Color::srgb(0.12, 0.1, 0.09), perceptual_roughness: 0.6, ..default() });
         for (k, (t, p)) in h.doll.capsules().zip(&h.build.parts).enumerate() {
             let mat = if p.name.ends_with("Foot") { hoof.clone() } else { coat.clone() };
             commands.spawn((Mesh3d(meshes.add(Capsule3d::new(p.radius, p.half * 2.0))), MeshMaterial3d(mat), t, HorsePart(k)));

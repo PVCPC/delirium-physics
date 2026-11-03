@@ -455,7 +455,9 @@ capsules (size, place, turn, mass and inertia: 617 kg in all), its 22 joints' fr
 other; from horse.xml each joint's limits and muscle. The two files are checked against each other (the fragment keeps
 the same joint ranges, less RAGE's 0.03 margin). While it's sound it's held in its pose, as RDR2 holds its horses on
 their animation; shoot, blast, tomahawk or arrow it: a leg hit twice gives, or killed (400 health), and it falls as
-RDR2's ragdoll with the hits' pushes.
+RDR2's ragdoll with the hits' pushes. Like Homer, it's see-through by See-through, with its skeleton drawn by Skeleton
+(its left legs red, its right blue), and the mouse grabs it: drag a part and it's let go of its pose and pulled
+(Homer's pull, times how much heavier it is, capped by the part's own mass); a click pokes it.
 
 Where it isn't RDR2's, because of what Delirium's solver does:
 - **Centre of mass:** a part's sits at its capsule's centre, so the 0.2 m RDR2 moves the pelvis's and the spine links'

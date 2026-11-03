@@ -1313,6 +1313,8 @@ struct Grab {
     target: Vec3,
     press: (Vec2, Vec3, Vec3),
     pulling: bool,
+    /// a part of the RDR2 horse, not Homer's
+    horse: bool,
 }
 
 const MUSC_STIFF: (f32, f32) = (11.0, 12.0);
@@ -1320,6 +1322,9 @@ static MUSC_HELP: std::sync::LazyLock<f32> = std::sync::LazyLock::new(|| std::en
 
 const PULL_K: f32 = 1500.0;
 const PULL_MAX: f32 = 1500.0;
+/// The mouse's pull on the horse: Homer's, times how much heavier it is, but at most once more for each this much of
+/// the grabbed part's mass, kg.
+const HORSE_PULL_KG: f32 = 8.0;
 
 struct Side {
     parts: Vec<Vec3>,
@@ -3562,6 +3567,9 @@ impl Sim {
     }
 
     fn pull(&mut self) {
+        if self.grab.as_ref().is_some_and(|g| g.horse) {
+            return self.pull_horse();
+        }
         let Some((part, local, target)) = self.grab.as_ref().filter(|g| g.pulling).map(|g| (g.part, g.local, g.target)) else { return };
         let Some(f) = self.agent.doll.frames().nth(part) else { return };
         let at = f.translation + f.rotation * local;
@@ -3571,6 +3579,22 @@ impl Sim {
         self.held = false;
         let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
         let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "applyImpulse", &ps);
+    }
+
+    /// The mouse's pull on the RDR2 horse: as on Homer, scaled by how much heavier it is (see `HORSE_PULL_KG`).
+    fn pull_horse(&mut self) {
+        let Some((part, local, target)) = self.grab.as_ref().filter(|g| g.pulling).map(|g| (g.part, g.local, g.target)) else { return };
+        let homer = self.agent.doll.mass();
+        let Some(h) = self.horse.as_mut() else { return self.grab = None };
+        let Some(f) = h.doll.frames().nth(part) else { return };
+        let at = f.translation + f.rotation * local;
+        let (v, w) = h.doll.vel(part);
+        let heavier = h.doll.mass() / homer.max(1.0);
+        let damp = (2.0 * (PULL_K * heavier * h.doll.mass()).sqrt()).min(30.0 * h.doll.part_mass(part));
+        // no harder than its part can take (all of it on a 6 kg hoof flung the horse)
+        let most = PULL_MAX * heavier.min(1.0 + h.doll.part_mass(part) / HORSE_PULL_KG);
+        let imp = (PULL_K * heavier * (target - at) - damp * (v + w.cross(at - f.translation))).clamp_length_max(most) / 60.0;
+        h.pull(part, at, imp);
     }
 
     fn cue(&mut self) {
@@ -8680,7 +8704,14 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     }
     if !buttons.pressed(MouseButton::Left) {
         if let Some(g) = sim.grab.take().filter(|g| !g.pulling) {
-            sim.poke(g.part, g.press.2, g.press.1);
+            if g.horse {
+                let imp = g.press.1.normalize_or_zero() * sim.poke;
+                if let Some(h) = sim.horse.as_mut() {
+                    h.poke(g.part, g.press.2, imp);
+                }
+            } else {
+                sim.poke(g.part, g.press.2, g.press.1);
+            }
         }
     }
     if sim.hero.is_some() && sim.hero_gun && !sim.driving && kind(sim.weapon) > 0 {
@@ -8745,11 +8776,15 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         if let Some(i) = (1..near.len()).filter(|&i| near[i] < near[0]).min_by(|&a, &b| near[a].total_cmp(&near[b])) {
             sim.control(i - 1);
         }
-        if let Some((part, hit, _)) = sim.agent.doll.probe(&sim.build, from, from + dir * 50.0) {
-            if let Some(f) = { let f = sim.agent.doll.frames().nth(part); f } {
-                let local = f.rotation.inverse() * (hit - f.translation);
-                sim.grab = Some(Grab { part, local, plane: (hit, -dir), target: hit, press: (cursor, dir, hit), pulling: false });
-            }
+        let horse = sim.horse.as_ref().and_then(|h| h.doll.probe(&h.build, from, from + dir * 50.0));
+        let homer = sim.agent.doll.probe(&sim.build, from, from + dir * 50.0);
+        // the nearer of Homer and the horse
+        let on_horse = horse.is_some_and(|h| homer.is_none_or(|o| h.1.distance(from) < o.1.distance(from)));
+        let picked = if on_horse { horse.map(|h| (h, sim.horse.as_ref().and_then(|x| x.doll.frames().nth(h.0)))) }
+                     else { homer.map(|h| (h, sim.agent.doll.frames().nth(h.0))) };
+        if let Some(((part, hit, _), Some(f))) = picked {
+            let local = f.rotation.inverse() * (hit - f.translation);
+            sim.grab = Some(Grab { part, local, plane: (hit, -dir), target: hit, press: (cursor, dir, hit), pulling: false, horse: on_horse });
         }
     }
 }
@@ -8881,7 +8916,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let d: Vec<f32> = w.next().unwrap_or("").split(',').filter_map(|x| x.parse().ok()).collect();
                 let at = sim.ours().p(part);
                 let target = at + Vec3::new(d.first().copied().unwrap_or(0.0), d.get(1).copied().unwrap_or(0.0), d.get(2).copied().unwrap_or(0.0));
-                sim.grab = Some(Grab { part, local: Vec3::ZERO, plane: (at, Vec3::Z), target, press: (Vec2::ZERO, Vec3::Z, at), pulling: true });
+                sim.grab = Some(Grab { part, local: Vec3::ZERO, plane: (at, Vec3::Z), target, press: (Vec2::ZERO, Vec3::Z, at), pulling: true, horse: false });
                 let com = sim.agent.doll.com().0;
                 sim.say(format!("ours  grab {part} to {} (com {})", v3(target), v3(com)));
             }
@@ -9559,6 +9594,16 @@ fn headless(mut sim: Sim, n: usize) {
                 let leg = |l: usize| horse::LEGS[l].iter().map(|&k| e[k]).fold(0.0f32, f32::max);
                 eprintln!("      most off  legs {:.2} {:.2} {:.2} {:.2}  neck/head {:.2}", leg(0), leg(1), leg(2), leg(3), horse::NECK_HEAD.iter().map(|&k| e[k]).fold(0.0f32, f32::max));
             }
+            // HORSE_GRAB=part: at 2 s the mouse grabs that part and pulls it 2 m out and 1 m up, letting go at 5 s
+            if let Some(k) = std::env::var("HORSE_GRAB").ok().and_then(|v| v.parse::<usize>().ok()) {
+                if i == 120 && let Some(at) = sim.horse.as_ref().and_then(|h| h.doll.frames().nth(k)).map(|f| f.translation) {
+                    let target = at + Vec3::new(2.0, 0.0, 1.0);
+                    sim.grab = Some(Grab { part: k, local: Vec3::ZERO, plane: (at, Vec3::Z), target, press: (Vec2::ZERO, Vec3::Z, at), pulling: true, horse: true });
+                }
+                if i == 300 {
+                    sim.grab = None;
+                }
+            }
             if std::env::var("HORSE_DIE").is_ok() && i == 120 && let Some(h) = sim.horse.as_mut() {
                 h.dead = true;
             }
@@ -9755,9 +9800,9 @@ fn muscles(mut commands: Commands, sim: NonSend<Sim>, mut meshes: ResMut<Assets<
 }
 
 fn side_color(name: &str) -> Color {
-    if name.ends_with("Left") {
+    if name.ends_with("Left") || name.starts_with("L_") {
         Color::srgb(0.9, 0.25, 0.2)
-    } else if name.ends_with("Right") {
+    } else if name.ends_with("Right") || name.starts_with("R_") {
         Color::srgb(0.25, 0.45, 0.95)
     } else {
         Color::srgb(0.95, 0.8, 0.15)
@@ -9849,7 +9894,11 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
             ours.circle(iso, r + d, Color::srgba(1.0, 0.05, 0.05, 1.0 - t)).resolution(32);
         }
     }
-    if let Some((g, f)) = sim.grab.as_ref().filter(|g| g.pulling).and_then(|g| Some((g, fr.get(g.part)?))) {
+    let horse_fr: Vec<Transform> = sim.horse.as_ref().map_or(vec![], |h| h.doll.frames().collect());
+    if let Some(h) = sim.horse.as_ref().filter(|_| dbg) {
+        skeleton(&mut ours, &h.build, skel_tint(&sim), |k| horse_fr.get(k).copied(), |k| h.doll.touch[k] & 0x48 != 0);
+    }
+    if let Some((g, f)) = sim.grab.as_ref().filter(|g| g.pulling).and_then(|g| Some((g, if g.horse { horse_fr.get(g.part)? } else { fr.get(g.part)? }))) {
         let at = f.translation + f.rotation * g.local;
         ours.line(at, g.target, Color::srgb(0.3, 0.9, 1.0));
         ours.sphere(Isometry3d::from_translation(g.target), 0.03, Color::srgb(0.3, 0.9, 1.0));
@@ -9905,7 +9954,9 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
     let joint = |k: usize| frame(k).map(|f| if build.parts[k].parent.is_some() { f.translation + f.rotation * build.parts[k].anchor } else { f.translation });
     for (k, p) in build.parts.iter().enumerate() {
         let (Some(f), Some(x)) = (frame(k), joint(k)) else { continue };
-        let c = tint.unwrap_or_else(|| side_color(delirium_data::nm_asset::PARTS.get(k).unwrap_or(&"")));
+        // a person's parts by Euphoria's names; another body's (the horse's) by its own, L_ and R_ for its sides
+        let name = if build.parts.len() == delirium_data::nm_asset::PARTS.len() { delirium_data::nm_asset::PARTS[k] } else { p.name.as_str() };
+        let c = tint.unwrap_or_else(|| side_color(name));
         if let Some(y) = p.parent.and_then(&joint) {
             g.line(x, y, line);
         }
