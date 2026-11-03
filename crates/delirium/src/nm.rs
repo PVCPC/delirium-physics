@@ -251,10 +251,10 @@ pub type BraceForImpact = crate::nmbr::BraceParams;
 pub type HighFall = crate::nmhf::HighFallParams;
 pub type FallOverWall = crate::nmfow::FallOverWallParams;
 
-fn dbm_config(c: ConfigureBalance, params: &BodyBalance, lean_bias: f32, hip_yaw: (f32, f32), legs: (f32, f32)) -> crate::nmdbm::Config {
+fn dbm_config(c: ConfigureBalance, params: &BodyBalance, lean_bias: f32, hip_yaw: (f32, f32), legs: (f32, f32), size: f32) -> crate::nmdbm::Config {
     crate::nmdbm::Config { step_height: c.step_height, leg_stiffness: c.leg_stiffness, abort: c.balance_abort_threshold,
                            step_clamp: c.step_clamp_scale, max_steps: params.max_steps as i32, taper: c.taper_knee_strength,
-                           lean_bias, hip_yaw, legs }
+                           lean_bias, hip_yaw, legs, size }
 }
 
 impl BodyBalance {
@@ -328,6 +328,7 @@ pub struct Agent {
     pub(crate) nm_bw: Option<crate::nmbw::Writhe>,
     nm_bw_msg: Option<BodyWrithe>,
     pub extras: crate::extras::Extras,
+    pub overrides: Vec<(&'static str, &'static str, crate::msg::Value)>,
     nm_aw: crate::nmaw::Windmill,
     nm_aw_msg: Option<ArmsWindmill>,
     nm_pd: crate::nmpd::Pedal,
@@ -378,6 +379,8 @@ pub struct Agent {
     pub legs: (f32, f32),
     pub strength: f32,
     pub most: f32,
+    pub short: f32,
+    pub apart: Vec<(usize, usize)>,
 }
 
 #[allow(non_snake_case)]
@@ -402,7 +405,7 @@ pub(crate) fn game_pairs(pairs: impl Iterator<Item = (usize, usize)>) -> Vec<(us
 
 impl Agent {
     pub fn limp_rage(&self) -> Vec<crate::ragdoll::Rigid> {
-        let mut rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(103), self.strength, self.most));
+        let mut rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(103), self.strength * self.short, self.most));
         rigid.iter_mut().for_each(|r| (r.max, r.gain) = ([0.0; 2], [0.0; 2]));
         rigid
     }
@@ -419,6 +422,8 @@ impl Agent {
         if let Some(pairs) = crate::nmrs::SELF[build.nm].get().filter(|_| build.parts.len() == delirium_data::nm_asset::PARTS.len()) {
             doll.pairs = game_pairs(pairs.iter().copied().filter(|&(a, b)| a.max(b) < build.parts.len()));
         }
+        let apart = if build.parts.iter().any(|p| p.size != 1.0) { doll.overlapping(build, &doll.pairs) } else { vec![] };
+        doll.pairs.retain(|p| !apart.contains(p));
         let frames: Vec<Transform> = doll.frames().collect();
         let zero = build.parts.iter().enumerate()
             .map(|(i, p)| p.parent.map_or(frames[i].rotation, |j| frames[j].rotation.inverse() * frames[i].rotation)).collect();
@@ -426,8 +431,8 @@ impl Agent {
         let pelvis_up = facing.inverse() * frames[roles.pelvis].rotation;
         let mut a = Agent { locomotion_drive: None, locomotion_tracking: false, locomotion_terms: None, doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * delirium_data::kv!(82)) as u32 + 1), time: 0.0,
                 stiffness: (delirium_data::kv!(31), 1.0), relax: None, config: ConfigureBalance::default(), feedback: vec![], balance: None, lean: None,
-                shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_hit_hold: false, nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, extras: Default::default(), nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
-                brace: None, head_look: vec![], shot_look: false, eff_override: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -delirium_data::kv!(200), hip_yaw: crate::nmdbm::CHAR_YAW(), legs: (crate::nmdbm::CHAR_LEGS().0 * build.parts[0].grown, crate::nmdbm::CHAR_LEGS().1 * build.parts[0].grown), strength: 1.0, most: build.parts.first().filter(|p| p.heft != 1.0 || p.grown != 1.0).map_or(1.0, |p| p.heft * p.size.powi(3) * p.grown),
+                shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_hit_hold: false, nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, extras: Default::default(), overrides: vec![], nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
+                brace: None, head_look: vec![], shot_look: false, eff_override: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -delirium_data::kv!(200), hip_yaw: crate::nmdbm::CHAR_YAW(), legs: (crate::nmdbm::CHAR_LEGS().0, crate::nmdbm::CHAR_LEGS().1 * build.parts[0].grown), strength: 1.0, short: 1.0 / build.parts[0].grown.clamp(delirium_data::kv!(78), 1.0), apart, most: build.parts.first().filter(|p| p.heft != 1.0 || p.grown != 1.0).map_or(1.0, |p| p.heft * p.size.powi(3) * p.grown),
                 ch: crate::nmrs::ASSET[build.nm].get().and_then(|a| crate::nmrs::joints(build, a)).map(|j| {
                     let mut c = crate::nmrs::Character::new(j, &frames);
                     c.mode = if build.nm == crate::nmrs::MARGE { 2 } else { 1 };
@@ -592,7 +597,7 @@ impl Agent {
             }
             self.config.leg_stiffness = delirium_data::kv!(21);
             let body = crate::nmdbm::Body { ch, build, doll: &self.doll, frames: &frames };
-            let dbm = crate::nmdbm::Dbm::new(&body, dbm_config(self.config, &params, self.lean_bias, self.hip_yaw, self.legs));
+            let dbm = crate::nmdbm::Dbm::new(&body, dbm_config(self.config, &params, self.lean_bias, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1));
             dbm.activate(ch);
             self.lean_bias = -delirium_data::kv!(200);
             self.balance = Some(Balance { params, dbm: Some(dbm), bb: Some(bb), feet: [Foot::Planted(Transform::IDENTITY); 2], steps: 0,
@@ -1060,7 +1065,7 @@ impl Agent {
     }
 
     pub fn joints(&self, build: &Build) -> Vec<Option<crate::ragdoll::JointInfo>> {
-        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(103), self.strength, self.most));
+        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(103), self.strength * self.short, self.most));
         (0..build.parts.len()).map(|k| crate::ragdoll::joint_info(build, k, rigid.get(k))).collect()
     }
 
@@ -1149,7 +1154,7 @@ impl Agent {
                 let body = crate::nmdbm::Body { ch: &snap, build, doll: &self.doll, frames };
                 let params = self.balance.as_ref().map_or(BodyBalance { body_stiffness: 0.0, damping: 0.0, elbow: 0.0, shoulder: 0.0,
                     max_steps: out.dbm_steps.unwrap_or(delirium_data::kv!(197 int)).max(0) as u32, spine_stiffness: 0.0, spine_damping: 0.0 }, |b| b.params);
-                let mut dbm = crate::nmdbm::Dbm::new(&body, dbm_config(self.config, &params, self.lean_bias, self.hip_yaw, self.legs));
+                let mut dbm = crate::nmdbm::Dbm::new(&body, dbm_config(self.config, &params, self.lean_bias, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1));
                 if let Some(old) = self.balance.as_ref().and_then(|b| b.dbm.as_ref()) {
                     dbm.restart_over(old);
                 }
@@ -1181,7 +1186,7 @@ impl Agent {
         }
         if let Some(d) = self.balance.as_mut().and_then(|b| b.dbm.as_mut()) {
             if let Some(n) = out.dbm_steps {
-                d.f.countdown = n;
+                d.f.countdown = crate::nmdbm::steps(n, d.p.size);
             }
             if let Some(x) = out.dbm_leg_offset {
                 d.leg_offset = x;
@@ -1328,7 +1333,7 @@ impl Agent {
         if let Some(ch) = self.ch.as_mut().filter(|ch| eff_words(ch) != self.held_eff) {
             held.muscles = ch.muscles(Muscle { target: self.zero[pelvis], stiffness: 0.0, damping: 0.0 });
             held.muscles[pelvis].stiffness = 0.0;
-            held.rigid = ch.rigid(dt, self.strength, self.most);
+            held.rigid = ch.rigid(dt, self.strength * self.short, self.most);
         }
         Some(held)
     }
@@ -1383,7 +1388,7 @@ impl Agent {
                     None => {
                         let params = BodyBalance { max_steps: delirium_data::kv!(197 int), ..BodyBalance::from(Default::default()) };
                         let body = crate::nmdbm::Body { ch, build, doll: &self.doll, frames: &frames };
-                        let d = crate::nmdbm::Dbm::new(&body, crate::nmdbm::Config { lean_bias: -delirium_data::kv!(200), ..dbm_config(self.config, &params, 0.0, self.hip_yaw, self.legs) });
+                        let d = crate::nmdbm::Dbm::new(&body, crate::nmdbm::Config { lean_bias: -delirium_data::kv!(200), ..dbm_config(self.config, &params, 0.0, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1) });
                         if d.held {
                             d.activate(ch);
                             self.balance = Some(Balance { params, dbm: Some(d), bb: None, feet: [Foot::Planted(Transform::IDENTITY); 2], steps: 0,
@@ -1398,7 +1403,7 @@ impl Agent {
         }
         if let (Some(b), Some(ch), true) = (self.balance.as_mut(), self.ch.as_mut(), nm_tick) {
             if let Some(dbm) = b.dbm.as_mut() {
-                let c = dbm_config(self.config, &b.params, self.lean_bias, self.hip_yaw, self.legs);
+                let c = dbm_config(self.config, &b.params, self.lean_bias, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1);
                 dbm.lean = match self.lean {
                     Some((mode, amount, _, as_force)) => crate::nmdbm::Lean { mode, amount, as_force },
                     None => Default::default(),
@@ -1812,7 +1817,7 @@ impl Agent {
                 _ => self.zero[i],
             }
         };
-        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(dt, self.strength, self.most));
+        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(dt, self.strength * self.short, self.most));
         let (mut torque, mut force, mut push) = (vec![], vec![], vec![]);
         for &(k, v, f) in &shot_out.seq {
             torque.resize(torque.len().max(k + 1), Vec3::ZERO);
@@ -2115,7 +2120,7 @@ impl Agent {
         if let Some(pairs) = crate::nmrs::SELF[build.nm].get().filter(|_| build.parts.len() == delirium_data::nm_asset::PARTS.len()) {
             let legs = self.balance.as_ref().and_then(|b| b.dbm.as_ref()).is_some_and(|d| d.held);
             let hands = self.nm_fl.hands_off;
-            let on = |p: &(usize, usize)| pair_on(*p, legs, hands);
+            let on = |p: &(usize, usize)| pair_on(*p, legs, hands) && !self.apart.contains(p) && !self.apart.contains(&(p.1, p.0));
             if self.doll.pairs.len() != pairs.iter().filter(|p| on(p)).count() {
                 self.doll.pairs = game_pairs(pairs.iter().copied().filter(on));
             }

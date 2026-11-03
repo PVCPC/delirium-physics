@@ -215,7 +215,7 @@ pub fn load(el: &Element, row: &mut Row) {
     putf(row, crate::kv!(107 int), float_attr(el, "weaponrange", 0.0));
     put32(row, crate::kv!(85 int), weapon_type_index(attr_or_empty(el, "stattype"), -1) as u32);
     put16(row, crate::kv!(329 int), int_attr(el, "clipsize", 0) as u16);
-    let ammo = ((int_attr(el, "ammomax", crate::kv!(1060 int)) as i16) as i32).clamp(0, crate::kv!(1060 int));
+    let ammo = ((int_attr(el, "ammomax", crate::kv!(1068 int)) as i16) as i32).clamp(0, crate::kv!(1068 int));
     put16(row, crate::kv!(321 int), ammo as u16);
     put32(row, crate::kv!(290 int), int_attr(el, "timebetweenshots", 0) as u32);
     for c in &el.children {

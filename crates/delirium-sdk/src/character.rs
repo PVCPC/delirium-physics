@@ -93,12 +93,13 @@ fn fr(t: &Transform) -> Frame {
 
 impl Character {
     pub fn from_xrt(d: &[u8], build: Option<(&Build, &[Transform])>) -> Character {
-        let joints = nm_asset::read(d).into_iter().map(|j| Joint {
+        let (joints, parts, masses) = nm_asset::in_order(d, || (nm_asset::read(d), nm_asset::parts(d), nm_asset::masses(d)));
+        let joints = joints.into_iter().map(|j| Joint {
             name: j.name, index: j.index, three: j.three, pos: j.pos, twist_axis: j.twist_axis, lean_axis: j.lean_axis,
             limits: j.limits.map(|(a, b)| [a, b]), flip: j.flip, muscle_stiffness: j.muscle_stiffness, damping: j.damping,
             strength: j.strength, max_torque: j.max_torque, centred: j.centred,
         }).collect();
-        let parts = nm_asset::parts(d).into_iter().zip(nm_asset::masses(d)).zip(nm_asset::PARTS)
+        let parts = parts.into_iter().zip(masses).zip(nm_asset::PARTS)
             .map(|((frame, mass), name)| Part { name: name.into(), frame, mass }).collect();
         let build = build.map(|(b, frames)| b.parts.iter().zip(frames).map(|(p, f)| BuildPart {
             name: p.name.clone(), parent: p.parent, mass: p.mass, radius: p.radius, half: p.half, offset: fr(&p.offset),

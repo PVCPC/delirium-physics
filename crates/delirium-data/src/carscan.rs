@@ -65,7 +65,7 @@ pub fn scan(car: &Vehicle, ped: &Walker, roll: impl FnOnce() -> f32, gate: impl 
     if v < 0.0 {
         a = fneg(v);
     }
-    let ahead = if a > 0.0 { (a * crate::kv!(636 f32)).mul_add(crate::kv!(65), 2.0) } else { 0.0 };
+    let ahead = if a > 0.0 { (a * crate::kv!(646 f32)).mul_add(crate::kv!(65), 2.0) } else { 0.0 };
     let (far, near) = if v >= 0.0 {
         let reach = crate::kv!(18) * v;
         (ahead + front, (if reach >= 2.0 { 2.0 } else { reach }) + front)
@@ -85,7 +85,7 @@ pub fn scan(car: &Vehicle, ped: &Walker, roll: impl FnOnce() -> f32, gate: impl 
     }
     let along = d[0].mul_add(axis[0], d[2].mul_add(axis[2], d[1] * axis[1]));
     let sign = |x: f32| if x < 0.0 { -1 } else { 1 };
-    if v == 0.0 || sign(along) != sign(v) || v.abs() <= crate::kv!(637 f32) || along.abs() <= front {
+    if v == 0.0 || sign(along) != sign(v) || v.abs() <= crate::kv!(647 f32) || along.abs() <= front {
         return Reaction::None;
     }
     let across = car.right[0].mul_add(d[0], car.right[1].mul_add(d[1], car.right[2] * d[2])).abs();
@@ -96,9 +96,9 @@ pub fn scan(car: &Vehicle, ped: &Walker, roll: impl FnOnce() -> f32, gate: impl 
     let roll = roll();
     let mut aware = facing || car.horn_driver() || along.abs() < front;
     let warn_chance = if aware {
-        roll < crate::kv!(638 f32)
+        roll < crate::kv!(648 f32)
     } else {
-        aware = roll < crate::kv!(639 f32);
+        aware = roll < crate::kv!(649 f32);
         false
     };
     if !aware {
@@ -129,13 +129,13 @@ impl Vehicle {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn EVASIVE_STEP() -> u32 { crate::kv!(640 int) }
+pub fn EVASIVE_STEP() -> u32 { crate::kv!(650 int) }
 
 pub fn dives(car: &Vehicle, agility: u8, fighting: bool, roll: impl FnOnce() -> f32) -> bool {
     let v = car.velocity;
     let s = v[2].mul_add(v[2], v[0].mul_add(v[0], v[1] * v[1]));
     let pressed = car.horn_driver() || roll() < 0.5;
-    s > crate::kv!(137) && (agility > 1 && (s > crate::kv!(641) || pressed) || fighting)
+    s > crate::kv!(137) && (agility > 1 && (s > crate::kv!(651) || pressed) || fighting)
 }
 
 pub fn step_anim(car: &Vehicle, ped: [f32; 3], heading: f32, dive: bool) -> Option<&'static crate::runanim::Row> {
@@ -173,6 +173,6 @@ pub fn way_anim(way: [f32; 2], heading: f32, ahead: bool, dive: bool) -> Option<
 }
 
 pub fn step_rate(draw: u32) -> f32 {
-    (draw as f32 * crate::kv!(100 f32)).mul_add(crate::kv!(642 f32), crate::kv!(643 f32))
+    (draw as f32 * crate::kv!(100 f32)).mul_add(crate::kv!(652 f32), crate::kv!(653 f32))
 }
 

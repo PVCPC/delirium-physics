@@ -3,7 +3,7 @@ use crate::movement::{self, Movement, Moves, Mover};
 pub mod kind {
     #[allow(non_snake_case)]
     #[inline]
-    pub fn REACT_TO_GUN_AIMED_AT() -> u32 { crate::kv!(968 int) }
+    pub fn REACT_TO_GUN_AIMED_AT() -> u32 { crate::kv!(976 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn PLAYER_ON_FOOT() -> u32 { crate::kv!(1 int) }
@@ -17,39 +17,39 @@ pub mod kind {
     pub fn DEAD() -> u32 { crate::kv!(433 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INJURED_ON_GROUND() -> u32 { crate::kv!(969 int) }
+    pub fn INJURED_ON_GROUND() -> u32 { crate::kv!(977 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn PATHFIND_PROBLEM() -> u32 { crate::kv!(970 int) }
+    pub fn PATHFIND_PROBLEM() -> u32 { crate::kv!(978 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn PLAY_RANDOM_AMBIENTS() -> u32 { crate::kv!(971 int) }
+    pub fn PLAY_RANDOM_AMBIENTS() -> u32 { crate::kv!(979 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn RUN_NAMED_ANIM() -> u32 { crate::kv!(972 int) }
+    pub fn RUN_NAMED_ANIM() -> u32 { crate::kv!(980 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn HIT_WALL() -> u32 { crate::kv!(958 int) }
+    pub fn HIT_WALL() -> u32 { crate::kv!(966 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn SEQUENCE() -> u32 { crate::kv!(352 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn USE_SEQUENCE() -> u32 { crate::kv!(973 int) }
+    pub fn USE_SEQUENCE() -> u32 { crate::kv!(981 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn DO_NOTHING() -> u32 { crate::kv!(974 int) }
+    pub fn DO_NOTHING() -> u32 { crate::kv!(982 int) }
     pub const MOVE_STAND_STILL: u32 = 282;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_DO_NOTHING() -> u32 { crate::kv!(975 int) }
+    pub fn MOVE_DO_NOTHING() -> u32 { crate::kv!(983 int) }
     pub const MOVE_NONE: u32 = 284;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_PATHFIND_PROBLEM() -> u32 { crate::kv!(976 int) }
+    pub fn MOVE_PATHFIND_PROBLEM() -> u32 { crate::kv!(984 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn CONTROL_MOVEMENT() -> u32 { crate::kv!(977 int) }
+    pub fn CONTROL_MOVEMENT() -> u32 { crate::kv!(985 int) }
     pub const MOVE_PLAYER: u32 = 2;
     pub const MOVE_SWIM: u32 = 1304;
     pub const USE_MOBILE_PHONE: u32 = 1600;
@@ -59,106 +59,106 @@ pub mod kind {
     pub const MOVE_GO_TO_POINT_AND_STAND_STILL: u32 = 903;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FOLLOW_POINT_ROUTE() -> u32 { crate::kv!(978 int) }
+    pub fn FOLLOW_POINT_ROUTE() -> u32 { crate::kv!(986 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SMART_FLEE_POINT() -> u32 { crate::kv!(979 int) }
+    pub fn SMART_FLEE_POINT() -> u32 { crate::kv!(987 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SMART_FLEE_ENTITY() -> u32 { crate::kv!(980 int) }
+    pub fn SMART_FLEE_ENTITY() -> u32 { crate::kv!(988 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SEEK_COVER() -> u32 { crate::kv!(981 int) }
+    pub fn SEEK_COVER() -> u32 { crate::kv!(989 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_ABOUT_INJURED() -> u32 { crate::kv!(982 int) }
+    pub fn MOVE_ABOUT_INJURED() -> u32 { crate::kv!(990 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn REVIVE() -> u32 { crate::kv!(983 int) }
+    pub fn REVIVE() -> u32 { crate::kv!(991 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn WANDER() -> u32 { crate::kv!(630 int) }
+    pub fn WANDER() -> u32 { crate::kv!(640 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FOLLOW_LEADER_IN_FORMATION() -> u32 { crate::kv!(984 int) }
+    pub fn FOLLOW_LEADER_IN_FORMATION() -> u32 { crate::kv!(992 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FOLLOW_LEADER_ANY_MEANS() -> u32 { crate::kv!(985 int) }
+    pub fn FOLLOW_LEADER_ANY_MEANS() -> u32 { crate::kv!(993 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FLEE_ANY_MEANS() -> u32 { crate::kv!(986 int) }
+    pub fn FLEE_ANY_MEANS() -> u32 { crate::kv!(994 int) }
     pub const MOVE_FOLLOW_NAV_MESH_ROUTE: u32 = 942;
     pub const MOVE_GO_TO_POINT_ON_ROUTE: u32 = 943;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_GO_TO_POINT_STAND_STILL_ACHIEVE_HEADING() -> u32 { crate::kv!(987 int) }
+    pub fn MOVE_GO_TO_POINT_STAND_STILL_ACHIEVE_HEADING() -> u32 { crate::kv!(995 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_WANDER() -> u32 { crate::kv!(988 int) }
+    pub fn MOVE_WANDER() -> u32 { crate::kv!(996 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_BE_IN_FORMATION() -> u32 { crate::kv!(989 int) }
+    pub fn MOVE_BE_IN_FORMATION() -> u32 { crate::kv!(997 int) }
     pub const MOVE_CROWD_AROUND_LOCATION: u32 = 951;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn GUN() -> u32 { crate::kv!(990 int) }
+    pub fn GUN() -> u32 { crate::kv!(998 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn AIM_GUN() -> u32 { crate::kv!(991 int) }
+    pub fn AIM_GUN() -> u32 { crate::kv!(999 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FIRE_GUN() -> u32 { crate::kv!(992 int) }
+    pub fn FIRE_GUN() -> u32 { crate::kv!(1000 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn RELOAD_GUN() -> u32 { crate::kv!(993 int) }
+    pub fn RELOAD_GUN() -> u32 { crate::kv!(1001 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn DUCK() -> u32 { crate::kv!(994 int) }
+    pub fn DUCK() -> u32 { crate::kv!(1002 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SAY_AUDIO() -> u32 { crate::kv!(995 int) }
+    pub fn SAY_AUDIO() -> u32 { crate::kv!(1003 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn GANG_HASSLE_PED() -> u32 { crate::kv!(996 int) }
+    pub fn GANG_HASSLE_PED() -> u32 { crate::kv!(1004 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn COMBAT() -> u32 { crate::kv!(997 int) }
+    pub fn COMBAT() -> u32 { crate::kv!(1005 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_RELAX() -> u32 { crate::kv!(998 int) }
+    pub fn NM_RELAX() -> u32 { crate::kv!(1006 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_SHOT() -> u32 { crate::kv!(999 int) }
+    pub fn NM_SHOT() -> u32 { crate::kv!(1007 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_BALANCE() -> u32 { crate::kv!(784 int) }
+    pub fn NM_BALANCE() -> u32 { crate::kv!(793 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_EXPLOSION() -> u32 { crate::kv!(1000 int) }
+    pub fn NM_EXPLOSION() -> u32 { crate::kv!(1008 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_ON_FIRE() -> u32 { crate::kv!(1001 int) }
+    pub fn NM_ON_FIRE() -> u32 { crate::kv!(1009 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_BRACE() -> u32 { crate::kv!(1002 int) }
+    pub fn NM_BRACE() -> u32 { crate::kv!(1010 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_HIGH_FALL() -> u32 { crate::kv!(1003 int) }
+    pub fn NM_HIGH_FALL() -> u32 { crate::kv!(1011 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn JUMP_IN_AIR() -> u32 { crate::kv!(445 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_FLINCH() -> u32 { crate::kv!(1004 int) }
+    pub fn NM_FLINCH() -> u32 { crate::kv!(1012 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NM_FALL_DOWN() -> u32 { crate::kv!(1005 int) }
+    pub fn NM_FALL_DOWN() -> u32 { crate::kv!(1013 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn NM_SCRIPT_CONTROL() -> u32 { crate::kv!(538 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn COMPLEX_NM() -> u32 { crate::kv!(1006 int) }
+    pub fn COMPLEX_NM() -> u32 { crate::kv!(1014 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn NM_POSE() -> u32 { crate::kv!(519 int) }
@@ -167,7 +167,7 @@ pub mod kind {
     pub fn NM_SIT() -> u32 { crate::kv!(559 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn REACT() -> u32 { crate::kv!(1007 int) }
+    pub fn REACT() -> u32 { crate::kv!(1015 int) }
     pub const ON_FIRE: u32 = 250;
     pub const END: u32 = u32::MAX;
 }

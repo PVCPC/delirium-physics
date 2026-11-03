@@ -369,6 +369,24 @@ build.
    heavier or lighter by its thickness; `nm_build_weigh_skin(b, joints,
    verts, parts, n)` sets it from the skin (bind pose, the same space as the
    joints): a fat belly makes a heavy body.
+   *Long necks and tall skulls (optional):* the fit cuts a neck longer than a
+   person's (0.12 of a leg) so a long neck bone doesn't grow a giant head.
+   Long on purpose? `nm_build_fit_neck(base, joints, n)` lets it be up to `n`
+   times that (the Playroom's Neck slider, 0.5-6), the head kept its normal
+   size on the neck's end. The neck stays one stiff bone hinged at both ends,
+   with no extra joints: it swings the head further, it doesn't bend in the
+   middle. Homer (the game's own body) never has any of this: it's only for
+   fitted bodies. If your skull is taller than Homer's (the face pokes out of
+   the head capsule, sinking into the floor when lying face down),
+   `nm_build_set_head(b, raise, grow)` moves the head capsule `raise` further
+   up the neck and makes it `grow` times as thick (0.05, 1.08 suit a tall one).
+   *The Playroom's bodies:* `nm_build_sized(base, legs, arms, trunk, width,
+   head, neck, kg, height)` is its Custom body (the Brawler: 0.45, 0.7, 1, 1.4,
+   1.5, 1, 80, 0) and `nm_build_random(base, seed, variance, symmetric)` its
+   Random one, the same seed the same body. `nm_build_named(base, "Lanky")`
+   gives its presets: Small, Average, Large, Lanky, Fat, Stocky, Waddler,
+   Guard, Brute, Brawler. All are made from the game man, not your skeleton:
+   for NPC variety on a rig that maps to his.
 4. *Its world.* `nm_world_create`, then `nm_world_set_scale(w,
    nm_build_get_scale(b))` before anything else, `nm_world_add_floor` under its
    feet, and the level around it
@@ -562,6 +580,11 @@ Vectors are `x,y,z`. "mask" is a body-part string (see
 
 Parameters marked unused in the listing are accepted (and counted in the return
 value of `nm_msg_send`) but do not change anything.
+
+The Playroom's Parameters tab is `nm_agent_set_override(agent, "shot",
+"bodyStiffness", 7)`: every message of that behaviour the agent gets from then
+on, yours and the ones the `nm_agent_task_*` tasks send, goes with that value
+instead of its own. `nm_agent_clear_overrides(agent)` puts them back.
 
 ## Playroom scripting
 

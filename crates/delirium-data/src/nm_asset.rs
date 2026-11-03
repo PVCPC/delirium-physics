@@ -311,6 +311,14 @@ pub fn rigid(m: &[f32; 16], tol: f32) -> bool {
     ok(det - 1.0)
 }
 
+pub fn in_order<T>(d: &[u8], f: impl FnOnce() -> T) -> T {
+    use std::sync::atomic::Ordering::Relaxed;
+    let was = crate::LE.swap(d.get(8) == Some(&0x07), Relaxed);
+    let out = f();
+    crate::LE.store(was, Relaxed);
+    out
+}
+
 pub fn read(d: &[u8]) -> Vec<Joint> {
     joints(d).0
 }

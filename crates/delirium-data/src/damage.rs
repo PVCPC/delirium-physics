@@ -24,7 +24,7 @@ pub fn crash_amount(j: f32, mass: f32, mult: f32) -> f32 {
 
 pub fn crash_shocks(j: f32, mass: f32, player_driving: bool, by_ped: bool) -> bool {
     let scale = if player_driving { crate::kv!(5) } else { crate::kv!(12) } * if by_ped { crate::kv!(31) } else { 1.0 };
-    j / mass * scale > crate::kv!(31) || j * scale > crate::kv!(736)
+    j / mass * scale > crate::kv!(31) || j * scale > crate::kv!(746)
 }
 
 pub fn crash_shake(d: f32) -> Option<(f32, f32)> {
@@ -56,7 +56,7 @@ pub fn panel_frees(panel: Panel, amount: f32, normal_x: f32, side_x: f32, random
         return false;
     }
     let side = if side_x > 0.5 { 1.0 } else if side_x < -0.5 { -1.0 } else { 0.0 };
-    if normal_x * side * amount < -crate::kv!(737) {
+    if normal_x * side * amount < -crate::kv!(747) {
         return random() < 0.5;
     }
     random() < if panel == Panel::Door { 0.5 } else { crate::kv!(24) } && inside()
@@ -67,7 +67,7 @@ pub struct Lamps(pub [bool; 14]);
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn LAMP_REACH2() -> f32 { crate::kv!(738 f32) }
+pub fn LAMP_REACH2() -> f32 { crate::kv!(748 f32) }
 
 impl Lamps {
     pub fn smash(&mut self, amount: f32, mut dist2: impl FnMut(usize) -> Option<f32>) -> Vec<usize> {
@@ -88,7 +88,7 @@ impl Lamps {
 
 #[allow(non_snake_case)]
 #[inline]
-fn FIRE_STEPS() -> &'static [f32; 8] { static V: std::sync::OnceLock<[f32; 8]> = std::sync::OnceLock::new(); let f = || [-crate::kv!(739), -crate::kv!(740), -crate::kv!(741), -crate::kv!(82), -crate::kv!(742), -crate::kv!(743), -crate::kv!(73), -crate::kv!(744)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn FIRE_STEPS() -> &'static [f32; 8] { static V: std::sync::OnceLock<[f32; 8]> = std::sync::OnceLock::new(); let f = || [-crate::kv!(749), -crate::kv!(750), -crate::kv!(751), -crate::kv!(82), -crate::kv!(752), -crate::kv!(753), -crate::kv!(73), -crate::kv!(754)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 impl Health {
     pub fn collision(&mut self, j: f32, mass: f32, mult: [f32; 4], up: f32, engine_end: bool, random: &mut impl FnMut() -> f32) -> Option<f32> {
@@ -162,7 +162,7 @@ impl Health {
     }
 
     pub fn put_out(&mut self) {
-        self.body = self.body.max(crate::kv!(745));
+        self.body = self.body.max(crate::kv!(585));
         if (self.engine < 0.0 && self.engine > -crate::kv!(238)) || self.petrol_fire() {
             (self.engine, self.petrol) = (-crate::kv!(238), 1.0);
         }
@@ -201,7 +201,7 @@ impl Health {
     }
 
     pub fn smoke(&self) -> f32 {
-        if 0.0 < self.engine { fneg(self.engine.mul_add(crate::kv!(746), -1.0)) } else { 1.0 }
+        if 0.0 < self.engine { fneg(self.engine.mul_add(crate::kv!(755), -1.0)) } else { 1.0 }
     }
 
     pub fn fire(&self) -> f32 {
@@ -209,11 +209,11 @@ impl Health {
         if !(e < 0.0) {
             0.0
         } else if -crate::kv!(16) < e {
-            e * crate::kv!(747 f32)
-        } else if e < -crate::kv!(748) {
+            e * crate::kv!(756 f32)
+        } else if e < -crate::kv!(757) {
             0.0
-        } else if e < -crate::kv!(749) {
-            fneg((e - -crate::kv!(748)).mul_add(crate::kv!(750), -1.0))
+        } else if e < -crate::kv!(758) {
+            fneg((e - -crate::kv!(757)).mul_add(crate::kv!(759), -1.0))
         } else {
             1.0
         }
@@ -227,7 +227,7 @@ impl Health {
         let t = *tyre;
         if t <= amount + crate::kv!(15) {
             if 0.0 < t {
-                *tyre = crate::kv!(751 f32);
+                *tyre = crate::kv!(760 f32);
             }
         } else {
             *tyre = t - amount;
@@ -254,7 +254,7 @@ impl Health {
 
 pub fn wreck_keep_chance(dist: f32) -> f32 {
     if dist <= crate::kv!(147) {
-        if crate::kv!(737) < dist { crate::kv!(116) } else { 0.0 }
+        if crate::kv!(747) < dist { crate::kv!(116) } else { 0.0 }
     } else {
         crate::kv!(20)
     }
@@ -276,7 +276,7 @@ pub enum WreckPart {
 }
 
 pub fn wreck_part(consider: f32, keep: f32, rand: &mut impl FnMut() -> i32) -> WreckPart {
-    let unit = |r: i32| (r as f64 * crate::kv!(752)) as f32;
+    let unit = |r: i32| (r as f64 * crate::kv!(761)) as f32;
     if !(unit(rand()) < consider) {
         return WreckPart::Stays;
     }
@@ -284,7 +284,7 @@ pub fn wreck_part(consider: f32, keep: f32, rand: &mut impl FnMut() -> i32) -> W
 }
 
 pub fn wreck_part_fire(bits: u32, chance: f32) -> bool {
-    ((((bits & crate::kv!(190 int)) as f64) * crate::kv!(753)) as f32) < chance
+    ((((bits & crate::kv!(190 int)) as f64) * crate::kv!(762)) as f32) < chance
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -333,7 +333,7 @@ impl Explosion {
 
 pub fn blast_area(radius: f32, size: [f32; 3], n: [f32; 3]) -> f32 {
     let [x, y, z] = size;
-    if !(radius * radius * radius * crate::kv!(754) > z * y * x) {
+    if !(radius * radius * radius * crate::kv!(763) > z * y * x) {
         return radius * radius * std::f32::consts::TAU;
     }
     (n[0] * z * y).abs() + (n[1] * z * x).abs() + (n[2] * y * x).abs()

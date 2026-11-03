@@ -27,7 +27,7 @@ pub static PARTS: [std::sync::OnceLock<Vec<[[f32; 3]; 4]>>; 2] = [const { std::s
 pub static MASSES: [std::sync::OnceLock<Vec<f32>>; 2] = [const { std::sync::OnceLock::new() }; 2];
 
 pub fn load(nm: usize, d: &[u8]) {
-    set(nm, nm_asset::read(d), nm_asset::parts(d), nm_asset::masses(d), nm_asset::self_collision(d));
+    nm_asset::in_order(d, || set(nm, nm_asset::read(d), nm_asset::parts(d), nm_asset::masses(d), nm_asset::self_collision(d)));
 }
 
 pub fn set(nm: usize, joints: Vec<nm_asset::Joint>, parts: Vec<[[f32; 3]; 4]>, masses: Vec<f32>, pairs: Vec<(usize, usize)>) {

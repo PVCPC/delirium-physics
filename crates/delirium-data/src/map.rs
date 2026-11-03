@@ -25,9 +25,9 @@ impl ObjectDef {
         #[allow(non_snake_case)]
         #[inline]
         fn MOVES() -> &'static [(u32, u32); 14] { static V: std::sync::OnceLock<[(u32, u32); 14]> = std::sync::OnceLock::new(); let f = || [
-            (crate::kv!(634 int), crate::kv!(1 int)), (crate::kv!(52 int), crate::kv!(181 int)), (crate::kv!(708 int), crate::kv!(54 int)), (crate::kv!(7 int), crate::kv!(698 int)), (crate::kv!(251 int), crate::kv!(634 int)), (crate::kv!(804 int), crate::kv!(184 int)), (crate::kv!(805 int), crate::kv!(806 int)),
-            (crate::kv!(807 int), crate::kv!(808 int)), (crate::kv!(809 int), crate::kv!(810 int)), (crate::kv!(810 int), crate::kv!(662 int)), (crate::kv!(811 int), crate::kv!(183 int)), (crate::kv!(812 int), crate::kv!(708 int)), (crate::kv!(182 int), crate::kv!(813 int)),
-            (crate::kv!(183 int), crate::kv!(814 int)),
+            (crate::kv!(644 int), crate::kv!(1 int)), (crate::kv!(52 int), crate::kv!(181 int)), (crate::kv!(718 int), crate::kv!(54 int)), (crate::kv!(7 int), crate::kv!(708 int)), (crate::kv!(251 int), crate::kv!(644 int)), (crate::kv!(812 int), crate::kv!(184 int)), (crate::kv!(813 int), crate::kv!(814 int)),
+            (crate::kv!(815 int), crate::kv!(816 int)), (crate::kv!(817 int), crate::kv!(818 int)), (crate::kv!(818 int), crate::kv!(672 int)), (crate::kv!(819 int), crate::kv!(183 int)), (crate::kv!(820 int), crate::kv!(718 int)), (crate::kv!(182 int), crate::kv!(821 int)),
+            (crate::kv!(183 int), crate::kv!(822 int)),
         ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
         let mut out = (self.kind as u32) << crate::kv!(107 int);
         for (from, to) in (*MOVES()) {
@@ -81,7 +81,7 @@ pub struct Xpl<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn XPL_SECTIONS() -> &'static [(usize, usize); 11] { static V: std::sync::OnceLock<[(usize, usize); 11]> = std::sync::OnceLock::new(); let f = || [(crate::kv!(1 int), crate::kv!(93 int)), (crate::kv!(23 int), crate::kv!(324 int)), (crate::kv!(55 int), crate::kv!(93 int)), (crate::kv!(54 int), crate::kv!(317 int)), (crate::kv!(127 int), crate::kv!(409 int)), (crate::kv!(107 int), crate::kv!(409 int)), (crate::kv!(85 int), crate::kv!(127 int)), (crate::kv!(253 int), crate::kv!(362 int)), (crate::kv!(94 int), crate::kv!(253 int)), (crate::kv!(95 int), crate::kv!(767 int)), (crate::kv!(409 int), crate::kv!(107 int))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn XPL_SECTIONS() -> &'static [(usize, usize); 11] { static V: std::sync::OnceLock<[(usize, usize); 11]> = std::sync::OnceLock::new(); let f = || [(crate::kv!(1 int), crate::kv!(93 int)), (crate::kv!(23 int), crate::kv!(324 int)), (crate::kv!(55 int), crate::kv!(93 int)), (crate::kv!(54 int), crate::kv!(317 int)), (crate::kv!(127 int), crate::kv!(409 int)), (crate::kv!(107 int), crate::kv!(409 int)), (crate::kv!(85 int), crate::kv!(127 int)), (crate::kv!(253 int), crate::kv!(362 int)), (crate::kv!(94 int), crate::kv!(253 int)), (crate::kv!(95 int), crate::kv!(776 int)), (crate::kv!(409 int), crate::kv!(107 int))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn be32(d: &[u8], at: usize) -> Option<u32> {
     d.get(at..at + crate::kv!(1 int)).map(|b| u32::from_be_bytes(b.try_into().unwrap()))
@@ -248,7 +248,7 @@ pub fn read_xpl_extras(d: &[u8]) -> Result<(Vec<Garage>, Vec<TimeCycleBox>, Vec<
         })
         .collect();
     let slow = records(x.slow, crate::kv!(107 int)).map(|r| ([float(r, 0), float(r, 1), float(r, 2)], [float(r, crate::kv!(0 int)), float(r, crate::kv!(1 int)), float(r, crate::kv!(2 int))])).collect();
-    let lodm = records(x.lodm, crate::kv!(767 int))
+    let lodm = records(x.lodm, crate::kv!(776 int))
         .map(|r| {
             let head = word(r, crate::kv!(6 int));
             let n = ((head & crate::kv!(198 int)) as usize).min(crate::kv!(81 int));

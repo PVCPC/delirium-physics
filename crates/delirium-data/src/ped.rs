@@ -26,31 +26,31 @@ pub fn KILLED() -> u8 { crate::kv!(7 int) }
 pub mod flags {
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NOT_BY_GROUP() -> u32 { crate::kv!(634 int) }
+    pub fn NOT_BY_GROUP() -> u32 { crate::kv!(644 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn ONLY_BY_GROUP() -> u32 { crate::kv!(806 int) }
+    pub fn ONLY_BY_GROUP() -> u32 { crate::kv!(814 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn EXPLOSION_PROOF() -> u32 { crate::kv!(808 int) }
+    pub fn EXPLOSION_PROOF() -> u32 { crate::kv!(816 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn ONLY_BY_PLAYER() -> u32 { crate::kv!(813 int) }
+    pub fn ONLY_BY_PLAYER() -> u32 { crate::kv!(821 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INVINCIBLE() -> u32 { crate::kv!(814 int) }
+    pub fn INVINCIBLE() -> u32 { crate::kv!(822 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MELEE_PROOF() -> u32 { crate::kv!(810 int) }
+    pub fn MELEE_PROOF() -> u32 { crate::kv!(818 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn COLLISION_PROOF() -> u32 { crate::kv!(811 int) }
+    pub fn COLLISION_PROOF() -> u32 { crate::kv!(819 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FIRE_PROOF() -> u32 { crate::kv!(804 int) }
+    pub fn FIRE_PROOF() -> u32 { crate::kv!(812 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn BULLET_PROOF() -> u32 { crate::kv!(913 int) }
+    pub fn BULLET_PROOF() -> u32 { crate::kv!(921 int) }
 }
 
 pub fn set_proofs(bits: u32, [bullet, fire, explosion, collision, melee]: [bool; 5]) -> u32 {
@@ -128,7 +128,7 @@ impl<'a> Hit<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_CUT() -> f32 { crate::kv!(925) }
+pub fn NO_CUT() -> f32 { crate::kv!(933) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Victim {
@@ -196,7 +196,7 @@ fn HEAD() -> u16 { crate::kv!(203 int) }
 fn NECK() -> u16 { crate::kv!(204 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn SPINE() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || [crate::kv!(763 int), crate::kv!(206 int), crate::kv!(764 int), crate::kv!(207 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SPINE() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || [crate::kv!(772 int), crate::kv!(206 int), crate::kv!(773 int), crate::kv!(207 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn scale(hit: &Hit, victim: &Victim) -> f32 {
     let kind = damage_type(hit.weapon);
@@ -225,7 +225,7 @@ pub fn scale(hit: &Hit, victim: &Victim) -> f32 {
     };
     if cut {
         let third = a * crate::kv!(135);
-        a = if crate::kv!(926) - third >= 0.0 { third } else { crate::kv!(926) };
+        a = if crate::kv!(934) - third >= 0.0 { third } else { crate::kv!(934) };
     }
     a
 }
@@ -274,7 +274,7 @@ pub fn damage(h: &mut Health, hit: &Hit, victim: &Victim, rand: &mut Rand) -> Ou
     }
     let d = (a - out.absorbed).max(0.0);
     if hit.floor {
-        let left = (h.health - d).max(crate::kv!(927));
+        let left = (h.health - d).max(crate::kv!(935));
         out.lost = h.health - left;
         h.health = left;
     } else if h.health - d >= INJURED_BELOW() {
@@ -386,7 +386,7 @@ pub mod control {
     pub fn SCRIPT() -> u32 { crate::kv!(7 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn OTHER() -> u32 { crate::kv!(708 int) }
+    pub fn OTHER() -> u32 { crate::kv!(718 int) }
 }
 
 pub fn police_armour(model: &str) -> f32 {

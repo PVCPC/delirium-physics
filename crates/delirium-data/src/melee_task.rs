@@ -3,7 +3,7 @@ use crate::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KIND() -> u32 { crate::kv!(915 int) }
+pub fn KIND() -> u32 { crate::kv!(923 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -18,7 +18,7 @@ pub enum Step {
 pub fn SEEK_BEYOND() -> f32 { crate::kv!(499) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_NEAR() -> f32 { crate::kv!(916) }
+pub fn SEEK_NEAR() -> f32 { crate::kv!(924) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn ROUTE_WITHIN() -> f32 { crate::kv!(12) }
@@ -122,7 +122,7 @@ fn TOP() -> f32 { crate::kv!(18) }
 fn PLAYING() -> f32 { crate::kv!(194) }
 #[allow(non_snake_case)]
 #[inline]
-fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(917 int)) }
+fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(925 int)) }
 
 pub fn chance(dist: f32, playing: bool) -> f32 {
     if playing {
@@ -142,7 +142,7 @@ pub fn wait(rng: &mut Rand) -> f32 {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn TURN_SPEED() -> f32 { crate::kv!(918) }
+pub fn TURN_SPEED() -> f32 { crate::kv!(926) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keep {

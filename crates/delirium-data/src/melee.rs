@@ -101,12 +101,12 @@ impl Impulse {
         let v = |off: u32| &c.values[index(off)];
         let axis = |n: usize| v(pair_pick((*AXIS_PAIRS())[n], v((*AXIS_PAIRS())[n].0)));
         let (a, b) = match self.impulse {
-            1 => (v(crate::kv!(676 int)), None),
-            2 => (v(crate::kv!(677 int)), None),
-            3 => (v(crate::kv!(678 int)), None),
-            4 => (v(crate::kv!(679 int)), None),
-            5 => (v(crate::kv!(680 int)), None),
-            6 => (v(crate::kv!(681 int)), None),
+            1 => (v(crate::kv!(686 int)), None),
+            2 => (v(crate::kv!(687 int)), None),
+            3 => (v(crate::kv!(688 int)), None),
+            4 => (v(crate::kv!(689 int)), None),
+            5 => (v(crate::kv!(690 int)), None),
+            6 => (v(crate::kv!(691 int)), None),
             7 => (axis(0), None),
             8 => (axis(1), None),
             9 => (axis(0), Some(axis(1))),
@@ -115,9 +115,9 @@ impl Impulse {
         let ms = (self.interval * crate::kv!(82)) as i64 as u32;
         let [r0, r1] = self.range;
         let (lo, hi) = match self.impulse {
-            7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(732)), byte((r1 + 1.0) * 0.5 * crate::kv!(732))),
-            9 => (byte(r0.abs() * crate::kv!(912)), byte(r1.abs() * crate::kv!(912))),
-            3 if setting == 0 => (byte(r0 * crate::kv!(732)), byte(r1 * crate::kv!(732))),
+            7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(742)), byte((r1 + 1.0) * 0.5 * crate::kv!(742))),
+            9 => (byte(r0.abs() * crate::kv!(920)), byte(r1.abs() * crate::kv!(920))),
+            3 if setting == 0 => (byte(r0 * crate::kv!(742)), byte(r1 * crate::kv!(742))),
             _ => (crate::kv!(251 int), crate::kv!(389 int)),
         };
         let q: fn(&IoValue, u32, u8, u8) -> bool = match self.state {
@@ -310,18 +310,18 @@ pub fn special_test(hash: u32, me: &Special, from: [f32; 3], target: Option<(u32
         7 => target.is_some() && !away(false),
         8 => away(true),
         9 => target.is_some() && !away(true),
-        10 => bit(me, crate::kv!(807 int)),
-        11 => on(crate::kv!(807 int)),
-        12 => bit(me, crate::kv!(805 int)),
-        13 => on(crate::kv!(805 int)),
-        14 => bit(me, crate::kv!(913 int)),
-        15 => !bit(me, crate::kv!(913 int)),
-        16 => on(crate::kv!(913 int)),
-        17 => off(crate::kv!(913 int)),
-        18 => bit(me, crate::kv!(804 int)),
-        19 => !bit(me, crate::kv!(804 int)),
-        20 => on(crate::kv!(804 int)),
-        21 => off(crate::kv!(804 int)),
+        10 => bit(me, crate::kv!(815 int)),
+        11 => on(crate::kv!(815 int)),
+        12 => bit(me, crate::kv!(813 int)),
+        13 => on(crate::kv!(813 int)),
+        14 => bit(me, crate::kv!(921 int)),
+        15 => !bit(me, crate::kv!(921 int)),
+        16 => on(crate::kv!(921 int)),
+        17 => off(crate::kv!(921 int)),
+        18 => bit(me, crate::kv!(812 int)),
+        19 => !bit(me, crate::kv!(812 int)),
+        20 => on(crate::kv!(812 int)),
+        21 => off(crate::kv!(812 int)),
         22 => me.move_from_idle,
         23 => !me.move_from_idle,
         24 => opp.is_some_and(|o| o.move_from_idle),
@@ -366,11 +366,11 @@ pub fn special_result(hash: u32) -> SpecialEffect {
     let Some(i) = SPECIAL_RESULTS.iter().position(|n| crate::map::hash_bytes(n.as_bytes(), 0) == hash) else { return e };
     #[allow(non_snake_case)]
     #[inline]
-    fn BITS() -> &'static [u32; 5] { static V: std::sync::OnceLock<[u32; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(807 int), crate::kv!(805 int), crate::kv!(913 int), crate::kv!(804 int), crate::kv!(811 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn BITS() -> &'static [u32; 5] { static V: std::sync::OnceLock<[u32; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(815 int), crate::kv!(813 int), crate::kv!(921 int), crate::kv!(812 int), crate::kv!(819 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     match i {
-        0 => (e.me, e.opponent) = ((crate::kv!(913 int), 0), (0, crate::kv!(805 int))),
-        1 => e.me = (crate::kv!(913 int), crate::kv!(914 int)),
-        2 => e.opponent = (crate::kv!(913 int), crate::kv!(914 int)),
+        0 => (e.me, e.opponent) = ((crate::kv!(921 int), 0), (0, crate::kv!(813 int))),
+        1 => e.me = (crate::kv!(921 int), crate::kv!(922 int)),
+        2 => e.opponent = (crate::kv!(921 int), crate::kv!(922 int)),
         3..=22 => {
             let (bit, k) = ((*BITS())[(i - crate::kv!(0 int)) / crate::kv!(1 int)], (i - crate::kv!(0 int)) % crate::kv!(1 int));
             let (set, clear) = if k % 2 == 0 { (bit, 0) } else { (0, bit) };
@@ -736,7 +736,7 @@ pub fn hit_reaction<'t>(t: &'t ActionTable, ask: &Ask, gate: bool, tasks: [bool;
     let action = choose(t, &ask, rand);
     let result = action.filter(|a| a.move_ != 0).and_then(|a| t.results.iter().rfind(|r| r.name == a.move_));
     let special = result.is_some_and(|r| r.special_result != crate::actiontable::none());
-    let low = ask.fighter.health < crate::kv!(785);
+    let low = ask.fighter.health < crate::kv!(582);
     let ragdoll = gate
         && (action.is_some_and(|a| a.prefer_ragdoll) || if tasks[0] && !tasks[1] { low } else { !special || low });
     Reaction { action, result, ragdoll }

@@ -40,10 +40,9 @@ typedef struct NmRig NmRig;
 NM_API int32_t nm_version(void);
 /* The calling thread's last error message. */
 NM_API int32_t nm_last_error(char* buf, int32_t len);
-/* NM's character (character.xrt's bytes, from `delirium-room --game <your game> --export <folder>`): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
+/* NM's character (character.xrt's bytes, from `delirium-room --export`): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
 NM_API int32_t nm_init_memory(const uint8_t* xrt, int32_t len);
-/* nm_init_memory from a file: the `character.xrt` that `delirium-room --export` writes. (On PC the game keeps it loose, as a .art
-   file; on the disc it's packed in an archive. The export works for both.) */
+/* nm_init_memory from a file (the `character.xrt` that `delirium-room --export` writes; on PC the game keeps it loose, as a .art file). */
 NM_API int32_t nm_init(const char* xrt_path);
 /* Opens the numbers: they're read from the player's own game's program, `exe_path` the PC GTAIV.exe or the disc's default.xex (or the folder either is in; the disc's key is fetched from the internet the first time). Call first, before nm_init or nm_init_character. */
 NM_API int32_t nm_unlock(const char* exe_path);
@@ -76,6 +75,16 @@ NM_API int32_t nm_build_part_count(const NmBuild* b);
 NM_API int32_t nm_build_part_info(const NmBuild* b, int32_t i, float* mass, float* radius, float* half, int32_t* parent);
 /* A body for another skeleton: `build` (Homer's) fitted to `joints`, 21 positions (3 floats each, metres, Z up), one per part in part order (`nm_part_name`): where your skeleton's matching joint is in its bind pose, the part's joint with its parent (the thigh's: the hip; the forearm's: the elbow; the hand's: the wrist), the root's (Buttocks) the pelvis's centre. Each part is scaled by its bone's length against Homer's and turned onto your bones; its mass goes by the scale's cube. The new build stands in your skeleton's pose (`nm_build_part_frame`): capture the bone offsets for LEAD there. Behaviours are Homer's (his joint limits, his balance's tuning): far from his build (1.8 m), expect them to work less well. */
 NM_API NmBuild* nm_build_fit(const NmBuild* build, const float* joints);
+/* nm_build_fit with the head's joint allowed `neck` times as far past the neck's as the fit's own cap (0.12 of a leg, the game man's: a longer neck bone is cut to it). For a skeleton with a long neck on purpose (the room's Neck slider: 0.5 to 6); the head keeps the size nm_build_fit gives it, on the neck's end. 1: nm_build_fit. */
+NM_API NmBuild* nm_build_fit_neck(const NmBuild* build, const float* joints, float neck);
+/* The head's capsule `raise` further from its joint (host units, along the joint to the capsule's centre: up the neck) and `grow` times as thick: a skull taller than the game man's sticks out of the fitted head, which sits at the jaw (0.05 and 1.08 suit a tall one). Agents made after it take it. */
+NM_API int32_t nm_build_set_head(NmBuild* b, float raise, float grow);
+/* The Playroom's Custom body: the game man (`build` as nm_build_load gives it) with his legs, arms, trunk height, width (shoulders, hips and thickness), head and neck (nm_build_fit_neck) each that many times his, weighing `kg`; `height` (m) over 0: all of it grown or shrunk to that. His sizes: 1, 1, 1, 1, 1, 1, 77, 0 (close to him, not bit for bit; use `build` itself for him). The Brawler (nm_build_named): 0.45, 0.7, 1, 1.4, 1.5, 1, 80, 0. A new build; free it. */
+NM_API NmBuild* nm_build_sized(const NmBuild* build, float legs, float arms, float trunk, float width, float head, float neck, float kg, float height);
+/* The Playroom's body `name` of the game man (`build` as nm_build_load gives it): Small, Average (him), Large, Lanky, Fat, Stocky, Waddler, Guard, Brute or Brawler (any case). Odd ones may need nm_build_tune to stand. A new build; free it. Null for another name. */
+NM_API NmBuild* nm_build_named(const NmBuild* build, const char* name);
+/* The Playroom's Random body: each of the game man's (`build`) bones and parts' thickness drawn at random, `variance` 1 to 4 (the room's slider, 1.5 its default; 4: bones 0.2 to 4 times his), the right side the left's if `symmetric` isn't 0. The same `seed`, the same body. Odd ones may need nm_build_tune to stand. A new build; free it. */
+NM_API NmBuild* nm_build_random(const NmBuild* build, int32_t seed, float variance, int32_t symmetric);
 /* nm_build_fit at the size `mode` picks (NM_SIZE_*, nm_size_scale): the body fitted to `joints` / s, and the agents made from it take and give the host's units at that scale (positions, velocities, impulses, forces, the step's dt and the times read back), so a giant runs on a person-sized body that keeps its balance and still moves at a giant's pace. Give the world the same scale (nm_world_set_scale with nm_build_get_scale). Message parameters stay NM's. */
 NM_API NmBuild* nm_build_fit_sized(const NmBuild* build, const float* joints, int32_t mode);
 /* The build's weight (kg, the host's units at its scale). */
@@ -96,10 +105,10 @@ NM_API int32_t nm_build_copy_tune(NmBuild* dst, const NmBuild* src);
 NM_API float nm_build_get_scale(const NmBuild* b);
 /* Part `i`'s frame in the build's pose (world, as dumped). */
 NM_API int32_t nm_build_part_frame(const NmBuild* b, int32_t i, float* pos, float* rot);
-/* An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. */
+/* An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. The build's lowest point (its lowest capsule or foot box, not a joint) is put on `pos`'s height: a host's rig placed by its bind pose's joints stands off it by the feet's thickness (a few cm). */
 NM_API NmAgent* nm_agent_create(const NmBuild* b, const float* pos, float yaw, float seed);
 NM_API void nm_agent_destroy(NmAgent* a);
-/* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted). */
+/* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted). A host stepping with wall-clock dt near 1/60 gets 0 steps some frames and 2 the next (a stutter): pass 1/60 each frame instead. */
 NM_API int32_t nm_agent_step(NmAgent* a, const NmWorld* w, float dt);
 /* NM_MODE_LEAD: NM's own physics moves the body; the host reads the parts' transforms onto a puppet. NM_MODE_FOLLOW: the host's ragdoll is the body; each step it sets the parts' states, steps, and applies the parts' drives (nm_agent_get_part_drive[s]) to its own bodies. */
 NM_API int32_t nm_agent_set_mode(NmAgent* a, int32_t mode);
@@ -160,6 +169,10 @@ NM_API int32_t nm_msg_set_int(NmAgent* a, const char* name, int32_t v);
 NM_API int32_t nm_msg_set_bool(NmAgent* a, const char* name, int32_t v);
 NM_API int32_t nm_msg_set_vec3(NmAgent* a, const char* name, const float* v);
 NM_API int32_t nm_msg_set_string(NmAgent* a, const char* name, const char* v);
+/* The Playroom's Parameters tab for one agent: every `behaviour` message it gets from now on (yours, and those the nm_agent_task_* send) carries `param` as `value` in place of its own (bools 0 or 1, whole numbers rounded). Only the number, whole-number and on/off params the port acts on (nm_message_param_doc); not the hit's part (bodyPart, partIndex, hitPart), which each hit sets. Again for the same param: the new value. */
+NM_API int32_t nm_agent_set_override(NmAgent* a, const char* behaviour, const char* param, float value);
+/* Drops all of the agent's nm_agent_set_override values: its messages go out as sent again. */
+NM_API int32_t nm_agent_clear_overrides(NmAgent* a);
 /* Sends the message built since nm_msg_begin, as the game's NM takes it: a behaviour starts with the bool "start" set to 1, stops with 0 and only takes the params without it; the one-shots (applyImpulse, setStiffness, the leans, ...) act either way. Returns how many of its params the port accepted without acting on them. */
 NM_API int32_t nm_msg_send(NmAgent* a, const NmWorld* w);
 /* Drops the message being built. */

@@ -253,7 +253,7 @@ pub fn pad_motors(intensity: f32) -> (u8, u8) {
     } else if i < crate::kv!(78) {
         (0, (i * crate::kv!(31)).mul_add(crate::kv!(147), crate::kv!(79)) as u8)
     } else {
-        (i.mul_add(crate::kv!(1061), crate::kv!(30)) as u8, if i >= crate::kv!(28) { crate::kv!(300 int) } else { 0 })
+        (i.mul_add(crate::kv!(1069), crate::kv!(30)) as u8, if i >= crate::kv!(28) { crate::kv!(300 int) } else { 0 })
     }
 }
 

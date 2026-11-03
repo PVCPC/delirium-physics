@@ -88,6 +88,21 @@ namespace Delirium
         /// <summary>A body for another skeleton: `build` (Homer's) fitted to `joints`, 21 positions (3 floats each, metres, Z up), one per part in part order (`nm_part_name`): where your skeleton's matching joint is in its bind pose, the part's joint with its parent (the thigh's: the hip; the forearm's: the elbow; the hand's: the wrist), the root's (Buttocks) the pelvis's centre. Each part is scaled by its bone's length against Homer's and turned onto your bones; its mass goes by the scale's cube. The new build stands in your skeleton's pose (`nm_build_part_frame`): capture the bone offsets for LEAD there. Behaviours are Homer's (his joint limits, his balance's tuning): far from his build (1.8 m), expect them to work less well.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr nm_build_fit(IntPtr build, float[] joints);
+        /// <summary>nm_build_fit with the head's joint allowed `neck` times as far past the neck's as the fit's own cap (0.12 of a leg, the game man's: a longer neck bone is cut to it). For a skeleton with a long neck on purpose (the room's Neck slider: 0.5 to 6); the head keeps the size nm_build_fit gives it, on the neck's end. 1: nm_build_fit.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr nm_build_fit_neck(IntPtr build, float[] joints, float neck);
+        /// <summary>The head's capsule `raise` further from its joint (host units, along the joint to the capsule's centre: up the neck) and `grow` times as thick: a skull taller than the game man's sticks out of the fitted head, which sits at the jaw (0.05 and 1.08 suit a tall one). Agents made after it take it.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_build_set_head(IntPtr b, float raise, float grow);
+        /// <summary>The Playroom's Custom body: the game man (`build` as nm_build_load gives it) with his legs, arms, trunk height, width (shoulders, hips and thickness), head and neck (nm_build_fit_neck) each that many times his, weighing `kg`; `height` (m) over 0: all of it grown or shrunk to that. His sizes: 1, 1, 1, 1, 1, 1, 77, 0 (close to him, not bit for bit; use `build` itself for him). The Brawler (nm_build_named): 0.45, 0.7, 1, 1.4, 1.5, 1, 80, 0. A new build; free it.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr nm_build_sized(IntPtr build, float legs, float arms, float trunk, float width, float head, float neck, float kg, float height);
+        /// <summary>The Playroom's body `name` of the game man (`build` as nm_build_load gives it): Small, Average (him), Large, Lanky, Fat, Stocky, Waddler, Guard, Brute or Brawler (any case). Odd ones may need nm_build_tune to stand. A new build; free it. Null for another name.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr nm_build_named(IntPtr build, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+        /// <summary>The Playroom's Random body: each of the game man's (`build`) bones and parts' thickness drawn at random, `variance` 1 to 4 (the room's slider, 1.5 its default; 4: bones 0.2 to 4 times his), the right side the left's if `symmetric` isn't 0. The same `seed`, the same body. Odd ones may need nm_build_tune to stand. A new build; free it.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr nm_build_random(IntPtr build, int seed, float variance, int symmetric);
         /// <summary>nm_build_fit at the size `mode` picks (NM_SIZE_*, nm_size_scale): the body fitted to `joints` / s, and the agents made from it take and give the host's units at that scale (positions, velocities, impulses, forces, the step's dt and the times read back), so a giant runs on a person-sized body that keeps its balance and still moves at a giant's pace. Give the world the same scale (nm_world_set_scale with nm_build_get_scale). Message parameters stay NM's.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr nm_build_fit_sized(IntPtr build, float[] joints, int mode);
@@ -118,12 +133,12 @@ namespace Delirium
         /// <summary>Part `i`'s frame in the build's pose (world, as dumped).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_build_part_frame(IntPtr b, int i, float[] pos, float[] rot);
-        /// <summary>An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start.</summary>
+        /// <summary>An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. The build's lowest point (its lowest capsule or foot box, not a joint) is put on `pos`'s height: a host's rig placed by its bind pose's joints stands off it by the feet's thickness (a few cm).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr nm_agent_create(IntPtr b, float[] pos, float yaw, float seed);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern void nm_agent_destroy(IntPtr a);
-        /// <summary>One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted).</summary>
+        /// <summary>One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted). A host stepping with wall-clock dt near 1/60 gets 0 steps some frames and 2 the next (a stutter): pass 1/60 each frame instead.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_step(IntPtr a, IntPtr w, float dt);
         /// <summary>NM_MODE_LEAD: NM's own physics moves the body; the host reads the parts' transforms onto a puppet. NM_MODE_FOLLOW: the host's ragdoll is the body; each step it sets the parts' states, steps, and applies the parts' drives (nm_agent_get_part_drive[s]) to its own bodies.</summary>
@@ -222,6 +237,12 @@ namespace Delirium
         public static extern int nm_msg_set_vec3(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, float[] v);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_msg_set_string(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string v);
+        /// <summary>The Playroom's Parameters tab for one agent: every `behaviour` message it gets from now on (yours, and those the nm_agent_task_* send) carries `param` as `value` in place of its own (bools 0 or 1, whole numbers rounded). Only the number, whole-number and on/off params the port acts on (nm_message_param_doc); not the hit's part (bodyPart, partIndex, hitPart), which each hit sets. Again for the same param: the new value.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_set_override(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string behaviour, [MarshalAs(UnmanagedType.LPUTF8Str)] string param, float value);
+        /// <summary>Drops all of the agent's nm_agent_set_override values: its messages go out as sent again.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_clear_overrides(IntPtr a);
         /// <summary>Sends the message built since nm_msg_begin, as the game's NM takes it: a behaviour starts with the bool "start" set to 1, stops with 0 and only takes the params without it; the one-shots (applyImpulse, setStiffness, the leans, ...) act either way. Returns how many of its params the port accepted without acting on them.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_msg_send(IntPtr a, IntPtr w);

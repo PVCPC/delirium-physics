@@ -29,7 +29,7 @@ fn byte(d: &[u8], at: usize) -> Result<u8, String> {
 pub fn read(r: &Resource) -> Result<Vec<Part>, String> {
     let d = &r.data;
     let p = |at: usize| be32(d, at).and_then(|v| ptr(r, v));
-    let (children, groups, count) = (p(crate::kv!(392 int))?, p(crate::kv!(364 int))?, byte(d, crate::kv!(640 int))? as usize);
+    let (children, groups, count) = (p(crate::kv!(392 int))?, p(crate::kv!(364 int))?, byte(d, crate::kv!(650 int))? as usize);
     let bound = p(p(crate::kv!(92 int))? + crate::kv!(55 int))?;
     if byte(d, bound + crate::kv!(1 int))? != crate::kv!(55 int) {
         return Err("Fragment bound is not a composite".into());
@@ -40,7 +40,7 @@ pub fn read(r: &Resource) -> Result<Vec<Part>, String> {
         let c = p(children + i * crate::kv!(1 int))?;
         let group = byte(d, c + crate::kv!(55 int))?;
         let bone = crate::u16_of([byte(d, c + crate::kv!(56 int))?, byte(d, c + crate::kv!(198 int))?]) as usize;
-        let parent_group = byte(d, p(groups + group as usize * crate::kv!(1 int))? + crate::kv!(953 int))?;
+        let parent_group = byte(d, p(groups + group as usize * crate::kv!(1 int))? + crate::kv!(961 int))?;
         let k = p(kids + i * crate::kv!(1 int))?;
         let ext = |a: usize| -> Result<f32, String> { Ok((bef(d, k + crate::kv!(54 int) + a)? - bef(d, k + crate::kv!(7 int) + a)?) / 2.0) };
         let (radius, along) = (ext(0)?.min(ext(crate::kv!(23 int))?), ext(crate::kv!(1 int))?);

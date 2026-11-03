@@ -94,6 +94,14 @@ pub fn logged_links() -> Option<&'static [Quat]> {
     (!t.is_empty()).then_some(t.as_slice())
 }
 
+pub static STEP_LIMIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn steps(n: i32, size: f32) -> i32 {
+    if !STEP_LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
+        i32::MAX
+    } else if size < 1.0 { (n as f32 / size).round() as i32 } else { n }
+}
+
 fn step_clamp(b: &Body, c: Config) -> f32 {
     if b.ch.mode == 2 { c.step_clamp * delirium_data::kv!(74) } else { c.step_clamp }
 }
@@ -122,6 +130,7 @@ pub struct Snap {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Params {
+    pub size: f32,
     pub up: Vec3,
     pub gup: Vec3,
     pub target: [Vec3; 2],
@@ -411,10 +420,10 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
     f.centre = (f.pos[0] + f.pos[1]) * 0.5;
     f.dist = [0.0; 2];
     let pc = sat(s.hvel.mul_add(Vec3::splat(p.lead), s.com), up, sdot(f.centre, up, b"zyx"), b"yxz");
-    let inside = support(pc, &s.legs[0].foot, &s.legs[1].foot, delirium_data::kv!(68), delirium_data::kv!(9), up) > p.p172;
+    let inside = support(pc, &s.legs[0].foot, &s.legs[1].foot, delirium_data::kv!(68) * p.size, delirium_data::kv!(9) * p.size, up) > p.p172;
     f.flags = (f.flags & !delirium_data::kv!(1 int)) | (inside as u8) << 2;
     let (lpos, rpos) = (s.legs[0].foot.m.d, s.legs[1].foot.m.d);
-    if f.flags & delirium_data::kv!(1 int) != 0 && slen(shz(rpos - lpos, up, b"yzx"), b"zyx") > p.foot_width + delirium_data::kv!(60) {
+    if f.flags & delirium_data::kv!(1 int) != 0 && slen(shz(rpos - lpos, up, b"yzx"), b"zyx") > p.foot_width + delirium_data::kv!(60) * p.size {
         f.flags &= !delirium_data::kv!(1 int);
     }
     let (a, c, so) = (s.m.a, s.m.c, p.step_offset);
@@ -457,16 +466,16 @@ pub fn foot_placement(p: &Params, s: &Snap, f: &mut Feet) {
     let t1 = up.mul_add(Vec3::splat(sdot(f.pos[i], up, b"zyx") - sdot(t, up, b"yxz")), t);
     let (r80, r84) = hip_leans(&leg.hip, t1, leg.hip.mid_lean1, leg.hip.mid_lean2, side);
     let (r88, r92) = hip_leans(&leg.hip, f.start, leg.hip.mid_lean1, leg.hip.mid_lean2, side);
-    let lift = (closing.min(0.0).fma(delirium_data::kv!(78), ahead) * 0.5).clamp(-p.step_height, p.step_height);
+    let lift = (closing.min(0.0).fma(delirium_data::kv!(78) * p.size, ahead) * 0.5).clamp(-p.step_height, p.step_height);
     let (n, foot) = if two { (p.normal[1], &s.legs[1].foot) } else { (p.normal[0], &s.legs[0].foot) };
     let c2 = foot.w.vx(foot.m.c).mul_add(Vec3::splat(delirium_data::kv!(112)), foot.m.c);
     let tilt = delirium_data::kv!(12) / (sdot(n, up, b"zyx") + 0.5);
     let toe = sdot(n, c2, b"zyx");
     let room = hip_room(&leg.hip, r80, r84, r88, r92);
-    let mut h = toe.abs().min(1.0).fma(delirium_data::kv!(78), lift).min(room);
+    let mut h = toe.abs().min(1.0).fma(delirium_data::kv!(78) * p.size, lift).min(room);
     let mut g = p.target[i];
     if f.flags & delirium_data::kv!(54 int) == 0 {
-        h += delirium_data::kv!(112);
+        h += delirium_data::kv!(112) * p.size;
         g = p.gup.mul_add(Vec3::splat(sdot(p.gup, f.start - g, b"zyx").max(0.0)), g);
     }
     let h = g.x.fma(up.x, g.z.fma(up.z, tilt.fma(h, g.y * up.y)));
@@ -772,7 +781,7 @@ pub fn balance_solve(p: &Params, f: &Feet, pv: &Pelvis, s: &mut Snap) {
                             w: 1.0, reach: 0.0, lift: 0.0, swing: !planted, free: false };
         if !planted {
             let ahead = target[i] - (lfoot_v - p.gvel[0]).mul_add(Vec3::splat(delirium_data::kv!(68)), leg.foot.m.d);
-            (c.lead, c.reach, c.lift) = (p.p168, delirium_data::kv!(64), sdot(up, ahead, b"yxz").fma(delirium_data::kv!(84), delirium_data::kv!(78)).clamp(delirium_data::kv!(9), delirium_data::kv!(119)));
+            (c.lead, c.reach, c.lift) = (p.p168, delirium_data::kv!(64), sdot(up, ahead, b"yxz").fma(delirium_data::kv!(84) / p.size, delirium_data::kv!(78)).clamp(delirium_data::kv!(9), delirium_data::kv!(119)));
         }
         let limb = leg.limb;
         leg_ik(&mut c, &limb, &mut leg.knee, &mut leg.hip, &leg.foot, &pelvis, vel);
@@ -849,15 +858,20 @@ pub struct Body<'a> {
 }
 
 impl Body<'_> {
-    fn rigid(&self, j: usize) -> Option<(&crate::rigid::JointConst, &crate::rigid::Link, &crate::rigid::Link, Vec3)> {
+    fn rigid(&self, j: usize) -> Option<(crate::rigid::JointConst, &crate::rigid::Link, &crate::rigid::Link, Vec3)> {
         let (jd, (l, place, _)) = (&self.ch.joints[j], self.doll.rigid.as_ref()?);
-        Some((jd.rigid.as_ref()?, l.get(jd.parent)?, l.get(jd.child)?, *place))
+        let mut c = jd.rigid?;
+        let (ps, cs) = (self.build.parts[jd.parent].size, self.build.parts[jd.child].size);
+        if ps != 1.0 || cs != 1.0 {
+            (c.pa, c.ca) = (c.pa * ps, c.ca * cs);
+        }
+        Some((c, l.get(jd.parent)?, l.get(jd.child)?, *place))
     }
 
     pub fn read(&self, j: usize) -> [f32; 3] {
         let jd = &self.ch.joints[j];
         let tw = self.doll.prep_twist.get(jd.child).copied().flatten();
-        let Some((c, p, l, _)) = self.rigid(j) else { return self.ch.angle_at(j, self.frames, tw) };
+        let Some((ref c, p, l, _)) = self.rigid(j) else { return self.ch.angle_at(j, self.frames, tw) };
         if !jd.three {
             return [crate::rigid::hinge(c, p, l), 0.0, 0.0];
         }
@@ -871,7 +885,7 @@ impl Body<'_> {
     }
 
     pub fn joint_pos(&self, j: usize) -> Vec3 {
-        if let Some((c, _, l, place)) = self.rigid(j) {
+        if let Some((ref c, _, l, place)) = self.rigid(j) {
             return crate::rigid::pos(c, l, place);
         }
         let c = self.ch.joints[j].child;
@@ -904,7 +918,7 @@ impl Body<'_> {
         let half = |k: usize| (jd.limits[k].1 - jd.limits[k].0) * 0.5;
         let flip = |k: usize, x: f32| if jd.flip[k] { -x } else { x };
         let pos = self.joint_pos(j);
-        let m = self.rigid(j).map_or_else(|| m34(self.frames[jd.parent].rotation * jd.rage_parent, pos), |(c, p, l, place)| crate::rigid::frames(c, p, l, place).0);
+        let m = self.rigid(j).map_or_else(|| m34(self.frames[jd.parent].rotation * jd.rage_parent, pos), |(c, p, l, place)| crate::rigid::frames(&c, p, l, place).0);
         Eff3 { m, pos, damping: e.damping, strength: e.strength, half_twist: half(2), half_lean1: half(0),
                half_lean2: half(1), mid_lean1: flip(0, mid(0)), mid_lean2: flip(1, mid(1)), mid_twist: flip(2, mid(2)),
                desired: e.desired, actual: self.ch.actual(j, self.frames) }
@@ -914,7 +928,7 @@ impl Body<'_> {
         let (jd, e) = (&self.ch.joints[j], &self.ch.eff[j]);
         let pos = self.joint_pos(j);
         let (m, child) = self.rigid(j).map_or_else(|| (m34(self.frames[jd.parent].rotation * jd.in_parent, pos), m34(self.frames[jd.child].rotation * jd.in_child, pos)),
-                                                  |(c, p, l, place)| crate::rigid::frames(c, p, l, place));
+                                                  |(c, p, l, place)| crate::rigid::frames(&c, p, l, place));
         Eff1 { m, child, pos, damping: e.damping, strength: e.strength, half: (jd.limits[0].1 - jd.limits[0].0) * 0.5,
                mid: (jd.limits[0].0 + jd.limits[0].1) * 0.5, desired: e.desired[0], actual: self.ch.actual(j, self.frames)[0] }
     }
@@ -925,7 +939,7 @@ impl Body<'_> {
             return m;
         }
         if let (Some(k), Some((c, p, l, place))) = (self.rigid(knee), self.rigid(hip)) {
-            let (k, h) = (crate::rigid::frames(k.0, k.1, k.2, k.3).0, crate::rigid::frames(c, p, l, place).1);
+            let (k, h) = (crate::rigid::frames(&k.0, k.1, k.2, k.3).0, crate::rigid::frames(&c, p, l, place).1);
             let t = |v: Vec3| Vec3::new(v.vd(h.a), v.vd(h.b), v.vd(h.c));
             return M34 { a: t(k.a), b: t(k.b), c: t(k.c), d: t(k.d - h.d) };
         }
@@ -1026,6 +1040,7 @@ pub struct Config {
     pub lean_bias: f32,
     pub hip_yaw: (f32, f32),
     pub legs: (f32, f32),
+    pub size: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1133,11 +1148,11 @@ impl Dbm {
             },
             hip_dist: slen((b.eff3((*HIP())[0]).m.d - pelvis).vx(cu), b"zyx"),
             leg_length: c.legs.0, foot_width: c.legs.1, p148: c.hip_yaw.0, p152: c.hip_yaw.1,
-            step_offset: c.legs.1.fma(delirium_data::kv!(24), delirium_data::kv!(130)), abort: c.abort, lead: delirium_data::kv!(60), p168: 1.0, p172: 0.0, lean_bias: c.lean_bias,
-            step_height: c.step_height, leg_stiffness: c.leg_stiffness, step_clamp: step_clamp(b, c), taper: c.taper,
-            low_abort: c.taper, ..default()
+            step_offset: c.legs.1.fma(delirium_data::kv!(24), delirium_data::kv!(130) * c.size), abort: c.abort, lead: delirium_data::kv!(60) * c.size, p168: 1.0, p172: 0.0, lean_bias: c.lean_bias,
+            step_height: c.step_height * c.size, leg_stiffness: c.leg_stiffness, step_clamp: step_clamp(b, c), taper: c.taper,
+            low_abort: c.taper, size: c.size, ..default()
         };
-        let f = Feet { pos: [l, r], centre: (l + r) * 0.5, height: [up.vd(l), up.vd(r)], countdown: c.max_steps, flags: delirium_data::kv!(2 int), ..default() };
+        let f = Feet { pos: [l, r], centre: (l + r) * 0.5, height: [up.vd(l), up.vd(r)], countdown: steps(c.max_steps, c.size), flags: delirium_data::kv!(2 int), ..default() };
         let (fl, fr) = (b.pmat(b.ch.joints[(*ANKLE())[0]].child).m, b.pmat(b.ch.joints[(*ANKLE())[1]].child).m);
         let pm = b.pmat(b.ch.joints[(*HIP())[0]].parent).m;
         let splay = asin(sdot(cu, fr.c.vx(fl.c), b"zyx")) * delirium_data::kv!(17);
@@ -1203,14 +1218,13 @@ impl Dbm {
         let h = up.vd(s.com) - up.vd(l).min(up.vd(r));
         let off = horizontal(s.com - l, up).length().min(horizontal(s.com - r, up).length())
             .min(horizontal(s.com - (l + r) * 0.5, up).length());
-        (self.event, self.success) = (None, false);
-        if off > self.p.abort * h || (h < 0.5 && self.p.low_abort) || self.f.countdown == -1 {
+        if off > self.p.abort * h || (h < 0.5 * self.p.size && self.p.low_abort) || self.f.countdown == -1 {
             return false;
         }
         self.success = slen(s.vel, b"yxz") < delirium_data::kv!(17) && slen(s.angvel, b"yxz") < delirium_data::kv!(17);
         let x = off / (h * delirium_data::kv!(142));
         self.ratio = if x > self.ratio { x } else { (x - self.ratio) * delirium_data::kv!(17) + self.ratio };
-        if self.ratio < 1.0 && h > delirium_data::kv!(74) && self.f.countdown > 2 {
+        if self.ratio < 1.0 && h > delirium_data::kv!(74) * self.p.size && self.f.countdown > 2 {
             self.event = Some(self.ratio);
         }
         true
@@ -1224,7 +1238,7 @@ impl Dbm {
             let hit = world.segment(start, start - up);
             self.p.contact[i] = hit.is_some();
             (self.p.target[i], self.p.normal[i]) = match hit {
-                Some((at, n)) => (at + up * delirium_data::kv!(131), n),
+                Some((at, n)) => (at + up * (delirium_data::kv!(131) * self.p.size), n),
                 None => (start - up * (self.p.leg_length * self.p.pelvis_height), up),
             };
             let y = crate::estimate::vrefp(self.p.dt);
@@ -1236,7 +1250,7 @@ impl Dbm {
         self.p.dt = dt;
         self.p.step_clamp = step_clamp(b, c);
         self.p.abort = c.abort;
-        self.p.step_height = c.step_height;
+        self.p.step_height = c.step_height * c.size;
         self.tilt(b);
         let mut s = b.snap(self.p.up);
         self.last = (s.m.b, s.angvel);
@@ -1375,7 +1389,7 @@ pub fn oppose_gravity(b: &Body, attached: Option<(usize, Vec3, f32)>, out: &mut 
     }
     let ahead = |s: &(f32, Vec3, Vec3)| s.2.mul_add(Vec3::splat(AHEAD()), s.1) * crate::gjk::recip(s.0);
     let at = |i: usize, k: usize| {
-        let p = b.rigid(i).map_or_else(|| b.joint_pos(i), |(c, _, l, _)| crate::rigid::pos(c, l, Vec3::ZERO));
+        let p = b.rigid(i).map_or_else(|| b.joint_pos(i), |(c, _, l, _)| crate::rigid::pos(&c, l, Vec3::ZERO));
         let (v, w) = vw(k);
         let r = rel(k);
         let vo = b.doll.rage_vo.as_ref().and_then(|o| o.get(k).copied())
@@ -1422,7 +1436,7 @@ pub fn oppose_gravity(b: &Body, attached: Option<(usize, Vec3, f32)>, out: &mut 
             }
             t
         } else {
-            let axis = b.rigid(i).map_or_else(|| b.frames[j.parent].rotation * j.in_parent * Vec3::Z, |(c, _, l, _)| crate::rigid::hinge_axis(c, l));
+            let axis = b.rigid(i).map_or_else(|| b.frames[j.parent].rotation * j.in_parent * Vec3::Z, |(c, _, l, _)| crate::rigid::hinge_axis(&c, l));
             axis * sdot(axis, t, b"zyx").clamp(-max, max)
         };
         out[j.child] += t;

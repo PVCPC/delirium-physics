@@ -83,17 +83,17 @@ pub const DEFAULT_CLIP: (i32, i32) = (DAMAGE_KO, id::KO_FRONT);
 #[allow(non_snake_case)]
 #[inline]
 pub fn CLIPS() -> &'static [ClipDef; 12] { static V: std::sync::OnceLock<[ClipDef; 12]> = std::sync::OnceLock::new(); let f = || [
-    ClipDef { group: DAMAGE_KO, id: id::KO_FRONT, dict: "dam_ko", clip: "ko_front", flags: crate::kv!(755 int) },
-    ClipDef { group: DAMAGE_KO, id: id::KO_BACK(), dict: "dam_ko", clip: "ko_back", flags: crate::kv!(755 int) },
-    ClipDef { group: DAMAGE_KO, id: id::KO_LEFT(), dict: "dam_ko", clip: "ko_left", flags: crate::kv!(755 int) },
-    ClipDef { group: DAMAGE_KO, id: id::KO_RIGHT(), dict: "dam_ko", clip: "ko_right", flags: crate::kv!(755 int) },
-    ClipDef { group: CLIMB(), id: id::FALL_BACK(), dict: "climb_std", clip: "fall_back", flags: crate::kv!(756 int) },
-    ClipDef { group: CLIMB(), id: id::FALL_FRONT(), dict: "climb_std", clip: "fall_front", flags: crate::kv!(756 int) },
-    ClipDef { group: PRONE(), id: id::FLOOR_FRONT(), dict: "dam_rec_civi", clip: "floor_front", flags: crate::kv!(662 int) },
-    ClipDef { group: PRONE(), id: id::FLOOR_BACK(), dict: "dam_rec_civi", clip: "floor_back", flags: crate::kv!(662 int) },
-    ClipDef { group: DAMAGE_KO, id: id::KO_COLLAPSE(), dict: "dam_ko", clip: "ko_collapse", flags: crate::kv!(757 int) },
-    ClipDef { group: DAMAGE_REACT_FLOOR(), id: id::REACT_FLOOR_FRONT(), dict: "dam_rec_civi", clip: "floor_front", flags: crate::kv!(758 int) },
-    ClipDef { group: DAMAGE_REACT_FLOOR(), id: id::REACT_FLOOR_BACK(), dict: "dam_rec_civi", clip: "floor_back", flags: crate::kv!(759 int) },
+    ClipDef { group: DAMAGE_KO, id: id::KO_FRONT, dict: "dam_ko", clip: "ko_front", flags: crate::kv!(764 int) },
+    ClipDef { group: DAMAGE_KO, id: id::KO_BACK(), dict: "dam_ko", clip: "ko_back", flags: crate::kv!(764 int) },
+    ClipDef { group: DAMAGE_KO, id: id::KO_LEFT(), dict: "dam_ko", clip: "ko_left", flags: crate::kv!(764 int) },
+    ClipDef { group: DAMAGE_KO, id: id::KO_RIGHT(), dict: "dam_ko", clip: "ko_right", flags: crate::kv!(764 int) },
+    ClipDef { group: CLIMB(), id: id::FALL_BACK(), dict: "climb_std", clip: "fall_back", flags: crate::kv!(765 int) },
+    ClipDef { group: CLIMB(), id: id::FALL_FRONT(), dict: "climb_std", clip: "fall_front", flags: crate::kv!(765 int) },
+    ClipDef { group: PRONE(), id: id::FLOOR_FRONT(), dict: "dam_rec_civi", clip: "floor_front", flags: crate::kv!(672 int) },
+    ClipDef { group: PRONE(), id: id::FLOOR_BACK(), dict: "dam_rec_civi", clip: "floor_back", flags: crate::kv!(672 int) },
+    ClipDef { group: DAMAGE_KO, id: id::KO_COLLAPSE(), dict: "dam_ko", clip: "ko_collapse", flags: crate::kv!(766 int) },
+    ClipDef { group: DAMAGE_REACT_FLOOR(), id: id::REACT_FLOOR_FRONT(), dict: "dam_rec_civi", clip: "floor_front", flags: crate::kv!(767 int) },
+    ClipDef { group: DAMAGE_REACT_FLOOR(), id: id::REACT_FLOOR_BACK(), dict: "dam_rec_civi", clip: "floor_back", flags: crate::kv!(768 int) },
     ClipDef { group: DAMAGE_KO, id: id::DROWN(), dict: "dam_ko", clip: "drown", flags: crate::kv!(180 int) },
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
@@ -112,16 +112,16 @@ pub fn ko_id(side: u32) -> i32 {
 
 #[allow(non_snake_case)]
 #[inline]
-fn QUARTER_PI() -> f32 { crate::kv!(760 f32) }
+fn QUARTER_PI() -> f32 { crate::kv!(769 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn PI() -> f32 { crate::kv!(761 f32) }
+fn PI() -> f32 { crate::kv!(770 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn TWO_PI() -> f32 { crate::kv!(604 f32) }
+fn TWO_PI() -> f32 { crate::kv!(614 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn TWO_OVER_PI() -> f32 { crate::kv!(762 f32) }
+fn TWO_OVER_PI() -> f32 { crate::kv!(771 f32) }
 
 pub fn wrap_angle(x: f32) -> f32 {
     let mut x = if x < -crate::kv!(38) { -crate::kv!(38) } else if x > crate::kv!(38) { crate::kv!(38) } else { x };
@@ -179,7 +179,7 @@ pub const EXPLOSION: u32 = 51;
 pub fn FALL_DAMAGE() -> u32 { crate::kv!(37 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn TORSO() -> &'static [u16; 9] { static V: std::sync::OnceLock<[u16; 9]> = std::sync::OnceLock::new(); let f = || [crate::kv!(205 int), crate::kv!(763 int), crate::kv!(206 int), crate::kv!(764 int), crate::kv!(207 int), crate::kv!(204 int), crate::kv!(203 int), crate::kv!(765 int), crate::kv!(766 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn TORSO() -> &'static [u16; 9] { static V: std::sync::OnceLock<[u16; 9]> = std::sync::OnceLock::new(); let f = || [crate::kv!(205 int), crate::kv!(772 int), crate::kv!(206 int), crate::kv!(773 int), crate::kv!(207 int), crate::kv!(204 int), crate::kv!(203 int), crate::kv!(774 int), crate::kv!(775 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Hit {
@@ -214,13 +214,13 @@ pub fn quadrant(angle: f32) -> i32 {
 pub fn VEH_DIE_GROUP() -> i32 { crate::kv!(446 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DIE_DS() -> i32 { crate::kv!(767 int) }
+pub fn DIE_DS() -> i32 { crate::kv!(776 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DIE_HORN_DS() -> i32 { crate::kv!(768 int) }
+pub fn DIE_HORN_DS() -> i32 { crate::kv!(777 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DIE_PS() -> i32 { crate::kv!(769 int) }
+pub fn DIE_PS() -> i32 { crate::kv!(778 int) }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Seated {
@@ -258,7 +258,7 @@ pub fn death_clip(d: &Death) -> (i32, i32) {
     if d.weapon == DROWNING() || (d.in_water && !d.on_ground) {
         return (DAMAGE_KO, id::DROWN());
     }
-    if d.head_z < d.ped_z - crate::kv!(770 f32) && matches!(d.task, Some(kind::FALL) | Some(kind::GET_UP)) {
+    if d.head_z < d.ped_z - crate::kv!(779 f32) && matches!(d.task, Some(kind::FALL) | Some(kind::GET_UP)) {
         return (DAMAGE_REACT_FLOOR(), if d.lies == 2 { id::REACT_FLOOR_BACK() } else { id::REACT_FLOOR_FRONT() });
     }
     if d.task.is_some() && d.parent == Some(crate::tasks::kind::INJURED_ON_GROUND()) {
@@ -363,7 +363,7 @@ pub enum Thrown {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn THROWN_FAST() -> f32 { crate::kv!(771) }
+pub fn THROWN_FAST() -> f32 { crate::kv!(780) }
 pub const THROWN_SIDE: u32 = 2;
 #[allow(non_snake_case)]
 #[inline]
@@ -461,7 +461,7 @@ impl SimpleFall {
                     return false;
                 }
                 let t = self.left as f32;
-                self.left = rng::float_from_draw(rand.next(), t * crate::kv!(643 f32), t * crate::kv!(772 f32)) as i64 as u32;
+                self.left = rng::float_from_draw(rand.next(), t * crate::kv!(653 f32), t * crate::kv!(781 f32)) as i64 as u32;
                 if self.left > crate::kv!(40 int) && ped.waits_short() {
                     self.left = crate::kv!(40 int);
                 }

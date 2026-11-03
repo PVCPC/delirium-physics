@@ -15,7 +15,7 @@ impl Rand {
     }
 
     pub fn next(&mut self) -> u32 {
-        self.seed = self.seed.wrapping_mul(crate::kv!(954 int)).wrapping_add(crate::kv!(955 int));
+        self.seed = self.seed.wrapping_mul(crate::kv!(962 int)).wrapping_add(crate::kv!(963 int));
         (self.seed >> crate::kv!(54 int)) & crate::kv!(562 int)
     }
 
@@ -55,7 +55,7 @@ impl ScriptRand {
     }
 
     pub fn float(&mut self) -> f32 {
-        (self.step() & crate::kv!(190 int)) as f32 * crate::kv!(753 f32)
+        (self.step() & crate::kv!(190 int)) as f32 * crate::kv!(762 f32)
     }
 
     pub fn int_in_range(&mut self, min: i32, max: i32) -> i32 {
@@ -65,7 +65,7 @@ impl ScriptRand {
     }
 
     pub fn float_in_range(&mut self, min: f32, max: f32) -> f32 {
-        let unit = (self.step() & crate::kv!(190 int)) as f32 * crate::kv!(753 f32);
+        let unit = (self.step() & crate::kv!(190 int)) as f32 * crate::kv!(762 f32);
         unit.mul_add(max - min, min)
     }
 }
@@ -76,7 +76,7 @@ pub fn float_from_draw(draw: u32, min: f32, max: f32) -> f32 {
 }
 
 pub fn int_from_draw(draw: u32, min: i32, max: i32) -> i32 {
-    let unit = (draw & crate::kv!(53 int)) as f32 * crate::kv!(956 f32);
+    let unit = (draw & crate::kv!(53 int)) as f32 * crate::kv!(964 f32);
     let scaled = unit * max.wrapping_sub(min) as f32;
     (scaled as i32).wrapping_add(min)
 }
@@ -89,7 +89,7 @@ pub struct AudioRand {
 
 impl Default for AudioRand {
     fn default() -> Self {
-        AudioRand { value: 1, carry: crate::kv!(957 int) }
+        AudioRand { value: 1, carry: crate::kv!(965 int) }
     }
 }
 
@@ -112,7 +112,7 @@ impl AudioRand {
         }
         let x = (self.value as u64).wrapping_mul(crate::kv!(192 int)).wrapping_add(self.carry as u64);
         (self.value, self.carry) = (x as u32, (x >> crate::kv!(7 int)) as u32);
-        ((self.value & crate::kv!(190 int)) as f32) * crate::kv!(753 f32) < p
+        ((self.value & crate::kv!(190 int)) as f32) * crate::kv!(762 f32) < p
     }
 
     pub fn float_in_range(&mut self, min: f32, max: f32) -> f32 {

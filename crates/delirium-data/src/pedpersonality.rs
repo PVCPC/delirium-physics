@@ -5,25 +5,25 @@ use std::collections::HashMap;
 pub fn TICKBOXES() -> &'static [(&'static str, u64); 44] { static V: std::sync::OnceLock<[(&'static str, u64); 44]> = std::sync::OnceLock::new(); let f = || [
     ("bowling", crate::kv!(1 int)), ("pool", crate::kv!(23 int)), ("basketball", crate::kv!(54 int)), ("drivespoorcar", crate::kv!(7 int)), ("drivesaveragecar", crate::kv!(253 int)),
     ("drivesrichcar", crate::kv!(251 int)), ("drivesbigcar", crate::kv!(96 int)), ("drivesmotorcycle", crate::kv!(182 int)), ("drivesboat", crate::kv!(183 int)),
-    ("onfoot", crate::kv!(708 int)), ("argue", crate::kv!(181 int)), ("smoker", crate::kv!(52 int)), ("phoneuser", crate::kv!(662 int)), ("buydrugs", crate::kv!(698 int)),
-    ("givebummoney", crate::kv!(184 int)), ("insultbum", crate::kv!(634 int)), ("replytoho", crate::kv!(806 int)), ("taketaxi", crate::kv!(808 int)),
-    ("watchfight", crate::kv!(813 int)), ("late", crate::kv!(814 int)), ("softjack", crate::kv!(937 int)), ("murdershakefist", crate::kv!(810 int)),
-    ("murdercallpolice", crate::kv!(811 int)), ("murderrunaway", crate::kv!(804 int)), ("murderattack", crate::kv!(913 int)),
-    ("taxidriver", crate::kv!(938 int)), ("policeofficer", crate::kv!(805 int)), ("swat", crate::kv!(807 int)), ("fbi", crate::kv!(809 int)),
-    ("dea", crate::kv!(812 int)), ("csi", crate::kv!(930 int)), ("paramedic", crate::kv!(929 int)), ("fireman", crate::kv!(939 int)),
-    ("prostitute", crate::kv!(940 int)), ("pimp", crate::kv!(941 int)), ("bum", crate::kv!(942 int)),
-    ("cancarryweapons", crate::kv!(943 int)), ("likesart", crate::kv!(944 int)), ("dislikesart", crate::kv!(945 int)),
-    ("tourist", crate::kv!(946 int)), ("office", crate::kv!(947 int)), ("gardening", crate::kv!(948 int)),
-    ("jewish", crate::kv!(949 int)), ("criminal", crate::kv!(950 int)),
+    ("onfoot", crate::kv!(718 int)), ("argue", crate::kv!(181 int)), ("smoker", crate::kv!(52 int)), ("phoneuser", crate::kv!(672 int)), ("buydrugs", crate::kv!(708 int)),
+    ("givebummoney", crate::kv!(184 int)), ("insultbum", crate::kv!(644 int)), ("replytoho", crate::kv!(814 int)), ("taketaxi", crate::kv!(816 int)),
+    ("watchfight", crate::kv!(821 int)), ("late", crate::kv!(822 int)), ("softjack", crate::kv!(945 int)), ("murdershakefist", crate::kv!(818 int)),
+    ("murdercallpolice", crate::kv!(819 int)), ("murderrunaway", crate::kv!(812 int)), ("murderattack", crate::kv!(921 int)),
+    ("taxidriver", crate::kv!(946 int)), ("policeofficer", crate::kv!(813 int)), ("swat", crate::kv!(815 int)), ("fbi", crate::kv!(817 int)),
+    ("dea", crate::kv!(820 int)), ("csi", crate::kv!(938 int)), ("paramedic", crate::kv!(937 int)), ("fireman", crate::kv!(947 int)),
+    ("prostitute", crate::kv!(948 int)), ("pimp", crate::kv!(949 int)), ("bum", crate::kv!(950 int)),
+    ("cancarryweapons", crate::kv!(951 int)), ("likesart", crate::kv!(952 int)), ("dislikesart", crate::kv!(953 int)),
+    ("tourist", crate::kv!(954 int)), ("office", crate::kv!(955 int)), ("gardening", crate::kv!(956 int)),
+    ("jewish", crate::kv!(957 int)), ("criminal", crate::kv!(958 int)),
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 pub const HAS_PERSONALITY: u64 = 0x1;
 pub const MALE: u64 = 0x2;
 #[allow(non_snake_case)]
 #[inline]
-pub fn IN_GROUPS_30_41() -> u64 { crate::kv!(951 int) }
+pub fn IN_GROUPS_30_41() -> u64 { crate::kv!(959 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn PLAYER() -> u64 { crate::kv!(952 int) }
+pub fn PLAYER() -> u64 { crate::kv!(960 int) }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Personality {

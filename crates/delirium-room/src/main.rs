@@ -12,7 +12,7 @@ use delirium::collision::Collision;
 use delirium::msg::{self, Kind, Value};
 use delirium::nm::{Agent, Hit};
 use delirium::shottask::{self, ShotTask};
-use delirium::ragdoll::{Build, Capsule, Ragdoll};
+use delirium::ragdoll::{Build, Capsule, Ragdoll, Sizes, spread, BRAWLER_BODY, PROFILES, SHAPES};
 use std::collections::VecDeque;
 use std::io::Write;
 
@@ -35,6 +35,7 @@ mod map;
 #[allow(dead_code)]
 mod melee;
 mod hero;
+mod params;
 mod sfx;
 mod jump;
 mod sever;
@@ -422,12 +423,13 @@ ghost_surface {}
 vorticity {}
 spray_physics {}
 skate3_bails {}
+step_limit {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), sim.skel_style, b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.homer_wild), b(sim.gun_ai), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.extra_pick, sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails))
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails), b(sim.step_limit)) + &params::save(&sim.param_edits)
 }
 
 const XR: [(&str, &str); 8] = [
@@ -460,6 +462,10 @@ fn apply_settings(sim: &mut Sim, t: &str) {
     for (k, v) in t.lines().filter_map(|l| l.split_once(' ')) {
         if k == "gpu" {
             sim.gpu = v.trim().into();
+            continue;
+        }
+        if k == "param" {
+            params::load_param(&mut sim.param_edits, v);
             continue;
         }
         if k == "sharp_by" {
@@ -550,6 +556,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "god" => sim.god = on,
             "weak" => sim.weak = on,
             "skate3_bails" => sim.skate3_bails = on,
+            "step_limit" => sim.step_limit = on,
             "passive" => sim.passive = on,
             "walk" => sim.walk = on,
             "hero_physics" => sim.hero_physics = on,
@@ -646,40 +653,85 @@ fn taxi_of(id: i32) -> i32 {
     if id >= CABIN_ID { id - CABIN_ID } else { id - TAXI_ID }
 }
 const PLANK_ID: i32 = 200;
-const BODIES: [(&str, &str, f32, f32, f32); 10] = [("S", "Small", 1.60, 55.0, 1.0), ("A", "Average", 1.75, 77.0, 1.0), ("L", "Large", 1.90, 110.0, 1.0),
-                                                 ("K", "Lanky", 1.90, 64.0, 1.12), ("F", "Fat", 1.72, 125.0, 0.95), ("T", "Stocky", 1.63, 88.0, 0.9),
+#[allow(non_snake_case)]
+#[inline]
+fn BODIES() -> &'static [(&'static str, &'static str, f32, f32, f32); 12] { static V: std::sync::OnceLock<[(&'static str, &'static str, f32, f32, f32); 12]> = std::sync::OnceLock::new(); let f = || [("S", "Small", (*PROFILES())[0].1, (*PROFILES())[0].2, (*PROFILES())[0].3), ("A", "Average", (*PROFILES())[1].1, (*PROFILES())[1].2, (*PROFILES())[1].3),
+                                                 ("L", "Large", (*PROFILES())[2].1, (*PROFILES())[2].2, (*PROFILES())[2].3), ("K", "Lanky", (*PROFILES())[3].1, (*PROFILES())[3].2, (*PROFILES())[3].3),
+                                                 ("F", "Fat", (*PROFILES())[4].1, (*PROFILES())[4].2, (*PROFILES())[4].3), ("T", "Stocky", (*PROFILES())[5].1, (*PROFILES())[5].2, (*PROFILES())[5].3),
                                                  ("W", "Waddler", HW.0, HW.1, 1.0), ("G", "Guard", HG.0, HG.1, 1.0), ("B", "Brute", HB.0, HB.1, 1.0),
-                                                 ("R", "Random", 0.0, 0.0, 1.0)];
+                                                 ("R", "Random", 0.0, 0.0, 1.0), ("C", "Custom", 0.0, 0.0, 1.0),
+                                                 ("X", "Brawler", 0.0, (*BRAWLER_BODY()).kg, 1.0)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 const RANDOM: usize = 9;
-static SYMMETRIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-static VARIANCE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x4040_0000);
+const CUSTOM: usize = 10;
+const BRAWLER: usize = 11;
+static CUSTOM_SIZE: std::sync::Mutex<(f32, f32, f32, f32, f32, f32)> = std::sync::Mutex::new((1.0, 1.0, 1.0, 1.0, 77.0, 1.0));
+static CUSTOM_HEIGHT: std::sync::Mutex<f32> = std::sync::Mutex::new(0.0);
+static CUSTOM_NECK: std::sync::Mutex<f32> = std::sync::Mutex::new(1.0);
 
-fn spread(v: f32) -> ((f32, f32), (f32, f32)) {
-    let t = v.clamp(1.0, 4.0).ln() / 4f32.ln();
-    ((0.2f32.powf(t), 4f32.powf(t)), (0.5f32.powf(t), 2f32.powf(t)))
+fn custom_ui(ui: &mut egui::Ui) {
+    let mut c = CUSTOM_SIZE.lock().unwrap();
+    let (leg, arm, torso, w, kg, head) = &mut *c;
+    let mut moved = ui.add(egui::Slider::new(leg, 0.4..=2.0).text("Legs").suffix("x")).on_hover_text("Leg length against his").changed();
+    moved |= ui.add(egui::Slider::new(arm, 0.4..=2.0).text("Arms").suffix("x")).on_hover_text("Arm length against his").changed();
+    moved |= ui.add(egui::Slider::new(torso, 0.5..=2.0).text("Trunk").suffix("x")).on_hover_text("Trunk height against his").changed();
+    moved |= ui.add(egui::Slider::new(w, 0.5..=2.0).text("Width").suffix("x")).on_hover_text("Shoulders, hips and thickness against his").changed();
+    moved |= ui.add(egui::Slider::new(head, 0.5..=2.0).text("Head").suffix("x")).on_hover_text("Head size against his").changed();
+    moved |= ui.add(egui::Slider::new(&mut *CUSTOM_NECK.lock().unwrap(), 0.5..=6.0).text("Neck").suffix("x"))
+        .on_hover_text("Custom and Brawler bodies only: Homer (Average) keeps the game's own neck, untouched.
+            The neck bone this many times his length (1x: his), thinner as it gets longer. It's still one stiff bone hinged             at the shoulders and the head (no extra joints), so a long neck swings the head further but doesn't bend in             the middle. The head keeps its size, on the neck's end.
+            To compare: Legs/Arms/Trunk/Width/Head 1x and 77 kg is Homer refitted (close to him, not bit for bit); spawn             an Average Homer beside it.").changed();
+    moved |= ui.add(egui::Slider::new(kg, 30.0..=300.0).text("Weight").suffix(" kg")).on_hover_text("His weight: 77 kg").changed();
+    let mut tall = CUSTOM_HEIGHT.lock().unwrap();
+    let mut set = *tall > 0.0;
+    if ui.checkbox(&mut set, "Set height").on_hover_text("Off: as tall as the sizes above make him").changed() {
+        (*tall, moved) = (if set { 1.75 } else { 0.0 }, true);
+    }
+    if set {
+        moved |= ui.add(egui::Slider::new(&mut *tall, 0.8..=3.0).text("Height").suffix(" m")).on_hover_text("His height: 1.75 m").changed();
+    }
+    if moved {
+        *HOLO.lock().unwrap() = Some(std::time::Instant::now());
+    }
 }
+static HOLO: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+const HOLO_SHOW: f32 = 3.0;
 
-fn roll_body(build: &Build) -> (Vec<f32>, Vec<f32>) {
-    let ((l0, l1), (g0, g1)) = spread(f32::from_bits(VARIANCE.load(std::sync::atomic::Ordering::Relaxed)));
-    let draw = |u: f32, lo: f32, hi: f32| lo * (hi / lo).powf(u);
-    let mut x = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
-    let mut u = || {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        (x >> 40) as f32 / (1u64 << 24) as f32
-    };
-    let n = build.parts.len();
-    let (mut len, mut girth): (Vec<f32>, Vec<f32>) = (0..n).map(|_| (draw(u(), l0, l1), draw(u(), g0, g1))).unzip();
-    if SYMMETRIC.load(std::sync::atomic::Ordering::Relaxed) {
-        for k in 0..n {
-            let twin = build.parts[k].name.replace("_R_", "_L_");
-            if let Some(l) = (twin != build.parts[k].name).then(|| build.parts.iter().position(|p| p.name == twin)).flatten() {
-                (len[k], girth[k]) = (len[l], girth[l]);
-            }
+fn holo(sim: NonSend<Sim>, mut g: Gizmos, mut made: Local<Option<((f32, f32, f32, f32, f32, f32), (f32, f32), Build, Vec<Transform>)>>) {
+    let Some(t) = *HOLO.lock().unwrap() else { return };
+    let age = t.elapsed().as_secs_f32();
+    if age > HOLO_SHOW {
+        return;
+    }
+    let key = (*CUSTOM_SIZE.lock().unwrap(), (*CUSTOM_HEIGHT.lock().unwrap(), *CUSTOM_NECK.lock().unwrap()));
+    if made.as_ref().is_none_or(|m| (m.0, m.1) != key) {
+        let (b, f, _) = body_of(&sim.base.0, &sim.base.1, CUSTOM);
+        *made = Some((key.0, key.1, b, f));
+    }
+    let Some((_, _, b, f)) = made.as_ref() else { return };
+    let s = sim.ours();
+    let spot = (s.p(THIGH_L) + s.p(THIGH_R)) * 0.5 + s.fwd.with_z(0.0) * 2.0;
+    let start = Side::new(f.iter().map(|f| f.translation).collect());
+    let ground = sim.world.ground(spot + Vec3::Z * 0.3, 4.0).unwrap_or(0.0);
+    let floor = b.parts.iter().zip(f).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
+    let turn = Quat::from_rotation_z(start.fwd.cross(s.fwd).z.atan2(start.fwd.dot(s.fwd)));
+    let (from, to) = (((start.p(THIGH_L) + start.p(THIGH_R)) * 0.5).with_z(floor), spot.with_z(ground));
+    let c = Color::srgba(0.3, 0.9, 1.0, (1.0 - (age - HOLO_SHOW + 0.5).max(0.0) * 2.0) * 0.8);
+    for (k, (p, f)) in b.parts.iter().zip(f).enumerate() {
+        let (at, rot) = (to + turn * (f.translation - from), turn * f.rotation * delirium::nmdbm::rage_link(getup::links(nm()), k));
+        match p.boxed {
+            Some(e) => g.cube(Transform { translation: at, rotation: rot, scale: e * 2.0 }, c),
+            None => { g.primitive_3d(&Capsule3d::new(p.radius, p.half * 2.0), Isometry3d::new(at, rot), c); }
         }
     }
-    (len, girth)
+}
+static SYMMETRIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static VARIANCE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3FC0_0000);
+static SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn roll_body(build: &Build) -> (Vec<f32>, Vec<f32>) {
+    let seed = SEED.load(std::sync::atomic::Ordering::Relaxed);
+    let seed = if seed != 0 { seed } else { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) };
+    build.roll(seed, f32::from_bits(VARIANCE.load(std::sync::atomic::Ordering::Relaxed)), SYMMETRIC.load(std::sync::atomic::Ordering::Relaxed))
 }
 
 thread_local! {
@@ -687,8 +739,7 @@ thread_local! {
     static TUNED: std::cell::RefCell<std::collections::HashMap<usize, Vec<(&'static str, f32)>>> = Default::default();
     static TUNING: std::cell::RefCell<Vec<(usize, usize, std::sync::mpsc::Receiver<(Vec<(&'static str, f32)>, i32)>)>> = Default::default();
 }
-const SHAPES: [(f32, f32, f32, f32, f32); 3] = [(0.6, 1.3, 1.2, 1.8, 300.0), (1.3, 0.9, 1.1, 0.8, 60.0), (1.3, 1.8, 1.0, 1.3, 160.0)];
-const HW: (f32, f32) = (2.68, 300.0);
+const HW: (f32, f32) = (2.63, 300.0);
 const HG: (f32, f32) = (1.61, 60.0);
 const HB: (f32, f32) = (1.63, 160.0);
 const PLAT_ID: i32 = 300;
@@ -837,7 +888,7 @@ struct HeroDoll {
     rise: Option<getup::Rise>,
 }
 
-const HOMERS: usize = 8;
+const HOMERS: usize = 50;
 
 struct Benched {
     homer_id: usize,
@@ -970,6 +1021,7 @@ struct Sim {
     meat_on: bool,
     meat_wipe: bool,
     skate3_bails: bool,
+    step_limit: bool,
     meat_screen: Option<Option<hom::Screen>>,
     shot_scene: String,
     photo_note: String,
@@ -1020,6 +1072,9 @@ struct Sim {
     no_dodge: bool,
     dodge_gap: f32,
     extra: bool,
+    param_edits: params::Edits,
+    param_search: String,
+    param_changed_only: bool,
     extra_pick: u32,
     fire_react: bool,
     dive: bool,
@@ -1303,71 +1358,36 @@ fn hero_task(tp: &TaskParams, task: &str, set: &str, head: Vec3, me: Vec3, fwd: 
 }
 
 fn body_of(build: &Build, frames: &[Transform], body: usize) -> (Build, Vec<Transform>, Option<(Vec<f32>, f32)>) {
-    let (_, name, h, m, l) = BODIES[body];
+    let (_, name, h, m, l) = (*BODIES())[body];
     let pivot = |k: usize| build.parts[k].parent.map_or(frames[k].translation, |_| frames[k].translation + frames[k].rotation * build.parts[k].anchor);
     if body == RANDOM {
         let (len, girth) = ROLLED.with_borrow_mut(|r| r.get_or_insert_with(|| roll_body(build)).clone());
-        let mut j = vec![pivot(0); build.parts.len()];
-        for (c, p) in build.parts.iter().enumerate() {
-            if let Some(q) = p.parent {
-                j[c] = j[q] + (pivot(c) - pivot(q)) * len[c];
-            }
-        }
-        let legs = |j: &dyn Fn(usize) -> Vec3| (j(1).distance(j(2)) + j(2).distance(j(3)) + j(4).distance(j(5)) + j(5).distance(j(6))) / 2.0;
-        let k = legs(&pivot) / legs(&|i| j[i]);
-        let j: Vec<Vec3> = j.iter().map(|v| pivot(0) + (*v - pivot(0)) * k).collect();
-        let (mut b, f) = build.fit(frames, &j);
-        for (p, g) in b.parts.iter_mut().zip(&girth) {
-            (p.radius, p.heft) = (p.radius * g, p.heft * g * g);
-        }
-        let low = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
-        let top = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z + p.radius + p.half).fold(f32::MIN, f32::max);
-        eprintln!("body  {name}: {:.2} m, {:.0} kg", top - low, Ragdoll::new(&b, &f, Vec3::ZERO).mass());
+        let (b, f) = build.rolled(frames, &len, &girth);
+        eprintln!("body  {name}: {:.2} m, {:.0} kg", b.height(&f), Ragdoll::new(&b, &f, Vec3::ZERO).mass());
         return (b, f, None);
     }
-    if let Some(&(leg, arm, torso, w, kg)) = body.checked_sub(6).and_then(|i| SHAPES.get(i)) {
-        let o = pivot(0);
-        let f: Vec<Vec3> = (0..build.parts.len()).map(|k| pivot(k) - o).collect();
-        let mut j = f.clone();
-        let wide = |v: Vec3| (v * w).with_z(v.z);
-        for (hip, kids) in [(1, [2, 3]), (4, [5, 6])] {
-            for k in kids {
-                j[k] = wide(f[hip]) + (f[k] - f[hip]) * leg;
-            }
-            j[hip] = wide(f[hip]);
-        }
-        for v in &mut j[7..] {
-            v.z *= torso;
-        }
-        for (sh, kids) in [(14, [15, 16]), (18, [19, 20])] {
-            let s = j[sh];
-            for k in kids {
-                j[k] = wide(s) + (j[k] - s) * arm;
-            }
-            j[sh] = wide(s);
-        }
-        let j: Vec<Vec3> = j.iter().map(|v| o + *v / leg).collect();
-        let (mut b, f) = build.fit(frames, &j);
-        for p in &mut b.parts {
-            p.radius *= w;
-        }
-        let k = kg / Ragdoll::new(&b, &f, Vec3::ZERO).mass();
-        for p in &mut b.parts {
-            p.heft *= k;
-        }
-        let low = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
-        let top = b.parts.iter().zip(&f).map(|(p, f)| f.translation.z + p.radius + p.half).fold(f32::MIN, f32::max);
-        eprintln!("body  {name}: {:.2} m, {:.0} kg", top - low, Ragdoll::new(&b, &f, Vec3::ZERO).mass());
+    if body == CUSTOM || body == BRAWLER {
+        let sizes = if body == BRAWLER { (*BRAWLER_BODY()) } else {
+            let (legs, arms, trunk, width, kg, head) = *CUSTOM_SIZE.lock().unwrap();
+            Sizes { legs, arms, trunk, width, head, neck: *CUSTOM_NECK.lock().unwrap(), kg, height: *CUSTOM_HEIGHT.lock().unwrap() }
+        };
+        let Sizes { arms, trunk, width, head, neck, .. } = sizes;
+        let (b, f, len, leg) = build.sized(frames, sizes);
+        eprintln!("body  {name}: legs x{leg:.2}, arms x{arms:.2}, trunk x{trunk:.2}, width x{width:.2}, head x{head:.2}, neck x{neck:.2}, {:.2} m, {:.0} kg", b.height(&f), Ragdoll::new(&b, &f, Vec3::ZERO).mass());
+        return (b, f, Some((len, leg)));
+    }
+    if let Some(&(_, leg, arm, torso, w, kg)) = body.checked_sub(6).and_then(|i| (*SHAPES()).get(i)) {
+        let (b, f) = build.shape(frames, leg, arm, torso, w, kg);
+        eprintln!("body  {name}: {:.2} m, {:.0} kg", b.height(&f), Ragdoll::new(&b, &f, Vec3::ZERO).mass());
         return (b, f, None);
     }
     if body == 1 {
         return (build.clone(), frames.to_vec(), None);
     }
-    let s = h / BODIES[1].2 / (0.53 * l + 0.47);
-    let len: Vec<f32> = build.parts.iter().map(|p| if p.name.contains("_L_") || p.name.contains("_R_") { s * l } else { s }).collect();
-    let (b, f) = build.scaled(frames, &len, m / BODIES[1].3);
-    eprintln!("body  {name}: trunk x{s:.3}, limbs x{:.3}, girth x{:.3}", s * l, b.parts[0].radius / build.parts[0].radius / s);
-    (b, f, Some((len, s * l)))
+    let (b, f, len, limbs) = build.profile(frames, h, m, l);
+    let s = len[0];
+    eprintln!("body  {name}: trunk x{s:.3}, limbs x{limbs:.3}, girth x{:.3}", b.parts[0].radius / build.parts[0].radius / s);
+    (b, f, Some((len, limbs)))
 }
 
 fn v3(x: Vec3) -> String {
@@ -1633,7 +1653,7 @@ impl Sim {
     }
 
     fn spawn(&mut self, key: &str) {
-        let Some(body) = BODIES.iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  spawn: no body {key} (S A L K F T W G B R)")) };
+        let Some(body) = (*BODIES()).iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  spawn: no body {key} (S A L K F T W G B R C X)")) };
         if body == RANDOM {
             ROLLED.set(Some(roll_body(&self.base.0)));
         }
@@ -1662,7 +1682,7 @@ impl Sim {
             self.button("balance");
         }
         self.held = false;
-        self.say(format!("room  spawned Homer {} ({}) at {}: {} Homers", self.bench[i].homer_id + 1, BODIES[body].1, v3(to), self.bench.len() + 1));
+        self.say(format!("room  spawned Homer {} ({}) at {}: {} Homers", self.bench[i].homer_id + 1, (*BODIES())[body].1, v3(to), self.bench.len() + 1));
     }
 
     fn stand_homer(&mut self, body: usize, spot: Vec3, fwd: Vec3) -> (usize, Vec3) {
@@ -1686,10 +1706,10 @@ impl Sim {
     }
 
     fn tune_homer(&mut self, id: usize, body: usize, build: &Build, frames: &[Transform]) {
-        if body < 6 {
+        if body < 6 || body >= CUSTOM {
             return;
         }
-        if let Some(t) = (body != RANDOM).then(|| TUNED.with_borrow(|m| m.get(&body).cloned())).flatten() {
+        if let Some(t) = (body < RANDOM).then(|| TUNED.with_borrow(|m| m.get(&body).cloned())).flatten() {
             return self.retune(id, &t);
         }
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1708,7 +1728,7 @@ impl Sim {
             Err(e) => e == std::sync::mpsc::TryRecvError::Empty,
         }));
         for (id, body, (tune, got)) in done {
-            if body != RANDOM {
+            if body < RANDOM {
                 TUNED.with_borrow_mut(|m| m.insert(body, tune.clone()));
             }
             self.retune(id, &tune);
@@ -1728,7 +1748,7 @@ impl Sim {
     }
 
     fn rebody(&mut self, key: &str) {
-        let Some(body) = BODIES.iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  body: no body {key} (S A L K F T W G B R)")) };
+        let Some(body) = (*BODIES()).iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  body: no body {key} (S A L K F T W G B R C X)")) };
         if body == RANDOM {
             ROLLED.set(Some(roll_body(&self.base.0)));
         }
@@ -1738,7 +1758,7 @@ impl Sim {
         self.take_control(i);
         self.drop_homer(i);
         self.homer_id = id;
-        self.say(format!("room  body: Homer {} now {}", id + 1, BODIES[body].1));
+        self.say(format!("room  body: Homer {} now {}", id + 1, (*BODIES())[body].1));
     }
 
     fn swap_homer(&mut self, i: usize) {
@@ -1786,7 +1806,7 @@ impl Sim {
         }
         self.take_control(i);
         let at = self.agent.doll.com().0;
-        self.say(format!("room  control: Homer {} ({}) at {}", self.homer_id + 1, BODIES[self.body].1, v3(at)));
+        self.say(format!("room  control: Homer {} ({}) at {}", self.homer_id + 1, (*BODIES())[self.body].1, v3(at)));
     }
 
     fn take_control(&mut self, i: usize) {
@@ -3587,8 +3607,9 @@ impl Sim {
         let Some(f) = self.agent.doll.frames().nth(part) else { return };
         let at = f.translation + f.rotation * local;
         let (v, w) = self.agent.doll.vel(part);
-        let damp = (2.0 * (PULL_K * self.agent.doll.mass()).sqrt()).min(30.0 * self.agent.doll.part_mass(part));
-        let imp = (PULL_K * (target - at) - damp * (v + w.cross(at - f.translation))).clamp_length_max(PULL_MAX) / 60.0;
+        let heavy = (self.agent.doll.mass() / (*BODIES())[1].3).max(1.0);
+        let damp = (2.0 * (PULL_K * heavy * self.agent.doll.mass()).sqrt()).min(30.0 * self.agent.doll.part_mass(part));
+        let imp = (PULL_K * heavy * (target - at) - damp * (v + w.cross(at - f.translation))).clamp_length_max(PULL_MAX * heavy) / 60.0;
         self.held = false;
         let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
         let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "applyImpulse", &ps);
@@ -3857,7 +3878,14 @@ impl Sim {
         }
         match hit {
             Some(((part, at, normal), d)) => self.fire(part, Some((at, d, normal)), fatal, &more),
-            None if hurt.is_empty() => self.near_miss(from, dir),
+            None if hurt.is_empty() => {
+                let off = |a: &Agent| { let c = a.doll.centre(CHEST) - from; (c - dir * c.dot(dir).max(0.0)).length() };
+                let mine = off(&self.agent);
+                match (0..self.bench.len()).map(|i| (i, off(&self.crowd[i].0))).filter(|x| x.1 < mine).min_by(|a, b| a.1.total_cmp(&b.1)) {
+                    Some((i, _)) => self.as_homer(i, |s| s.near_miss(from, dir)),
+                    None => self.near_miss(from, dir),
+                }
+            }
             None => {}
         }
     }
@@ -4572,7 +4600,11 @@ impl Sim {
                 }
             }
         }
-        let short: String = line.chars().take(110).collect();
+        let edited = if self.param_edits.is_empty() { vec![] } else { params::apply(&self.param_edits, name, &mut ps) };
+        let mut short: String = line.chars().take(110).collect();
+        if !edited.is_empty() {
+            short += &format!("  (changed: {})", edited.join(" "));
+        }
         let (agent, st, tag, build) = match who {
             0 => (&mut self.agent, &mut self.msgs, String::new(), &self.build),
             HERO => match self.hero_doll.as_mut() {
@@ -4691,7 +4723,21 @@ fn archive_read(game: &str, rpf: &str, paths: &[&str]) -> Vec<Option<Vec<u8>>> {
     let Ok(key) = getup::key(dir) else { return vec![None; paths.len()] };
     if getup::pc() {
         let sub = if rpf == "common.rpf" { "common" } else { "pc" };
-        return paths.iter().map(|p| std::fs::read(dir.join(sub).join(getup::plat(p))).ok()).collect();
+        let packed = std::cell::OnceCell::new();
+        return paths.iter().map(|p| std::fs::read(dir.join(sub).join(getup::plat(p))).ok().or_else(|| {
+            let (toc, d) = packed.get_or_init(|| std::fs::read(dir.join("pc/data/game.rpf")).ok().map(|d| (delirium_data::rpf::read_toc(&d, &key).unwrap_or_default(), d))).as_ref()?;
+            let name = p.rsplit('/').next()?;
+            toc.iter().find(|e| e.path.eq_ignore_ascii_case(p) || e.path.rsplit('/').next().is_some_and(|n| n.eq_ignore_ascii_case(name)))
+                .and_then(|e| delirium_data::rpf::read(d, e).ok())
+                .map(|mut x| {
+                    let n = x.len() / 16 * 16;
+                    key.decrypt(&mut x[..n]);
+                    while x.last() == Some(&0) {
+                        x.pop();
+                    }
+                    x
+                })
+        })).collect();
     }
     let Ok(data) = std::fs::read(dir.join(getup::plat(rpf))) else { return vec![None; paths.len()] };
     let toc = delirium_data::rpf::read_toc(&data, &key).unwrap_or_default();
@@ -4754,7 +4800,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
         println!("{} {dir}", if ok { "exported to" } else { "export incomplete:" });
         std::process::exit(if ok { 0 } else { 1 });
     }
-    let body = a.iter().position(|x| x == "--body").and_then(|i| a.get(i + 1)).and_then(|n| BODIES.iter().position(|b| b.0 == n)).unwrap_or(1);
+    let body = a.iter().position(|x| x == "--body").and_then(|i| a.get(i + 1)).and_then(|n| (*BODIES()).iter().position(|b| b.0 == n)).unwrap_or(1);
     let base = (build, frames);
     let (build, frames, grow) = body_of(&base.0, &base.1, body);
     let crowd_build = build.clone();
@@ -4783,7 +4829,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
+                        weapons, weapon: 0, weak: false, param_edits: Default::default(), param_search: String::new(), param_changed_only: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, step_limit: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
@@ -4915,7 +4961,7 @@ fn main() {
     }
     sim.say(format!("weaponinfo.xml: {} weapons{}", sim.weapons.len(), if sim.weapons.is_empty() { " (--game <dir> reads it; impulses 50 N s)" } else { "" }));
 
-    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, (apply_look, god_rays, glass_light, fire_view), video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, draw, smooth).chain();
+    let systems = (keys, console, viewports, mouse, scripted, step, switch, scene, (apply_look, god_rays, glass_light, fire_view), video, follow_floor, bodies, face_view, props, car_mesh, pusher_mesh, taxi_mesh, gun_view, (draw, holo), smooth).chain();
     let mut app = App::new();
     let gpu = std::fs::read_to_string(getup::config_dir().join(SETTINGS)).ok()
         .and_then(|t| t.lines().find_map(|l| l.strip_prefix("gpu ").map(|g| g.trim().to_lowercase()))).filter(|g| !g.is_empty());
@@ -6087,7 +6133,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
         }
     }
     a.retain(|x| x != "--marge");
-    a.extend(["--body".to_string(), BODIES[sim.body].0.to_string()]);
+    a.extend(["--body".to_string(), (*BODIES())[sim.body].0.to_string()]);
     let (map, ground) = match scene.as_str() {
         "stairs" => ("818.94,-348.88", None),
         "wall" => ("738.83,-467", None),
@@ -6110,6 +6156,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
     (new.show_pops, new.help, new.tab, new.skin) = (sim.show_pops, sim.help, sim.tab, sim.skin);
     new.meat_on = sim.meat_on;
     new.skate3_bails = sim.skate3_bails;
+    new.step_limit = sim.step_limit;
     (new.ped_color, new.body_alpha, new.skel, new.soft, new.eyes, new.film) = (sim.ped_color, sim.body_alpha, sim.skel, sim.soft, sim.eyes, sim.film);
     apply_settings(&mut new, &settings(&sim));
     new.scene = Some(scene.clone());
@@ -6535,6 +6582,7 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
     if let Some(i) = info.filter(|_| sim.gpu_now.is_empty()) {
         sim.gpu_now = i.name.clone();
         let (f, id) = (getup::config_dir().join(FALLBACK), format!("{} {} {}", i.name, i.driver, i.driver_info));
+        crash::note_gpu(format!("{id} ({:?})", i.backend));
         if let Ok(t) = std::fs::read_to_string(&f) {
             match t.lines().nth(1) {
                 None => drop(std::fs::write(&f, format!("{}
@@ -7937,7 +7985,7 @@ fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>, mut contexts: Eg
     }
     if k.just_pressed(KeyCode::KeyN) {
         let b = if k.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
-            format!("spawn {}", BODIES[sim.spawn_body].0)
+            format!("spawn {}", (*BODIES())[sim.spawn_body].0)
         } else if k.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
             "remove homer".into()
         } else {
@@ -8645,6 +8693,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 sim.fire(part, None, w.next() == Some("fatal"), &[]);
             }
             ("!nododge", _) => sim.no_dodge = !sim.no_dodge,
+            ("!steplimit", _) => sim.step_limit = !sim.step_limit,
             ("!superpunch", _) => sim.button("super punch"),
             #[cfg(feature = "portal")]
             ("!portal", Some(a)) => sim.portal_script(a),
@@ -8757,6 +8806,9 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!infinite", _) => sim.infinite = !sim.infinite,
             ("!hide", _) => sim.show_ui = !sim.show_ui,
             ("!tab", Some(n)) => sim.tab = n.parse().unwrap_or(1),
+            ("!param", Some(a)) => params::load_param(&mut sim.param_edits, a),
+            ("!variance", Some(v)) => VARIANCE.store(v.parse::<f32>().unwrap_or(1.5).to_bits(), std::sync::atomic::Ordering::Relaxed),
+            ("!seed", Some(n)) => { SEED.store(n.parse().unwrap_or(0), std::sync::atomic::Ordering::Relaxed); ROLLED.with_borrow_mut(|r| *r = None); }
             ("!cam2", a) => sim.cam2 = match a.unwrap_or("").split_whitespace().filter_map(|x| x.parse().ok()).collect::<Vec<f32>>()[..] {
                 [x, y, z, a, b, c] => Some((Vec3::new(x, y, z), Vec3::new(a, b, c))),
                 _ => None,
@@ -8836,11 +8888,21 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let scene = sim.scene.clone().unwrap_or_else(|| "room".into());
                 sim.switch_to = Some((scene, n == "marge"));
             }
-            ("!body", Some(n)) => if let Some(i) = BODIES.iter().position(|b| b.0 == n) {
+            ("!body", Some(n)) => if let Some(i) = (*BODIES()).iter().position(|b| b.0 == n) {
                 sim.body = i;
                 sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
             },
             ("!strength", Some(n)) => sim.agent.strength = n.parse().unwrap_or(1.0),
+            ("!custom", Some(n)) => match n.split(',').filter_map(|x| x.parse().ok()).collect::<Vec<f32>>()[..] {
+                [a, b, c, d, e] => *CUSTOM_SIZE.lock().unwrap() = (a, b, c, d, e, 1.0),
+                [a, b, c, d, e, f] => {
+                    *CUSTOM_SIZE.lock().unwrap() = (a, b, c, d, e, f);
+                    *HOLO.lock().unwrap() = Some(std::time::Instant::now());
+                }
+                _ => {}
+            },
+            ("!height", Some(n)) => *CUSTOM_HEIGHT.lock().unwrap() = n.parse().unwrap_or(0.0),
+            ("!neck", Some(n)) => *CUSTOM_NECK.lock().unwrap() = n.parse().unwrap_or(1.0),
             ("!scene", Some(n)) => {
                 if SCENES.contains(&n) || STAGES.iter().chain(&EXTRAS).any(|t| t.0 == n) {
                     sim.switch_to = Some((n.to_string(), nm() == delirium::nmrs::MARGE));
@@ -9015,6 +9077,7 @@ impl Sim {
     }
 
     fn tick(&mut self) {
+        delirium::nmdbm::STEP_LIMIT.store(self.step_limit, std::sync::atomic::Ordering::Relaxed);
         self.tunes_in();
         self.extras_frame();
         self.bridge();
@@ -9289,7 +9352,10 @@ fn step(mut sim: NonSendMut<Sim>, time: Res<Time>, mut timing: Local<(f32, f32, 
         *timing = (timing.0 + time.delta_secs() * 1000.0, timing.1 + started.elapsed().as_secs_f32() * 1000.0, timing.2 + 1);
         if timing.0 >= 1000.0 {
             let n = timing.2 as f32;
-            eprintln!("frame {:.1} FPS, {:.1} ms a frame, physics {:.1} ms", n * 1000.0 / timing.0, timing.0 / n, timing.1 / n);
+            let s = sim.ours();
+            let (lean, fwd) = (s.p(HEAD) - s.p(0), s.fwd);
+            eprintln!("frame {:.1} FPS, {:.1} ms a frame, physics {:.1} ms, hips {:.3} m, lean {:.2} {:.2}, facing {:.2} {:.2}", n * 1000.0 / timing.0, timing.0 / n,
+                      timing.1 / n, s.p(0).z, lean.x, lean.y, fwd.x, fwd.y);
             *timing = (0.0, 0.0, 0);
         }
     }
@@ -9646,7 +9712,7 @@ fn section_title(t: &str) -> egui::RichText {
     egui::RichText::new(t).family(egui::FontFamily::Name("big".into())).size(22.0).color(INK)
 }
 
-const NAV: [(u8, &str); 8] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (1, "Interact"),
+const NAV: [(u8, &str); 9] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (9, "Parameters"), (1, "Interact"),
                                      (4, "Graphics / Camera"), (8, "Audio / Video"), (6, "Inspect"), (5, "Help")];
 
 fn active_tab(bits: u16) -> u16 {
@@ -9676,6 +9742,21 @@ fn ui(mut contexts: EguiContexts, mut sim: NonSendMut<Sim>, mut log_open: Local<
         f.families.insert(egui::FontFamily::Name("big".into()), std::iter::once("archivo".to_string()).chain(rest).collect());
         ctx.set_fonts(f);
         return Ok(());
+    }
+    let last = crash::pending().clone();
+    if let Some(text) = last {
+        egui::Window::new("The room crashed last time").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.label("It saved a report (crash.txt, in the room's folder). Sending it helps fix it: a GitHub page opens filled in with it, and you press Submit.");
+            ui.horizontal(|ui| {
+                if ui.button("Report crash").clicked() {
+                    crash::report(&text);
+                    *crash::pending() = None;
+                }
+                if ui.button("Not now").clicked() {
+                    *crash::pending() = None;
+                }
+            });
+        });
     }
     ctx.global_style_mut(|s| {
         s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
@@ -9770,8 +9851,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             if ui.button("Reset pose").on_hover_text(RESET_TIP).clicked() { pressed = Some("RESET pose".into()); }
             if ui.button("Reset here").on_hover_text("Stand Homer back up where he is, facing his way (Shift+R)").clicked() { pressed = Some("RESET here".into()); }
             ui.separator();
-            egui::ComboBox::from_id_salt("bar body").width(64.0).selected_text(BODIES[sim.spawn_body].1).show_ui(ui, |ui| {
-                for (i, (_, n, h, m, _)) in BODIES.iter().enumerate() {
+            egui::ComboBox::from_id_salt("bar body").width(64.0).selected_text((*BODIES())[sim.spawn_body].1).show_ui(ui, |ui| {
+                for (i, (_, n, h, m, _)) in (*BODIES()).iter().enumerate() {
                     ui.selectable_value(&mut sim.spawn_body, i, *n).on_hover_text(format!("{h:.2} m, {m:.0} kg"));
                 }
             }).response.on_hover_text("The body the next spawned Homer has");
@@ -9786,9 +9867,12 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                     VARIANCE.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
                 }
             }
+            if sim.spawn_body == CUSTOM {
+                ui.menu_button("Sizes", custom_ui).response.on_hover_text("The custom body's legs, arms, trunk, width and weight");
+            }
             if ui.add_enabled(sim.bench.len() + 1 < HOMERS, egui::Button::new("Spawn Homer"))
                 .on_hover_text(format!("Another Homer of this body, 2 m in front of the one you control (Shift+N); up to {HOMERS}")).clicked() {
-                pressed = Some(format!("spawn {}", BODIES[sim.spawn_body].0));
+                pressed = Some(format!("spawn {}", (*BODIES())[sim.spawn_body].0));
             }
             if ui.add_enabled(sim.can_remove(), egui::Button::new("Remove")).on_hover_text("Remove the Homer you control, a spawned one; control passes to the next (Ctrl+N)").clicked() {
                 pressed = Some("remove homer".into());
@@ -9952,7 +10036,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let start = stripe.left() + stripe.width() * i as f32 / 5.0;
             ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(start, stripe.top()), egui::vec2(stripe.width() / 5.0, 4.0)), 0.0, color);
         }
-        ui.label(section_title(if nm() == delirium::nmrs::MARGE { "Marge" } else { "Homer" }));
+        let who = if nm() == delirium::nmrs::MARGE { "Marge" } else { "Homer" };
+        ui.label(section_title(&if sim.body == 1 { who.to_string() } else { format!("{who} · {}", (*BODIES())[sim.body].1) }));
         ui.label(egui::RichText::new(if state.is_empty() { "Ready" } else { &state }).color(DIM));
         let hp = if sim.god { 1.0 } else { (sim.health / 200.0).clamp(0.0, 1.0) };
         ui.add(egui::ProgressBar::new(hp).desired_height(8.0).fill(egui::Color32::from_rgb(93, 194, 159)));
@@ -9968,14 +10053,14 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         }
         ui.add_space(4.0);
         ui.separator();
-        let nav_width = (ui.available_width() - 18.0) / 4.0;
-        egui::Grid::new("section navigation").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
+        let nav_width = (ui.available_width() - 12.0) / 3.0;
+        egui::Grid::new("section navigation").num_columns(3).spacing([6.0, 6.0]).show(ui, |ui| {
             ui.spacing_mut().button_padding.x = 6.0;
             for (i, &(bit, name)) in NAV.iter().enumerate() {
                 if ui.add_sized([nav_width, 34.0], egui::Button::new(egui::RichText::new(name).size(14.0)).wrap().selected(sim.tab == 1 << bit)).on_hover_text(match bit { 4 => "Camera and appearance", 8 => "Graphics quality, resolution, shadows, frame rate and sound", _ => name }).clicked() {
                     sim.tab = 1 << bit;
                 }
-                if i % 4 == 3 { ui.end_row(); }
+                if i % 3 == 2 { ui.end_row(); }
             }
         });
         ui.separator();
@@ -9984,6 +10069,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         if sim.tab & (1 << 0) != 0 {
             ui.add_space(6.0);
             ui.label(section_title("Reactions"));
+            ui.checkbox(&mut sim.step_limit, "Step limit")
+                .on_hover_text("As in the game: a stumbling Homer falls after so many steps. Off: he keeps stepping until he finds his balance.");
             info(ui, "Start a reaction, then poke, shoot or pull Homer to see how he responds.");
             let per = per_row(ui, 108.0);
             egui::Grid::new("beh").spacing([10.0, 8.0]).show(ui, |ui| {
@@ -10069,6 +10156,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.label(egui::RichText::new(t).strong().size(15.0));
         };
 
+        if sim.tab & (1 << 9) != 0 {
+            let s = &mut *sim;
+            params::tab(ui, &mut s.param_edits, &mut s.param_search, &mut s.param_changed_only);
+        }
         if sim.tab & (1 << 1) != 0 {
             ui.add_space(6.0);
             ui.label(section_title("Interact"));
@@ -10196,22 +10287,22 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             info(ui, "Control Homer, change his reactions, or play as the Hero.");
             ui.horizontal_wrapped(|ui| {
                 ui.label("Body");
-                for (i, (_, n, h, m, _)) in BODIES.iter().enumerate() {
+                for (i, (_, n, h, m, _)) in (*BODIES()).iter().enumerate() {
                     let tip = if sim.bench.is_empty() { format!("{h:.2} m, {m:.0} kg (restarts the scene)") } else { format!("{h:.2} m, {m:.0} kg: the Homer you control, where he stands") };
                     if ui.selectable_label(sim.body == i, *n).on_hover_text(tip).clicked() && sim.body != i {
                         if sim.bench.is_empty() {
                             sim.body = i;
                             sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
                         } else {
-                            pressed = Some(format!("body {}", BODIES[i].0));
+                            pressed = Some(format!("body {}", (*BODIES())[i].0));
                         }
                     }
                 }
             });
             sub(ui, "Homers");
             ui.horizontal_wrapped(|ui| {
-                egui::ComboBox::from_id_salt("spawn body").selected_text(BODIES[sim.spawn_body].1).show_ui(ui, |ui| {
-                    for (i, (_, n, h, m, _)) in BODIES.iter().enumerate() {
+                egui::ComboBox::from_id_salt("spawn body").selected_text((*BODIES())[sim.spawn_body].1).show_ui(ui, |ui| {
+                    for (i, (_, n, h, m, _)) in (*BODIES()).iter().enumerate() {
                         ui.selectable_value(&mut sim.spawn_body, i, *n).on_hover_text(format!("{h:.2} m, {m:.0} kg"));
                     }
                 });
@@ -10226,8 +10317,11 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                         VARIANCE.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
                     }
                 }
+                if sim.spawn_body == CUSTOM {
+                    ui.vertical(custom_ui);
+                }
                 if ui.add_enabled(sim.bench.len() + 1 < HOMERS, egui::Button::new("Spawn Homer")).on_hover_text("Another Homer of this body, 2 m in front of the one you control, balancing (Shift+N)").clicked() {
-                    pressed = Some(format!("spawn {}", BODIES[sim.spawn_body].0));
+                    pressed = Some(format!("spawn {}", (*BODIES())[sim.spawn_body].0));
                 }
             });
             if !sim.bench.is_empty() {
@@ -10235,7 +10329,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 all.sort();
                 for (id, body, on) in all {
                     ui.horizontal(|ui| {
-                        ui.label(format!("Homer {} · {}", id + 1, BODIES[body].1));
+                        ui.label(format!("Homer {} · {}", id + 1, (*BODIES())[body].1));
                         if on {
                             ui.label(egui::RichText::new("controlled").color(HI));
                         } else {

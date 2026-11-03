@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+- **Custom bodies**: Character tab, body Custom. Sliders for legs, arms, trunk, width, head, neck and weight, and
+  an optional height. A see-through preview shows the next spawn while you move them. Short legs, long legs, wide
+  and heavy bodies all stand, walk and take every reaction. Script: `!custom legs,arms,trunk,width,kg[,head]`,
+  `!neck n`.
+- **Neck slider** (Custom only, 0.5 to 6 times): a longer neck sits the head higher and is thinner. It is one
+  stiff bone, hinged at both ends, so a long neck swings but doesn't bend in the middle. Homer (Average) always
+  keeps the game's own neck.
+- **Brawler** body: short thick legs, short arms, a wide trunk and a big head.
+- **Random** body is repeatable: `!seed n` and `!variance v` in scripts.
+- **Parameters tab** (by [LoAlCo](https://github.com/LoAlCo), from PR #42): every behaviour's parameters with their defaults and what they do. A changed value goes
+  with that behaviour every time it's sent, from buttons, hits, shots or the console.
+- Up to 50 Homers.
+- **SDK, the same bodies as the Playroom**: `nm_build_sized` (Custom), `nm_build_named` (Small, Average, Large,
+  Lanky, Fat, Stocky, Waddler, Guard, Brute, Brawler), `nm_build_random` (seed, variance, symmetric),
+  `nm_build_fit_neck` (fit a skeleton with a long neck) and `nm_build_set_head` (raise and grow the head for a tall
+  skull). `nm_agent_set_override` / `nm_agent_clear_overrides` are the Parameters tab for one character,
+  including the messages the built-in tasks send. See [Modding](docs/modding.md).
+- After a crash the room writes `crash.txt` (system, graphics card, settings) beside it, and the next start offers
+  Report crash with a GitHub issue filled in.
+
+### Fixed
+- **PC (Steam) export**: `delirium-room --export` now writes a working `taskparams.txt` (it is packed and
+  encrypted in `pc/data/game.rpf`), and the PC character file is read in its own byte order everywhere, so the SDK
+  no longer gets NaN bodies from it.
+- Fitted bodies' joints pivot where the fit puts them (they pivoted at the game man's places).
+- The Waddler holds his own weight (his pelvis hung past his short legs and he sat on it).
+- Random bodies no longer fly around (default spread 1.5 times, was 3) or stack their spine into blobs, and Reset
+  pose stands them as built.
+- The mouse pull grows with a heavy body's weight.
+
+### Docs
+- SDK: `nm_agent_create` puts the body's lowest point on the position you give; pass `nm_agent_step` a fixed
+  1/60 s, not the frame's wall-clock time.
+
 ## 0.5.2
 
 ### Fixed

@@ -28,10 +28,10 @@ pub struct Look {
 pub fn FULL() -> f32 { crate::kv!(28) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(814 int) }
+pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(822 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MOVER_BITS() -> u32 { crate::kv!(965 int) }
+pub fn MOVER_BITS() -> u32 { crate::kv!(973 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Anim {

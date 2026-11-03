@@ -76,7 +76,7 @@ pub struct OccluderLists {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn OCCLUDER_NEAR() -> f32 { crate::kv!(801) }
+pub fn OCCLUDER_NEAR() -> f32 { crate::kv!(809) }
 
 impl OccluderLists {
     pub fn new(count: usize) -> OccluderLists {
@@ -229,7 +229,7 @@ pub struct CullZone {
 
 impl CullZone {
     pub fn new(centre: [f32; 2], a: [f32; 2], z_low: f32, b: [f32; 2], z_high: f32, flags: u32) -> Option<CullZone> {
-        let flags = flags as u16 & crate::kv!(802 int);
+        let flags = flags as u16 & crate::kv!(810 int);
         (flags != 0).then(|| CullZone {
             corner: [short(centre[0] - a[0] - b[0]), short(centre[1] - a[1] - b[1])],
             axis_a: [short(a[0] * 2.0), short(a[1] * 2.0)],
@@ -346,7 +346,7 @@ pub struct TextIpls {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX_OCCLUDERS() -> usize { crate::kv!(786 int) }
+pub fn MAX_OCCLUDERS() -> usize { crate::kv!(794 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IplLine {
@@ -561,8 +561,8 @@ impl TextIpls {
             length: at_least_one(l),
             width: at_least_one(w),
             height: at_least_one(h),
-            cos: short((angle as f64).cos() as f32 * crate::kv!(803)),
-            sin: short((angle as f64).sin() as f32 * crate::kv!(803)),
+            cos: short((angle as f64).cos() as f32 * crate::kv!(811)),
+            sin: short((angle as f64).sin() as f32 * crate::kv!(811)),
             flag,
         });
     }

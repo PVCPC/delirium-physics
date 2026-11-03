@@ -595,6 +595,19 @@ pub fn find(name: &str) -> Option<&'static Message> {
 }
 
 pub fn send(a: &mut Agent, build: &Build, world: &Collision, st: &mut State, msg: &str, params: &[(&str, Value)]) -> Result<usize, Error> {
+    if a.overrides.iter().any(|(m, ..)| *m == msg) {
+        let over = std::mem::take(&mut a.overrides);
+        let mut ps = params.to_vec();
+        for (_, k, v) in over.iter().filter(|(m, ..)| *m == msg) {
+            match ps.iter_mut().find(|(n, _)| n == k) {
+                Some(slot) => slot.1 = v.clone(),
+                None => ps.push((k, v.clone())),
+            }
+        }
+        let r = send(a, build, world, st, msg, &ps);
+        a.overrides = over;
+        return r;
+    }
     if let Some(r) = a.extras.send(msg, params) {
         return r;
     }

@@ -345,7 +345,7 @@ pub struct MoverPlayer {
 pub fn FULL_MOVER_WEIGHT() -> u32 { crate::kv!(184 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn OWN_CHANNEL() -> u32 { crate::kv!(634 int) }
+pub fn OWN_CHANNEL() -> u32 { crate::kv!(644 int) }
 
 pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     use crate::staticcount::{MOVER_BITS, NO_MOVER_TRACK};
@@ -445,7 +445,7 @@ pub fn split_ratio(ratio: f32) -> [(i32, f32); 2] {
 
 #[allow(non_snake_case)]
 #[inline]
-fn LIST_SLACK() -> f32 { crate::kv!(635) }
+fn LIST_SLACK() -> f32 { crate::kv!(645) }
 
 pub fn normalize_list(w: &mut [f32]) {
     let Some(last) = w.len().checked_sub(1) else { return };

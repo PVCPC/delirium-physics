@@ -49,10 +49,64 @@ mod imp {
         let _ = std::fs::rename(&p, dir.join("crash-previous.dmp"));
         let _ = PATH.set((p.as_os_str().encode_wide().chain([0]).collect(), p.display().to_string()));
         unsafe { SetUnhandledExceptionFilter(Some(filter)) };
+        super::panics();
     }
+}
+
+fn panics() {
+    let dirs = [std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf())), Some(delirium_data::xex::config_dir())];
+    for d in dirs.iter().flatten() {
+        let p = d.join("crash.txt");
+        if let Ok(t) = std::fs::read_to_string(&p) {
+            let _ = std::fs::rename(&p, d.join("crash-previous.txt"));
+            *pending() = Some(t);
+        }
+    }
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let text = format!("The room crashed: {info}\n\n{}\n{}", system(), std::backtrace::Backtrace::force_capture());
+        if let Some(p) = dirs.iter().flatten().map(|d| d.join("crash.txt")).find(|p| std::fs::write(p, &text).is_ok()) {
+            eprintln!("\nThe room crashed. It saved a report: {} (the next start offers to send it)", p.display());
+        }
+        default(info);
+    }));
+}
+
+static GPU: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub fn note_gpu(gpu: String) {
+    let _ = GPU.set(gpu);
+}
+
+pub fn pending() -> std::sync::MutexGuard<'static, Option<String>> {
+    static LAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    LAST.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn system() -> String {
+    let run = |c: &str, a: &[&str]| std::process::Command::new(c).args(a).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let os = if cfg!(windows) { run("cmd", &["/c", "ver"]) } else if cfg!(target_os = "macos") { run("sw_vers", &["-productVersion"]).map(|v| format!("macOS {v}")) } else { run("uname", &["-sr"]) };
+    let settings = std::fs::read_to_string(delirium_data::xex::config_dir().join("settings.txt")).unwrap_or_default();
+    format!("System: {} ({})\nGraphics: {}\n\nSettings:\n{settings}", os.unwrap_or_default(), std::env::consts::ARCH, GPU.get().map_or("not started", |g| g))
+}
+
+pub fn report(text: &str) {
+    let enc = |s: &str| s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect::<String>();
+    let first = text.lines().next().unwrap_or("The room crashed");
+    let body: String = text.chars().take(5000).collect();
+    let url = format!("https://github.com/PVCPC/delirium-physics/issues/new?title={}&body={}", enc(first), enc(&format!("```\n{body}\n```")));
+    let _ = if cfg!(windows) {
+        std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&url).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(&url).spawn()
+    };
 }
 
 #[cfg(windows)]
 pub use imp::install;
 #[cfg(not(windows))]
-pub fn install() {}
+pub fn install() {
+    panics();
+}

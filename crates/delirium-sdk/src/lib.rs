@@ -8,7 +8,7 @@ use delirium::collision::Collision;
 use delirium::msg::{self, Kind, Value};
 use delirium::nm::{self, Agent};
 use delirium::prelude::*;
-use delirium::ragdoll::{Build, Obstacle, Ragdoll};
+use delirium::ragdoll::{Build, Obstacle, Ragdoll, Sizes};
 use std::cell::RefCell;
 use std::ffi::{CStr, c_char};
 use std::sync::RwLock;
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn nm_init_memory(xrt: *const u8, len: i32) -> i32 {
         return fail(NM_E_ARG, "nm_init_memory: no data");
     }
     let d = unsafe { std::slice::from_raw_parts(xrt, len as usize) };
-    let Ok(asset) = std::panic::catch_unwind(|| delirium_data::nm_asset::read(d)) else {
+    let Ok(asset) = std::panic::catch_unwind(|| delirium_data::nm_asset::in_order(d, || delirium_data::nm_asset::read(d))) else {
         return fail(NM_E_PARSE, "nm_init: not an NM character file");
     };
     if !delirium_data::kv::open() {
@@ -429,6 +429,74 @@ pub unsafe extern "C" fn nm_build_fit(build: *const NmBuild, joints: *const f32)
         return std::ptr::null_mut();
     }
     let (build, frames) = b.build.fit(&b.frames, &j);
+    Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] }))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_build_fit_neck(build: *const NmBuild, joints: *const f32, neck: f32) -> *mut NmBuild {
+    if !(neck > 0.0 && neck.is_finite()) {
+        fail(NM_E_ARG, "nm_build_fit_neck: neck over 0");
+        return std::ptr::null_mut();
+    }
+    let b = unsafe { nm_build_fit(build, joints) };
+    let (Some(out), Some(src)) = (unsafe { b.as_mut() }, unsafe { build.as_ref() }) else { return b };
+    let j: Vec<Vec3> = unsafe { std::slice::from_raw_parts(joints, 63) }.chunks(3).map(|c| Vec3::new(c[0], c[1], c[2])).collect();
+    (out.build, out.frames) = src.build.fit_neck(&src.frames, &j, neck);
+    b
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_build_set_head(b: *mut NmBuild, raise: f32, grow: f32) -> i32 {
+    let Some(b) = (unsafe { b.as_mut() }) else { return fail(NM_E_ARG, "null build") };
+    if !(raise.is_finite() && grow > 0.0 && grow.is_finite()) {
+        return fail(NM_E_ARG, "nm_build_set_head: raise finite, grow over 0");
+    }
+    let Some(k) = b.build.parts.iter().position(|p| p.name.ends_with("Head")) else { return fail(NM_E_ARG, "nm_build_set_head: no head") };
+    b.build.shift_part(&mut b.frames, k, raise / b.scale, grow);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_build_sized(build: *const NmBuild, legs: f32, arms: f32, trunk: f32, width: f32, head: f32, neck: f32, kg: f32, height: f32) -> *mut NmBuild {
+    let Some(b) = (unsafe { build.as_ref() }) else {
+        fail(NM_E_ARG, "nm_build_sized: null build");
+        return std::ptr::null_mut();
+    };
+    if b.build.parts.len() != 21 || ![legs, arms, trunk, width, head, neck, kg].iter().all(|v| *v > 0.0 && v.is_finite()) || !(height >= 0.0 && height.is_finite()) {
+        fail(NM_E_ARG, "nm_build_sized: not a 21-part build, or a size or the weight not over 0");
+        return std::ptr::null_mut();
+    }
+    let (build, frames, _, _) = b.build.sized(&b.frames, Sizes { legs, arms, trunk, width, head, neck, kg, height });
+    Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] }))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_build_named(build: *const NmBuild, name: *const c_char) -> *mut NmBuild {
+    let (Some(b), Some(n)) = (unsafe { build.as_ref() }, unsafe { text(name) }) else {
+        fail(NM_E_ARG, "nm_build_named: null build or name");
+        return std::ptr::null_mut();
+    };
+    match (b.build.parts.len() == 21).then(|| b.build.named(&b.frames, n)).flatten() {
+        Some((build, frames)) => Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] })),
+        None => {
+            fail(NM_E_ARG, format!("nm_build_named: no body {n:?}, or not a 21-part build"));
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_build_random(build: *const NmBuild, seed: i32, variance: f32, symmetric: i32) -> *mut NmBuild {
+    let Some(b) = (unsafe { build.as_ref() }) else {
+        fail(NM_E_ARG, "nm_build_random: null build");
+        return std::ptr::null_mut();
+    };
+    if b.build.parts.len() != 21 || !variance.is_finite() {
+        fail(NM_E_ARG, "nm_build_random: not a 21-part build, or variance not a number");
+        return std::ptr::null_mut();
+    }
+    let (len, girth) = b.build.roll(seed as u32 as u64, variance, symmetric != 0);
+    let (build, frames) = b.build.rolled(&b.frames, &len, &girth);
     Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] }))
 }
 
@@ -1281,6 +1349,32 @@ pub unsafe extern "C" fn nm_msg_set_vec3(a: *mut NmAgent, name: *const c_char, v
 pub unsafe extern "C" fn nm_msg_set_string(a: *mut NmAgent, name: *const c_char, v: *const c_char) -> i32 {
     let Some(s) = (unsafe { text(v) }) else { return fail(NM_E_ARG, "null string") };
     unsafe { add(a, name, Value::Str(s.to_string())) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_set_override(a: *mut NmAgent, behaviour: *const c_char, param: *const c_char, value: f32) -> i32 {
+    let a = agent!(a);
+    let (Some(m), Some(p)) = (unsafe { text(behaviour) }, unsafe { text(param) }) else { return fail(NM_E_ARG, "nm_agent_set_override: no behaviour or param") };
+    let Some(msg) = msg::MESSAGES.iter().chain(delirium::extras::messages()).find(|x| x.name == m) else { return fail(NM_E_MESSAGE, format!("no message {m}")) };
+    let Some(par) = msg.params.iter().find(|x| x.name == p) else { return fail(NM_E_PARAM, format!("{m}: no param {p}")) };
+    let v = match par.kind {
+        Kind::Float => Value::Float(value),
+        Kind::Int => Value::Int(value.round() as i32),
+        Kind::Bool => Value::Bool(value != 0.0),
+        _ => return fail(NM_E_TYPE, format!("{m}.{p}: not a number, whole number or on/off")),
+    };
+    if !par.used || ["bodyPart", "partIndex", "hitPart"].contains(&p) || !value.is_finite() {
+        return fail(NM_E_PARAM, format!("{m}.{p}: the port doesn't act on it, each hit sets it, or not a number"));
+    }
+    a.agent.overrides.retain(|(om, op, _)| (*om, *op) != (msg.name, par.name));
+    a.agent.overrides.push((msg.name, par.name, v));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_clear_overrides(a: *mut NmAgent) -> i32 {
+    agent!(a).agent.overrides.clear();
+    0
 }
 
 #[unsafe(no_mangle)]

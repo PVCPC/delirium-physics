@@ -132,7 +132,7 @@ pub fn shader_params(r: &Resource, drawable: usize) -> Result<Vec<ShaderParams>,
 }
 
 pub fn drawables(r: &Resource) -> Result<Vec<usize>, String> {
-    if be32(&r.data, 0)? & crate::kv!(735 int) == crate::kv!(919 int) { array(r, crate::kv!(107 int)) } else { Ok(vec![0]) }
+    if be32(&r.data, 0)? & crate::kv!(745 int) == crate::kv!(927 int) { array(r, crate::kv!(107 int)) } else { Ok(vec![0]) }
 }
 
 pub fn declarations(r: &Resource) -> Result<Vec<Declaration>, String> {
@@ -169,17 +169,17 @@ fn geometries(r: &Resource, drawable: usize) -> Result<Vec<(usize, usize)>, Stri
 }
 
 fn half(h: u16) -> f32 {
-    let (sign, exp, mant) = ((h >> crate::kv!(198 int)) as u32, ((h >> crate::kv!(81 int)) & crate::kv!(456 int)) as i32, (h & crate::kv!(920 int)) as f32);
+    let (sign, exp, mant) = ((h >> crate::kv!(198 int)) as u32, ((h >> crate::kv!(81 int)) & crate::kv!(456 int)) as i32, (h & crate::kv!(928 int)) as f32);
     let v = match exp {
         0 => mant * 2f32.powi(-crate::kv!(107 int)),
         31 => if mant == 0.0 { f32::INFINITY } else { f32::NAN },
-        e => (1.0 + mant / crate::kv!(776)) * 2f32.powi(e - crate::kv!(198 int)),
+        e => (1.0 + mant / crate::kv!(785)) * 2f32.powi(e - crate::kv!(198 int)),
     };
     if sign == 1 { -v } else { v }
 }
 
 fn dec3n(v: u32) -> [f32; 3] {
-    let s = |x: u32| { let x = (x & crate::kv!(920 int)) as i32; (if x & crate::kv!(182 int) != 0 { x - crate::kv!(183 int) } else { x }) as f32 / crate::kv!(921) };
+    let s = |x: u32| { let x = (x & crate::kv!(928 int)) as i32; (if x & crate::kv!(182 int) != 0 { x - crate::kv!(183 int) } else { x }) as f32 / crate::kv!(929) };
     [s(v), s(v >> crate::kv!(81 int)), s(v >> crate::kv!(127 int))]
 }
 
@@ -203,7 +203,7 @@ pub fn fragment_root(r: &Resource) -> Result<usize, String> {
 
 pub fn fragment_inertia(r: &Resource) -> Result<[f32; 3], String> {
     let f = |at: usize| be32(&r.data, at).map(f32::from_bits);
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(392 int))?)?, *r.data.get(crate::kv!(922 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(392 int))?)?, *r.data.get(crate::kv!(930 int)).ok_or("Truncated fragment")? as usize);
     let mut total = 0.0;
     for i in 0..count {
         total += f(ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)? + crate::kv!(1 int))?;
@@ -224,7 +224,7 @@ pub fn read_drawable(r: &Resource, drawable: usize) -> Result<Vec<Mesh>, String>
     if r.kind != crate::kv!(431 int) {
         return meshes(r, drawable, drawable);
     }
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(392 int))?)?, *r.data.get(crate::kv!(640 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(392 int))?)?, *r.data.get(crate::kv!(650 int)).ok_or("Truncated fragment")? as usize);
     let mut out = meshes(r, drawable, drawable)?;
     for i in 0..count {
         let child = ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)?;
@@ -237,7 +237,7 @@ pub fn read_drawable(r: &Resource, drawable: usize) -> Result<Vec<Mesh>, String>
 }
 
 pub fn fragment_children(r: &Resource) -> Result<Vec<(usize, usize)>, String> {
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(392 int))?)?, *r.data.get(crate::kv!(640 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(392 int))?)?, *r.data.get(crate::kv!(650 int)).ok_or("Truncated fragment")? as usize);
     let mut out = vec![];
     for i in 0..count {
         let child = ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)?;
@@ -274,7 +274,7 @@ pub struct LightAttr {
 }
 
 pub fn lights(r: &Resource, drawable: usize) -> Result<Vec<LightAttr>, String> {
-    let at = if r.kind == crate::kv!(431 int) { crate::kv!(623 int) } else { drawable + crate::kv!(251 int) };
+    let at = if r.kind == crate::kv!(431 int) { crate::kv!(633 int) } else { drawable + crate::kv!(251 int) };
     let d = &r.data;
     let count = be16(d, at + crate::kv!(1 int))? as usize;
     if count == 0 {

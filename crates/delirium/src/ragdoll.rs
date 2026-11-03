@@ -215,6 +215,34 @@ impl Build {
     }
 
     pub fn fit(&self, frames: &[Transform], joints: &[Vec3]) -> (Build, Vec<Transform>) {
+        self.fit_capped(frames, joints, 1.0)
+    }
+
+    pub fn fit_neck(&self, frames: &[Transform], joints: &[Vec3], neck: f32) -> (Build, Vec<Transform>) {
+        let (mut b, mut f) = self.fit_capped(frames, joints, neck);
+        if neck != 1.0 && let Some(k) = b.parts.iter().position(|p| p.name.ends_with("Head")) {
+            let (one, fo) = self.fit(frames, joints);
+            let at = f[k].translation + f[k].rotation * b.parts[k].anchor;
+            let ap = b.parts[k].anchor_parent;
+            b.parts[k] = one.parts[k].clone();
+            b.parts[k].anchor_parent = ap;
+            f[k] = Transform { translation: at - fo[k].rotation * one.parts[k].anchor, ..fo[k] };
+        }
+        (b, f)
+    }
+
+    pub fn shift_part(&mut self, frames: &mut [Transform], k: usize, raise: f32, grow: f32) {
+        let p = &mut self.parts[k];
+        let way = -p.anchor.normalize_or_zero();
+        p.anchor -= way * raise;
+        p.radius *= grow;
+        frames[k].translation += frames[k].rotation * way * raise;
+        for c in self.parts.iter_mut().filter(|c| c.parent == Some(k)) {
+            c.anchor_parent -= way * raise;
+        }
+    }
+
+    fn fit_capped(&self, frames: &[Transform], joints: &[Vec3], neck: f32) -> (Build, Vec<Transform>) {
         let n = self.parts.len();
         let mut j = joints.to_vec();
         if n == delirium_data::kv!(111 int) {
@@ -222,8 +250,8 @@ impl Build {
         if j[delirium_data::kv!(22 int)].distance(j[0]) > delirium_data::kv!(125) * leg {
             j[delirium_data::kv!(22 int)] = j[0] + (j[delirium_data::kv!(22 int)] - j[0]).normalize_or_zero() * delirium_data::kv!(125) * leg;
         }
-        if j[delirium_data::kv!(55 int)].distance(j[delirium_data::kv!(113 int)]) > delirium_data::kv!(125) * leg {
-            j[delirium_data::kv!(55 int)] = j[delirium_data::kv!(113 int)] + (j[delirium_data::kv!(55 int)] - j[delirium_data::kv!(113 int)]).normalize_or_zero() * delirium_data::kv!(125) * leg;
+        if j[delirium_data::kv!(55 int)].distance(j[delirium_data::kv!(113 int)]) > delirium_data::kv!(125) * leg * neck {
+            j[delirium_data::kv!(55 int)] = j[delirium_data::kv!(113 int)] + (j[delirium_data::kv!(55 int)] - j[delirium_data::kv!(113 int)]).normalize_or_zero() * delirium_data::kv!(125) * leg * neck;
         }
         }
         let joints = &j[..];
@@ -2006,6 +2034,14 @@ impl Ragdoll {
         r[2].mul_add(Vec3::splat(a.z), r[1].mul_add(Vec3::splat(a.y), r[0].mul_add(Vec3::splat(a.x), ip)))
     }
 
+    pub fn overlapping(&self, build: &Build, pairs: &[(usize, usize)]) -> Vec<(usize, usize)> {
+        let t = self.turns();
+        let at = |k: usize| (self.bodies[k].x + self.o, t[k]);
+        pairs.iter().copied().filter(|&(a, c)| {
+            Self::shape_contacts((&part_shape(&build.parts[a]), &part_shape(&build.parts[c])), at(a), at(c), 0.0, Vec3::Z).first().is_some_and(|x| x.3 < -delirium_data::kv!(51))
+        }).collect()
+    }
+
     pub(crate) fn turns(&self) -> Vec<Mat3> {
         let inst = self.inst();
         self.comp(&inst).iter().map(|(_, c)| turn(&crate::rigid::rows_mul(c, &inst))).collect()
@@ -3075,7 +3111,10 @@ impl Ragdoll {
     fn jconst(&self, build: &Build, k: usize, j: &Joint, rigid: Option<&Rigid>) -> crate::rigid::JointConst {
         let grown = |jc: crate::rigid::JointConst| {
             let (ps, cs) = (build.parts[j.parent].size, build.parts[k].size);
-            if ps == 1.0 && cs == 1.0 { jc } else { crate::rigid::JointConst { pa: jc.pa * ps, ca: jc.ca * cs, ..jc } }
+            if ps == 1.0 && cs == 1.0 { jc } else {
+                let (lp, lc, part) = (self.bodies[j.parent].l.inverse(), self.bodies[k].l.inverse(), &build.parts[k]);
+                crate::rigid::JointConst { pa: lp * part.anchor_parent, ca: lc * part.anchor, ..jc }
+            }
         };
         rigid.and_then(|r| r.jc).map(grown).unwrap_or_else(|| {
             let (lp, lc, part) = (self.bodies[j.parent].l.inverse(), self.bodies[k].l.inverse(), &build.parts[k]);
@@ -4044,6 +4083,186 @@ impl Rig {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Sizes {
+    pub legs: f32,
+    pub arms: f32,
+    pub trunk: f32,
+    pub width: f32,
+    pub head: f32,
+    pub neck: f32,
+    pub kg: f32,
+    pub height: f32,
+}
+
+pub fn spread(v: f32) -> ((f32, f32), (f32, f32)) {
+    let t = v.clamp(1.0, delirium_data::kv!(84)).ln() / delirium_data::kv!(84 f32).ln();
+    ((delirium_data::kv!(60 f32).powf(t), delirium_data::kv!(84 f32).powf(t)), (0.5f32.powf(t), 2f32.powf(t)))
+}
+
+impl Build {
+    pub fn height(&self, frames: &[Transform]) -> f32 {
+        let low = self.parts.iter().zip(frames).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
+        let top = self.parts.iter().zip(frames).map(|(p, f)| f.translation.z + p.radius + p.half).fold(f32::MIN, f32::max);
+        top - low
+    }
+
+    fn pivot(&self, frames: &[Transform], k: usize) -> Vec3 {
+        self.parts[k].parent.map_or(frames[k].translation, |_| frames[k].translation + frames[k].rotation * self.parts[k].anchor)
+    }
+
+    pub fn sized(&self, frames: &[Transform], s: Sizes) -> (Build, Vec<Transform>, Vec<f32>, f32) {
+        let Sizes { legs: leg, arms: arm, trunk: torso, width: w, head, neck, kg, height: tall } = s;
+        let pivot = |k: usize| self.pivot(frames, k);
+        let across = (pivot(1) - pivot(delirium_data::kv!(1 int))).normalize();
+        let make = |s: f32| {
+            let len: Vec<f32> = self.parts.iter()
+                .map(|p| s * if p.lower { leg } else if (p.name.contains("_L_") || p.name.contains("_R_")) && !p.name.ends_with("Clavicle") { arm } else if p.name.ends_with("Head") { head } else { torso }).collect();
+            let mut j = vec![pivot(0); self.parts.len()];
+            for (c, p) in self.parts.iter().enumerate() {
+                if let Some(q) = p.parent {
+                    let n = if self.parts[c].name.ends_with("Head") { neck } else { 1.0 };
+                    j[c] = j[q] + (pivot(c) - pivot(q)) * len[c] * n;
+                }
+            }
+            let j: Vec<Vec3> = j.iter().map(|v| *v + across * (across.dot(*v - pivot(0)) * (w - 1.0))).collect();
+            let (mut b, f) = self.fit_neck(frames, &j, neck);
+            for (p, o) in b.parts.iter_mut().zip(&self.parts) {
+                let fat = if p.name.ends_with("Head") { head * w } else if p.name.ends_with("Neck") { w / neck.sqrt() } else if p.name.ends_with("Pelvis") || p.name.ends_with("_Spine") { 1.0 } else { w };
+                let (r, fat) = if p.name.ends_with("Thigh") { (o.radius, 1.0) } else if p.lower { (p.radius, 1.0) } else { (p.radius, fat) };
+                (p.radius, p.grown) = (r * fat * s, p.grown * leg * s);
+            }
+            let h = b.height(&f);
+            (b, f, len, h)
+        };
+        let s = if tall > 0.0 { let s = tall / make(1.0).3; s * tall / make(s).3 } else { 1.0 };
+        let (mut b, f, len, _) = make(s);
+        let k = kg / Ragdoll::new(&b, &f, Vec3::ZERO).mass();
+        for p in &mut b.parts {
+            p.heft *= k;
+        }
+        (b, f, len, leg * s)
+    }
+
+    pub fn roll(&self, seed: u64, variance: f32, symmetric: bool) -> (Vec<f32>, Vec<f32>) {
+        let ((l0, l1), (g0, g1)) = spread(variance);
+        let draw = |u: f32, lo: f32, hi: f32| lo * (hi / lo).powf(u);
+        let mut x = seed.wrapping_mul(delirium_data::kv!(578 int)) | 1;
+        let mut u = || {
+            x ^= x << delirium_data::kv!(114 int);
+            x ^= x >> delirium_data::kv!(22 int);
+            x ^= x << delirium_data::kv!(110 int);
+            (x >> delirium_data::kv!(95 int)) as f32 / (1u64 << delirium_data::kv!(107 int)) as f32
+        };
+        let n = self.parts.len();
+        let (mut len, mut girth): (Vec<f32>, Vec<f32>) = (0..n).map(|_| (draw(u(), l0, l1), draw(u(), g0, g1))).unzip();
+        if let Some(t) = self.parts.iter().position(|p| p.name.contains("Spine")) {
+            for k in 0..n {
+                if self.parts[k].name.contains("Spine") || self.parts[k].name.ends_with("Pelvis") {
+                    (len[k], girth[k]) = (len[t], girth[t]);
+                }
+            }
+        }
+        if symmetric {
+            for k in 0..n {
+                let twin = self.parts[k].name.replace("_R_", "_L_");
+                if let Some(l) = (twin != self.parts[k].name).then(|| self.parts.iter().position(|p| p.name == twin)).flatten() {
+                    (len[k], girth[k]) = (len[l], girth[l]);
+                }
+            }
+        }
+        (len, girth)
+    }
+
+    pub fn rolled(&self, frames: &[Transform], len: &[f32], girth: &[f32]) -> (Build, Vec<Transform>) {
+        let pivot = |k: usize| self.pivot(frames, k);
+        let mut j = vec![pivot(0); self.parts.len()];
+        for (c, p) in self.parts.iter().enumerate() {
+            if let Some(q) = p.parent {
+                j[c] = j[q] + (pivot(c) - pivot(q)) * len[c];
+            }
+        }
+        let legs = |j: &dyn Fn(usize) -> Vec3| (j(1).distance(j(2)) + j(2).distance(j(delirium_data::kv!(0 int))) + j(delirium_data::kv!(1 int)).distance(j(delirium_data::kv!(2 int))) + j(delirium_data::kv!(2 int)).distance(j(delirium_data::kv!(6 int)))) / 2.0;
+        let k = legs(&pivot) / legs(&|i| j[i]);
+        let j: Vec<Vec3> = j.iter().map(|v| pivot(0) + (*v - pivot(0)) * k).collect();
+        let (mut b, f) = self.fit(frames, &j);
+        for (p, g) in b.parts.iter_mut().zip(girth) {
+            (p.radius, p.heft) = (p.radius * g, p.heft * g * g);
+        }
+        (b, f)
+    }
+}
+
+#[allow(non_snake_case)]
+#[inline]
+pub fn PROFILES() -> &'static [(&'static str, f32, f32, f32); 6] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32); 6]> = std::sync::OnceLock::new(); let f = || [("Small", delirium_data::kv!(486), delirium_data::kv!(579), 1.0), ("Average", delirium_data::kv!(13), delirium_data::kv!(580), 1.0), ("Large", delirium_data::kv!(186), delirium_data::kv!(46), 1.0), ("Lanky", delirium_data::kv!(186), delirium_data::kv!(565), delirium_data::kv!(501)), ("Fat", delirium_data::kv!(581), delirium_data::kv!(582), delirium_data::kv!(19)), ("Stocky", delirium_data::kv!(583), delirium_data::kv!(584), delirium_data::kv!(28))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+#[allow(non_snake_case)]
+#[inline]
+pub fn SHAPES() -> &'static [(&'static str, f32, f32, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || [("Waddler", delirium_data::kv!(119), delirium_data::kv!(80), delirium_data::kv!(136), delirium_data::kv!(201), delirium_data::kv!(585)), ("Guard", delirium_data::kv!(80), delirium_data::kv!(28), delirium_data::kv!(138), delirium_data::kv!(20), delirium_data::kv!(103)), ("Brute", delirium_data::kv!(80), delirium_data::kv!(201), 1.0, delirium_data::kv!(80), delirium_data::kv!(508))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+#[allow(non_snake_case)]
+#[inline]
+pub fn BRAWLER_BODY() -> &'static Sizes { static V: std::sync::OnceLock<Sizes> = std::sync::OnceLock::new(); let f = || Sizes { legs: delirium_data::kv!(10), arms: delirium_data::kv!(74), trunk: 1.0, width: delirium_data::kv!(179), head: delirium_data::kv!(12), neck: 1.0, kg: delirium_data::kv!(63), height: 0.0 }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+
+impl Build {
+    pub fn profile(&self, frames: &[Transform], height: f32, kg: f32, limbs: f32) -> (Build, Vec<Transform>, Vec<f32>, f32) {
+        let (_, h, m, _) = (*PROFILES())[1];
+        let s = height / h / (delirium_data::kv!(586) * limbs + delirium_data::kv!(587));
+        let len: Vec<f32> = self.parts.iter().map(|p| if p.name.contains("_L_") || p.name.contains("_R_") { s * limbs } else { s }).collect();
+        let (b, f) = self.scaled(frames, &len, kg / m);
+        (b, f, len, s * limbs)
+    }
+
+    pub fn shape(&self, frames: &[Transform], leg: f32, arm: f32, torso: f32, w: f32, kg: f32) -> (Build, Vec<Transform>) {
+        let o = self.pivot(frames, 0);
+        let f: Vec<Vec3> = (0..self.parts.len()).map(|k| self.pivot(frames, k) - o).collect();
+        let mut j = f.clone();
+        let wide = |v: Vec3| (v * w).with_z(v.z);
+        for (hip, kids) in [(1, [2, delirium_data::kv!(0 int)]), (delirium_data::kv!(1 int), [delirium_data::kv!(2 int), delirium_data::kv!(6 int)])] {
+            for k in kids {
+                j[k] = wide(f[hip]) + (f[k] - f[hip]) * leg;
+            }
+            j[hip] = wide(f[hip]);
+        }
+        for v in &mut j[delirium_data::kv!(22 int)..] {
+            v.z *= torso;
+        }
+        for (sh, kids) in [(delirium_data::kv!(56 int), [delirium_data::kv!(198 int), delirium_data::kv!(54 int)]), (delirium_data::kv!(211 int), [delirium_data::kv!(199 int), delirium_data::kv!(127 int)])] {
+            let s = j[sh];
+            for k in kids {
+                j[k] = wide(s) + (j[k] - s) * arm;
+            }
+            j[sh] = wide(s);
+        }
+        let j: Vec<Vec3> = j.iter().map(|v| o + *v / leg).collect();
+        let (mut b, f) = self.fit(frames, &j);
+        for p in b.parts.iter_mut().filter(|p| !p.lower && !p.name.ends_with("Pelvis")) {
+            p.radius *= w;
+        }
+        let k = kg / Ragdoll::new(&b, &f, Vec3::ZERO).mass();
+        for p in &mut b.parts {
+            p.heft *= k;
+        }
+        (b, f)
+    }
+
+    pub fn named(&self, frames: &[Transform], name: &str) -> Option<(Build, Vec<Transform>)> {
+        if name.eq_ignore_ascii_case((*PROFILES())[1].0) {
+            return Some((self.clone(), frames.to_vec()));
+        }
+        if let Some(&(_, h, m, l)) = (*PROFILES()).iter().find(|p| p.0.eq_ignore_ascii_case(name)) {
+            let (b, f, _, _) = self.profile(frames, h, m, l);
+            return Some((b, f));
+        }
+        if let Some(&(_, leg, arm, torso, w, kg)) = (*SHAPES()).iter().find(|p| p.0.eq_ignore_ascii_case(name)) {
+            return Some(self.shape(frames, leg, arm, torso, w, kg));
+        }
+        name.eq_ignore_ascii_case("Brawler").then(|| {
+            let (b, f, _, _) = self.sized(frames, (*BRAWLER_BODY()));
+            (b, f)
+        })
+    }
+}
+
 pub(crate) fn island_order(nodes: &[(Option<usize>, Option<usize>)]) -> Vec<usize> {
     struct Forest {
         parent: Vec<Option<usize>>,
@@ -4236,10 +4455,10 @@ fn island_sort_as_the_game() {
 fn touch_as_the_game() {
     let f = f32::from_bits;
     let mut a = (Vec3::ZERO, Vec3::ZERO, 0.0, -1);
-    let (at, n) = (Vec3::new(f(delirium_data::kv!(578 int)), f(delirium_data::kv!(579 int)), f(delirium_data::kv!(580 int))), Vec3::new(f(delirium_data::kv!(581 int)), f(delirium_data::kv!(582 int)), 0.0));
-    touch_add(&mut a, at, n, f(delirium_data::kv!(583 int)), delirium_data::kv!(22 int));
+    let (at, n) = (Vec3::new(f(delirium_data::kv!(588 int)), f(delirium_data::kv!(589 int)), f(delirium_data::kv!(590 int))), Vec3::new(f(delirium_data::kv!(591 int)), f(delirium_data::kv!(592 int)), 0.0));
+    touch_add(&mut a, at, n, f(delirium_data::kv!(593 int)), delirium_data::kv!(22 int));
     let (p, m, id) = touch_hit(a).unwrap();
-    assert_eq!((p.x.to_bits(), m.x.to_bits(), m.y.to_bits(), m.z.to_bits(), id), (delirium_data::kv!(578 int), delirium_data::kv!(584 int), delirium_data::kv!(585 int), 0, delirium_data::kv!(22 int)));
+    assert_eq!((p.x.to_bits(), m.x.to_bits(), m.y.to_bits(), m.z.to_bits(), id), (delirium_data::kv!(588 int), delirium_data::kv!(594 int), delirium_data::kv!(595 int), 0, delirium_data::kv!(22 int)));
     assert!(touch_hit((Vec3::ZERO, Vec3::ZERO, 0.0, -1)).is_none());
 }
 
@@ -4252,7 +4471,7 @@ fn island_order_as_the_game() {
     assert_eq!(island_order(&[(Some(2), None), (Some(1), None), (Some(2), Some(1)), (Some(1), Some(1))]), [0, 2, 1, delirium_data::kv!(0 int)]);
     assert_eq!(island_order(&[(Some(2), None), (Some(1), None), (Some(1), None), (Some(2), Some(1)), (Some(1), Some(1))]), [1, 2, 0, delirium_data::kv!(0 int), delirium_data::kv!(1 int)]);
     let mut nodes = vec![(Some(2), None)];
-    nodes.extend(std::iter::repeat_n((Some(1), None), delirium_data::kv!(586 int)));
+    nodes.extend(std::iter::repeat_n((Some(1), None), delirium_data::kv!(596 int)));
     nodes.push((Some(1), Some(2)));
     let want: Vec<usize> = [0, delirium_data::kv!(181 int)].into_iter().chain(1..delirium_data::kv!(181 int)).collect();
     assert_eq!(island_order(&nodes), want);
