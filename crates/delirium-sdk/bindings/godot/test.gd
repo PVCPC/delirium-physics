@@ -19,7 +19,7 @@ func expect(what: String, ok: bool) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok: failed += 1
 
-func run(what: String, hit: Callable) -> float:
+func run(what: String, hit: Callable, setup := Callable()) -> float:
 	var root := Node3D.new()
 	get_root().add_child(root)
 	var sk := Skeleton3D.new()
@@ -36,6 +36,7 @@ func run(what: String, hit: Callable) -> float:
 	var d = ClassDB.instantiate("DeliriumRagdoll")
 	sk.add_child(d)
 	d.character = root
+	if setup.is_valid(): setup.call(d)
 	await process_frame
 	var hips := 0.0
 	if d.ragdoll():
@@ -74,5 +75,13 @@ func go() -> void:
 	expect("down after a hard push", await run("200 N s push", func(d): d.push(Vector3(200, 0, 0))) < 0.4)
 	expect("down after a killing shot", await run("shot, health 40", func(d): d.shoot(d.get_hips() + Vector3(0, 0.4, 0), Vector3(1, 0, 0), 40.0, "POWERFUL_WEAPON", 40.0)) < 0.4)
 	expect("down without a leg", await run("leg cut", func(d): expect("cut", d.sever(d.get_hips() + Vector3(0.1, -0.6, 0), Vector3(0, 0.2, 0)))) < 0.4)
+	# The body setting and overrides (the Playroom's bodies and Parameters tab).
+	expect("Brawler stands", await run("Brawler", func(d): pass, func(d): d.body = "Brawler") > 0.5)
+	expect("Random stands", await run("Random seed 5", func(d): pass, func(d): d.body = "Random"; d.body_seed = 5) > 0.5)
+	expect("Custom heavy stands", await run("Custom", func(d): pass, func(d): d.body = "Custom"; d.custom_body = "1, 1, 1, 1.2, 1, 1, 95, 0") > 0.5)
+	expect("overrides", await run("override", func(d):
+		expect("good override", d.set_override("bodyBalance", "useHeadLook", 0))
+		expect("bad override refused", not d.set_override("bodyBalance", "noSuchThing", 1)),
+		func(d): d.overrides = "shot.bodyStiffness=7") > 0.5)
 	print("DONE failed=%d" % failed)
 	quit(failed)

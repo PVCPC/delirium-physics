@@ -48,6 +48,13 @@ nm.lying_still.connect(func(face_up, facing): nm.get_up())
 Also `ragdoll()`, `shoot(point, dir, force, set, health)`, `on_fire(burning, health)`, `high_fall()`, `kill()`,
 `get_up()`, `is_ragdolled()`, `get_hips()`; `get_up_after` gets it up by itself after that many seconds lying still.
 
+- **Bodies and parameters (the Playroom's):** `body` is `Fitted` (its own skeleton's, the default), `Small`,
+  `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute` or `Brawler` (that shape of this
+  character), `Random` (`body_seed`, 0: its own; `body_variance`; `body_symmetric`) or `Custom` (`custom_body`: legs,
+  arms, trunk, width, head, neck against the fitted body, weight in kg, height in m, 0 keeps it). `overrides` changes
+  behaviour parameters as the Playroom's Parameters tab does (`shot.bodyStiffness=7, bodyBalance.useHeadLook=0`);
+  `set_override(behaviour, param, value)` and `clear_overrides()` in code. The mesh keeps its look (its bones follow
+  the body's turns), so pick a body near the mesh.
 - It's a skeleton modifier: while ragdolled it poses the bones over the animation, so your AnimationTree can keep
   running. Stop your own movement code while `is_ragdolled()`.
 - **No snaps**: it starts from the animated pose and the character's speed (CharacterBody3D or RigidBody3D), and

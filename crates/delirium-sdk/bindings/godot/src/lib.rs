@@ -127,6 +127,19 @@ pub struct DeliriumRagdoll {
     get_up_blend: f32,
     #[export]
     get_up_after: f32,
+    #[export]
+    body: GString,
+    #[export]
+    body_seed: i32,
+    #[export]
+    body_variance: f32,
+    #[export]
+    body_symmetric: bool,
+    #[export]
+    custom_body: GString,
+    #[export]
+    overrides: GString,
+    set: Vec<(String, String, f32)>,
     build: *mut NmBuild,
     world: *mut NmWorld,
     agent: *mut NmAgent,
@@ -146,7 +159,8 @@ pub struct DeliriumRagdoll {
 impl ISkeletonModifier3D for DeliriumRagdoll {
     fn init(base: Base<SkeletonModifier3D>) -> Self {
         Self {
-            base, character: None, get_up_blend: 0.4, get_up_after: 0.0, build: std::ptr::null_mut(), world: std::ptr::null_mut(),
+            base, character: None, get_up_blend: 0.4, get_up_after: 0.0, body: "Fitted".into(), body_seed: 0, body_variance: 1.5,
+            body_symmetric: true, custom_body: "1, 1, 1, 1, 1, 1, 77, 0".into(), overrides: GString::new(), set: Vec::new(), build: std::ptr::null_mut(), world: std::ptr::null_mut(),
             agent: std::ptr::null_mut(), rig: std::ptr::null_mut(), bones: Vec::new(), out: Vec::new(), scale: 1.0, clock: 0.0,
             told: false, blend: 0.0, last: Vec::new(), last_hips: Vector3::ZERO, hips_world: Transform3D::IDENTITY,
         }
@@ -234,6 +248,24 @@ impl DeliriumRagdoll {
 
     #[func]
     fn is_ragdolled(&self) -> bool { !self.agent.is_null() }
+
+    #[func]
+    fn set_override(&mut self, behaviour: GString, param: GString, value: f32) -> bool {
+        let (m, p) = (behaviour.to_string(), param.to_string());
+        if !self.agent.is_null() && !check(unsafe { nm_agent_set_override(self.agent, c(&m).as_ptr(), c(&p).as_ptr(), value) }, "set_override") {
+            return false;
+        }
+        self.set.retain(|(om, op, _)| (om, op) != (&m, &p));
+        self.set.push((m, p, value));
+        true
+    }
+
+    #[func]
+    fn clear_overrides(&mut self) {
+        self.set.clear();
+        self.overrides = GString::new();
+        if !self.agent.is_null() { unsafe { nm_agent_clear_overrides(self.agent) }; }
+    }
 
     #[func]
     fn get_hips(&self) -> Vector3 {
@@ -337,8 +369,23 @@ impl DeliriumRagdoll {
             return false;
         }
         self.scale = unsafe { nm_build_get_scale(self.build) };
+        let body = Body {
+            name: self.body.to_string(),
+            seed: if self.body_seed != 0 { self.body_seed } else { clock_nanos() },
+            variance: self.body_variance,
+            symmetric: self.body_symmetric,
+            custom: self.custom_body.to_string(),
+        };
+        match body.make(self.build) {
+            Ok(Some(b)) => {
+                unsafe { nm_build_destroy(self.build) };
+                self.build = b;
+            }
+            Ok(None) => {}
+            Err(e) => godot_warn!("Delirium body {}: {e}", body.name),
+        }
         if setting_b("adaptive", true) {
-            let kind = (0..all).map(|b| s.get_bone_name(b).to_string()).collect::<Vec<_>>().join("|") + &format!("@{}", self.scale);
+            let kind = (0..all).map(|b| s.get_bone_name(b).to_string()).collect::<Vec<_>>().join("|") + &format!("@{}{}", self.scale, body.key());
             let mut t = TUNED.lock().unwrap();
             let map = t.get_or_insert_with(HashMap::new);
             match map.get(&kind) {
@@ -349,7 +396,11 @@ impl DeliriumRagdoll {
                     map.insert(kind.clone(), 0);
                     let (b, j) = (base as usize, joints);
                     std::thread::spawn(move || {
-                        let t = unsafe { nm_build_fit_sized(b as *const NmBuild, j.as_ptr(), mode) };
+                        let mut t = unsafe { nm_build_fit_sized(b as *const NmBuild, j.as_ptr(), mode) };
+                        if let (false, Ok(Some(r))) = (t.is_null(), body.make(t)) {
+                            unsafe { nm_build_destroy(t) };
+                            t = r;
+                        }
                         let got = if t.is_null() { -1 } else { unsafe { nm_build_tune(t, 200) } };
                         TUNED.lock().unwrap().get_or_insert_with(HashMap::new).insert(kind, t as usize);
                         godot_print!("Delirium: balance tuned, stands through {got} of 3 pushes");
@@ -391,6 +442,9 @@ impl DeliriumRagdoll {
         }
         let strength = setting_f("strength", 1.0);
         if strength != 1.0 { check(unsafe { nm_agent_set_strength(self.agent, strength) }, "strength"); }
+        for (m, p, v) in parse_overrides(&self.overrides.to_string()).into_iter().chain(self.set.iter().cloned()) {
+            check(unsafe { nm_agent_set_override(self.agent, c(&m).as_ptr(), c(&p).as_ptr(), v) }, "overrides");
+        }
         self.rig = unsafe { nm_rig_create(self.agent, n as i32, parents.as_ptr(), rest.as_ptr(), parts.as_ptr()) };
         if self.rig.is_null() {
             godot_warn!("Delirium: {}", last_error());
@@ -497,4 +551,44 @@ impl DeliriumRagdoll {
 fn rand_seed() -> f32 {
     let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
     (t % 1000) as f32 / 1000.0
+}
+
+fn clock_nanos() -> i32 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos() as i32)
+}
+
+fn parse_overrides(s: &str) -> Vec<(String, String, f32)> {
+    s.split(',').filter(|x| !x.trim().is_empty()).filter_map(|x| {
+        let got = x.split_once('=').and_then(|(k, v)| Some((k.trim().split_once('.')?, v.trim().parse::<f32>().ok()?)));
+        if got.is_none() { godot_warn!("Delirium overrides: {x:?} isn't behaviour.param=value") }
+        got.map(|((m, p), v)| (m.into(), p.into(), v))
+    }).collect()
+}
+
+#[derive(Clone)]
+struct Body { name: String, seed: i32, variance: f32, symmetric: bool, custom: String }
+
+impl Body {
+    fn make(&self, b: *mut NmBuild) -> Result<Option<*mut NmBuild>, String> {
+        let r = match self.name.as_str() {
+            "" | "Fitted" => return Ok(None),
+            "Random" => unsafe { nm_build_random(b, self.seed, self.variance, self.symmetric as i32) },
+            "Custom" => {
+                let v: Vec<f32> = self.custom.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                let [legs, arms, trunk, width, head, neck, kg, height] = v[..] else { return Err("custom_body needs 8 numbers".into()) };
+                unsafe { nm_build_sized(b, legs, arms, trunk, width, head, neck, kg, height) }
+            }
+            n => unsafe { nm_build_named(b, c(n).as_ptr()) },
+        };
+        if r.is_null() { Err(last_error()) } else { Ok(Some(r)) }
+    }
+
+    fn key(&self) -> String {
+        match self.name.as_str() {
+            "" | "Fitted" => String::new(),
+            "Random" => format!(" Random {} {} {}", self.seed, self.variance, self.symmetric),
+            "Custom" => format!(" Custom {}", self.custom),
+            n => format!(" {n}"),
+        }
+    }
 }

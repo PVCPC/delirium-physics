@@ -38,5 +38,14 @@ humanoid, Mixamo, Biped, Unreal style); add others to `Bone Map`.
 - Ragdolls near each other share one physics world, so they push and trip over each other.
 - `Ragdoll Key` / `Release Key` are test keys: aim and press to ragdoll whoever you look at (None: off).
 
+**Bodies and parameters (the Playroom's):** `Body` picks every character's body: `Fitted` (its own skeleton's, the
+default), `Small`, `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute` or `Brawler` (that shape of
+each character), `Random` (`Body Seed`, 0: each its own; `Body Variance`; `Body Symmetric`) or `Custom` (`Custom Body`:
+legs, arms, trunk, width, head, neck against the fitted body, weight in kg, height in m, 0 keeps it). `SetBody(owner,
+"Brawler")` sets one character's. `Overrides` changes behaviour parameters for every character, as the Playroom's
+Parameters tab does (`shot.bodyStiffness=7, bodyBalance.useHeadLook=0`); `SetOverride(owner, "shot", "bodyStiffness",
+7)` and `ClearOverrides(owner)` for one. The mesh keeps its look (its bones follow the body's turns), so pick a body near the mesh: a Brawler under a tall mesh
+shows its feet off the ground.
+
 The full call list is in `docs/modding.md`. The BepInEx mod (`../bepinex`) is built from this same
 `Runtime/DeliriumRagdolls.cs`.

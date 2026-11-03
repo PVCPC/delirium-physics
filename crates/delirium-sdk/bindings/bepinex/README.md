@@ -71,6 +71,12 @@ mesh readable) and its balance settings, searched once per kind in the backgroun
 weight share and balance on its own bones. `[Body] Strength` (1) scales every body's muscles: 1.5-2 for tough enemies
 or a movie giant (at 2 a person stands a push of 80 N s instead of 60). From code: `nm_agent_set_strength`.
 
+`[Body] Body` gives every character one of the Playroom's bodies: `Fitted` (its own, the default), `Small`, `Average`,
+`Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute`, `Brawler`, `Random` (`Seed`, 0: each its own;
+`Variance`; `Symmetric`) or `Custom` (`CustomBody`: legs, arms, trunk, width, head, neck against the fitted body,
+weight in kg, height in m, 0 keeps it). `[Body] Overrides` changes behaviour parameters as the Playroom's Parameters
+tab does: `shot.bodyStiffness=7, bodyBalance.useHeadLook=0`. The mesh keeps its look, so pick a body near it.
+
 ## How hard hits land
 
 The `[Force]` settings scale every hit: `Shot`, `Melee` and `Explosion` (1 = as given). `Weapons` is a table for

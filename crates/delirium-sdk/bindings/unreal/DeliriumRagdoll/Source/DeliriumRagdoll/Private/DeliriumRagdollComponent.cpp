@@ -36,6 +36,69 @@ namespace
 		return UTF8_TO_TCHAR(Buf);
 	}
 
+	/** The Body setting, for the character and its background tune alike. */
+	struct FBody
+	{
+		FString Name;
+		int32 Seed;
+		float Variance;
+		bool bSymmetric;
+		FString Custom;
+
+		/** The fitted build `B` reshaped (a new build); null: Fitted, keep it, or failed (`Error` set). */
+		NmBuild* Make(NmBuild* B, FString& Error) const
+		{
+			NmBuild* R;
+			if (Name.IsEmpty() || Name == TEXT("Fitted")) return nullptr;
+			if (Name == TEXT("Random")) R = nm_build_random(B, Seed, Variance, bSymmetric);
+			else if (Name == TEXT("Custom"))
+			{
+				TArray<FString> P;
+				Custom.ParseIntoArray(P, TEXT(","));
+				if (P.Num() != 8)
+				{
+					Error = TEXT("CustomBody needs 8 numbers");
+					return nullptr;
+				}
+				float V[8];
+				for (int32 I = 0; I < 8; I++) V[I] = FCString::Atof(*P[I].TrimStartAndEnd());
+				R = nm_build_sized(B, V[0], V[1], V[2], V[3], V[4], V[5], V[6], V[7]);
+			}
+			else R = nm_build_named(B, TCHAR_TO_UTF8(*Name));
+			if (!R) Error = LastError();
+			return R;
+		}
+
+		/** Kinds tuned apart: the body's own. */
+		FString Key() const
+		{
+			if (Name.IsEmpty() || Name == TEXT("Fitted")) return FString();
+			if (Name == TEXT("Random")) return FString::Printf(TEXT(" Random %d %g %d"), Seed, Variance, bSymmetric);
+			if (Name == TEXT("Custom")) return TEXT(" Custom ") + Custom;
+			return TEXT(" ") + Name;
+		}
+	};
+
+	/** "behaviour.param=value, ...": each one (bad ones in the log). */
+	TArray<TTuple<FString, FString, float>> ParseOverrides(const FString& S)
+	{
+		TArray<TTuple<FString, FString, float>> Out;
+		TArray<FString> Items;
+		S.ParseIntoArray(Items, TEXT(","));
+		for (const FString& Item : Items)
+		{
+			FString K, V, M, P;
+			if (Item.TrimStartAndEnd().IsEmpty()) continue;
+			if (!Item.Split(TEXT("="), &K, &V) || !K.TrimStartAndEnd().Split(TEXT("."), &M, &P) || !V.TrimStartAndEnd().IsNumeric())
+			{
+				UE_LOG(LogDelirium, Warning, TEXT("Overrides: \"%s\" isn't behaviour.param=value"), *Item);
+				continue;
+			}
+			Out.Add({ M, P, FCString::Atof(*V.TrimStartAndEnd()) });
+		}
+		return Out;
+	}
+
 	bool Check(int32 Result, const TCHAR* What)
 	{
 		if (Result < 0) UE_LOG(LogDelirium, Warning, TEXT("%s: %s"), What, *LastError());
@@ -223,19 +286,33 @@ bool UDeliriumRagdollComponent::Take()
 		return false;
 	}
 	Scale = nm_build_get_scale(Build);
+	const FBody Shape{ Body, BodySeed ? BodySeed : (int32)FPlatformTime::Cycles(), BodyVariance, bBodySymmetric, CustomBody };
+	FString BodyError;
+	if (NmBuild* R = Shape.Make(Build, BodyError))
+	{
+		nm_build_destroy(Build);
+		Build = R;
+	}
+	else if (!BodyError.IsEmpty()) UE_LOG(LogDelirium, Warning, TEXT("%s body %s: %s"), *GetOwner()->GetName(), *Body, *BodyError);
 	// Each kind's balance settings, searched once in the background and copied to the rest of its kind.
 	if (S->bAdaptive)
 	{
 		FScopeLock Lock(&TunedLock);
-		const FString Kind = Asset->GetPathName();
+		const FString Kind = Asset->GetPathName() + Shape.Key();
 		if (NmBuild** T = Tuned.Find(Kind)) { if (*T) nm_build_copy_tune(Build, *T); }
 		else
 		{
 			Tuned.Add(Kind, nullptr);
 			TArray<float> J(Joints, 63);
-			AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [Kind, J, Mode]
+			AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [Kind, J, Mode, Shape]
 			{
 				NmBuild* T = nm_build_fit_sized(BaseBuild, J.GetData(), Mode);
+				FString Ignored;
+				if (NmBuild* R = T ? Shape.Make(T, Ignored) : nullptr)
+				{
+					nm_build_destroy(T);
+					T = R;
+				}
 				const int32 Got = T ? nm_build_tune(T, 200) : -1;
 				FScopeLock Lock(&TunedLock);
 				Tuned.Add(Kind, T);
@@ -275,6 +352,10 @@ bool UDeliriumRagdollComponent::Take()
 		return false;
 	}
 	if (S->Strength != 1.f) Check(nm_agent_set_strength(Agent, S->Strength), TEXT("Strength"));
+	TArray<TTuple<FString, FString, float>> Overridden = ParseOverrides(Overrides);
+	Overridden.Append(Added);
+	for (const auto& O : Overridden)
+		Check(nm_agent_set_override(Agent, TCHAR_TO_UTF8(*O.Get<0>()), TCHAR_TO_UTF8(*O.Get<1>()), O.Get<2>()), TEXT("Overrides"));
 	Rig = nm_rig_create(Agent, N, Parents.GetData(), Rest.GetData(), Parts.GetData());
 	if (!Rig)
 	{
@@ -397,6 +478,28 @@ FVector UDeliriumRagdollComponent::GetHips() const
 }
 
 bool UDeliriumRagdollComponent::Ragdoll() { return Take(); }
+
+TArray<FString> UDeliriumRagdollComponent::Bodies()
+{
+	return { TEXT("Fitted"), TEXT("Small"), TEXT("Average"), TEXT("Large"), TEXT("Lanky"), TEXT("Fat"), TEXT("Stocky"),
+		TEXT("Waddler"), TEXT("Guard"), TEXT("Brute"), TEXT("Brawler"), TEXT("Random"), TEXT("Custom") };
+}
+
+bool UDeliriumRagdollComponent::SetOverride(FString Behaviour, FString Param, float Value)
+{
+	if (Agent && !Check(nm_agent_set_override(Agent, TCHAR_TO_UTF8(*Behaviour), TCHAR_TO_UTF8(*Param), Value), TEXT("SetOverride")))
+		return false;
+	Added.RemoveAll([&](const TTuple<FString, FString, float>& O) { return O.Get<0>() == Behaviour && O.Get<1>() == Param; });
+	Added.Add({ Behaviour, Param, Value });
+	return true;
+}
+
+void UDeliriumRagdollComponent::ClearOverrides()
+{
+	Added.Reset();
+	Overrides.Reset();
+	if (Agent) nm_agent_clear_overrides(Agent);
+}
 
 bool UDeliriumRagdollComponent::Shoot(FVector Point, FVector Direction, float Force, FString Set, float Health)
 {

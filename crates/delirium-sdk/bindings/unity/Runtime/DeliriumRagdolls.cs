@@ -33,7 +33,10 @@ namespace Delirium.Ragdoll
         string gameExe, xrt, buildFile, taskParams, boneMap, getUpFront, getUpBack, sizeMode;
         KeyCode ragdollKey, releaseKey;
         float push, getUpAfter, getUpBlend;
-        bool balance;
+        bool balance, bodySymmetric;
+        string body, customBody, overrides;
+        int bodySeed;
+        float bodyVariance;
 #else
     /// Add to one object in your first scene (it lives on across scenes). Ragdoll, Shoot, MeleeHit, ... take the
     /// character's root; getting up blends back into its Animator. The data files come from the player's own game.
@@ -74,6 +77,18 @@ namespace Delirium.Ragdoll
         public bool adaptive = true;
         [Tooltip("Every body's muscles times this.")]
         public float strength = 1f;
+        [Tooltip("The body (the Playroom's): Fitted (the skeleton's own); Small, Average, Large, Lanky, Fat, Stocky, Waddler, Guard, Brute or Brawler (that shape, of each character); Random; Custom (customBody). The mesh keeps its look: pick one near it. SetBody sets one character's.")]
+        public string body = "Fitted";
+        [Tooltip("Random's seed: the same seed, the same body (0: each character its own).")]
+        public int bodySeed = 0;
+        [Tooltip("Random's spread, 1 to 4 (1.5 the Playroom's default).")]
+        public float bodyVariance = 1.5f;
+        [Tooltip("Random: the right side the left's.")]
+        public bool bodySymmetric = true;
+        [Tooltip("Custom's sizes against the fitted body: legs, arms, trunk, width, head, neck, weight (kg), height (m; 0 keeps it).")]
+        public string customBody = "1, 1, 1, 1, 1, 1, 77, 0";
+        [Tooltip("Behaviour parameters changed for every character (the Playroom's Parameters tab): shot.bodyStiffness=7, bodyBalance.useHeadLook=0. SetOverride does one character's.")]
+        public string overrides = "";
 
         static class Logger
         {
@@ -89,6 +104,12 @@ namespace Delirium.Ragdoll
         /// and every body's strength.
         internal static bool Adaptive = true;
         internal static float Strength = 1f;
+        /// The Body settings' body (Body.Make), and SetBody's for one character.
+        internal static Body Shape = new Body("Fitted", 0, 1.5f, true, "");
+        internal static readonly Dictionary<Transform, Body> Shapes = new Dictionary<Transform, Body>();
+        /// The Overrides setting's (behaviour, param, value) for every character, and SetOverride's for one.
+        internal static List<(string, string, float)> AllOverrides = new List<(string, string, float)>();
+        internal static readonly Dictionary<Transform, List<(string, string, float)>> Overridden = new Dictionary<Transform, List<(string, string, float)>>();
         /// The Weapons setting: name -> taskparams set, bullet push (N s), health it takes.
         readonly Dictionary<string, (string set, float force, float damage)> weapons = new Dictionary<string, (string, float, float)>(StringComparer.OrdinalIgnoreCase);
         IntPtr build;
@@ -138,6 +159,13 @@ namespace Delirium.Ragdoll
                 "balance settings searched once in the background (a few seconds). Off: the game man's weight share and balance on its bones.").Value;
             Strength = Config.Bind("Body", "Strength", 1f, new ConfigDescription("Every body's muscles times this (1: as made). 1.5-2 for tough " +
                 "enemies or a movie giant: at 2 a person stands a push of 80 N s instead of 60.", new AcceptableValueRange<float>(0.1f, 10f))).Value;
+            body = Config.Bind("Body", "Body", "Fitted", new ConfigDescription("The body (the Playroom's): Fitted (the skeleton's own); that shape of " +
+                "each character; Random; Custom (CustomBody). The mesh keeps its look: pick one near it.", new AcceptableValueList<string>(Body.Names))).Value;
+            bodySeed = Config.Bind("Body", "Seed", 0, "Random's seed: the same seed, the same body (0: each character its own).").Value;
+            bodyVariance = Config.Bind("Body", "Variance", 1.5f, new ConfigDescription("Random's spread (1.5 the Playroom's default).", new AcceptableValueRange<float>(1f, 4f))).Value;
+            bodySymmetric = Config.Bind("Body", "Symmetric", true, "Random: the right side the left's.").Value;
+            customBody = Config.Bind("Body", "CustomBody", "1, 1, 1, 1, 1, 1, 77, 0", "Custom's sizes against the fitted body: legs, arms, trunk, width, head, neck, weight (kg), height (m; 0 keeps it).").Value;
+            overrides = Config.Bind("Body", "Overrides", "", "Behaviour parameters changed for every character (the Playroom's Parameters tab): shot.bodyStiffness=7, bodyBalance.useHeadLook=0.").Value;
             HeadshotKills = Config.Bind("Feel", "HeadshotKills", true, "A shot whose nearest body part is the head kills: health 0, the body goes limp and never gets up by itself.").Value;
             sizeMode = Config.Bind("Feel", "Size", "Auto", new ConfigDescription(
                 "Real: NM's body is the character's own size (true physics; it keeps its balance only within about 0.9-1.1 of a person). " +
@@ -151,6 +179,8 @@ namespace Delirium.Ragdoll
             var tunes = Path.Combine(Application.persistentDataPath, "delirium-tunes.txt");
             (ShotForce, MeleeForce, ExplosionForce, Adaptive, Strength, HeadshotKills) = (shotForce, meleeForce, explosionForce, adaptive, strength, headshotKills);
 #endif
+            Shape = new Body(body, bodySeed, bodyVariance, bodySymmetric, customBody);
+            AllOverrides = Body.ParseOverrides(overrides);
             foreach (var w in weaponTable.Split(','))
             {
                 var kv = w.Split('=');
@@ -408,6 +438,34 @@ namespace Delirium.Ragdoll
             return d != null;
         }
 
+        /// One character's body (Body's names; Random's seed, 0: its own), from its next ragdoll on.
+        public void SetBody(Transform owner, string body, int seed = 0) =>
+            Shapes[owner] = new Body(body, seed, Shape.Variance, Shape.Symmetric, Shape.Custom);
+
+        /// Every `behaviour` message to that character from now on carries `param` as `value` (on/off: 0 or 1). False (the
+        /// reason in the log) for a parameter it doesn't take.
+        public bool SetOverride(Transform owner, string behaviour, string param, float value)
+        {
+            var d = dolls.FirstOrDefault(x => x.Owner == owner);
+            if (d != null && nm_agent_set_override(d.agent, behaviour, param, value) < 0)
+            {
+                Logger.LogWarning($"SetOverride: {LastError()}");
+                return false;
+            }
+            if (!Overridden.TryGetValue(owner, out var list)) Overridden[owner] = list = new List<(string, string, float)>();
+            list.RemoveAll(o => o.Item1 == behaviour && o.Item2 == param);
+            list.Add((behaviour, param, value));
+            return true;
+        }
+
+        /// Drops that character's SetOverride values and the Overrides setting's for it: its messages go out as sent.
+        public void ClearOverrides(Transform owner)
+        {
+            Overridden[owner] = null;
+            var d = dolls.FirstOrDefault(x => x.Owner == owner);
+            if (d != null) nm_agent_clear_overrides(d.agent);
+        }
+
         Doll Doll(Transform owner, Vector3 impulse, bool balanced)
         {
             var map = Overrides();
@@ -546,7 +604,7 @@ namespace Delirium.Ragdoll
             // DELIRIUM_DUMP=<dir>: each character's 21 fitted joints (NM space, metres), to replay a fit outside the game.
             var dump = Environment.GetEnvironmentVariable("DELIRIUM_DUMP");
             if (!string.IsNullOrEmpty(dump))
-                File.WriteAllText(Path.Combine(dump, owner.name + "_" + owner.GetInstanceID() + ".txt"),
+                File.WriteAllText(Path.Combine(dump, owner.name + "_" + owner.GetHashCode() + ".txt"),
                     string.Join(" ", fit.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))));
             // ... and its skin as it stands (an .obj per mesh, the mesh's own space), to look at.
             if (!string.IsNullOrEmpty(dump))
@@ -555,13 +613,13 @@ namespace Delirium.Ragdoll
                     var m = new Mesh();
                     r.BakeMesh(m, true);
                     var ci = System.Globalization.CultureInfo.InvariantCulture;
-                    File.WriteAllLines(Path.Combine(dump, owner.name + "_" + owner.GetInstanceID() + "_" + r.name + ".obj"),
+                    File.WriteAllLines(Path.Combine(dump, owner.name + "_" + owner.GetHashCode() + "_" + r.name + ".obj"),
                         m.vertices.Select(v => string.Format(ci, "v {0} {1} {2}", v.x, v.y, v.z))
                          .Concat(Enumerable.Range(0, m.triangles.Length / 3).Select(t => $"f {m.triangles[t * 3] + 1} {m.triangles[t * 3 + 1] + 1} {m.triangles[t * 3 + 2] + 1}")));
                     UnityEngine.Object.Destroy(m);
                 }
             if (!string.IsNullOrEmpty(dump))
-                File.WriteAllLines(Path.Combine(dump, owner.name + "_" + owner.GetInstanceID() + ".bones"),
+                File.WriteAllLines(Path.Combine(dump, owner.name + "_" + owner.GetHashCode() + ".bones"),
                     Enumerable.Range(0, n).Select(b => $"{bones[b].name}\t{parents[b]}\t{parts[b]}\t{At(b) - At(0):F3}"));
             // Fitted at the size the Size setting picks: the SDK scales places, pushes and the clock (nm_build_fit_sized).
             build = nm_build_fit_sized(baseBuild, fit, sizeMode == "Homer" ? NM_SIZE_BASE : sizeMode == "Real" ? NM_SIZE_REAL : NM_SIZE_AUTO);
@@ -595,17 +653,35 @@ namespace Delirium.Ragdoll
                 Debug.Log($"[NM] {owner.name}: {nm_build_weigh_skin(build, fit, verts.ToArray(), vparts.ToArray(), vparts.Count):F0} kg by its skin (fitted {was:F0} kg)");
             else
                 Debug.Log($"[NM] {owner.name}: {was:F0} kg by its bones (its skin isn't readable)");
+            var shape = Plugin.Shapes.TryGetValue(owner, out var own) ? own : Plugin.Shape;
+            if (shape.Name == "Random" && shape.Seed == 0) shape = shape.WithSeed(Environment.TickCount ^ owner.GetHashCode());
+            try
+            {
+                var reshaped = shape.Make(build);
+                if (reshaped != IntPtr.Zero)
+                {
+                    nm_build_destroy(build);
+                    build = reshaped;
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[NM] {owner.name} body {shape.Name}: {e.Message}"); }
             // Its kind's balance settings: searched once in the background (seconds: it stops the game otherwise), the
             // ones taken before it's done balance on the game's own.
             if (Plugin.Adaptive) lock (tunedKinds)
-                if (tunedKinds.TryGetValue(owner.name, out var tuned)) { if (tuned != IntPtr.Zero) nm_build_copy_tune(build, tuned); }
+                if (tunedKinds.TryGetValue(owner.name + shape.Key, out var tuned)) { if (tuned != IntPtr.Zero) nm_build_copy_tune(build, tuned); }
                 else
                 {
-                    tunedKinds[owner.name] = IntPtr.Zero;
-                    var (kind, mode, joints) = (owner.name, sizeMode == "Homer" ? NM_SIZE_BASE : sizeMode == "Real" ? NM_SIZE_REAL : NM_SIZE_AUTO, (float[])fit.Clone());
+                    tunedKinds[owner.name + shape.Key] = IntPtr.Zero;
+                    var (kind, mode, joints) = (owner.name + shape.Key, sizeMode == "Homer" ? NM_SIZE_BASE : sizeMode == "Real" ? NM_SIZE_REAL : NM_SIZE_AUTO, (float[])fit.Clone());
                     System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                     {
                         var t = nm_build_fit_sized(baseBuild, joints, mode);
+                        try
+                        {
+                            var r = t == IntPtr.Zero ? IntPtr.Zero : shape.Make(t);
+                            if (r != IntPtr.Zero) { nm_build_destroy(t); t = r; }
+                        }
+                        catch (Exception) { }
                         int got = t == IntPtr.Zero ? -1 : nm_build_tune(t, 200);
                         lock (tunedKinds) tunedKinds[kind] = t;
                         Debug.Log($"[NM] {kind}: balance tuned, stands through {got} of 3 pushes");
@@ -640,6 +716,9 @@ namespace Delirium.Ragdoll
             agent = nm_agent_create(build, P(new Vector3(hips.position.x, ground, hips.position.z)), 0f, UnityEngine.Random.value);
             if (agent == IntPtr.Zero) throw new Exception(LastError());
             if (Plugin.Strength != 1f) Plugin.Check(nm_agent_set_strength(agent, Plugin.Strength));
+            var mine = Plugin.Overridden.TryGetValue(owner, out var o) ? o : Plugin.AllOverrides.ToList();
+            foreach (var (m, p, v) in mine ?? new List<(string, string, float)>())
+                if (nm_agent_set_override(agent, m, p, v) < 0) Debug.LogWarning($"[NM] Overrides: {LastError()}");
             rig = nm_rig_create(agent, n, parents, rest, parts);
             if (rig == IntPtr.Zero) throw new Exception(LastError());
             // It starts in the pose its animation has it in now, moving as the character moved: no snap.
@@ -866,6 +945,62 @@ namespace Delirium.Ragdoll
                 nm_world_destroy(world);
             }
             return paused.OfType<Animator>().Where(a => a != null).ToList();
+        }
+    }
+}
+
+namespace Delirium.Ragdoll
+{
+    /// The Body setting (the Playroom's bodies), for a character and its background tune alike.
+    readonly struct Body
+    {
+        public static readonly string[] Names = { "Fitted", "Small", "Average", "Large", "Lanky", "Fat", "Stocky", "Waddler", "Guard", "Brute", "Brawler", "Random", "Custom" };
+        public readonly string Name, Custom;
+        public readonly int Seed;
+        public readonly float Variance;
+        public readonly bool Symmetric;
+
+        public Body(string name, int seed, float variance, bool symmetric, string custom) =>
+            (Name, Seed, Variance, Symmetric, Custom) = (string.IsNullOrEmpty(name) ? "Fitted" : name, seed, variance, symmetric, custom);
+
+        public Body WithSeed(int seed) => new Body(Name, seed, Variance, Symmetric, Custom);
+
+        /// The fitted build `b` reshaped (a new build); zero: Fitted, keep it. Throws for a bad body.
+        public IntPtr Make(IntPtr b)
+        {
+            IntPtr r;
+            switch (Name)
+            {
+                case "Fitted": return IntPtr.Zero;
+                case "Random": r = nm_build_random(b, Seed, Variance, Symmetric ? 1 : 0); break;
+                case "Custom":
+                    var v = Custom.Split(',').Select(x => float.TryParse(x.Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : float.NaN).ToArray();
+                    if (v.Length != 8 || v.Any(float.IsNaN)) throw new Exception("CustomBody needs 8 numbers");
+                    r = nm_build_sized(b, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+                    break;
+                default: r = nm_build_named(b, Name); break;
+            }
+            if (r == IntPtr.Zero) throw new Exception(LastError());
+            return r;
+        }
+
+        /// Kinds tuned apart: the body's own.
+        public string Key => Name == "Fitted" ? "" : Name == "Random" ? $" Random {Seed} {Variance} {Symmetric}" : Name == "Custom" ? " Custom " + Custom : " " + Name;
+
+        /// "behaviour.param=value, ...": each one (bad ones in the log).
+        public static List<(string, string, float)> ParseOverrides(string s)
+        {
+            var o = new List<(string, string, float)>();
+            foreach (var item in s.Split(',').Select(x => x.Trim()).Where(x => x != ""))
+            {
+                var kv = item.Split('=');
+                var mp = kv[0].Trim().Split('.');
+                if (kv.Length == 2 && mp.Length == 2 && float.TryParse(kv[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v))
+                    o.Add((mp[0], mp[1], v));
+                else Debug.LogWarning($"[NM] Overrides: \"{item}\" isn't behaviour.param=value");
+            }
+            return o;
         }
     }
 }

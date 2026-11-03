@@ -32,6 +32,15 @@ Add a **Delirium Ragdoll** component to the character. From Blueprint or C++:
 `OnLyingStill(bFaceUp, Facing)` fires once it has lain still half a second: start your get-up animation there and
 call `GetUp`. Or set `Get Up After` (seconds) and it hands itself back.
 
+**Bodies and parameters (the Playroom's)**, in the component's Delirium|Body settings: `Body` is `Fitted` (its own
+skeleton's, the default), `Small`, `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute` or
+`Brawler` (that shape of this character), `Random` (`Body Seed`, 0: its own; `Body Variance`; `Body Symmetric`) or
+`Custom` (`Custom Body`: legs, arms, trunk, width, head, neck against the fitted body, weight in kg, height in m, 0
+keeps it). `Overrides` changes behaviour parameters as the Playroom's Parameters tab does
+(`shot.bodyStiffness=7, bodyBalance.useHeadLook=0`); `SetOverride(Behaviour, Param, Value)` and `ClearOverrides()`
+from Blueprint. The mesh keeps its look (its bones follow the body's turns), so pick a body near the mesh: a Brawler under a tall mesh
+shows its feet off the ground.
+
 Places are Unreal's (cm); impulses are N s. Ragdolls within 5 m share one world, so they push and pile on each other.
 
 ## Try it: click to fight

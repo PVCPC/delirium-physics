@@ -467,7 +467,7 @@ pub unsafe extern "C" fn nm_build_sized(build: *const NmBuild, legs: f32, arms: 
         return std::ptr::null_mut();
     }
     let (build, frames, _, _) = b.build.sized(&b.frames, Sizes { legs, arms, trunk, width, head, neck, kg, height });
-    Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] }))
+    Box::into_raw(Box::new(NmBuild { build, frames, scale: b.scale, tune: vec![] }))
 }
 
 #[unsafe(no_mangle)]
@@ -477,7 +477,7 @@ pub unsafe extern "C" fn nm_build_named(build: *const NmBuild, name: *const c_ch
         return std::ptr::null_mut();
     };
     match (b.build.parts.len() == 21).then(|| b.build.named(&b.frames, n)).flatten() {
-        Some((build, frames)) => Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] })),
+        Some((build, frames)) => Box::into_raw(Box::new(NmBuild { build, frames, scale: b.scale, tune: vec![] })),
         None => {
             fail(NM_E_ARG, format!("nm_build_named: no body {n:?}, or not a 21-part build"));
             std::ptr::null_mut()
@@ -497,7 +497,7 @@ pub unsafe extern "C" fn nm_build_random(build: *const NmBuild, seed: i32, varia
     }
     let (len, girth) = b.build.roll(seed as u32 as u64, variance, symmetric != 0);
     let (build, frames) = b.build.rolled(&b.frames, &len, &girth);
-    Box::into_raw(Box::new(NmBuild { build, frames, scale: 1.0, tune: vec![] }))
+    Box::into_raw(Box::new(NmBuild { build, frames, scale: b.scale, tune: vec![] }))
 }
 
 #[unsafe(no_mangle)]

@@ -20,6 +20,9 @@
   `nm_build_fit_neck` (fit a skeleton with a long neck) and `nm_build_set_head` (raise and grow the head for a tall
   skull). `nm_agent_set_override` / `nm_agent_clear_overrides` are the Parameters tab for one character,
   including the messages the built-in tasks send. See [Modding](docs/modding.md).
+- **Unity, Godot, Unreal and BepInEx plugins**: a `Body` setting (Fitted, any of the Playroom's bodies, Random or
+  Custom) and `Overrides` (the Parameters tab), per character from code too: `SetBody`, `SetOverride`,
+  `ClearOverrides` (Godot `body`, `set_override`).
 - After a crash the room writes `crash.txt` (system, graphics card, settings) beside it, and the next start offers
   Report crash with a GitHub issue filled in.
 
@@ -32,6 +35,8 @@
 - Random bodies no longer fly around (default spread 1.5 times, was 3) or stack their spine into blobs, and Reset
   pose stands them as built.
 - The mouse pull grows with a heavy body's weight.
+- The Unity package compiles on Unity 6.6 (it used `GetInstanceID`, an error there).
+- SDK: Custom, Random and named bodies made from a fitted character keep its size scale.
 
 ### Docs
 - SDK: `nm_agent_create` puts the body's lowest point on the position you give; pass `nm_agent_step` a fixed

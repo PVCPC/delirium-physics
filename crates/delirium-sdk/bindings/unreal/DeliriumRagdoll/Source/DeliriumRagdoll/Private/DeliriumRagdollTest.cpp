@@ -30,12 +30,14 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	AStaticMeshActor* Floor = W->SpawnActor<AStaticMeshActor>(FVector(0, 0, -50), FRotator::ZeroRotator);
 	Floor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
 	Floor->SetActorScale3D(FVector(20, 20, 1));
-	auto Run = [&](const TCHAR* What, TFunctionRef<void(UDeliriumRagdollComponent*)> Hit, float Seconds) -> FVector
+	auto Run = [&](const TCHAR* What, TFunctionRef<void(UDeliriumRagdollComponent*)> Hit, float Seconds,
+		TFunctionRef<void(UDeliriumRagdollComponent*)> Setup = [](UDeliriumRagdollComponent*) {}) -> FVector
 	{
 		ASkeletalMeshActor* A = W->SpawnActor<ASkeletalMeshActor>(FVector::ZeroVector, FRotator::ZeroRotator);
 		A->GetSkeletalMeshComponent()->SetSkeletalMeshAsset(Asset);
 		auto* D = NewObject<UDeliriumRagdollComponent>(A);
 		D->RegisterComponent();
+		Setup(D);
 		FVector Head = FVector::ZeroVector;
 		if (D->Ragdoll())
 		{
@@ -63,6 +65,17 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	const FVector Cut = Run(TEXT("leg cut"), [this](UDeliriumRagdollComponent* D)
 		{ TestTrue(TEXT("cut"), D->Sever(D->GetHips() + FVector(0, 10, -60), FVector(0, 0, 20))); }, 5.f);
 	TestTrue(TEXT("down without a leg"), Cut.Z < 40.f);
+	// The Body setting and overrides (the Playroom's bodies and Parameters tab).
+	auto Nothing = [](UDeliriumRagdollComponent*) {};
+	TestTrue(TEXT("Brawler stands"), Run(TEXT("Brawler"), Nothing, 5.f, [](UDeliriumRagdollComponent* D) { D->Body = TEXT("Brawler"); }).Z > 50.f);
+	TestTrue(TEXT("Random stands"), Run(TEXT("Random seed 5"), Nothing, 5.f, [](UDeliriumRagdollComponent* D) { D->Body = TEXT("Random"); D->BodySeed = 5; }).Z > 50.f);
+	TestTrue(TEXT("Custom stands"), Run(TEXT("Custom"), Nothing, 5.f,
+		[](UDeliriumRagdollComponent* D) { D->Body = TEXT("Custom"); D->CustomBody = TEXT("1, 1, 1, 1.2, 1, 1, 95, 0"); }).Z > 50.f);
+	TestTrue(TEXT("overrides"), Run(TEXT("override"), [this](UDeliriumRagdollComponent* D)
+		{
+			TestTrue(TEXT("good override"), D->SetOverride(TEXT("bodyBalance"), TEXT("useHeadLook"), 0.f));
+			TestFalse(TEXT("bad override refused"), D->SetOverride(TEXT("bodyBalance"), TEXT("noSuchThing"), 1.f));
+		}, 5.f, [](UDeliriumRagdollComponent* D) { D->Overrides = TEXT("shot.bodyStiffness=7"); }).Z > 50.f);
 	GEngine->DestroyWorldContext(W);
 	W->DestroyWorld(false);
 	return true;

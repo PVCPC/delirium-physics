@@ -41,6 +41,45 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium")
 	float GetUpAfter = 0.f;
 
+	/** The body (the Playroom's): Fitted (the skeleton's own); Small, Average, Large, Lanky, Fat, Stocky, Waddler, Guard,
+	 *  Brute or Brawler (that shape, of this character); Random; Custom (CustomBody). The mesh keeps its look: pick
+	 *  one near it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body", meta = (GetOptions = "Bodies"))
+	FString Body = TEXT("Fitted");
+
+	/** Random's seed: the same seed, the same body (0: each character its own). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
+	int32 BodySeed = 0;
+
+	/** Random's spread, 1 to 4 (1.5 the Playroom's default). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body", meta = (ClampMin = "1", ClampMax = "4"))
+	float BodyVariance = 1.5f;
+
+	/** Random: the right side the left's. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
+	bool bBodySymmetric = true;
+
+	/** Custom's sizes against the fitted body: legs, arms, trunk, width, head, neck, weight (kg), height (m; 0 keeps it). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
+	FString CustomBody = TEXT("1, 1, 1, 1, 1, 1, 77, 0");
+
+	/** Behaviour parameters changed for this character (the Playroom's Parameters tab), every message of that behaviour
+	 *  sent with them: "shot.bodyStiffness=7, bodyBalance.useHeadLook=0". SetOverride does one in code. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
+	FString Overrides;
+
+	/** Every `Behaviour` message to it from now on carries `Param` as `Value` (on/off: 0 or 1). False (the reason in the
+	 *  log) for a parameter it doesn't take. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool SetOverride(FString Behaviour, FString Param, float Value);
+
+	/** Drops all overrides (Overrides too): its messages go out as sent again. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	void ClearOverrides();
+
+	UFUNCTION()
+	static TArray<FString> Bodies();
+
 	/** Takes the character (no hit): it stands and keeps its balance. */
 	UFUNCTION(BlueprintCallable, Category = "Delirium")
 	bool Ragdoll();
@@ -107,6 +146,8 @@ private:
 	void Release();
 	float Ground(const FVector& Hips) const;
 
+	/** SetOverride's, on top of Overrides. */
+	TArray<TTuple<FString, FString, float>> Added;
 	NmBuild* Build = nullptr;
 	NmWorld* World = nullptr;
 	NmAgent* Agent = nullptr;
