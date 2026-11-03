@@ -83,6 +83,25 @@ pub struct BuildPart {
     pub frame: Frame,
 }
 
+impl BuildPart {
+    /// A build part and its frame as JSON.
+    pub fn from_def(p: &PartDef, f: &Transform) -> BuildPart {
+        BuildPart {
+            name: p.name.clone(), parent: p.parent, mass: p.mass, radius: p.radius, half: p.half, offset: fr(&p.offset),
+            rest: p.rest.to_array(), anchor_parent: p.anchor_parent.to_array(), anchor: p.anchor.to_array(),
+            limit: match p.limit {
+                Limit::Cone { swing, twist } => JointLimit::Cone { swing, twist },
+                Limit::Hinge { axis, lo, hi, twist } => JointLimit::Hinge { axis: axis.to_array(), lo, hi, twist },
+                Limit::Bone { pf, cf, lean, twist } => JointLimit::Bone { parent_frame: pf.to_array(), child_frame: cf.to_array(), lean, twist },
+                Limit::BoneHinge { pf, cf, lo, hi } => JointLimit::BoneHinge { parent_frame: pf.to_array(), child_frame: cf.to_array(), lo, hi },
+                Limit::Locked => JointLimit::Locked,
+            },
+            lower: p.lower, reach: p.reach, bind: p.bind.to_array(), boxed: p.boxed.map(|e| e.to_array()),
+            inertia: p.inertia.to_array(), length: p.length, frame: fr(f),
+        }
+    }
+}
+
 fn q(v: [f32; 4]) -> Quat {
     Quat::from_array(v)
 }
@@ -100,19 +119,7 @@ impl Character {
         }).collect();
         let parts = nm_asset::parts(d).into_iter().zip(nm_asset::masses(d)).zip(nm_asset::PARTS)
             .map(|((frame, mass), name)| Part { name: name.into(), frame, mass }).collect();
-        let build = build.map(|(b, frames)| b.parts.iter().zip(frames).map(|(p, f)| BuildPart {
-            name: p.name.clone(), parent: p.parent, mass: p.mass, radius: p.radius, half: p.half, offset: fr(&p.offset),
-            rest: p.rest.to_array(), anchor_parent: p.anchor_parent.to_array(), anchor: p.anchor.to_array(),
-            limit: match p.limit {
-                Limit::Cone { swing, twist } => JointLimit::Cone { swing, twist },
-                Limit::Hinge { axis, lo, hi, twist } => JointLimit::Hinge { axis: axis.to_array(), lo, hi, twist },
-                Limit::Bone { pf, cf, lean, twist } => JointLimit::Bone { parent_frame: pf.to_array(), child_frame: cf.to_array(), lean, twist },
-                Limit::BoneHinge { pf, cf, lo, hi } => JointLimit::BoneHinge { parent_frame: pf.to_array(), child_frame: cf.to_array(), lo, hi },
-                Limit::Locked => JointLimit::Locked,
-            },
-            lower: p.lower, reach: p.reach, bind: p.bind.to_array(), boxed: p.boxed.map(|e| e.to_array()),
-            inertia: p.inertia.to_array(), length: p.length, frame: fr(f),
-        }).collect());
+        let build = build.map(|(b, frames)| b.parts.iter().zip(frames).map(|(p, f)| BuildPart::from_def(p, f)).collect());
         Character { format: FORMAT.into(), joints, parts, self_collision: nm_asset::self_collision(d).into_iter().map(|(a, b)| [a, b]).collect(), build }
     }
 

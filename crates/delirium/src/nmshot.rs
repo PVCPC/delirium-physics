@@ -105,6 +105,9 @@ pub struct Out {
     pub dbm_knee_scale: Option<f32>,
     pub dbm_acc: Option<f32>,
     pub dbm_turn: Option<Vec3>,
+    /// A lean asked for by an extra (RDR2's lean family, onFire's stagger): the balancer leans that way from the next
+    /// step; None unless one does.
+    pub lean: Option<(crate::nmdbm::LeanMode, f32, bool)>,
     pub hold_stiffness: bool,
     pub feedback: Vec<Feedback>,
     pub head_look_start: Option<(f32, f32)>,

@@ -278,6 +278,14 @@ NM_API void nm_rig_destroy(NmRig* r);
 NM_API int32_t nm_rig_pose(const NmRig* r, const NmAgent* a, float* out);
 /* Takes over from your animation without a snap: puts every part where your skeleton's bones are now (`now`, each bone's world frame, 7 floats as in nm_rig_create), moving as they were (`before`: the frames `dt` seconds earlier, say last frame's; null: still). Call right after creating the agent and rig (or any time to put it back on the animation), before the first step. */
 NM_API int32_t nm_rig_take(const NmRig* r, NmAgent* a, const float* now, const float* before, float dt);
+/* An RDR2 body (one of the player's own RDR2 naturalmotion XML files: fred.xml, wilma.xml or a size variant) as `nm-character-1` JSON on top of `base_json` (a base body, e.g. from nm_character_from_xrt): RDR2's part frames, joint limits, motor flips, muscles and force caps; the base's joint offsets, masses and self-collision. With `build_path` (the base's build dump) it carries a build fitted to RDR2's proportions. Into `buf` as usual. */
+NM_API int32_t nm_character_from_rdr2(const char* xml_path, const char* base_json, const char* build_path, char* buf, int32_t len);
+/* The RDR2 reactions option, for nm_agent_rdr2_shot / nm_agent_rdr2_melee (every agent): `name` one of "snap", "hitLocation", "melee", "balance" (0 off, 1 on), "spin", "knees", "reach" (chances, 0..1). Defaults: all on, spin 0.25, knees 0.15, reach 0.7. */
+NM_API int32_t nm_rdr2_set(const char* name, float value);
+/* RDR2's reactions to a bullet, started after the shot itself (nm_agent_task_shot): part `part` hit at `at` (world), the bullet going along `dir`. By where it hit: shotFromBehind, shotInGuts, shotInjuredLeg or shotInjuredArm; shotSnap; by chance shotSpin or shotFallToKnees, and reachForWound; rdr2Balance stays on (see nm_rdr2_set). Returns how many messages started. */
+NM_API int32_t nm_agent_rdr2_shot(NmAgent* a, const NmWorld* w, int32_t part, const float* at, const float* dir);
+/* RDR2's melee reaction (meleeReact, softened so a punch staggers and rarely drops) to a blow on part `part` at `at` (world) along `dir`, instead of a flinch; rdr2Balance stays on (see nm_rdr2_set). Returns how many messages started (0 with "melee" off). */
+NM_API int32_t nm_agent_rdr2_melee(NmAgent* a, const NmWorld* w, int32_t part, const float* at, const float* dir);
 
 #ifdef __cplusplus
 }

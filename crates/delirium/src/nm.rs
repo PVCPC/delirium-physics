@@ -1772,6 +1772,26 @@ impl Agent {
                 self.nm_head.tick(c.ch, &body);
             }
             self.nm_pa.tick(&mut c);
+            // an extra (RDR2's duck) may ask the balancer to crouch; nothing else here sets these, so they're None
+            // unless one does
+            if let Some(d) = self.balance.as_mut().and_then(|b| b.dbm.as_mut()) {
+                if let Some(x) = out.dbm_leg_offset {
+                    d.leg_offset = x;
+                }
+                if let Some(x) = out.dbm_knee_scale {
+                    d.knee_scale = x;
+                }
+                // a turn asked for by an extra (RDR2's shot spin and step turn): face along this
+                if let Some(v) = out.dbm_turn {
+                    (d.pv.fixed_vel, d.pv.vel) = (v != Vec3::ZERO, v);
+                }
+            }
+            // an extra (RDR2's leans, onFire) may ask for a lean; it lapses a moment after the extra stops asking
+            if let Some((mode, amount, as_force)) = out.lean {
+                self.lean = Some((mode, amount, 0.1, as_force));
+            }
+            // an extra (RDR2's fall to knees) may switch the balancer off
+            stop_dbm |= out.dbm == Some(false);
             for o in [brace_out, out] {
                 for &(k, v, f) in &o.seq {
                     if f { shot_out.force(k, v) } else { shot_out.torque(k, v) }

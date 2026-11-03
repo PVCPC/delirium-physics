@@ -3,7 +3,7 @@ use crate::nmshot::Ctx;
 use bevy_transform::components::Transform;
 
 pub fn messages() -> impl Iterator<Item = &'static Message> {
-    MESSAGES.iter().chain(&crate::extras_fall::MESSAGES).chain(&crate::extras_held::MESSAGES)
+    MESSAGES.iter().chain(&crate::extras_fall::MESSAGES).chain(&crate::extras_held::MESSAGES).chain(&crate::extras_rdr2::MESSAGES)
 }
 
 pub static MESSAGES: [Message; 3] = [
@@ -72,6 +72,10 @@ pub trait Extra: Send + Sync {
     fn let_go(&mut self, _hand: usize) {}
     fn objects(&mut self, _obs: &[crate::ragdoll::Obstacle]) {}
     fn stop(&mut self, _c: &mut Ctx) {}
+    /// The message sent again without start: new values for whatever it follows (rdr2Sit's seat).
+    fn update(&mut self, _p: &mut P) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -104,6 +108,11 @@ impl Extras {
             if let Some(h) = params.iter().find(|(n, _)| *n == "letGo").and_then(|(_, v)| v.i().ok()) {
                 self.on.iter_mut().filter(|(n, _)| *n == name).for_each(|(_, e)| e.let_go(h.clamp(0, 1) as usize));
             }
+            for (_, e) in self.on.iter_mut().filter(|(n, _)| *n == name) {
+                if let Err(e) = e.update(&mut P { params, used: vec![] }) {
+                    return Some(Err(e));
+                }
+            }
             return Some(Ok(0));
         }
         if name == "hardConstraint" {
@@ -123,13 +132,19 @@ impl Extras {
             "electrocute" => Electrocute::new(&mut p).map(|e| Box::new(e) as _),
             _ => match crate::extras_fall::build(name, &mut p) {
                 Some(e) => e,
-                None => crate::extras_held::build(name, &mut p).expect("every extra's message builds"),
+                None => match crate::extras_rdr2::build(name, &mut p) {
+                    Some(e) => e,
+                    None => crate::extras_held::build(name, &mut p).expect("every extra's message builds"),
+                },
             },
         };
         Some(e.and_then(|e| p.done().map(|()| self.on.push((name, e)))).map(|()| 0))
     }
 
     pub fn tick(&mut self, c: &mut Ctx, obs: &[crate::ragdoll::Obstacle], dt: f32) {
+        for e in c.ch.eff.iter_mut() {
+            e.offset = [0.0; 3];
+        }
         for (joints, amount) in self.injure.drain(..) {
             for j in joints {
                 c.ch.eff[j].injury = amount;

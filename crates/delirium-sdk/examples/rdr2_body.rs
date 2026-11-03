@@ -1,0 +1,77 @@
+//! Converts an RDR2 body (fred.xml, wilma.xml... from the player's own RDR2) into an `nm-character-1` JSON on top of
+//! Homer's (from the player's GTA IV), then stands it up and shoots it as a quick check.
+//! Usage: GTAIV_EXE=<GTAIV.exe> cargo run --release -p delirium-sdk --example rdr2_body --
+//!          <Fred.art|fred.xrt> <build.txt> <rdr2 body .xml> <out.json>
+use delirium_physics::character::*;
+use delirium_physics::rdr2::*;
+use delirium_physics::*;
+use std::ffi::CString;
+
+fn c(s: &str) -> CString {
+    CString::new(s).unwrap()
+}
+
+unsafe fn json(f: impl Fn(*mut std::ffi::c_char, i32) -> i32) -> String {
+    let n = f(std::ptr::null_mut(), 0);
+    assert!(n > 0, "{}", last());
+    let mut b = vec![0u8; n as usize + 1];
+    f(b.as_mut_ptr() as *mut _, b.len() as i32);
+    String::from_utf8_lossy(&b).trim_end_matches('\0').to_string()
+}
+
+fn last() -> String {
+    let mut b = vec![0u8; 512];
+    unsafe { nm_last_error(b.as_mut_ptr() as *mut _, 512) };
+    String::from_utf8_lossy(&b).trim_end_matches('\0').to_string()
+}
+
+fn main() {
+    let a: Vec<String> = std::env::args().collect();
+    unsafe {
+        if let Ok(e) = std::env::var("GTAIV_EXE") {
+            assert_eq!(nm_unlock(c(&e).as_ptr()), 0, "nm_unlock: {}", last());
+        }
+        if a[1].to_ascii_lowercase().ends_with(".art") {
+            delirium_data::LE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        let (xrt, build, xml) = (c(&a[1]), c(&a[2]), c(&a[3]));
+        let base = json(|b, n| nm_character_from_xrt(xrt.as_ptr(), build.as_ptr(), b, n));
+        let base_c = c(&base);
+        let body = json(|b, n| nm_character_from_rdr2(xml.as_ptr(), base_c.as_ptr(), build.as_ptr(), b, n));
+        std::fs::write(&a[4], &body).unwrap();
+        println!("wrote {} ({} bytes)", a[4], body.len());
+        // load it and try it
+        let bc = c(&body);
+        assert!(nm_init_character(bc.as_ptr()) >= 0, "nm_init_character: {}", last());
+        let b = nm_build_from_character(bc.as_ptr());
+        assert!(!b.is_null(), "nm_build_from_character: {}", last());
+        let w = nm_world_create();
+        nm_world_add_floor(w, 0.0, 0.0, 0.0, 50.0);
+        for (name, shoot) in [("stand", false), ("shot", true)] {
+            let g = nm_agent_create(b, [0.0f32; 3].as_ptr(), 0.0, 0.3);
+            nm_msg_begin(g, c("bodyBalance").as_ptr());
+            nm_msg_set_bool(g, c("start").as_ptr(), 1);
+            nm_msg_send(g, w);
+            let mut low = f32::MAX;
+            for k in 0..300 {
+                if shoot && k == 30 {
+                    let mut p = [0.0f32; 3];
+                    nm_agent_get_part_transform(g, 10, p.as_mut_ptr(), std::ptr::null_mut());
+                    nm_agent_apply_push(g, p.as_ptr(), [0.0f32, 40.0, 0.0].as_ptr());
+                    nm_agent_task_shot(g, w, c("*").as_ptr(), 10, p.as_ptr(), [0.0f32, 1.0, 0.0].as_ptr(), 200.0);
+                }
+                nm_agent_step(g, w, 1.0 / 60.0);
+                let mut p = [0.0f32; 3];
+                nm_agent_get_part_transform(g, 0, p.as_mut_ptr(), std::ptr::null_mut());
+                low = low.min(p[2]);
+            }
+            let mut p = [0.0f32; 3];
+            nm_agent_get_part_transform(g, 0, p.as_mut_ptr(), std::ptr::null_mut());
+            let mut head = [0.0f32; 3];
+            nm_agent_get_part_transform(g, 12, head.as_mut_ptr(), std::ptr::null_mut());
+            println!("{name:6} pelvis z {:.3} (lowest {:.3})  head z {:.3}  balancing {}  fallen {}",
+                     p[2], low, head[2], nm_agent_is_balancing(g), nm_agent_has_fallen(g));
+            nm_agent_destroy(g);
+        }
+    }
+}

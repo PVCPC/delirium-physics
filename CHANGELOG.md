@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Behaviours from Red Dead Redemption 2's Euphoria, as extra messages: `duck`, `shotSnap`, `shotSpin`,
+  `shotFallToKnees`, `meleeReact`, `shotFromBehind`, `shotInGuts`, `shotInjuredLeg`, `shotInjuredArm`,
+  `reachForWound`, `wallCollision`, `setFallingReaction`, `rdr2Balance`, `keyframe`, `onFire`, `rdr2Lasso`, `rdr2Bolas` and the lean family
+  (`leanRandom`, `hipsLeanInDirection`, `hipsLeanToPosition`, `hipsLeanTowardsObject`, `hipsLeanRandom`,
+  `forceLeanInDirection`, `forceLeanToPosition`, `forceLeanTowardsObject`, `forceLeanRandom`) (see docs/modding.md). They do
+  nothing until sent with `start=true`, so the existing behaviours are unchanged, bit for bit.
+- The SDK's `nm_character_from_rdr2` makes a character file from one of RDR2's body files (fred.xml, wilma.xml and the
+  size variants, from your own copy) on top of a base body; both of RDR2's part namings (the large bodies use the
+  older one) are read.
+- An optional RDR2 reactions mode: `nm_agent_rdr2_shot` / `nm_agent_rdr2_melee` (and `nm_rdr2_set`) start RDR2's
+  reactions to a hit by where it landed, one call per hit. In the playroom, a "Reaction style" switch in Reactions:
+  GTA IV (the default, unchanged) or Red Dead Redemption 2 (`!rdr2`).
+- `rdr2Sit`: RDR2's riding. The rider's pelvis is held in a seat the game moves each frame (rdr2Sit sent again without
+  start), feet in the stirrups, chest upright, hands on the reins; he's thrown when he or the seat tips too far, a hit
+  knocks him, or on `throw`, optionally dragged by a caught foot. Extras can now take updates sent without start.
+- Playroom (experimental): Homer can ride the horse (Ride it, `!horse ride`).
+- Playroom (experimental): Red Dead Redemption 2's horse, built from your own copies of its Euphoria body (horse.xml) and its ragdoll
+  (an OpenIV export of meta_base_horse_01.yft): RDR2's capsules, masses, inertias, joint frames, limits, muscles and
+  self-collision. Held in its pose while sound, as RDR2's animation holds it; lamed or killed, it falls as that
+  ragdoll (Character, `!horse`). Down and alive it does RDR2's
+  `quadrupedbase` on the ground, by its names and defaults: lifts its head, paddles its legs on its side, writhes its
+  neck, its strength fading; a hit weakens it a moment, and tipped past `failangle` it goes down (`!horse set`).
+- Playroom: Red Dead Redemption 2 weapons (lasso, bolas, dynamite, fire bottle, tomahawk, bow), each with its own
+  reaction; in Red Dead Redemption 2 reaction style, catching fire starts RDR2's `onFire`.
+- Playroom: a Parameters tab to change any behaviour's parameters (GTA IV's, the extras, RDR2's), with what each one
+  does on hover, and the RDR2 reaction picker's chances; changed values are used every time that behaviour starts and
+  saved in settings.txt. Nothing changed: the room behaves exactly as before.
+- Examples: `regress` (a fingerprint of fixed scenes, to check a change leaves the physics alone), `rdr2_try` (tries
+  an extra message on a standing body) and `rdr2_body` (converts an RDR2 body and stands it up).
+
+### Changed
+- RDR2 extras: defaults are RDR2's own (from its descriptor table) wherever the parameter means the same here: 33
+  of them across shotSnap, shotSpin's timing, meleeReact, duck, wallCollision, reachForWound, shotFromBehind's
+  onset and the injured leg and arm. Where RDR2's value is on its own scale (forces, torques, "amount"
+  multipliers) the default stays Delirium's, and the docs say which.
+
 ## 0.5.2
 
 ### Fixed

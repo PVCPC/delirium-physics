@@ -60,6 +60,12 @@
   2026 vladtrc, licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (its NOTICE: "Copyright 2026 vladtrc").
 - **Skate 3** is Electronic Arts'. None of its files are included: Skate 3 mode converts what it needs from your own
   disc. Not affiliated with or endorsed by Electronic Arts.
+- **Red Dead Redemption 2 behaviours** (`crates/delirium/src/extras_rdr2.rs`, `crates/delirium-sdk/src/rdr2.rs`): by
+  **LoAlCo**, from their research into how RDR2's Euphoria behaves. Written from descriptions of the behaviours: no
+  RDR2 code (decompiled or otherwise) or files are included. The parameter names are RDR2's, and some of the defaults
+  are RDR2's own default values from that research; the rest are this project's own. `nm_character_from_rdr2` reads
+  RDR2's body files from your own copy. RDR2 is
+  Rockstar Games'; not affiliated with or endorsed by Rockstar Games, Take-Two Interactive or NaturalMotion.
 - **Portal 2** is Valve's. None of its files are included: portal mode reads them from your own install. Not affiliated
   with or endorsed by Valve.
 

@@ -44,6 +44,8 @@ inline void load_task_params(const std::string& path) { check(nm_load_task_param
 inline void tune_file(const std::string& path) { nm_tune_file(path.c_str()); }
 /// Surface row `material` (a mesh triangle's byte) takes this friction and elasticity for every agent; ice ~0.05.
 inline void set_surface(int material, float friction, float elasticity) { check(nm_set_surface(material, friction, elasticity)); }
+/// The RDR2 reactions option ("snap", "hitLocation", "melee", "balance": 0/1; "spin", "knees", "reach": chances 0..1).
+inline void rdr2_set(const std::string& name, float value) { check(nm_rdr2_set(name.c_str(), value)); }
 
 class World {
     std::unique_ptr<NmWorld, decltype(&nm_world_destroy)> p{nm_world_create(), nm_world_destroy};
@@ -133,6 +135,10 @@ public:
     void shot(const World& w, const char* set, int part, const Vec3& at, const Vec3& dir, float health, float force) {
         check(nm_agent_task_shot_force(get(), w.get(), set, part, at.data(), dir.data(), health, force));
     }
+    /// RDR2's reactions to that shot (see nm_rdr2_set); how many started.
+    int rdr2_shot(const World& w, int part, const Vec3& at, const Vec3& dir) { return check(nm_agent_rdr2_shot(get(), w.get(), part, at.data(), dir.data())); }
+    /// RDR2's melee reaction to a blow, instead of a flinch; how many started.
+    int rdr2_melee(const World& w, int part, const Vec3& at, const Vec3& dir) { return check(nm_agent_rdr2_melee(get(), w.get(), part, at.data(), dir.data())); }
     bool balancing() const { return nm_agent_is_balancing(get()) == 1; }
     bool fallen() const { return nm_agent_has_fallen(get()) == 1; }
     /// The part a shot along the aim strikes, and where.

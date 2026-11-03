@@ -37,6 +37,9 @@ mod melee;
 mod hero;
 mod sfx;
 mod jump;
+mod horse;
+mod rdr2frag;
+mod params;
 mod sever;
 mod skate;
 mod skate_files;
@@ -422,12 +425,15 @@ ghost_surface {}
 vorticity {}
 spray_physics {}
 skate3_bails {}
+rdr2_reactions {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), sim.skel_style, b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.homer_wild), b(sim.gun_ai), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.extra_pick, sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails))
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails), b(sim.rdr2)) + &params::save(&sim.param_edits, &sim.rdr2_pick)
+        + &if sim.horse_file.is_empty() { String::new() } else { format!("rdr2_horse {}\n", sim.horse_file) }
+        + &if sim.horse_frag.is_empty() { String::new() } else { format!("rdr2_horse_frag {}\n", sim.horse_frag) }
 }
 
 const XR: [(&str, &str); 8] = [
@@ -460,6 +466,21 @@ fn apply_settings(sim: &mut Sim, t: &str) {
     for (k, v) in t.lines().filter_map(|l| l.split_once(' ')) {
         if k == "gpu" {
             sim.gpu = v.trim().into();
+            continue;
+        }
+        if k == "param" {
+            params::load_param(&mut sim.param_edits, v);
+            continue;
+        }
+        if k == "rdr2_pick" {
+            params::load_pick(&mut sim.rdr2_pick, v);
+            continue;
+        }
+        if k == "rdr2_horse_frag" {
+            sim.horse_frag = v.trim().into();
+        }
+        if k == "rdr2_horse" {
+            sim.horse_file = v.trim().into();
             continue;
         }
         if k == "sharp_by" {
@@ -572,6 +593,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "dodge_gap" => sim.dodge_gap = x.clamp(0.0, 10.0),
             "extra_reactions" => sim.extra = on,
             "extra_pick" => sim.extra_pick = x as u32,
+            "rdr2_reactions" => sim.rdr2 = on,
             _ => {}
         }
     }
@@ -594,10 +616,42 @@ fn save_settings(sim: NonSend<Sim>, mut last: Local<Option<Option<String>>>) {
 fn help_seen() -> bool {
     std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(HELP_SEEN))).is_some_and(|p| p.exists())
 }
-const WEAPONS: [(&str, &str, f32); 13] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
+const WEAPONS: [(&str, &str, f32); 19] = [("pistol", "PISTOL", 50.0), ("deagle", "DEAGLE", 50.0), ("smg", "MP5", 50.0),
                                          ("ak47", "AK47", 50.0), ("sniper", "SNIPERRIFLE", 50.0), ("shotgun", "SHOTGUN", 50.0), ("rpg", "RLAUNCHER", 50.0),
                                           ("grenade", "GRENADE", 50.0), ("molotov", "MOLOTOV", 50.0), ("bat", "BASEBALLBAT", 50.0), ("knife", "KNIFE", 50.0),
-                                          ("taser", "TASER", 10.0), ("baton", "BASEBALLBAT", 50.0)];
+                                          ("taser", "TASER", 10.0), ("baton", "BASEBALLBAT", 50.0),
+                                          // Red Dead Redemption 2's (kind 3), from how they act in it: thrown, each with its own reaction
+                                          ("lasso", "LASSO", 0.0), ("bolas", "BOLAS", 0.0), ("dynamite", "DYNAMITE", 50.0),
+                                          ("fire bottle", "MOLOTOV", 50.0), ("tomahawk", "TOMAHAWK", 60.0), ("bow", "BOW", 45.0)];
+
+/// How fast each Red Dead Redemption 2 weapon flies, m/s.
+fn rdr2_speed(w: usize) -> f32 {
+    match WEAPONS[w].0 {
+        "bow" => 45.0,
+        "tomahawk" => 18.0,
+        "bolas" => 16.0,
+        "dynamite" => 11.0,
+        _ => 14.0,
+    }
+}
+
+/// Lassoed: (the part the rope pulls, rdr2Lasso's lassoedtype) for the part the loop caught.
+fn lasso_on(part: usize) -> (usize, i32) {
+    match part {
+        11 | 12 => (11, 0),
+        1..=3 => (3, 2),
+        4..=6 => (6, 2),
+        _ => (10, 1),
+    }
+}
+
+/// How long the lasso stays round him once you stop pulling, s.
+const LASSO_HOLD: f32 = 4.0;
+/// Rope slack: it only pulls once the part is this far from the pointer, m.
+const ROPE_SLACK: f32 = 0.25;
+/// s a pull takes to build to its full strength.
+const ROPE_RAMP: f32 = 0.5;
+const DYNAMITE_FUSE: f32 = 3.0;
 
 const LEAN_SECS: f32 = 1.5;
 
@@ -620,6 +674,19 @@ struct Gun {
     rockets: Vec<(Vec3, Vec3, f32)>,
     blasts: Vec<(Vec3, f32)>,
     thrown: Vec<(Vec3, Vec3, f32, bool)>,
+    /// Red Dead Redemption 2 weapons in flight: where, velocity, fuse or age, which weapon
+    rdr2: Vec<(Vec3, Vec3, f32, usize)>,
+    /// a lasso round him: the part it pulls and how long it stays on
+    lasso: Option<(usize, f32)>,
+    /// the lasso in flight: the part it was aimed at (it locks on, as RDR2's does) and where it was thrown from
+    lasso_aim: (Option<usize>, Vec3),
+    /// the rope's end: where the pointer pulls it while the left button is held (None: slack), the plane it's pulled
+    /// in (through the part, facing the camera, from when the button went down), and where it was last pulled to
+    rope: Option<Vec3>,
+    rope_plane: Option<(Vec3, Vec3)>,
+    rope_end: Vec3,
+    /// s the rope has been pulled: the pull builds up over ROPE_RAMP rather than yanking
+    rope_t: f32,
     fires: Vec<(Vec3, f32)>,
     swing: f32,
 }
@@ -631,10 +698,11 @@ impl Gun {
     }
 }
 
-const KICK: [f32; 13] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8, 0.2, 1.2];
-const GUN_FALLBACK: [(f32, f32, f32); 13] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
+const KICK: [f32; 19] = [0.7, 1.1, 0.4, 0.6, 2.2, 2.0, 1.6, 0.3, 0.3, 1.2, 0.8, 0.2, 1.2, 0.3, 0.3, 0.3, 0.3, 0.4, 0.5];
+const GUN_FALLBACK: [(f32, f32, f32); 19] = [(300.0, 0.5, 0.02), (350.0, 0.5, 0.03), (70.0, 0.5, 0.02), (130.0, 0.5, 0.04), (400.0, 0.0, 0.06), (1200.0, 0.1, 0.06),
                                             (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (600.0, 0.0, 0.0), (400.0, 0.0, 0.0),
-                                            (1500.0, 0.0, 0.0), (600.0, 0.0, 0.0)];
+                                            (1500.0, 0.0, 0.0), (600.0, 0.0, 0.0),
+                                            (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (800.0, 0.0, 0.0), (900.0, 0.0, 0.0)];
 const TAXI_RADIUS: f32 = 0.303;
 const TAXI_AXLE: Vec2 = Vec2::new(0.73, 1.326);
 const TAXI_HULL: [Vec3; 2] = [Vec3::new(-0.916, -2.608, -0.143), Vec3::new(0.916, 2.466, 1.05)];
@@ -713,7 +781,7 @@ const HIGH_DROP: f32 = 12.0;
 const TUMBLE: f32 = 7.0;
 const TAXIS: usize = 4;
 
-const CLIP_FALLBACK: [u32; 13] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1, 1, 1];
+const CLIP_FALLBACK: [u32; 19] = [17, 9, 30, 30, 5, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
 const BLAST_R: f32 = 5.0;
 const PILE_FUSE: f32 = 2.0;
@@ -721,7 +789,7 @@ const BLAST_DV: f32 = 15.0;
 const BLAST_DAMAGE: f32 = 250.0;
 const PELLETS: usize = 16;
 
-const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 13] = [
+const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 19] = [
     (&[([0.03, 0.035, 0.19], [0.0, 0.02, -0.015], 0.0), ([0.028, 0.11, 0.045], [0.0, -0.045, 0.045], -0.25), ([0.006, 0.025, 0.04], [0.0, -0.01, -0.01], 0.0)], 0.11),
     (&[([0.035, 0.045, 0.27], [0.0, 0.025, -0.04], 0.0), ([0.032, 0.12, 0.05], [0.0, -0.05, 0.05], -0.2), ([0.006, 0.03, 0.045], [0.0, -0.01, -0.015], 0.0)], 0.175),
     (&[([0.045, 0.06, 0.36], [0.0, 0.02, -0.08], 0.0), ([0.02, 0.02, 0.1], [0.0, 0.02, -0.31], 0.0), ([0.05, 0.05, 0.14], [0.0, 0.005, -0.2], 0.0),
@@ -741,12 +809,20 @@ const GUN_MODELS: [(&[([f32; 3], [f32; 3], f32)], f32); 13] = [
     (&[([0.035, 0.045, 0.15], [0.0, 0.02, -0.01], 0.0), ([0.028, 0.1, 0.045], [0.0, -0.045, 0.045], -0.25)], 0.1),
     (&[([0.035, 0.035, 0.25], [0.0, 0.0, -0.125], 0.0), ([0.04, 0.04, 0.4], [0.0, 0.0, -0.45], 0.0), ([0.008, 0.008, 0.05], [0.012, 0.0, -0.675], 0.0),
        ([0.008, 0.008, 0.05], [-0.012, 0.0, -0.675], 0.0)], 0.7),
+    // lasso (a coil), bolas (two weights on a cord), dynamite (a stick), fire bottle, tomahawk (haft and head), bow
+    (&[([0.16, 0.03, 0.16], [0.0, 0.0, -0.06], 0.0), ([0.01, 0.01, 0.12], [0.0, 0.0, -0.18], 0.0)], 0.2),
+    (&[([0.05, 0.05, 0.05], [0.0, 0.0, -0.05], 0.0), ([0.01, 0.01, 0.2], [0.0, 0.0, -0.17], 0.0), ([0.05, 0.05, 0.05], [0.0, 0.0, -0.29], 0.0)], 0.3),
+    (&[([0.035, 0.035, 0.2], [0.0, 0.0, -0.1], 0.0), ([0.004, 0.004, 0.06], [0.0, 0.0, -0.23], 0.0)], 0.22),
+    (&[([0.075, 0.075, 0.17], [0.0, 0.0, -0.1], 0.0), ([0.03, 0.03, 0.09], [0.0, 0.0, -0.22], 0.0), ([0.02, 0.02, 0.05], [0.0, 0.0, -0.28], 0.0)], 0.3),
+    (&[([0.025, 0.025, 0.4], [0.0, 0.0, -0.2], 0.0), ([0.02, 0.12, 0.08], [0.0, 0.05, -0.37], 0.0)], 0.4),
+    (&[([0.02, 0.02, 1.1], [0.0, 0.03, -0.1], 0.0), ([0.03, 0.05, 0.08], [0.0, -0.02, -0.1], 0.0)], 0.2),
 ];
 
 fn kind(w: usize) -> u8 {
     match WEAPONS[w].0 {
         "grenade" | "molotov" => 1,
         "bat" | "baton" | "knife" => 2,
+        "lasso" | "bolas" | "dynamite" | "fire bottle" | "tomahawk" | "bow" => 3,
         _ => 0,
     }
 }
@@ -1020,6 +1096,25 @@ struct Sim {
     no_dodge: bool,
     dodge_gap: f32,
     extra: bool,
+    /// Reaction style: Red Dead Redemption 2's on shots and punches, or GTA IV's (false: Delirium's own, unchanged)
+    rdr2: bool,
+    /// RDR2 reactions waiting for the shot task's first messages (which would stop them)
+    rdr2_after: Vec<String>,
+    /// RDR2's onFire running (Red Dead Redemption 2 style, while he burns)
+    rdr2_fire: bool,
+    /// Red Dead Redemption 2's horse, when one is in the room, and the player's horse.xml it's made from
+    horse: Option<horse::Horse>,
+    horse_file: String,
+    /// and its ragdoll: the player's OpenIV export of meta_base_horse_01.yft (the .yft.sys)
+    horse_frag: String,
+    /// Homer's riding the horse (rdr2Sit, its seat moved with the saddle every step)
+    riding: bool,
+    /// Which RDR2 reactions a hit starts (the Parameters tab's picker)
+    rdr2_pick: delirium::extras_rdr2::Reactions,
+    /// Behaviour parameters changed in the Parameters tab, sent with every message of that behaviour
+    param_edits: params::Edits,
+    param_search: String,
+    param_changed_only: bool,
     extra_pick: u32,
     fire_react: bool,
     dive: bool,
@@ -1267,6 +1362,8 @@ struct Grab {
     target: Vec3,
     press: (Vec2, Vec3, Vec3),
     pulling: bool,
+    /// a part of the RDR2 horse, not Homer's
+    horse: bool,
 }
 
 const MUSC_STIFF: (f32, f32) = (11.0, 12.0);
@@ -1274,6 +1371,9 @@ static MUSC_HELP: std::sync::LazyLock<f32> = std::sync::LazyLock::new(|| std::en
 
 const PULL_K: f32 = 1500.0;
 const PULL_MAX: f32 = 1500.0;
+/// The mouse's pull on the horse: Homer's, times how much heavier it is, but at most once more for each this much of
+/// the grabbed part's mass, kg.
+const HORSE_PULL_KG: f32 = 8.0;
 
 struct Side {
     parts: Vec<Vec3>,
@@ -1368,6 +1468,20 @@ fn body_of(build: &Build, frames: &[Transform], body: usize) -> (Build, Vec<Tran
     let (b, f) = build.scaled(frames, &len, m / BODIES[1].3);
     eprintln!("body  {name}: trunk x{s:.3}, limbs x{:.3}, girth x{:.3}", s * l, b.parts[0].radius / build.parts[0].radius / s);
     (b, f, Some((len, s * l)))
+}
+
+/// An RDR2 reaction as a message line.
+fn rdr2_line(m: &delirium::extras_rdr2::Start) -> String {
+    let mut l = m.0.to_string();
+    for (k, v) in &m.1 {
+        let v = match v {
+            Value::Vec3(x) => v3(*x),
+            Value::Float(x) => format!("{x}"),
+            v => show(Some(v.clone())),
+        };
+        l += &format!(" {k}={v}");
+    }
+    l
 }
 
 fn v3(x: Vec3) -> String {
@@ -2748,7 +2862,8 @@ impl Sim {
                 if kind(self.weapon) == 2 && (self.hero.is_none() || self.hero_gun) {
                     self.cut(k, at, -j.normalize_or(Vec3::Z), dmg);
                 }
-                (if self.rand.float_in_range(0.0, 1.0) > BALANCE_ROLL() { "balance" } else { "flinch" }, vec![imp(k, at, j)])
+                // RDR2 style: he keeps his balance and RDR2's melee reaction (below) takes the flinch's place
+                (if self.rdr2 || self.rand.float_in_range(0.0, 1.0) > BALANCE_ROLL() { "balance" } else { "flinch" }, vec![imp(k, at, j)])
             }
             hero::Hit::Bump(_) => ("balance", vec![]),
         };
@@ -2760,6 +2875,11 @@ impl Sim {
         };
         let (mo, until) = hero_task(&self.tp, task, set, head, pelvis, ours.fwd, &mut self.rand);
         o.extend(mo);
+        if let (&hero::Hit::Swing(_, at, j), true) = (&hit, self.rdr2) {
+            let k = self.agent.doll.nearest(&self.build, at);
+            let r = self.rdr2_pick.on_melee(&mut self.rand, k, at, j);
+            o.extend(r.iter().map(rdr2_line));
+        }
         if let hero::Hit::Bump(from) = hit {
             let lean = |d: Vec3| format!("leanInDirection start=true applyAsForce=true leanAmount={} dir={}", BUMP_LEAN(), v3(d.with_z(0.0)));
             o.push(lean(pelvis - from));
@@ -3099,11 +3219,26 @@ impl Sim {
             return self.send_ours(o);
         }
         let (hit, now) = (self.hit(), self.now());
+        let rdr2 = if self.rdr2 { self.rdr2_shot(part, at, d) } else { vec![] };
         match self.shot_task.as_mut() {
-            Some((t, _)) => o.extend(t.next_hit(&mut self.rand, &self.tp, &hit, now, set, part, at, vel, n).iter().map(shottask::text)),
-            None => self.shot_task = Some((ShotTask::new(&hit, set, part, at, vel, n), self.steps)),
+            Some((t, _)) => {
+                o.extend(t.next_hit(&mut self.rand, &self.tp, &hit, now, set, part, at, vel, n).iter().map(shottask::text));
+                o.extend(rdr2);
+            }
+            None => {
+                self.shot_task = Some((ShotTask::new(&hit, set, part, at, vel, n), self.steps));
+                self.rdr2_after = rdr2;
+            }
         }
         self.send_ours(o);
+    }
+
+    /// The RDR2 reactions to a shot (part hit at `at`, the bullet along `dir`), as message lines.
+    fn rdr2_shot(&mut self, part: usize, at: Vec3, dir: Vec3) -> Vec<String> {
+        let fwd = self.ours().fwd;
+        let o = self.rdr2_pick.on_shot(&mut self.rand, part, at, dir, fwd);
+        self.say(format!("room  RDR2 reactions: {}", o.iter().map(|m| m.0).collect::<Vec<_>>().join(", ")));
+        o.iter().map(rdr2_line).collect()
     }
 
     fn hit(&self) -> Hit {
@@ -3130,6 +3265,9 @@ impl Sim {
         let step = t.update(&mut self.rand, &self.tp, &hit, now);
         for m in &step.msgs {
             self.send(&shottask::text(m));
+        }
+        for l in std::mem::take(&mut self.rdr2_after) {
+            self.send(&l);
         }
         if step.fire {
             self.say("ours  blind fire shot (no gun in the room)".into());
@@ -3583,6 +3721,9 @@ impl Sim {
     }
 
     fn pull(&mut self) {
+        if self.grab.as_ref().is_some_and(|g| g.horse) {
+            return self.pull_horse();
+        }
         let Some((part, local, target)) = self.grab.as_ref().filter(|g| g.pulling).map(|g| (g.part, g.local, g.target)) else { return };
         let Some(f) = self.agent.doll.frames().nth(part) else { return };
         let at = f.translation + f.rotation * local;
@@ -3592,6 +3733,22 @@ impl Sim {
         self.held = false;
         let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
         let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "applyImpulse", &ps);
+    }
+
+    /// The mouse's pull on the RDR2 horse: as on Homer, scaled by how much heavier it is (see `HORSE_PULL_KG`).
+    fn pull_horse(&mut self) {
+        let Some((part, local, target)) = self.grab.as_ref().filter(|g| g.pulling).map(|g| (g.part, g.local, g.target)) else { return };
+        let homer = self.agent.doll.mass();
+        let Some(h) = self.horse.as_mut() else { return self.grab = None };
+        let Some(f) = h.doll.frames().nth(part) else { return };
+        let at = f.translation + f.rotation * local;
+        let (v, w) = h.doll.vel(part);
+        let heavier = h.doll.mass() / homer.max(1.0);
+        let damp = (2.0 * (PULL_K * heavier * h.doll.mass()).sqrt()).min(30.0 * h.doll.part_mass(part));
+        // no harder than its part can take (all of it on a 6 kg hoof flung the horse)
+        let most = PULL_MAX * heavier.min(1.0 + h.doll.part_mass(part) / HORSE_PULL_KG);
+        let imp = (PULL_K * heavier * (target - at) - damp * (v + w.cross(at - f.translation))).clamp_length_max(most) / 60.0;
+        h.pull(part, at, imp);
     }
 
     fn cue(&mut self) {
@@ -3742,6 +3899,11 @@ impl Sim {
                 let s = format!("room  {b}: {}", if *on { "on" } else { "off" });
                 return self.say(s);
             }
+            "rdr2 reactions" => {
+                self.rdr2 = !self.rdr2;
+                let s = format!("room  reaction style: {}", if self.rdr2 { "Red Dead Redemption 2" } else { "GTA IV" });
+                return self.say(s);
+            }
             "crowd" => return self.crowd(),
             "grid" => return self.grid(),
             "stress" => return self.stress(),
@@ -3788,8 +3950,90 @@ impl Sim {
             self.sounds.push(sfx::Snd::Shot(self.weapon));
             return self.gun.rockets.push((from, dir * ROCKET_SPEED(), 0.0));
         }
+        if kind(self.weapon) == 3 {
+            // Red Dead Redemption 2's: thrown at what the camera looks at
+            let to = self.agent.doll.probe(&self.build, from, from + dir * 60.0).map(|h| h.1)
+                .or_else(|| self.world.contact(from, dir, 60.0).map(|c| from + dir * c.0)).unwrap_or(from + dir * 20.0);
+            return self.rdr2_throw(from + dir * 0.5, to);
+        }
         let (_, acc, pellets, _) = self.gun_stats();
         self.pellets(from, dir, acc, pellets, fatal);
+    }
+
+    /// Red Dead Redemption 2's horse, from the player's horse.xml, standing 2.5 m to Homer's side, side on to him.
+    fn spawn_horse(&mut self) {
+        let text = match std::fs::read_to_string(&self.horse_file) {
+            Ok(t) => t,
+            Err(e) => return self.say(format!("room  horse: can't read {:?}: {e}", self.horse_file)),
+        };
+        let frag = match std::fs::read(&self.horse_frag) {
+            Ok(b) => b,
+            Err(e) => return self.say(format!("room  horse: can't read its ragdoll {:?}: {e} (export meta_base_horse_01.yft with OpenIV: see the horse's section)", self.horse_frag)),
+        };
+        let ours = self.ours();
+        let at = ours.p(0) + ours.fwd.cross(Vec3::Z).normalize_or(Vec3::X) * 2.5;
+        let ground = self.world.ground(at + Vec3::Z * 2.0, 4.0).unwrap_or(0.0);
+        let facing = ours.fwd.y.atan2(ours.fwd.x);
+        match horse::Horse::new(&text, &frag, at.with_z(ground), facing) {
+            Ok(mut h) => {
+                // a new horse keeps the last one's settings
+                if let Some(old) = self.horse.take() {
+                    h.q = old.q;
+                }
+                self.horse = Some(h);
+                self.say("room  horse: Red Dead Redemption 2's, from your horse.xml and its ragdoll".into());
+            }
+            Err(e) => self.say(format!("room  horse: {e}")),
+        }
+    }
+
+    /// Homer gets on the horse: RDR2's sit (rdr2Sit), swung up into its saddle.
+    fn ride(&mut self) {
+        let Some(h) = self.horse.as_ref().filter(|h| h.standing()) else {
+            return self.say("room  ride: no horse on its feet".into());
+        };
+        let (seat, up, fwd, st) = h.saddle();
+        let v = |p: Vec3| format!("{},{},{}", p.x, p.y, p.z);
+        self.send(&format!("rdr2Sit start=true mountTime=1.2 seatPos={} seatUp={} seatForward={} stirrupL={} stirrupR={}", v(seat), v(up), v(fwd), v(st[0]), v(st[1])));
+        self.riding = true;
+    }
+
+    /// While he rides, the seat follows the saddle (sent quietly, every step); the horse going down throws him.
+    fn ride_frame(&mut self) {
+        if !self.riding {
+            return;
+        }
+        if !self.agent.extras.on.iter().any(|(n, _)| *n == "rdr2Sit") {
+            self.riding = false;
+            return;
+        }
+        let Some(h) = self.horse.as_ref() else {
+            self.riding = false;
+            return self.send("rdr2Sit throw=true");
+        };
+        let (seat, up, fwd, st) = h.saddle();
+        let ps = [("seatPos", Value::Vec3(seat)), ("seatUp", Value::Vec3(up)), ("seatForward", Value::Vec3(fwd)), ("stirrupL", Value::Vec3(st[0])),
+                  ("stirrupR", Value::Vec3(st[1])), ("throw", Value::Bool(!h.standing()))];
+        let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "rdr2Sit", &ps);
+    }
+
+    /// A bullet that hits the horse before anyone and anything else: it takes it (true).
+    fn horse_shot(&mut self, from: Vec3, dir: Vec3) -> bool {
+        let Some(h) = self.horse.as_ref() else { return false };
+        let Some((part, at, _)) = h.doll.probe(&h.build, from, from + dir * 60.0) else { return false };
+        let d = at.distance(from);
+        let people = std::iter::once(&self.agent).chain(self.crowd.iter().map(|c| &c.0)).enumerate()
+            .filter_map(|(i, a)| a.doll.probe(self.build_of(i), from, from + dir * 60.0)).map(|h| h.1.distance(from)).fold(f32::MAX, f32::min);
+        if people < d || self.world.contact(from, dir, 60.0).is_some_and(|c| c.0 < d) {
+            return false;
+        }
+        let w = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1);
+        let (damage, force) = (w.map_or(30.0, |w| w.damage), w.map_or(WEAPONS[self.weapon].2, |w| w.force));
+        self.sounds.push(sfx::Snd::Shot(self.weapon));
+        self.gun.tracers.push((from, at, 0.25));
+        let s = self.horse.as_mut().map_or(String::new(), |h| h.hit(part, at, dir * force, damage));
+        self.say(format!("room  horse: {s}"));
+        true
     }
 
     fn bullet_any(&mut self, from: Vec3, dir: Vec3) -> Option<(usize, (usize, Vec3, Vec3))> {
@@ -3834,6 +4078,9 @@ impl Sim {
             } else {
                 dir
             };
+            if self.horse_shot(from, d) {
+                continue;
+            }
             match self.bullet_any(from, d) {
                 Some((0, h)) => match hit {
                     None => hit = Some((h, d)),
@@ -3870,7 +4117,7 @@ impl Sim {
         let (_, acc, pellets, case) = self.gun_stats();
         let from = self.gun.at + self.gun.dir * GUN_MODELS[self.weapon].1;
         match kind(self.weapon) {
-            1 => return self.throw_weapon(from, self.gun.aim),
+            1 | 3 => return self.throw_weapon(from, self.gun.aim),
             2 => {
                 if self.gun.swing <= 0.0 {
                     self.gun.swing = swing_len(self.weapon);
@@ -3928,6 +4175,9 @@ impl Sim {
     }
 
     fn throw_weapon(&mut self, from: Vec3, to: Vec3) {
+        if kind(self.weapon) == 3 {
+            return self.rdr2_throw(from, to);
+        }
         let w = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1);
         let speed = w.map_or(THROW_SPEED, |w| if w.target_range > 0.0 { w.target_range } else { THROW_SPEED });
         let fuse = w.and_then(|w| w.projectile.as_ref()).filter(|p| p.kind == "FUSE" && p.fuse > 0.0).map_or(FUSE, |p| p.fuse / 1000.0);
@@ -3937,6 +4187,149 @@ impl Sim {
         self.gun.thrown.push((from, d / t + Vec3::Z * 4.905 * t, if molotov { f32::INFINITY } else { fuse }, molotov));
         self.gun.kick = KICK[self.weapon];
         self.sounds.push(sfx::Snd::Throw);
+    }
+
+    /// A Red Dead Redemption 2 weapon thrown (or loosed, the bow) from `from` to land at `to`.
+    fn rdr2_throw(&mut self, from: Vec3, to: Vec3) {
+        let d = to - from;
+        let t = (d.length() / rdr2_speed(self.weapon)).max(0.05);
+        let fuse = if WEAPONS[self.weapon].0 == "dynamite" { DYNAMITE_FUSE } else { 0.0 };
+        if WEAPONS[self.weapon].0 == "lasso" {
+            // it locks onto the part nearest where it's aimed, if that's on him, and pulls back the way it came
+            let k = self.agent.doll.nearest(&self.build, to);
+            self.gun.lasso_aim = ((self.ours().p(k).distance(to) < 0.6).then_some(k), from);
+        }
+        self.gun.rdr2.push((from, d / t + Vec3::Z * 4.905 * t, fuse, self.weapon));
+        self.say(format!("room  {} thrown", WEAPONS[self.weapon].0));
+        self.gun.kick = KICK[self.weapon];
+        self.sounds.push(sfx::Snd::Throw);
+    }
+
+    /// The Red Dead Redemption 2 weapons in flight, and what each does when it lands: the lasso pulls him by where it
+    /// caught (rdr2Lasso with dragged), the bolas wraps his legs (rdr2Bolas), the tomahawk and the arrow hit as shots
+    /// (so RDR2 reaction style adds its reactions), the fire bottle starts a fire, the dynamite rolls and goes off.
+    fn rdr2_frame(&mut self, dt: f32) {
+        if let Some((part, left)) = self.gun.lasso {
+            match self.gun.rope {
+                Some(to) => {
+                    self.gun.lasso = Some((part, LASSO_HOLD));
+                    self.gun.rope_end = to;
+                    self.gun.rope_t += dt;
+                    let ramp = (self.gun.rope_t / ROPE_RAMP).min(1.0);
+                    self.rope_pull(part, to, dt * ramp);
+                }
+                None if left - dt <= 0.0 => {
+                    self.gun.lasso = None;
+                    self.send("rdr2Lasso start=false");
+                    self.say("room  lasso: slips off".into());
+                }
+                None => self.gun.lasso = Some((part, left - dt)),
+            }
+        }
+        let mut landed = vec![];
+        let mut horse_hits = vec![];
+        let mut flying = std::mem::take(&mut self.gun.rdr2);
+        flying.retain_mut(|(p, v, fuse, w)| {
+            v.z -= 9.8 * dt;
+            let (d, len) = (v.normalize_or(Vec3::Z), v.length() * dt);
+            let him = self.agent.doll.probe(&self.build, *p, *p + d * len);
+            let wall = self.world.contact(*p, d, len).map(|c| (*p + d * c.0, c.1));
+            if matches!(WEAPONS[*w].0, "tomahawk" | "bow") && let Some(h) = self.horse.as_ref().and_then(|h| h.doll.probe(&h.build, *p, *p + d * len)) {
+                horse_hits.push((*w, h, d));
+                return false;
+            }
+            if WEAPONS[*w].0 == "dynamite" {
+                *fuse -= dt;
+                match him.map(|h| (h.1, -d)).or(wall) {
+                    Some((at, n)) => {
+                        *p = at + n * 0.03;
+                        *v = (*v - 2.0 * v.dot(n) * n) * 0.35;
+                    }
+                    None => *p += d * len,
+                }
+                if *fuse <= 0.0 {
+                    landed.push((*w, *p, d, None));
+                    return false;
+                }
+                return true;
+            }
+            match (him, wall) {
+                (Some(h), _) => {
+                    landed.push((*w, h.1, d, Some(h)));
+                    false
+                }
+                // the lasso locked on: landing by the part it was aimed at (round his feet, say) still catches it
+                (None, Some((at, n))) if WEAPONS[*w].0 == "lasso" && self.gun.lasso_aim.0.is_some_and(|k| self.ours().p(k).distance(at) < 0.8) => {
+                    let k = self.gun.lasso_aim.0.unwrap_or(0);
+                    landed.push((*w, at, d, Some((k, at, n))));
+                    false
+                }
+                (None, Some((at, _))) => {
+                    landed.push((*w, at, d, None));
+                    false
+                }
+                (None, None) => {
+                    *p += d * len;
+                    *fuse += dt;
+                    *fuse < 6.0
+                }
+            }
+        });
+        self.gun.rdr2 = flying;
+        for (w, (part, at, _), d) in horse_hits {
+            let (damage, push) = if WEAPONS[w].0 == "bow" { (80.0, 30.0) } else { (60.0, 60.0) };
+            let s = self.horse.as_mut().map_or(String::new(), |h| h.hit(part, at, d * push, damage));
+            self.say(format!("room  horse: {} {s}", WEAPONS[w].0));
+        }
+        for (w, at, d, him) in landed {
+            match (WEAPONS[w].0, him) {
+                ("dynamite", _) => self.explode(at),
+                ("fire bottle", _) => {
+                    let z = self.world.ground(at + Vec3::Z, 3.0).unwrap_or(at.z);
+                    self.gun.fires.push((at.with_z(z), 0.0));
+                    self.sounds.push(sfx::Snd::Crash);
+                    self.say("room  fire bottle: fire".into());
+                }
+                ("lasso", Some((part, _, _))) => {
+                    let (aimed, from) = self.gun.lasso_aim;
+                    let (rope, how) = lasso_on(aimed.unwrap_or(part));
+                    self.held = false;
+                    self.send(&format!("rdr2Lasso start=true lassoedtype={how}"));
+                    (self.gun.lasso, self.gun.rope_end) = (Some((rope, LASSO_HOLD)), from);
+                    self.say(format!("room  lasso round his {}: hold the left button to pull", ["neck", "chest and arms", "feet"][how as usize]));
+                }
+                ("bolas", Some(_)) => {
+                    self.held = false;
+                    self.send("rdr2Bolas start=true");
+                    self.say("room  bolas round his legs".into());
+                }
+                ("tomahawk" | "bow", Some((part, at, normal))) => self.fire(part, Some((at, d, normal)), false, &[]),
+                (name, _) => self.say(format!("room  {name}: missed")),
+            }
+        }
+    }
+
+    /// The lasso's rope pulling `part` towards `to`: as the mouse grab pulls, but only along the rope and only once
+    /// it's taut (a rope never pushes).
+    fn rope_pull(&mut self, part: usize, to: Vec3, dt: f32) {
+        let Some(f) = self.agent.doll.frames().nth(part) else { return };
+        let at = f.translation;
+        let off = to - at;
+        let stretch = off.length() - ROPE_SLACK;
+        if stretch <= 0.0 {
+            return;
+        }
+        let along = off / off.length();
+        let (v, _) = self.agent.doll.vel(part);
+        let damp = (2.0 * (PULL_K * self.agent.doll.mass()).sqrt()).min(30.0 * self.agent.doll.part_mass(part));
+        let tension = PULL_K * stretch - damp * v.dot(along);
+        if tension <= 0.0 {
+            return;
+        }
+        self.held = false;
+        let imp = (along * tension).clamp_length_max(PULL_MAX) * dt;
+        let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
+        let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "applyImpulse", &ps);
     }
 
     fn swing_weapon(&mut self) {
@@ -3984,6 +4377,7 @@ impl Sim {
             true
         });
         self.gun.thrown = thrown;
+        self.rdr2_frame(dt);
         for at in boom {
             self.explode(at);
         }
@@ -4142,6 +4536,10 @@ impl Sim {
         if self.dead {
             (self.burning, self.on_fire) = (0.0, None);
         }
+        if self.rdr2_fire && (self.burning <= 0.0 || self.dead) {
+            self.rdr2_fire = false;
+            self.send("onFire start=false");
+        }
         if self.burning <= 0.0 && self.on_fire.is_none() {
             return;
         }
@@ -4155,7 +4553,14 @@ impl Sim {
                 *c = (*c + dt / CHAR_TIME * (0.6 + 0.8 * ((k as f32 * 12.9898).sin() * 43758.545).rem_euclid(1.0))).min(CHAR_MAX);
             }
         }
-        if burning && self.on_fire.is_none() && self.fire_react {
+        if burning && self.rdr2 && self.fire_react && self.on_fire.is_none() {
+            // Red Dead Redemption 2 style: RDR2's onFire (stagger windmilling, down, roll) in place of GTA IV's task
+            if !self.rdr2_fire {
+                self.rdr2_fire = true;
+                self.send("onFire start=true");
+                self.say("room  Homer catches fire (RDR2's onFire)".into());
+            }
+        } else if burning && self.on_fire.is_none() && self.fire_react {
             let mut f = delirium::nm::OnFire::new("*");
             f.start(&mut self.agent, &self.build, &self.world, &self.tp, &mut self.rand);
             self.on_fire = Some(f);
@@ -4185,6 +4590,20 @@ impl Sim {
             self.as_homer(i, |s| s.blast_on(at, false));
         }
         self.blast_on(at, true);
+        if let Some(h) = self.horse.as_mut() {
+            let near = h.doll.frames().map(|f| f.translation.distance(at)).fold(f32::MAX, f32::min);
+            if near < BLAST_R {
+                for k in 0..h.build.parts.len() {
+                    let p = h.doll.frames().nth(k).map_or(at, |f| f.translation);
+                    let f = 1.0 - p.distance(at) / BLAST_R;
+                    if f > 0.0 {
+                        h.doll.impulse(k, p, ((p - at).normalize_or(Vec3::Z) + Vec3::Z * 0.5).normalize() * h.doll.part_mass(k) * BLAST_DV * f);
+                    }
+                }
+                let s = h.hit(0, h.doll.root(), Vec3::ZERO, BLAST_DAMAGE * (1.0 - near / BLAST_R));
+                self.say(format!("room  horse: blast {near:.1} m away, {s}"));
+            }
+        }
     }
 
     fn blast_on(&mut self, at: Vec3, game: bool) {
@@ -4572,7 +4991,11 @@ impl Sim {
                 }
             }
         }
-        let short: String = line.chars().take(110).collect();
+        let edited = if self.param_edits.is_empty() { vec![] } else { params::apply(&self.param_edits, name, &mut ps) };
+        let mut short: String = line.chars().take(110).collect();
+        if !edited.is_empty() {
+            short += &format!("  (changed: {})", edited.join(" "));
+        }
         let (agent, st, tag, build) = match who {
             0 => (&mut self.agent, &mut self.msgs, String::new(), &self.build),
             HERO => match self.hero_doll.as_mut() {
@@ -4783,7 +5206,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(),
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
+                        weapons, weapon: 0, weak: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, rdr2: false, rdr2_after: vec![], rdr2_fire: false, horse: None, horse_file: String::new(), horse_frag: String::new(), riding: false, rdr2_pick: Default::default(), param_edits: Default::default(), param_search: String::new(), param_changed_only: false, extra_pick: 0xff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
@@ -4947,6 +5370,7 @@ fn main() {
         .insert_non_send(sim)
         .add_systems(Startup, setup)
         .add_systems(Update, systems)
+        .add_systems(Update, horse::view)
         .add_systems(Update, skel_cams.after(smooth))
         .add_systems(Update, started)
         .add_systems(Update, (skate_pad.before(mouse), skate_cam.after(scripted), board_mesh.after(bodies)))
@@ -7760,6 +8184,32 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     for &(p, _, _, molotov) in &sim.gun.thrown {
         g.sphere(Isometry3d::from_translation(p), 0.05, if molotov { Color::srgb(1.0, 0.6, 0.2) } else { Color::srgb(0.4, 0.95, 1.0) });
     }
+    for &(p, v, _, w) in &sim.gun.rdr2 {
+        let d = v.normalize_or(Vec3::Z);
+        match WEAPONS[w].0 {
+            "lasso" => drop(g.circle(Isometry3d::new(p, Quat::from_rotation_arc(Vec3::Z, d)), 0.35, Color::srgb(0.85, 0.7, 0.45))),
+            "bolas" => {
+                let side = d.cross(Vec3::Z).normalize_or(Vec3::X) * 0.25;
+                g.line(p - side, p + side, Color::srgb(0.6, 0.5, 0.35));
+                g.sphere(Isometry3d::from_translation(p - side), 0.05, Color::srgb(0.4, 0.35, 0.3));
+                g.sphere(Isometry3d::from_translation(p + side), 0.05, Color::srgb(0.4, 0.35, 0.3));
+            }
+            "dynamite" => {
+                g.line(p - d * 0.1, p + d * 0.1, Color::srgb(0.85, 0.2, 0.15));
+                g.sphere(Isometry3d::from_translation(p + d * 0.12), 0.02, Color::srgb(1.0, 0.85, 0.3));
+            }
+            "fire bottle" => drop(g.sphere(Isometry3d::from_translation(p), 0.05, Color::srgb(1.0, 0.6, 0.2))),
+            _ => g.line(p - d * if WEAPONS[w].0 == "bow" { 0.7 } else { 0.35 }, p, Color::srgb(0.75, 0.75, 0.8)),
+        }
+    }
+    if let Some((part, _)) = sim.gun.lasso {
+        let (at, end) = (sim.ours().p(part), sim.gun.rope.unwrap_or(sim.gun.rope_end));
+        // taut while you pull, sagging when slack
+        let sag = if sim.gun.rope.is_some() { 0.0 } else { 0.25 * at.distance(end) };
+        let mid = (at + end) * 0.5 - Vec3::Z * sag;
+        g.line(at, mid, Color::srgb(0.85, 0.7, 0.45));
+        g.line(mid, end, Color::srgb(0.85, 0.7, 0.45));
+    }
     let flick = time.elapsed_secs() * 9.0;
     for &(at, age) in sim.gun.fires.iter().filter(|_| sim.fire == 0) {
         let a = (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0);
@@ -8395,6 +8845,36 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         }
     }
     sim.pop_screen = sim.pops.iter().filter_map(|&(p, n, age, small)| camera.world_to_viewport(gt, p + Vec3::Z * POP_RISE * age / POP_LIFE).ok().map(|c| (c, n, age, small))).collect();
+    // a lasso round him: a click on him takes it off (and throws a new one there); holding the left button off him
+    // pulls the rope towards the pointer (as a grab pulls), in a plane through the roped part facing the camera
+    if let (Some((part, _)), None) = (sim.gun.lasso, sim.hero.as_ref()) {
+        let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok());
+        if buttons.just_pressed(MouseButton::Left) && let Some(r) = ray {
+            if sim.agent.doll.probe(&sim.build, r.origin, r.origin + *r.direction * 60.0).is_some() {
+                // a click on him: the loop comes off, and this click throws a new one at the part clicked
+                sim.gun.lasso = None;
+                (sim.gun.rope, sim.gun.rope_plane) = (None, None);
+                sim.send("rdr2Lasso start=false");
+            } else {
+                // a click off him: pull the rope
+                sim.gun.rope_plane = Some((sim.ours().p(part), -*r.direction));
+                sim.gun.rope_t = 0.0;
+            }
+        }
+    }
+    if let (Some(_), None) = (sim.gun.lasso, sim.hero.as_ref()) {
+        let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok());
+        let down = buttons.pressed(MouseButton::Left) && !sim.over_ui;
+        if let (true, Some(r), Some((p, n))) = (down, ray, sim.gun.rope_plane) && r.direction.dot(n).abs() > 1e-4 {
+            sim.gun.rope = Some(r.origin + *r.direction * ((p - r.origin).dot(n) / r.direction.dot(n)));
+        }
+        if buttons.just_released(MouseButton::Left) {
+            (sim.gun.rope, sim.gun.rope_plane) = (None, None);
+        }
+        if down || buttons.just_released(MouseButton::Left) {
+            return;
+        }
+    }
     if sim.aim_gun && sim.hero.is_none() {
         let ray = cur.filter(|c| !sim.over_ui && c.x < half).and_then(|c| camera.viewport_to_world(gt, c).ok()).map(|r| (r.origin, *r.direction));
         let hold = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
@@ -8428,7 +8908,14 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     }
     if !buttons.pressed(MouseButton::Left) {
         if let Some(g) = sim.grab.take().filter(|g| !g.pulling) {
-            sim.poke(g.part, g.press.2, g.press.1);
+            if g.horse {
+                let imp = g.press.1.normalize_or_zero() * sim.poke;
+                if let Some(h) = sim.horse.as_mut() {
+                    h.poke(g.part, g.press.2, imp);
+                }
+            } else {
+                sim.poke(g.part, g.press.2, g.press.1);
+            }
         }
     }
     if sim.hero.is_some() && sim.hero_gun && !sim.driving && kind(sim.weapon) > 0 {
@@ -8493,11 +8980,15 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         if let Some(i) = (1..near.len()).filter(|&i| near[i] < near[0]).min_by(|&a, &b| near[a].total_cmp(&near[b])) {
             sim.control(i - 1);
         }
-        if let Some((part, hit, _)) = sim.agent.doll.probe(&sim.build, from, from + dir * 50.0) {
-            if let Some(f) = { let f = sim.agent.doll.frames().nth(part); f } {
-                let local = f.rotation.inverse() * (hit - f.translation);
-                sim.grab = Some(Grab { part, local, plane: (hit, -dir), target: hit, press: (cursor, dir, hit), pulling: false });
-            }
+        let horse = sim.horse.as_ref().and_then(|h| h.doll.probe(&h.build, from, from + dir * 50.0));
+        let homer = sim.agent.doll.probe(&sim.build, from, from + dir * 50.0);
+        // the nearer of Homer and the horse
+        let on_horse = horse.is_some_and(|h| homer.is_none_or(|o| h.1.distance(from) < o.1.distance(from)));
+        let picked = if on_horse { horse.map(|h| (h, sim.horse.as_ref().and_then(|x| x.doll.frames().nth(h.0)))) }
+                     else { homer.map(|h| (h, sim.agent.doll.frames().nth(h.0))) };
+        if let Some(((part, hit, _), Some(f))) = picked {
+            let local = f.rotation.inverse() * (hit - f.translation);
+            sim.grab = Some(Grab { part, local, plane: (hit, -dir), target: hit, press: (cursor, dir, hit), pulling: false, horse: on_horse });
         }
     }
 }
@@ -8629,7 +9120,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let d: Vec<f32> = w.next().unwrap_or("").split(',').filter_map(|x| x.parse().ok()).collect();
                 let at = sim.ours().p(part);
                 let target = at + Vec3::new(d.first().copied().unwrap_or(0.0), d.get(1).copied().unwrap_or(0.0), d.get(2).copied().unwrap_or(0.0));
-                sim.grab = Some(Grab { part, local: Vec3::ZERO, plane: (at, Vec3::Z), target, press: (Vec2::ZERO, Vec3::Z, at), pulling: true });
+                sim.grab = Some(Grab { part, local: Vec3::ZERO, plane: (at, Vec3::Z), target, press: (Vec2::ZERO, Vec3::Z, at), pulling: true, horse: false });
                 let com = sim.agent.doll.com().0;
                 sim.say(format!("ours  grab {part} to {} (com {})", v3(target), v3(com)));
             }
@@ -8661,6 +9152,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 (sim.gun_reach, sim.gun_up) = (v.first().copied().unwrap_or(1.0), v.get(1).copied().unwrap_or(0.0));
             }
             ("!soft", _) => sim.soft = !sim.soft,
+            ("!rdr2", _) => sim.rdr2 = !sim.rdr2,
             ("!oncue", Some(l)) => sim.on_cue.push(l.to_string()),
             ("!camat", Some(a)) => {
                 if let [x, y, z] = a.split_whitespace().filter_map(|x| x.parse().ok()).collect::<Vec<f32>>()[..] {
@@ -8847,6 +9339,34 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 }
             }
             ("!gunfire", _) => sim.gun_fire(false),
+            ("!horse", d) => match d.map(str::trim) {
+                Some("off") => {
+                    sim.horse = None;
+                    sim.say("room  horse: gone".into());
+                }
+                Some("ride") => sim.ride(),
+                Some(d) if d.starts_with("frag ") => sim.horse_frag = d[5..].trim().into(),
+                Some("off ride") | Some("getoff") => sim.send("rdr2Sit throw=true"),
+                Some(d) if d.starts_with("set ") => {
+                    let mut w = d[4..].split_whitespace();
+                    let (name, v) = (w.next().unwrap_or(""), w.next().unwrap_or(""));
+                    let ok = sim.horse.as_mut().is_some_and(|h| h.q.set(name, v));
+                    sim.say(format!("room  horse: {name} {}", if ok { v } else { "? (no horse, no such setting, or not a value)" }));
+                }
+                d => {
+                    if let Some(path) = d.filter(|p| !p.is_empty()) {
+                        sim.horse_file = path.into();
+                    }
+                    sim.spawn_horse();
+                }
+            },
+            ("!rope", Some(d)) => sim.gun.rope = match (sim.gun.lasso, d) {
+                (_, "off") | (None, _) => None,
+                (Some((part, _)), d) => {
+                    let v: Vec<f32> = d.split(',').filter_map(|x| x.parse().ok()).collect();
+                    Some(sim.ours().p(part) + Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)))
+                }
+            },
             ("!weapon", Some(i)) => sim.weapon = i.parse::<usize>().unwrap_or(0).min(WEAPONS.len() - 1),
             ("!aim", Some(m)) => (sim.aim_gun, sim.gun.placed) = (m == "gun", false),
             ("!gun", Some(d)) => {
@@ -9072,7 +9592,9 @@ impl Sim {
         }
         self.pops.retain_mut(|p| { p.2 += 1.0 / 60.0; p.2 < POP_LIFE });
         self.meat_tick(1.0 / 60.0);
-        let hero = self.hero.as_ref().zip(self.getup.as_ref()).filter(|_| !self.driving && self.hero_doll.is_none()).map_or(vec![], |(n, c)| n.capsules(c));
+        self.ride_frame();
+        let mut hero = self.hero.as_ref().zip(self.getup.as_ref()).filter(|_| !self.driving && self.hero_doll.is_none()).map_or(vec![], |(n, c)| n.capsules(c));
+        hero.extend(self.horse.iter().flat_map(|h| h.capsules()));
         self.taxi_frame(1.0 / 60.0);
         let car: Vec<_> = self.cars.iter().map(|&(c, v, _)| delirium::ragdoll::Obstacle { at: c, rot: Quat::from_rotation_arc(Vec3::Y, v.normalize()), centre: c,
             half: Vec3::new(0.92, 2.54, 0.6), vel: v, com: c, ..Default::default() })
@@ -9139,6 +9661,12 @@ impl Sim {
             .map(|(p, a)| (a, &hero[..], ped_build(build, bench, crowd, p)))
             .chain(doll).enumerate().map(|(i, (a, o, b))| (a, i, b, &car[..], o)).collect();
         Agent::step_group(&mut all, &self.world, 1.0 / 60.0, &mut self.group, &mut |_, _, _| {});
+        if let Some(h) = self.horse.as_mut() {
+            // ridden, Homer's body doesn't push on it (held in the seat, he'd act as if he weighed everything)
+            let riding = self.riding && self.agent.extras.on.iter().any(|(n, _)| *n == "rdr2Sit");
+            let homer = if riding { vec![] } else { caps_of(&self.build, &self.agent.doll) };
+            h.step(&self.world, 1.0 / 60.0, &car, &homer);
+        }
         self.car_hits();
         self.sever_frame(1.0 / 60.0, &car);
         for i in 0..self.bench.len() {
@@ -9227,6 +9755,75 @@ impl Sim {
 
 fn headless(mut sim: Sim, n: usize) {
     sim.button("balance");
+    // HORSE_TEST=<horse.xml>: Red Dead Redemption 2's horse beside him, its barrel's height and how far its joints are
+    // from their pose printed every half second; at 2 s, HORSE_DIE kills it, HORSE_SHOOT=k,k,... hits those parts (40
+    // damage and a 40 N s push each; two on a leg lame it); HORSE_SET=name=value,... sets its quadrupedbase settings
+    if let Ok(f) = std::env::var("HORSE_TEST") {
+        sim.horse_file = f;
+        sim.horse_frag = std::env::var("HORSE_FRAG").unwrap_or_default();
+        sim.spawn_horse();
+        for kv in std::env::var("HORSE_SET").unwrap_or_default().split(',').filter_map(|kv| kv.split_once('=')) {
+            if let Some(h) = sim.horse.as_mut() && !h.q.set(kv.0, kv.1) {
+                eprintln!("horse: no setting {kv:?}");
+            }
+        }
+        for i in 0..n {
+            // HORSE_RIDE: Homer gets on at 0.5 s; =throw throws him off at 4 s, =push shoves his chest sideways then,
+            // =drag gets on with drag=true and throws him off at 4 s
+            if let Ok(r) = std::env::var("HORSE_RIDE") {
+                if i == 30 {
+                    if r == "drag" {
+                        sim.param_edits.insert(("rdr2Sit", "drag"), Value::Bool(true));
+                    }
+                    sim.ride();
+                }
+                if i == 240 && matches!(r.as_str(), "throw" | "drag") {
+                    sim.send("rdr2Sit throw=true");
+                }
+                if i == 240 && r == "push" {
+                    let at = sim.agent.doll.frames().nth(10).map_or(Vec3::ZERO, |f| f.translation);
+                    sim.agent.doll.impulse(10, at, Vec3::Y * std::env::var("HORSE_PUSH").ok().and_then(|v| v.parse().ok()).unwrap_or(120.0));
+                }
+            }
+            sim.tick();
+            if let (Some(h), 0, true) = (sim.horse.as_ref(), i % 30, std::env::var("HORSE_RIDE").is_ok()) {
+                let p = sim.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
+                let head = sim.agent.doll.frames().nth(12).map_or(Vec3::ZERO, |f| f.translation);
+                eprintln!("ride  t {:.1}  riding {}  pelvis {:+.2} {:+.2} {:.2}  from seat {:.2}  head above pelvis {:.2}", i as f32 / 60.0, sim.riding, p.x, p.y, p.z, p.distance(h.saddle().0), head.z - p.z);
+            }
+            if let (Some(h), 0) = (sim.horse.as_ref(), i % 30) {
+                let fr: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
+                let low = fr.iter().map(|p| p.z).fold(f32::MAX, f32::min);
+                eprintln!("horse t {:.1}  body z {:.3}  head z {:.3}  lowest {:.3}  body at {:+.2} {:+.2}  {}", i as f32 / 60.0, fr[0].z, fr[horse::HEAD].z, low, fr[0].x, fr[0].y, h.state());
+                let e = h.errors();
+                let leg = |l: usize| horse::LEGS[l].iter().map(|&k| e[k]).fold(0.0f32, f32::max);
+                eprintln!("      most off  legs {:.2} {:.2} {:.2} {:.2}  neck/head {:.2}", leg(0), leg(1), leg(2), leg(3), horse::NECK_HEAD.iter().map(|&k| e[k]).fold(0.0f32, f32::max));
+            }
+            // HORSE_GRAB=part: at 2 s the mouse grabs that part and pulls it 2 m out and 1 m up, letting go at 5 s
+            if let Some(k) = std::env::var("HORSE_GRAB").ok().and_then(|v| v.parse::<usize>().ok()) {
+                if i == 120 && let Some(at) = sim.horse.as_ref().and_then(|h| h.doll.frames().nth(k)).map(|f| f.translation) {
+                    let target = at + Vec3::new(2.0, 0.0, 1.0);
+                    sim.grab = Some(Grab { part: k, local: Vec3::ZERO, plane: (at, Vec3::Z), target, press: (Vec2::ZERO, Vec3::Z, at), pulling: true, horse: true });
+                }
+                if i == 300 {
+                    sim.grab = None;
+                }
+            }
+            if std::env::var("HORSE_DIE").is_ok() && i == 120 && let Some(h) = sim.horse.as_mut() {
+                h.dead = true;
+            }
+            if let Ok(t) = std::env::var("HORSE_SHOOT") && i == 120 {
+                for n in t.split(',').filter_map(|x| x.parse::<usize>().ok()) {
+                    let s = sim.horse.as_mut().map(|h| { let at = h.doll.frames().nth(n).map_or(Vec3::ZERO, |f| f.translation); h.hit(n, at, Vec3::Y * 40.0, 40.0) });
+                    eprintln!("horse shot part {n}: {}", s.unwrap_or_default());
+                }
+            }
+        }
+        for (t, l, _) in &sim.log {
+            if l.contains("horse") || l.contains("rdr2Sit") || l.contains("ride") { eprintln!("{t:.2} {}", l.chars().take(160).collect::<String>()); }
+        }
+        return;
+    }
     let press = std::env::args().skip_while(|a| a != "--press").nth(1).unwrap_or_default();
     for b in press.split(',').filter(|b| !b.is_empty() && *b != "walk") {
         sim.button(b);
@@ -9408,9 +10005,9 @@ fn muscles(mut commands: Commands, sim: NonSend<Sim>, mut meshes: ResMut<Assets<
 }
 
 fn side_color(name: &str) -> Color {
-    if name.ends_with("Left") {
+    if name.ends_with("Left") || name.starts_with("L_") {
         Color::srgb(0.9, 0.25, 0.2)
-    } else if name.ends_with("Right") {
+    } else if name.ends_with("Right") || name.starts_with("R_") {
         Color::srgb(0.25, 0.45, 0.95)
     } else {
         Color::srgb(0.95, 0.8, 0.15)
@@ -9502,7 +10099,11 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
             ours.circle(iso, r + d, Color::srgba(1.0, 0.05, 0.05, 1.0 - t)).resolution(32);
         }
     }
-    if let Some((g, f)) = sim.grab.as_ref().filter(|g| g.pulling).and_then(|g| Some((g, fr.get(g.part)?))) {
+    let horse_fr: Vec<Transform> = sim.horse.as_ref().map_or(vec![], |h| h.doll.frames().collect());
+    if let Some(h) = sim.horse.as_ref().filter(|_| dbg) {
+        skeleton(&mut ours, &h.build, skel_tint(&sim), |k| horse_fr.get(k).copied(), |k| h.doll.touch[k] & 0x48 != 0);
+    }
+    if let Some((g, f)) = sim.grab.as_ref().filter(|g| g.pulling).and_then(|g| Some((g, if g.horse { horse_fr.get(g.part)? } else { fr.get(g.part)? }))) {
         let at = f.translation + f.rotation * g.local;
         ours.line(at, g.target, Color::srgb(0.3, 0.9, 1.0));
         ours.sphere(Isometry3d::from_translation(g.target), 0.03, Color::srgb(0.3, 0.9, 1.0));
@@ -9558,7 +10159,9 @@ fn skeleton<T: GizmoConfigGroup>(g: &mut Gizmos<T>, build: &Build, tint: Option<
     let joint = |k: usize| frame(k).map(|f| if build.parts[k].parent.is_some() { f.translation + f.rotation * build.parts[k].anchor } else { f.translation });
     for (k, p) in build.parts.iter().enumerate() {
         let (Some(f), Some(x)) = (frame(k), joint(k)) else { continue };
-        let c = tint.unwrap_or_else(|| side_color(delirium_data::nm_asset::PARTS.get(k).unwrap_or(&"")));
+        // a person's parts by Euphoria's names; another body's (the horse's) by its own, L_ and R_ for its sides
+        let name = if build.parts.len() == delirium_data::nm_asset::PARTS.len() { delirium_data::nm_asset::PARTS[k] } else { p.name.as_str() };
+        let c = tint.unwrap_or_else(|| side_color(name));
         if let Some(y) = p.parent.and_then(&joint) {
             g.line(x, y, line);
         }
@@ -9646,7 +10249,7 @@ fn section_title(t: &str) -> egui::RichText {
     egui::RichText::new(t).family(egui::FontFamily::Name("big".into())).size(22.0).color(INK)
 }
 
-const NAV: [(u8, &str); 8] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (1, "Interact"),
+const NAV: [(u8, &str); 9] = [(2, "Scene"), (3, "Character"), (0, "Reactions"), (9, "Parameters"), (1, "Interact"),
                                      (4, "Graphics / Camera"), (8, "Audio / Video"), (6, "Inspect"), (5, "Help")];
 
 fn active_tab(bits: u16) -> u16 {
@@ -9968,14 +10571,14 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         }
         ui.add_space(4.0);
         ui.separator();
-        let nav_width = (ui.available_width() - 18.0) / 4.0;
-        egui::Grid::new("section navigation").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
+        let nav_width = (ui.available_width() - 12.0) / 3.0;
+        egui::Grid::new("section navigation").num_columns(3).spacing([6.0, 6.0]).show(ui, |ui| {
             ui.spacing_mut().button_padding.x = 6.0;
             for (i, &(bit, name)) in NAV.iter().enumerate() {
                 if ui.add_sized([nav_width, 34.0], egui::Button::new(egui::RichText::new(name).size(14.0)).wrap().selected(sim.tab == 1 << bit)).on_hover_text(match bit { 4 => "Camera and appearance", 8 => "Graphics quality, resolution, shadows, frame rate and sound", _ => name }).clicked() {
                     sim.tab = 1 << bit;
                 }
-                if i % 4 == 3 { ui.end_row(); }
+                if i % 3 == 2 { ui.end_row(); }
             }
         });
         ui.separator();
@@ -10002,6 +10605,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                         ui.end_row();
                     }
                 }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Reaction style");
+                ui.selectable_value(&mut sim.rdr2, false, "GTA IV")
+                    .on_hover_text("Delirium's own reactions, as GTA IV's.");
+                ui.selectable_value(&mut sim.rdr2, true, "Red Dead Redemption 2")
+                    .on_hover_text("Shots also start RDR2's reactions: where he is hit matters (arches from behind, folds over a gut shot, limps, arm knocked round), a hand to the wound, a snap, sometimes a spin or a fall to his knees. Punches get RDR2's melee reaction instead of the flinch.");
             });
             ui.checkbox(&mut sim.extra, "Additional experimental reactions")
                 .on_hover_text("Our own uses of the reaction engine's moves, beyond the game's: pick which below.");
@@ -10069,6 +10679,10 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.label(egui::RichText::new(t).strong().size(15.0));
         };
 
+        if sim.tab & (1 << 9) != 0 {
+            let s = &mut *sim;
+            params::tab(ui, &mut s.param_edits, &mut s.param_search, &mut s.param_changed_only, &mut s.rdr2_pick, s.rdr2);
+        }
         if sim.tab & (1 << 1) != 0 {
             ui.add_space(6.0);
             ui.label(section_title("Interact"));
@@ -10104,12 +10718,12 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let (portal, picked) = (false, false);
             sub(ui, "Weapon");
             let per = per_row(ui, 108.0);
-            for (k, head) in [(0, "Guns"), (1, "Thrown"), (2, "Melee")] {
+            for (k, head) in [(0, "Guns"), (1, "Thrown"), (2, "Melee"), (3, "Red Dead Redemption 2")] {
                 ui.label(egui::RichText::new(head).weak());
                 egui::Grid::new(("guns", k)).spacing([10.0, 8.0]).show(ui, |ui| {
                     for (j, (i, w)) in WEAPONS.iter().enumerate().filter(|(i, _)| kind(*i) == k).enumerate() {
                         let on = sim.weapon == i && !picked;
-                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", "taser" => "Taser", "baton" => "Stun baton", _ => w.0 }).selected(on));
+                        let b = ui.add_sized([108.0, 40.0], egui::Button::new(match w.0 { "deagle" => "Desert Eagle", "smg" => "SMG", "ak47" => "AK-47", "rpg" => "RPG", "pistol" => "Pistol", "sniper" => "Sniper", "shotgun" => "Shotgun", "grenade" => "Grenade", "molotov" => "Molotov", "bat" => "Bat", "knife" => "Knife", "taser" => "Taser", "baton" => "Stun baton", "lasso" => "Lasso", "bolas" => "Bolas", "dynamite" => "Dynamite", "fire bottle" => "Fire bottle", "tomahawk" => "Tomahawk", "bow" => "Bow", _ => w.0 }).selected(on));
                         if b.clicked() { pressed = Some(format!("#weapon {i}")); }
                         if j % per == per - 1 {
                             ui.end_row();
@@ -10323,6 +10937,52 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 None => "Watch the trainer's latest generation live.".into(),
             });
             }
+            ui.collapsing("Red Dead Redemption 2 horse (experimental)", |ui| {
+                info(ui, "Experimental: still being worked on. RDR2's horse, built from your own copies of its two files: its Euphoria body (horse.xml: common_0.rpf, data/naturalmotion) and its ragdoll (packs_0.rpf, packs/base/models/metaped_fragments.rpf, meta_base_horse_01.yft: in OpenIV right-click it, Save content, and pick the .yft.sys it writes). Shoot or blast it: a hurt leg gives and it goes down, and killed it collapses.");
+                ui.horizontal(|ui| {
+                    ui.label("horse.xml");
+                    ui.add(egui::TextEdit::singleline(&mut sim.horse_file).hint_text("path to your horse.xml").desired_width(260.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("ragdoll");
+                    ui.add(egui::TextEdit::singleline(&mut sim.horse_frag).hint_text("path to your meta_base_horse_01.yft.sys").desired_width(260.0));
+                });
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!sim.horse_file.is_empty() && !sim.horse_frag.is_empty(), egui::Button::new(if sim.horse.is_some() { "New horse" } else { "Bring the horse" })).clicked() {
+                        pressed = Some("#horse".into());
+                    }
+                    if ui.add_enabled(sim.horse.is_some(), egui::Button::new("Remove it")).clicked() {
+                        pressed = Some("#horse off".into());
+                    }
+                    let can = sim.horse.as_ref().is_some_and(|h| h.standing());
+                    if sim.riding {
+                        if ui.button("Throw him off").on_hover_text("rdr2Sit throw=true: he's thrown, as if he'd lost his seat").clicked() {
+                            pressed = Some("#horse getoff".into());
+                        }
+                    } else if ui.add_enabled(can, egui::Button::new("Ride it")).on_hover_text("Homer gets on: RDR2's sit (rdr2Sit). Shoot or blast him, or the horse, to throw him; its settings are in Parameters").clicked() {
+                        pressed = Some("#horse ride".into());
+                    }
+                });
+                if let Some(h) = sim.horse.as_mut() {
+                    let legs: Vec<String> = h.legs.iter().zip(["hind right", "hind left", "fore right", "fore left"]).filter(|(l, _)| **l > 0.0).map(|(l, n)| format!("{n} {:.0}%", l / 60.0 * 100.0)).collect();
+                    info(ui, &format!("Health {:.0} / 400 · {}{}", h.health.max(0.0), h.state(),
+                                      if legs.is_empty() { String::new() } else { format!(" · legs hurt: {}", legs.join(", ")) }));
+                    ui.collapsing("On the ground (RDR2's quadrupedbase)", |ui| {
+                        info(ui, "RDR2's names and defaults. Down and alive, it lifts its head, paddles its legs on its side and writhes its neck, weaker as its strength fades; hit, it goes weak a moment; tipped past failangle it goes down. Dead, it's limp. (`!horse set name value` from a script.)");
+                        ui.horizontal_wrapped(|ui| {
+                            for (n, f) in h.q.flags() {
+                                ui.checkbox(f, n);
+                            }
+                        });
+                        for (n, f, lo, hi) in h.q.fields() {
+                            ui.add(egui::Slider::new(f, lo..=hi).text(n));
+                        }
+                        if ui.button("RDR2's defaults").clicked() {
+                            h.q = horse::Quadruped::default();
+                        }
+                    });
+                }
+            });
         }
 
         if sim.tab & (1 << 4) != 0 {
@@ -10722,6 +11382,13 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 }
             }
             (Some("#weak"), _) => sim.weak = !sim.weak,
+            (Some("#horse"), Some("ride")) => sim.ride(),
+            (Some("#horse"), Some("getoff")) => sim.send("rdr2Sit throw=true"),
+            (Some("#horse"), Some("off")) => {
+                sim.horse = None;
+                sim.say("room  horse: gone".into());
+            }
+            (Some("#horse"), _) => sim.spawn_horse(),
             #[cfg(feature = "portal")]
             (Some("#portalgun"), _) => portal::pick_gun(&mut sim),
             #[cfg(feature = "portal")]

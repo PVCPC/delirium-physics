@@ -301,6 +301,14 @@ lib.nm_rig_pose.argtypes = [c_void_p, c_void_p, P(c_float)]
 lib.nm_rig_pose.restype = c_int32
 lib.nm_rig_take.argtypes = [c_void_p, c_void_p, P(c_float), P(c_float), c_float]
 lib.nm_rig_take.restype = c_int32
+lib.nm_character_from_rdr2.argtypes = [c_char_p, c_char_p, c_char_p, c_char_p, c_int32]
+lib.nm_character_from_rdr2.restype = c_int32
+lib.nm_rdr2_set.argtypes = [c_char_p, c_float]
+lib.nm_rdr2_set.restype = c_int32
+lib.nm_agent_rdr2_shot.argtypes = [c_void_p, c_void_p, c_int32, P(c_float), P(c_float)]
+lib.nm_agent_rdr2_shot.restype = c_int32
+lib.nm_agent_rdr2_melee.argtypes = [c_void_p, c_void_p, c_int32, P(c_float), P(c_float)]
+lib.nm_agent_rdr2_melee.restype = c_int32
 
 def vec(*xs):
     """A float array (vectors, quaternions) for the calls."""
