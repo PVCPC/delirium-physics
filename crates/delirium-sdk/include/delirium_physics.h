@@ -15,6 +15,7 @@ extern "C" {
 typedef struct NmWorld NmWorld;
 typedef struct NmBuild NmBuild;
 typedef struct NmAgent NmAgent;
+typedef struct NmRig NmRig;
 
 #define NM_E_ARG (-1)
 #define NM_E_IO (-2)
@@ -31,24 +32,30 @@ typedef struct NmAgent NmAgent;
 #define NM_KIND_BOOL (2)
 #define NM_KIND_VEC3 (3)
 #define NM_KIND_STRING (4)
+#define NM_SIZE_REAL (0)
+#define NM_SIZE_BASE (1)
+#define NM_SIZE_AUTO (2)
 
 /* The SDK's version, as major * 10000 + minor * 100 + patch. */
 NM_API int32_t nm_version(void);
 /* The calling thread's last error message. */
 NM_API int32_t nm_last_error(char* buf, int32_t len);
-/* NM's character (fred.xrt's bytes): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
+/* NM's character (character.xrt's bytes, from `delirium-room --game <your game> --export <folder>`): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
 NM_API int32_t nm_init_memory(const uint8_t* xrt, int32_t len);
-/* nm_init_memory from a file (the game's `naturalmotion/fred.xrt`). */
+/* nm_init_memory from a file: the `character.xrt` that `delirium-room --export` writes. (On PC the game keeps it loose, as a .art
+   file; on the disc it's packed in an archive. The export works for both.) */
 NM_API int32_t nm_init(const char* xrt_path);
-/* Opens the numbers: they're read from the player's own PC game, `exe_path` its GTAIV.exe (or the folder it's in). Call first, before nm_init or nm_init_character. */
+/* Opens the numbers: they're read from the player's own game's program, `exe_path` the PC GTAIV.exe or the disc's default.xex (or the folder either is in; the disc's key is fetched from the internet the first time). Call first, before nm_init or nm_init_character. */
 NM_API int32_t nm_unlock(const char* exe_path);
 /* The tasks' tuning (the game's `taskparams.txt`); without it, NM's defaults. */
 NM_API int32_t nm_load_task_params(const char* path);
 /* NM's 21 parts' names, in part order (Buttocks .. Hand_Right). */
 NM_API int32_t nm_part_name(int32_t i, char* buf, int32_t len);
 NM_API NmWorld* nm_world_create(void);
+/* The world's scale (nm_build_get_scale of the builds stepping in it; 1 by default): set it before adding the level. Everything after takes the host's units (see nm_build_fit_sized). */
+NM_API int32_t nm_world_set_scale(NmWorld* w, float scale);
 NM_API void nm_world_destroy(NmWorld* w);
-/* Triangles: `positions` 3 floats per vertex, `triangles` 3 indices each, `materials` one byte per triangle (or null). */
+/* Triangles: `positions` 3 floats per vertex, `triangles` 3 indices each, `materials` one byte per triangle (or null). One over 32 m a side is cut into pieces that size (big faces make balance unstable, standing on their seams). */
 NM_API int32_t nm_world_add_mesh(NmWorld* w, const float* positions, int32_t vertices, const uint32_t* triangles, int32_t count, const uint8_t* materials);
 /* A flat floor at height `z`, `half` metres each way from (x, y), at most 100. */
 NM_API int32_t nm_world_add_floor(NmWorld* w, float x, float y, float z, float half);
@@ -69,12 +76,30 @@ NM_API int32_t nm_build_part_count(const NmBuild* b);
 NM_API int32_t nm_build_part_info(const NmBuild* b, int32_t i, float* mass, float* radius, float* half, int32_t* parent);
 /* A body for another skeleton: `build` (Homer's) fitted to `joints`, 21 positions (3 floats each, metres, Z up), one per part in part order (`nm_part_name`): where your skeleton's matching joint is in its bind pose, the part's joint with its parent (the thigh's: the hip; the forearm's: the elbow; the hand's: the wrist), the root's (Buttocks) the pelvis's centre. Each part is scaled by its bone's length against Homer's and turned onto your bones; its mass goes by the scale's cube. The new build stands in your skeleton's pose (`nm_build_part_frame`): capture the bone offsets for LEAD there. Behaviours are Homer's (his joint limits, his balance's tuning): far from his build (1.8 m), expect them to work less well. */
 NM_API NmBuild* nm_build_fit(const NmBuild* build, const float* joints);
+/* nm_build_fit at the size `mode` picks (NM_SIZE_*, nm_size_scale): the body fitted to `joints` / s, and the agents made from it take and give the host's units at that scale (positions, velocities, impulses, forces, the step's dt and the times read back), so a giant runs on a person-sized body that keeps its balance and still moves at a giant's pace. Give the world the same scale (nm_world_set_scale with nm_build_get_scale). Message parameters stay NM's. */
+NM_API NmBuild* nm_build_fit_sized(const NmBuild* build, const float* joints, int32_t mode);
+/* The build's weight (kg, the host's units at its scale). */
+NM_API float nm_build_get_weight(const NmBuild* b);
+/* Makes the build weigh `kg` (the host's units; nm_mesh_weight gives a mesh's) by its girth: every part thicker or thinner alike (its capsules by the weight's fourth root, so a stout body's parts don't start inside each other), so it keeps the game man's mass shares, and its muscles' strength goes with the weight. Within a third to three times the fitted weight (outside that it stops balancing). Agents made after it take it. */
+NM_API int32_t nm_build_set_weight(NmBuild* b, float kg);
+/* Weighs the build by its skin: how far the skin sits from each bone against the body's own thickness there (the median over the parts), the weight going with that girth squared (nm_build_set_weight). Sturdy against what game skins have: holes, several levels of detail, clothes. `joints`: the 21 joints nm_build_fit took (host units); `verts` x y z each in the same space and pose; `parts` each vertex's part (its main bone's, -1 none), or null: each goes to its nearest bone (for skins whose bone weights can't be read; the joints then in the skin's pose). Returns the weight (kg), 0 on error. */
+NM_API float nm_build_weigh_skin(NmBuild* b, const float* joints, const float* verts, const int32_t* parts, int32_t nverts);
+/* A closed mesh's weight (kg) at a body's density (985 kg/m^3): `verts` x y z each, `tris` three indices each, in metres in NM's axes (any closed mesh; open edges, as a skin with holes at the neck, make it rougher). 0 on error. */
+NM_API float nm_mesh_weight(const float* verts, int32_t nverts, const uint32_t* tris, int32_t ntris);
+/* Adaptive bodies: searches the game's own balance settings (TUNE: step height, leg stiffness, when it gives up, step reach, body stiffness, damping) for ones this build stands with, through no push and the game man's two hard ones (the same speed change), 4 s each; its agents start with the best. A build that stands on the game's own keeps them (a person-shaped body is untouched). `tries` random sets at most (each at most three 4 s runs, the one that would beat the best first, given up when it falls to it: 200 take a few seconds). Returns how many of the three it stands through (0-3), -1 on error. Deterministic. */
+NM_API int32_t nm_build_tune(NmBuild* b, int32_t tries);
+/* Keeps nm_build_tune's results in the text file `path` (made when missing; null: none kept): a build tuned before (the same body, size and tries) gets its settings from there at once, on any later run. Returns 0. */
+NM_API int32_t nm_tune_file(const char* path);
+/* Gives `dst` the balance settings nm_build_tune found for `src` (the same kind of body: tune one in the background, copy it to the rest). */
+NM_API int32_t nm_build_copy_tune(NmBuild* dst, const NmBuild* src);
+/* Host metres per NM metre of the build's agents (nm_build_fit_sized), 1 for any other build; 0 on error. */
+NM_API float nm_build_get_scale(const NmBuild* b);
 /* Part `i`'s frame in the build's pose (world, as dumped). */
 NM_API int32_t nm_build_part_frame(const NmBuild* b, int32_t i, float* pos, float* rot);
 /* An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. */
 NM_API NmAgent* nm_agent_create(const NmBuild* b, const float* pos, float yaw, float seed);
 NM_API void nm_agent_destroy(NmAgent* a);
-/* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. */
+/* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted). */
 NM_API int32_t nm_agent_step(NmAgent* a, const NmWorld* w, float dt);
 /* NM_MODE_LEAD: NM's own physics moves the body; the host reads the parts' transforms onto a puppet. NM_MODE_FOLLOW: the host's ragdoll is the body; each step it sets the parts' states, steps, and applies the parts' drives (nm_agent_get_part_drive[s]) to its own bodies. */
 NM_API int32_t nm_agent_set_mode(NmAgent* a, int32_t mode);
@@ -145,6 +170,24 @@ NM_API int32_t nm_agent_get_param(const NmAgent* a, const char* message, const c
 NM_API int32_t nm_agent_get_param_string(const NmAgent* a, const char* message, const char* param, char* buf, int32_t len);
 NM_API int32_t nm_agent_is_balancing(const NmAgent* a);
 NM_API int32_t nm_agent_has_fallen(const NmAgent* a);
+/* How long (s) the body has lain still: off its feet, its centre of mass under 0.2 m/s; 0 while it moves or balances. The moment to hand it back to the host's own get-up animation. `head`: the way from its hips to its head, flat (unit, Z 0); `face_up` 1 lying on its back, 0 on its front. A get-up from the back usually ends facing the feet (-head), one from the front facing the head. */
+NM_API float nm_agent_get_lying(const NmAgent* a, float* head, int32_t* face_up);
+/* 1 while a dead body rests (its steps skipped; see nm_agent_step): nothing to pose or read changes. */
+NM_API int32_t nm_agent_is_resting(const NmAgent* a, const NmWorld* w);
+/* On (default) a shot (nm_agent_task_shot) whose part is the head kills: health 0. */
+NM_API void nm_set_headshot_kills(int32_t on);
+/* 1 once killed: shot with health under 50 (100 and over staggers and fights to stay up, under 100 goes down), shot in the head (nm_set_headshot_kills), or nm_agent_set_dead. */
+NM_API int32_t nm_agent_is_dead(const NmAgent* a);
+/* Marks it dead (1) or alive (0), e.g. killed by the host's own damage; a dead one is never due to get up. */
+NM_API int32_t nm_agent_set_dead(NmAgent* a, int32_t dead);
+/* 1 when it's time to hand it back to its own get-up animation: alive and lying still `after` seconds (nm_agent_get_lying says which way it faces). */
+NM_API int32_t nm_agent_should_get_up(const NmAgent* a, float after);
+/* Cuts part `part` off (with those below it: a hand, an arm from the shoulder, a leg, the head at the neck), `impulse` (or null) on it at `at` (or null: its middle). It goes on as a limp piece of its own, stepped with the body: its parts' frames and velocities are read as before. A leg gone, he falls (catchFall) and never gets up (nm_agent_should_get_up 0). The head cut, he stays up: kill him yourself (nm_agent_set_dead). LEAD only. NM_E_STATE: the root, or cut already. */
+NM_API int32_t nm_agent_sever(NmAgent* a, const NmWorld* w, int32_t part_index, const float* at, const float* impulse);
+/* 1 when part `part_index` has been cut off (nm_agent_sever), else 0. */
+NM_API int32_t nm_agent_is_severed(const NmAgent* a, int32_t part_index);
+/* The part a shot along the shooter's aim strikes: the ray from `from` along `dir` against the body's capsules, else (a near miss of a thin body inside the game's bigger hitbox) the part it passes closest to; `point` gets where. For hosts whose hitbox is one big capsule: head and limb hits still land. -1 on error. */
+NM_API int32_t nm_agent_aim_hit(const NmAgent* a, const float* from, const float* dir, float* point);
 /* Standing still on its feet for a while (a stagger's over). */
 NM_API int32_t nm_agent_is_settled(const NmAgent* a);
 NM_API int32_t nm_agent_is_relaxing(const NmAgent* a);
@@ -158,24 +201,83 @@ NM_API int32_t nm_agent_get_stance(const NmAgent* a, float* pos);
 NM_API int32_t nm_agent_feedback_count(const NmAgent* a);
 /* Feedback `i`: its name into `buf`, its behaviour slot and value. */
 NM_API int32_t nm_agent_feedback_get(const NmAgent* a, int32_t i, char* buf, int32_t len, int32_t* slot, float* value);
-/* TaskNMShot's start (a new task's first update, with the game's `rand` draws: one generator for every agent): hit on part `part` at `at` (world), the bullet going along `dir` (bulletVel 400 m/s along it, the normal its back); `set` a taskparams set (e.g. "POWERFUL_WEAPON", "SMG_WEAPON", "*" for the defaults), `health` the ped's (100-200). The bullet's push is the caller's (nm_agent_apply_push). Returns 0. */
+/* TaskNMShot (with the game's `rand` draws: one generator for every agent): hit on part `part` at `at` (world), the bullet going along `dir` (bulletVel 400 m/s along it, the normal its back); `set` a taskparams set (e.g. "POWERFUL_WEAPON", "SMG_WEAPON", "*" for the defaults), `health` the ped's (100-200). The task then runs itself in nm_agent_step (its staggering, leaning, looking and its end) as the game's does each frame; a hit while it runs is its next hit (the reaction goes on, not over). nm_agent_task_stop ends it. The bullet's push is the caller's (nm_agent_apply_push). Returns 0. */
 NM_API int32_t nm_agent_task_shot(NmAgent* a, const NmWorld* w, const char* set, int32_t part, const float* at, const float* dir, float health);
 /* nm_agent_task_shot with the bullet's speed `force` (the weapon's weaponinfo force, +144; over 0) in place of 400. */
 NM_API int32_t nm_agent_task_shot_force(NmAgent* a, const NmWorld* w, const char* set, int32_t part, const float* at, const float* dir, float health, float force);
+/* 1 while a shot task runs (nm_agent_task_shot until it ends itself or nm_agent_task_stop), else 0. */
+NM_API int32_t nm_agent_task_running(const NmAgent* a);
+/* Why a character only ragdolls: one line per problem into `buf` (the setup calls missed, FOLLOW mode, nothing started, asleep); returns how many (0: it should react). */
+NM_API int32_t nm_agent_check(const NmAgent* a, char* buf, int32_t len);
+/* Ends the running task (the behaviours it started go on until stopped: send stopAllBehaviours for that). */
+NM_API int32_t nm_agent_task_stop(NmAgent* a);
 /* TaskNMBalance's start: stand and keep balance, looking at `look` (or null). */
 NM_API int32_t nm_agent_task_balance(NmAgent* a, const NmWorld* w, const char* set, const float* look);
 /* TaskNMRelax's catchFall. */
 NM_API int32_t nm_agent_task_catch_fall(NmAgent* a, const char* set);
+/* An explosion at `at`: every part within `radius` (m) is thrown out and up at up to `speed` m/s (less with distance; Delirium's room uses 5 m and 15 m/s), then TaskNMExplosion runs for 6 s by itself (each step): a roll-up, writhe or windmill in the air, depending on how it flies. Health is the host's: take what it should lose yourself. */
+NM_API int32_t nm_agent_task_explosion(NmAgent* a, const NmWorld* w, const float* at, float radius, float speed);
+/* TaskNMOnFire: it burns, flails, staggers, drops and writhes (the game's reaction, 1-30 s). Runs by itself each step; tell it when the flames are out or its health changes with nm_agent_set_on_fire. Starting again while it runs only updates those. */
+NM_API int32_t nm_agent_task_on_fire(NmAgent* a, const NmWorld* w, float health);
+/* The burning character's state for its on-fire task: `burning` 0 once the flames are out (it calms and ends), `health` the host's (0: dies burning). Fails when no on-fire task runs. */
+NM_API int32_t nm_agent_set_on_fire(NmAgent* a, int32_t burning, float health);
+/* A punch, kick or melee weapon blow that doesn't kill: the blow's `impulse` (kg m/s) at `at`, then as the game picks for a melee hit: 7 in 10 a flinch from the attacker's head `head` (MELEE, or MELEE_PASIVE with `passive` 1 for timid characters), else a stagger keeping its balance, looking at the attacker. Health is the host's; for a kill send the blow and nm_agent_task_relax. */
+NM_API int32_t nm_agent_task_melee_hit(NmAgent* a, const NmWorld* w, const float* at, const float* impulse, const float* head, int32_t passive);
+/* TaskNMHighFall's start: falling from a height (arms out, legs ready; the game starts it once a ped falls faster than 6 m/s). `player` 1 for the player's own set of reactions. */
+NM_API int32_t nm_agent_task_high_fall(NmAgent* a, const NmWorld* w, const char* set, int32_t player);
+/* TaskNMFallDown's start: a ped by a ledge is pushed off it (over a drop, a low wall, or down a long drop or stairs). It looks 2 m out along `heading` (0-1 of a turn round from behind; negative: a random one, as the game's) for a ledge. Returns 1 when it found one and started (it runs each nm_agent_step until it lies relaxed), 0 when there's no ledge that way (nothing starts). */
+NM_API int32_t nm_agent_task_fall_down(NmAgent* a, const NmWorld* w, float heading);
+/* The game's grab (a balance toward the hold with its GrabHelper, as when a climber grabs a moving car): the hands reach for points on the level and hold. `left` / `right`: 6 floats each, the point and the surface's normal out of it (null: that hand stays free; at least one). It has 1 s to get hold, then holds `hold` s (0: until another task or nm_agent_task_relax). */
+NM_API int32_t nm_agent_task_grab(NmAgent* a, const NmWorld* w, const float* left, const float* right, float hold);
+/* TaskNMJumpRollFromRoadVehicle's start: jumping out of a moving car, it tucks and rolls. */
+NM_API int32_t nm_agent_task_jump_roll(NmAgent* a, const NmWorld* w);
+/* TaskNMRelax: goes limp (a kill, or knocked out). `stiffness` 0-100 (negative: the game's default), `damping` (negative: unset). */
+NM_API int32_t nm_agent_task_relax(NmAgent* a, float stiffness, float damping);
+/* TaskNMBrace's start: a car is about to hit it; it braces against the car (hands out, maybe a jump). */
+NM_API int32_t nm_agent_task_brace(NmAgent* a, const NmWorld* w, const char* set);
+/* TaskNMBrace's control, each frame while the car comes: `car` its matrix as 12 floats (x axis, y axis, z axis, place), `hit` where it will strike (or null), `look` the driver's head (or null: the car's place). */
+NM_API int32_t nm_agent_task_brace_control(NmAgent* a, const NmWorld* w, const float* car, const float* hit, const float* look);
+/* The game's car hit (a moving box's, nm_world_set_boxes, gathered over 8/60 s): call after each step. 1 when one is ready: `damage` the health it takes (RUNOVERBYCAR, from the ped's `health` and the push; the host takes it off), `hit_box` the box's index, and its reaction started (bracing, rolling up, staggering or limp, by the game's rules: `agility` its ped's, under 3 weak; `player_driver` 1 when the player drives it). 0: none (or too light to hurt). */
+NM_API int32_t nm_agent_car_hit(NmAgent* a, const NmWorld* w, float health, int32_t agility, int32_t player_driver, float* damage, int32_t* hit_box);
+/* Delirium's dragged-from-the-car (the room's cab; the game's is an animation): both hands on box `hit_box`'s side at `at` (null: the nearest side, under his waist), balancing while it stands; once it moves he's dragged, legs kicking and writhing, till it's going 12 m/s or 6 s on, then lets go and falls (smartFall). Set the boxes first. */
+NM_API int32_t nm_agent_task_car_door(NmAgent* a, const NmWorld* w, int32_t hit_box, const float* at);
+/* This body dives at `target` (another LEAD body within 4 m, else NM_E_STATE): thrown on toward him (leading his speed), his hands latch onto the target's chest (`low` 0) or thighs (`low` 1), he drives on and pulls him down, and both go to ground. No hold within a second: a miss, he just lands. He lets go 2 s after the hold, never with `keep` 1 (another task ends it). The target reacts by being driven, with no message of his own. Keep `target` alive while it's on. */
+NM_API int32_t nm_agent_task_tackle(NmAgent* a, const NmWorld* w, NmAgent* target, int32_t low, int32_t keep);
+/* 1 while nm_agent_task_tackle's hands hold on, 2 while it's diving, else 0. */
+NM_API int32_t nm_agent_tackle_state(const NmAgent* a);
+/* Water whose surface is at height `level` (world, up the host's up), or NaN for none: down in it (his pelvis within 0.4 m of the surface) he floats face up, soft (the buoyancy behaviour, its own defaults), and stops once well out (0.9 m). Standing in the shallows he's untouched. One plane per body: set it as he moves over water. */
+NM_API int32_t nm_agent_set_water(NmAgent* a, const NmWorld* w, float level);
+/* The body's strength: its muscles' stiffness, damping and most torque times `k` (1 as made, within 0.1-10). For a "movie giant" (heavy and powerful, not a real giant's weak and floaty) or a tough enemy: at 2 a person stands a chest push of 80 N s instead of 60; a giant run at a person's size (nm_build_fit_sized) gains less. */
+NM_API int32_t nm_agent_set_strength(NmAgent* a, float k);
+/* 1 while floating in nm_agent_set_water's water, else 0. */
+NM_API int32_t nm_agent_in_water(const NmAgent* a);
+/* 1 while it burns (nm_agent_task_on_fire, or caught from a burning body it touched), else 0. */
+NM_API int32_t nm_agent_is_burning(const NmAgent* a);
 /* TaskNMFlinch's start: flinch from a threat at `from`. */
 NM_API int32_t nm_agent_task_flinch(NmAgent* a, const NmWorld* w, const char* set, const float* from);
-/* The character (an nm-character-1 JSON text) in place of fred.xrt: as `nm_init_memory`, once (later calls, and calls after nm_init, are ignored and return 1). */
+/* The character (an nm-character-1 JSON text) in place of character.xrt: as `nm_init_memory`, once (later calls, and calls after nm_init, are ignored and return 1). */
 NM_API int32_t nm_init_character(const char* json);
 /* nm_init_character from a file. */
 NM_API int32_t nm_init_character_file(const char* path);
 /* The character file's build (call after nm_init_character: it's laid out on the loaded character); NULL if the file has none. */
 NM_API NmBuild* nm_build_from_character(const char* json);
-/* A character file from a the game fred.xrt (and a build dump, or NULL for none), into `buf` as usual. Load fred.xrt (nm_init) first when a build is given: the build is laid out on it. */
+/* A character file from character.xrt (and a build dump, or NULL for none), into `buf` as usual. Load character.xrt (nm_init) first when a build is given: the build is laid out on it. */
 NM_API int32_t nm_character_from_xrt(const char* xrt_path, const char* build_path, char* buf, int32_t len);
+/* Why a skeleton might contort: one line per problem into `buf`, the same inputs as `nm_rig_joints` (`map` isn't changed); returns how many (0: it should fit). Finds missing parts, bones under the wrong part (a shin not under its thigh), left and right swapped, and a bent rest pose (the animated pose passed in place of the bind pose). */
+NM_API int32_t nm_rig_check(int32_t bones, const int32_t* parents, const float* rest, const int32_t* map, char* buf, int32_t len);
+/* The 21 joints (`nm_build_fit`'s, NM space) from your skeleton, as engine plugins need them: `bones` bones, `parents` each one's parent (-1 for none; parents before children), `rest` each one's place in its bind pose (3 floats each, NM space: Z up, metres), `map` each one's part (in: `nm_rig_part_for_name`'s guesses or your own, the hips bone on 0; out: cleaned, pass it on to `nm_rig_create`). Spine or head names under an arm or leg (a creature's jaw) are dropped; no head bone: the spine bone farthest from the hips is the head; missing knees, spine, neck and clavicles are filled in, and a head below the shoulders is put above them. Fails naming the first part it can't do without (hips, legs, head, arms: add that bone to the map). */
+NM_API int32_t nm_rig_joints(int32_t bones, const int32_t* parents, const float* rest, int32_t* map, float* joints);
+/* The world scale to run a character at: game metres per NM metre, 1 for its own size. With s != 1 fit the body to `joints` / s and pass the host's places in divided by s (out times s), impulses divided by s^3.5 and each step's dt by sqrt(s): the base-sized body then balances, and moves and falls at the character's own pace (a model's motion at its scale). `joints` its 21 (`nm_rig_joints`), `mode` NM_SIZE_*; 0 on error. */
+NM_API float nm_size_scale(const NmBuild* base, const float* joints, int32_t mode);
+/* The part (0-20, `nm_part_name`) a bone of this name drives, or -1 for none. */
+NM_API int32_t nm_rig_part_for_name(const char* name);
+/* A rig for `bones` bones, made while the agent stands in the same pose as your skeleton: `parents` each bone's parent (-1 for none; parents before children), `rest` each bone's world frame in that pose (7 floats: x, y, z, qx, qy, qz, qw, in NM's space: Z up, metres) and `map` each bone's part (-1 for none; `nm_rig_part_for_name` guesses; one bone must be on part 0, the hips). */
+NM_API NmRig* nm_rig_create(const NmAgent* a, int32_t bones, const int32_t* parents, const float* rest, const int32_t* map);
+NM_API void nm_rig_destroy(NmRig* r);
+/* Your skeleton's pose now: each bone's rotation local to its parent into `out` (4 floats each, qx, qy, qz, qw), then the hips bone's (the one on part 0) world place (3 floats). Set the rotations on every bone and the place on that bone only. Returns the hips bone's index. */
+NM_API int32_t nm_rig_pose(const NmRig* r, const NmAgent* a, float* out);
+/* Takes over from your animation without a snap: puts every part where your skeleton's bones are now (`now`, each bone's world frame, 7 floats as in nm_rig_create), moving as they were (`before`: the frames `dt` seconds earlier, say last frame's; null: still). Call right after creating the agent and rig (or any time to put it back on the animation), before the first step. */
+NM_API int32_t nm_rig_take(const NmRig* r, NmAgent* a, const float* now, const float* before, float dt);
 /* An RDR2 body (one of the player's own RDR2 naturalmotion XML files: fred.xml, wilma.xml or a size variant) as `nm-character-1` JSON on top of `base_json` (a base body, e.g. from nm_character_from_xrt): RDR2's part frames, joint limits, motor flips, muscles and force caps; the base's joint offsets, masses and self-collision. With `build_path` (the base's build dump) it carries a build fitted to RDR2's proportions. Into `buf` as usual. */
 NM_API int32_t nm_character_from_rdr2(const char* xml_path, const char* base_json, const char* build_path, char* buf, int32_t len);
 /* The RDR2 reactions option, for nm_agent_rdr2_shot / nm_agent_rdr2_melee (every agent): `name` one of "snap", "hitLocation", "melee", "balance" (0 off, 1 on), "spin", "knees", "reach" (chances, 0..1). Defaults: all on, spin 0.25, knees 0.15, reach 0.7. */

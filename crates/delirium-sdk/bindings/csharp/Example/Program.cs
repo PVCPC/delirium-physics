@@ -1,4 +1,4 @@
-// A ped stands, then is shot. usage: Example <fred.xrt> <build.txt> [taskparams.txt], delirium_physics.dll beside it or on PATH,
+// A ped stands, then is shot. usage: Example <character.xrt> <build.txt> [taskparams.txt], delirium_physics.dll beside it or on PATH,
 // GTAIV_EXE your PC GTAIV.exe (the numbers are read from it).
 using System;
 using Delirium;

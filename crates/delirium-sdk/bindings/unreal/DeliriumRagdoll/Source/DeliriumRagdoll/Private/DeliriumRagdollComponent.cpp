@@ -1,0 +1,552 @@
+#include "DeliriumRagdollComponent.h"
+#include "DeliriumSettings.h"
+#include "delirium_physics.h"
+
+#include "Async/Async.h"
+#include "Chaos/TriangleMeshImplicitObject.h"
+#include "Components/PoseableMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/World.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
+#include "PhysicsEngine/BodySetup.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogDelirium, Log, All);
+
+namespace
+{
+	NmBuild* BaseBuild = nullptr;
+	/** Each kind of character's tuned build (null while it's being tuned). */
+	TMap<FString, NmBuild*> Tuned;
+	FCriticalSection TunedLock;
+
+	/** Worlds ragdolls share, so they push and pile on each other: one per spot (same size, ground within 50 cm,
+	 *  within 5 m of where it was made, its level read there), freed with its last ragdoll. */
+	struct FShared { NmWorld* World; float Scale; FVector At; int32 Refs; };
+	TArray<FShared> Shared;
+
+	FString LastError()
+	{
+		char Buf[512] = {};
+		nm_last_error(Buf, sizeof Buf);
+		return UTF8_TO_TCHAR(Buf);
+	}
+
+	bool Check(int32 Result, const TCHAR* What)
+	{
+		if (Result < 0) UE_LOG(LogDelirium, Warning, TEXT("%s: %s"), What, *LastError());
+		return Result >= 0;
+	}
+
+	// NM is metres, Z up, right-handed; Unreal centimetres, Z up, left-handed: y flips, a rotation (x, y, z, w) becomes
+	// (-x, y, -z, w), both ways. Impulses are N s in both (only y flips).
+	void ToNm(const FVector& V, float* O) { O[0] = V.X / 100.f; O[1] = -V.Y / 100.f; O[2] = V.Z / 100.f; }
+	FVector FromNm(const float* F) { return FVector(F[0] * 100.f, -F[1] * 100.f, F[2] * 100.f); }
+	void ToNmDir(const FVector& V, float* O) { O[0] = V.X; O[1] = -V.Y; O[2] = V.Z; }
+	void ToNmTurn(const FQuat& Q, float* O) { O[0] = -Q.X; O[1] = Q.Y; O[2] = -Q.Z; O[3] = Q.W; }
+	FQuat FromNmTurn(const float* F) { return FQuat(-F[0], F[1], -F[2], F[3]); }
+
+	FString Resolve(const FString& P)
+	{
+		return P.IsEmpty() || !FPaths::IsRelative(P) ? P : FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / P);
+	}
+
+	/** The level's static collision within `Radius` of `At` (boxes, convex hulls, triangle meshes), into the world.
+	 *  ponytail: spheres, capsules and landscapes left out (the floor under the feet covers flat ground); read once. */
+	int32 Level(UWorld* W, const AActor* Owner, const FVector& At, float Radius, NmWorld* World)
+	{
+		TArray<FOverlapResult> Hits;
+		FCollisionQueryParams Q(TEXT("DeliriumLevel"), false, Owner);
+		W->OverlapMultiByObjectType(Hits, At, FQuat::Identity, FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionShape::MakeSphere(Radius), Q);
+		TArray<float> Pts;
+		TArray<uint32> Tris;
+		auto Vert = [&](const FVector& V) { const int32 I = Pts.Num(); Pts.AddUninitialized(3); ToNm(V, &Pts[I]); return uint32(I / 3); };
+		for (const FOverlapResult& H : Hits)
+		{
+			UPrimitiveComponent* C = H.GetComponent();
+			UBodySetup* B = C ? C->GetBodySetup() : nullptr;
+			if (!B) continue;
+			const FTransform T = C->GetComponentTransform();
+			for (const FKBoxElem& Box : B->AggGeom.BoxElems)
+			{
+				const FTransform BT = Box.GetTransform() * T;
+				uint32 K[8];
+				for (int32 I = 0; I < 8; I++)
+					K[I] = Vert(BT.TransformPosition(FVector((I & 1 ? 0.5 : -0.5) * Box.X, (I & 2 ? 0.5 : -0.5) * Box.Y, (I & 4 ? 0.5 : -0.5) * Box.Z)));
+				static const int32 F[6][4] = { {0, 2, 3, 1}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 6, 7, 3}, {0, 4, 6, 2}, {1, 3, 7, 5} };
+				for (const auto& Q4 : F)
+					Tris.Append({ K[Q4[0]], K[Q4[1]], K[Q4[2]], K[Q4[0]], K[Q4[2]], K[Q4[3]] });
+			}
+			for (const FKConvexElem& Cx : B->AggGeom.ConvexElems)
+			{
+				const FTransform CT = Cx.GetTransform() * T;
+				const uint32 First = Pts.Num() / 3;
+				for (const FVector& V : Cx.VertexData) Vert(CT.TransformPosition(V));
+				for (int32 I : Cx.IndexData) Tris.Add(First + I);
+			}
+			for (const Chaos::FTriangleMeshImplicitObjectPtr& M : B->TriMeshGeometries)
+			{
+				if (!M) continue;
+				const uint32 First = Pts.Num() / 3;
+				const auto& P = M->Particles();
+				for (uint32 I = 0; I < P.Size(); I++) Vert(T.TransformPosition(FVector(P.GetX(I))));
+				const Chaos::FTrimeshIndexBuffer& E = M->Elements();
+				auto Add = [&](const auto& Buf) { for (const auto& Tri : Buf) Tris.Append({ First + Tri[0], First + Tri[1], First + Tri[2] }); };
+				if (E.RequiresLargeIndices()) Add(E.GetLargeIndexBuffer()); else Add(E.GetSmallIndexBuffer());
+			}
+		}
+		if (Tris.Num() == 0) return 0;
+		// The y flip mirrors them: turn each back to face the same way.
+		for (int32 I = 0; I < Tris.Num(); I += 3) Swap(Tris[I + 1], Tris[I + 2]);
+		Check(nm_world_add_mesh(World, Pts.GetData(), Pts.Num() / 3, Tris.GetData(), Tris.Num() / 3, nullptr), TEXT("nm_world_add_mesh"));
+		return Tris.Num() / 3;
+	}
+}
+
+UDeliriumRagdollComponent::UDeliriumRagdollComponent()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
+}
+
+bool UDeliriumRagdollComponent::Start()
+{
+	static int32 State = 0; // 0 not tried, 1 ready, -1 failed
+	if (State) return State > 0;
+	State = -1;
+	const UDeliriumSettings* S = GetDefault<UDeliriumSettings>();
+	// The SDK sits next to the plugin's module.
+	TSharedPtr<IPlugin> Me = IPluginManager::Get().FindPlugin(TEXT("DeliriumRagdoll"));
+	const FString Dll = Me ? FPaths::Combine(Me->GetBaseDir(), TEXT("Binaries/Win64/delirium_physics.dll")) : FString();
+	if (!Dll.IsEmpty() && !FPlatformProcess::GetDllHandle(*Dll))
+	{
+		UE_LOG(LogDelirium, Error, TEXT("can't load %s"), *Dll);
+		return false;
+	}
+	if (!S->GameExe.IsEmpty() && !Check(nm_unlock(TCHAR_TO_UTF8(*Resolve(S->GameExe))), TEXT("GameExe"))) return false;
+	if (!Check(nm_init(TCHAR_TO_UTF8(*Resolve(S->Character))), TEXT("Character"))) return false;
+	if (!S->TaskParams.IsEmpty() && !Check(nm_load_task_params(TCHAR_TO_UTF8(*Resolve(S->TaskParams))), TEXT("TaskParams"))) return false;
+	nm_tune_file(TCHAR_TO_UTF8(*FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("delirium-tunes.txt"))));
+	BaseBuild = nm_build_load(TCHAR_TO_UTF8(*Resolve(S->Build)));
+	if (!BaseBuild)
+	{
+		UE_LOG(LogDelirium, Error, TEXT("Build: %s"), *LastError());
+		return false;
+	}
+	nm_set_headshot_kills(S->bHeadshotKills ? 1 : 0);
+	State = 1;
+	return true;
+}
+
+float UDeliriumRagdollComponent::Ground(const FVector& Hips) const
+{
+	FHitResult Hit;
+	FCollisionQueryParams Q(TEXT("DeliriumGround"), false, GetOwner());
+	if (GetWorld()->LineTraceSingleByObjectType(Hit, Hips, Hips - FVector(0, 0, 500), FCollisionObjectQueryParams(ECC_WorldStatic), Q))
+		return Hit.ImpactPoint.Z;
+	// No floor below: its lowest bone.
+	float Low = Hips.Z;
+	for (int32 B : Bones) Low = FMath::Min(Low, Mesh->GetBoneTransform(B).GetLocation().Z);
+	return Low;
+}
+
+bool UDeliriumRagdollComponent::Take()
+{
+	if (Agent) return true;
+	if (!Start()) return false;
+	if (!Mesh) Mesh = GetOwner()->FindComponentByClass<USkeletalMeshComponent>();
+	USkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+	if (!Asset)
+	{
+		UE_LOG(LogDelirium, Warning, TEXT("%s: no skeletal mesh"), *GetOwner()->GetName());
+		return false;
+	}
+	const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
+	const int32 All = Ref.GetNum();
+	TArray<int32> Guess;
+	for (int32 B = 0; B < All; B++) Guess.Add(nm_rig_part_for_name(TCHAR_TO_UTF8(*Ref.GetBoneName(B).ToString())));
+	// The hips: the bone named so, else the thighs' shared parent.
+	int32 Hips = Guess.IndexOfByKey(0);
+	if (Hips < 0)
+	{
+		const int32 L = Guess.IndexOfByKey(1), R = Guess.IndexOfByKey(4);
+		Hips = L >= 0 && R >= 0 && Ref.GetParentIndex(L) == Ref.GetParentIndex(R) ? Ref.GetParentIndex(L) : -1;
+	}
+	if (Hips < 0)
+	{
+		UE_LOG(LogDelirium, Warning, TEXT("%s: no hips among its bones"), *GetOwner()->GetName());
+		return false;
+	}
+	// The hips and everything under them, parents first (the reference skeleton's own order).
+	TArray<int32> Local;
+	Local.Init(-1, All);
+	Bones.Reset();
+	for (int32 B = Hips; B < All; B++)
+		if (B == Hips || (Ref.GetParentIndex(B) >= 0 && Local[Ref.GetParentIndex(B)] >= 0)) { Local[B] = Bones.Num(); Bones.Add(B); }
+	const int32 N = Bones.Num();
+	// The skeleton in its bind pose (not the pose it's in now: a body fitted to a mid-stride pose comes out bent
+	// against its own joint limits), placed where the mesh is.
+	TArray<FTransform> Cs;
+	Cs.SetNum(All);
+	for (int32 B = 0; B < All; B++)
+		Cs[B] = Ref.GetRefBonePose()[B] * (Ref.GetParentIndex(B) >= 0 ? Cs[Ref.GetParentIndex(B)] : FTransform::Identity);
+	const FTransform ToWorld = Mesh->GetComponentTransform();
+	TArray<int32> Parents, Parts;
+	TArray<float> Places, Rest;
+	Places.SetNum(N * 3);
+	Rest.SetNum(N * 7);
+	for (int32 I = 0; I < N; I++)
+	{
+		const int32 B = Bones[I];
+		Parents.Add(I == 0 ? -1 : Local[Ref.GetParentIndex(B)]);
+		Parts.Add(I == 0 ? 0 : Guess[B]);
+		const FTransform W = Cs[B] * ToWorld;
+		ToNm(W.GetLocation(), &Places[I * 3]);
+		ToNm(W.GetLocation(), &Rest[I * 7]);
+		ToNmTurn(W.GetRotation(), &Rest[I * 7 + 3]);
+	}
+	char Report[2048] = {};
+	if (nm_rig_check(N, Parents.GetData(), Places.GetData(), Parts.GetData(), Report, sizeof Report) > 0)
+		UE_LOG(LogDelirium, Warning, TEXT("%s's skeleton: %s"), *Asset->GetName(), UTF8_TO_TCHAR(Report));
+	float Joints[63];
+	if (!Check(nm_rig_joints(N, Parents.GetData(), Places.GetData(), Parts.GetData(), Joints), TEXT("nm_rig_joints"))) return false;
+	const UDeliriumSettings* S = GetDefault<UDeliriumSettings>();
+	const int32 Mode = S->Size == TEXT("Homer") ? NM_SIZE_BASE : S->Size == TEXT("Real") ? NM_SIZE_REAL : NM_SIZE_AUTO;
+	Build = nm_build_fit_sized(BaseBuild, Joints, Mode);
+	if (!Build)
+	{
+		UE_LOG(LogDelirium, Warning, TEXT("%s: %s"), *GetOwner()->GetName(), *LastError());
+		return false;
+	}
+	Scale = nm_build_get_scale(Build);
+	// Each kind's balance settings, searched once in the background and copied to the rest of its kind.
+	if (S->bAdaptive)
+	{
+		FScopeLock Lock(&TunedLock);
+		const FString Kind = Asset->GetPathName();
+		if (NmBuild** T = Tuned.Find(Kind)) { if (*T) nm_build_copy_tune(Build, *T); }
+		else
+		{
+			Tuned.Add(Kind, nullptr);
+			TArray<float> J(Joints, 63);
+			AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [Kind, J, Mode]
+			{
+				NmBuild* T = nm_build_fit_sized(BaseBuild, J.GetData(), Mode);
+				const int32 Got = T ? nm_build_tune(T, 200) : -1;
+				FScopeLock Lock(&TunedLock);
+				Tuned.Add(Kind, T);
+				UE_LOG(LogDelirium, Log, TEXT("%s: balance tuned, stands through %d of 3 pushes"), *Kind, Got);
+			});
+		}
+	}
+	const FVector HipsAt = (Cs[Hips] * ToWorld).GetLocation();
+	const FVector Now = Mesh->GetBoneTransform(Hips).GetLocation();
+	const float Floor = Ground(Now);
+	const FVector Spot(Now.X, Now.Y, Floor);
+	const int32 Near = Shared.IndexOfByPredicate([&](const FShared& W)
+		{ return W.Scale == Scale && FMath::Abs(W.At.Z - Floor) < 50.f * Scale && FVector::Dist(W.At, Spot) < 500.f * Scale; });
+	if (Near >= 0)
+	{
+		World = Shared[Near].World;
+		Shared[Near].Refs++;
+	}
+	else
+	{
+		World = nm_world_create();
+		Check(nm_world_set_scale(World, Scale), TEXT("nm_world_set_scale"));
+		Shared.Add({ World, Scale, Spot, 1 });
+		const int32 Tris = Level(GetWorld(), GetOwner(), Now, 1500.f, World);
+		UE_LOG(LogDelirium, Log, TEXT("%s: %d level triangles"), *GetOwner()->GetName(), Tris);
+		float F[3];
+		ToNm(Spot, F);
+		Check(nm_world_add_floor(World, F[0], F[1], F[2], 100.f * Scale), TEXT("nm_world_add_floor"));
+	}
+	float At[3];
+	ToNm(FVector(HipsAt.X, HipsAt.Y, Floor), At);
+	Agent = nm_agent_create(Build, At, 0.f, FMath::FRand());
+	if (!Agent)
+	{
+		UE_LOG(LogDelirium, Warning, TEXT("%s: %s"), *GetOwner()->GetName(), *LastError());
+		Release();
+		return false;
+	}
+	if (S->Strength != 1.f) Check(nm_agent_set_strength(Agent, S->Strength), TEXT("Strength"));
+	Rig = nm_rig_create(Agent, N, Parents.GetData(), Rest.GetData(), Parts.GetData());
+	if (!Rig)
+	{
+		UE_LOG(LogDelirium, Warning, TEXT("%s: %s"), *GetOwner()->GetName(), *LastError());
+		Release();
+		return false;
+	}
+	// It starts in the pose its animation has it in now, moving as the character moved: no snap.
+	TArray<float> Anim;
+	Anim.SetNum(N * 7);
+	for (int32 I = 0; I < N; I++)
+	{
+		const FTransform W = Mesh->GetBoneTransform(Bones[I]);
+		ToNm(W.GetLocation(), &Anim[I * 7]);
+		ToNmTurn(W.GetRotation(), &Anim[I * 7 + 3]);
+	}
+	Check(nm_rig_take(Rig, Agent, Anim.GetData(), nullptr, 0.f), TEXT("nm_rig_take"));
+	const FVector Vel = GetOwner()->GetVelocity();
+	if (!Vel.IsNearlyZero())
+	{
+		float V[3];
+		ToNmDir(Vel / 100.f, V);
+		Check(nm_agent_add_velocity(Agent, V), TEXT("nm_agent_add_velocity"));
+	}
+	PoseOut.SetNum(N * 4 + 3);
+	// A posed copy of the mesh shows the body; the game's own mesh, animation and movement wait.
+	if (Posed) { Posed->DestroyComponent(); Posed = nullptr; }
+	Blend = 0.f;
+	Posed = NewObject<UPoseableMeshComponent>(GetOwner());
+	Posed->SetSkinnedAssetAndUpdate(Asset);
+	for (int32 M = 0; M < Mesh->GetNumMaterials(); M++) Posed->SetMaterial(M, Mesh->GetMaterial(M));
+	Posed->SetupAttachment(Mesh->GetAttachParent());
+	Posed->SetRelativeTransform(Mesh->GetRelativeTransform());
+	Posed->RegisterComponent();
+	Posed->CopyPoseFromSkeletalComponent(Mesh);
+	Mesh->SetVisibility(false, true);
+	Mesh->bPauseAnims = true;
+	if (ACharacter* C = Cast<ACharacter>(GetOwner()))
+	{
+		C->GetCharacterMovement()->StopMovementImmediately();
+		C->GetCharacterMovement()->DisableMovement();
+	}
+	Pinned = GetOwner()->GetActorTransform();
+	if (S->bBalance)
+	{
+		nm_msg_begin(Agent, "bodyBalance");
+		nm_msg_set_bool(Agent, "start", 1);
+		Check(nm_msg_send(Agent, World), TEXT("bodyBalance"));
+	}
+	bTold = false;
+	Clock = 0.f;
+	UE_LOG(LogDelirium, Log, TEXT("ragdolled %s (%d bones, scale %.2f)"), *GetOwner()->GetName(), N, Scale);
+	return true;
+}
+
+void UDeliriumRagdollComponent::Pose()
+{
+	GetOwner()->SetActorTransform(Pinned);
+	const int32 HipsOut = nm_rig_pose(Rig, Agent, PoseOut.GetData());
+	const int32 N = Bones.Num();
+	TArray<FTransform>& Local = Posed->BoneSpaceTransforms;
+	// The hips' turn (and place) is a world one, every other bone's is under its parent.
+	for (int32 I = 1; I < N; I++) Local[Bones[I]].SetRotation(FromNmTurn(&PoseOut[I * 4]));
+	FTransform HipsWorld(FromNmTurn(&PoseOut[0]), HipsOut == 0 ? FromNm(&PoseOut[N * 4]) : Posed->GetBoneTransform(Bones[0]).GetLocation());
+	const int32 Parent = Posed->GetSkinnedAsset()->GetRefSkeleton().GetParentIndex(Bones[0]);
+	const FTransform ParentWorld = Parent >= 0 ? Posed->GetBoneTransform(Parent) : Posed->GetComponentTransform();
+	FTransform L = HipsWorld.GetRelativeTransform(ParentWorld);
+	L.SetScale3D(Local[Bones[0]].GetScale3D());
+	Local[Bones[0]] = L;
+	Posed->RefreshBoneTransforms();
+}
+
+void UDeliriumRagdollComponent::Step(float Seconds)
+{
+	if (Blend > 0.f && Posed && Mesh)
+	{
+		// Getting up: from the ragdoll's last pose into the animation's, then the animated mesh again.
+		Blend = FMath::Max(Blend - Seconds, 0.f);
+		const float T = 1.f - Blend / FMath::Max(GetUpBlend, 1e-3f);
+		const TArray<FTransform>& Anim = Mesh->GetBoneSpaceTransforms();
+		TArray<FTransform>& Local = Posed->BoneSpaceTransforms;
+		for (int32 B : Bones)
+			if (Anim.IsValidIndex(B)) Local[B].Blend(Last[B], Anim[B], T);
+		Posed->RefreshBoneTransforms();
+		if (Blend <= 0.f)
+		{
+			Mesh->SetVisibility(true, true);
+			Mesh->VisibilityBasedAnimTickOption = WasTick;
+			Posed->DestroyComponent();
+			Posed = nullptr;
+		}
+		return;
+	}
+	if (!Agent) return;
+	Clock = FMath::Min(Clock + Seconds, 4.f / 60.f);
+	for (; Clock >= 1.f / 60.f; Clock -= 1.f / 60.f) Check(nm_agent_step(Agent, World, 1.f / 60.f), TEXT("nm_agent_step"));
+	Pose();
+	float Head[3];
+	int32 Up = 0;
+	const float Still = nm_agent_get_lying(Agent, Head, &Up);
+	if (Still < 0.5f) { bTold = false; return; }
+	if (!bTold)
+	{
+		bTold = true;
+		const FVector Facing = FVector(Head[0], -Head[1], 0.f).GetSafeNormal() * (Up ? -1.f : 1.f);
+		OnLyingStill.Broadcast(Up == 1, Facing);
+	}
+	if (GetUpAfter > 0.f && Agent && nm_agent_should_get_up(Agent, GetUpAfter) == 1) GetUp();
+}
+
+void UDeliriumRagdollComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	Step(DeltaTime);
+}
+
+FVector UDeliriumRagdollComponent::GetHips() const
+{
+	return Posed && Bones.Num() ? Posed->GetBoneTransform(Bones[0]).GetLocation() : FVector::ZeroVector;
+}
+
+bool UDeliriumRagdollComponent::Ragdoll() { return Take(); }
+
+bool UDeliriumRagdollComponent::Shoot(FVector Point, FVector Direction, float Force, FString Set, float Health)
+{
+	if (!Take()) return false;
+	float At[3], Dir[3], Imp[3];
+	ToNm(Point, At);
+	ToNmDir(Direction.GetSafeNormal(), Dir);
+	ToNmDir(Direction.GetSafeNormal() * Force * GetDefault<UDeliriumSettings>()->ShotForce, Imp);
+	const int32 Part = FMath::Max(nm_agent_nearest_part(Agent, At), 0);
+	Check(nm_agent_apply_push(Agent, At, Imp), TEXT("Shoot"));
+	return Check(nm_agent_task_shot(Agent, World, TCHAR_TO_UTF8(*Set), Part, At, Dir, Health), TEXT("Shoot"));
+}
+
+bool UDeliriumRagdollComponent::ShootAlong(FVector From, FVector Aim, float Force, FString Set, float Health)
+{
+	if (!Take()) return false;
+	float F[3], D[3], Hit[3];
+	ToNm(From, F);
+	ToNmDir(Aim.GetSafeNormal(), D);
+	if (nm_agent_aim_hit(Agent, F, D, Hit) < 0) return false;
+	return Shoot(FromNm(Hit), Aim, Force, Set, Health);
+}
+
+bool UDeliriumRagdollComponent::Push(FVector Impulse)
+{
+	if (!Take()) return false;
+	float At[3], Imp[3];
+	ToNm(GetHips() + FVector(0, 0, 35.f * Scale), At);
+	ToNmDir(Impulse, Imp);
+	return Check(nm_agent_apply_push(Agent, At, Imp), TEXT("Push"));
+}
+
+bool UDeliriumRagdollComponent::Explode(FVector At, float Radius, float Speed)
+{
+	if (!Take()) return false;
+	float A[3];
+	ToNm(At, A);
+	return Check(nm_agent_task_explosion(Agent, World, A, Radius / 100.f, Speed * GetDefault<UDeliriumSettings>()->ExplosionForce), TEXT("Explode"));
+}
+
+bool UDeliriumRagdollComponent::MeleeHit(FVector Point, FVector Impulse, FVector AttackerHead, bool bTimid)
+{
+	if (!Take()) return false;
+	float P[3], I[3], H[3];
+	ToNm(Point, P);
+	ToNmDir(Impulse * GetDefault<UDeliriumSettings>()->MeleeForce, I);
+	ToNm(AttackerHead, H);
+	return Check(nm_agent_task_melee_hit(Agent, World, P, I, H, bTimid ? 1 : 0), TEXT("MeleeHit"));
+}
+
+bool UDeliriumRagdollComponent::OnFire(bool bBurning, float Health)
+{
+	if (!Take()) return false;
+	return Check(bBurning ? nm_agent_task_on_fire(Agent, World, Health) : nm_agent_set_on_fire(Agent, 0, Health), TEXT("OnFire"));
+}
+
+bool UDeliriumRagdollComponent::HighFall()
+{
+	return Take() && Check(nm_agent_task_high_fall(Agent, World, nullptr, 0), TEXT("HighFall"));
+}
+
+bool UDeliriumRagdollComponent::Kill()
+{
+	return Take() && Check(nm_agent_set_dead(Agent, 1), TEXT("Kill")) && Check(nm_agent_task_relax(Agent, -1.f, -1.f), TEXT("Kill"));
+}
+
+bool UDeliriumRagdollComponent::Sever(FVector Point, FVector Impulse)
+{
+	if (!Take()) return false;
+	float At[3], Imp[3];
+	ToNm(Point, At);
+	ToNmDir(Impulse, Imp);
+	// Nearest the hips (the root) or cut already: nothing to cut.
+	const int32 Part = nm_agent_nearest_part(Agent, At);
+	if (Part <= 0 || nm_agent_is_severed(Agent, Part) == 1) return false;
+	return Check(nm_agent_sever(Agent, World, Part, At, Imp), TEXT("Sever"));
+}
+
+void UDeliriumRagdollComponent::GetUp()
+{
+	if (!Agent) return;
+	float Head[3];
+	int32 Up = 0;
+	nm_agent_get_lying(Agent, Head, &Up);
+	const FVector Hips = GetHips();
+	const FVector Facing = FVector(Head[0], -Head[1], 0.f).GetSafeNormal() * (Up ? -1.f : 1.f);
+	// The actor stands where the body lies, facing the way it'll get up.
+	FVector At(Hips.X, Hips.Y, Ground(Hips));
+	if (ACharacter* C = Cast<ACharacter>(GetOwner())) At.Z += C->GetSimpleCollisionHalfHeight();
+	// The body stays where it lies while the actor moves under it: its bones' world frames, before and after.
+	TArray<FTransform> Frames;
+	for (int32 B : Bones) Frames.Add(Posed->GetBoneTransform(B));
+	GetOwner()->SetActorLocationAndRotation(At, Facing.IsNearlyZero() ? Pinned.GetRotation() : Facing.Rotation().Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
+	const int32 Parent = Posed->GetSkinnedAsset()->GetRefSkeleton().GetParentIndex(Bones[0]);
+	FTransform& HipsLocal = Posed->BoneSpaceTransforms[Bones[0]];
+	const FVector Size = HipsLocal.GetScale3D();
+	HipsLocal = Frames[0].GetRelativeTransform(Parent >= 0 ? Posed->GetBoneTransform(Parent) : Posed->GetComponentTransform());
+	HipsLocal.SetScale3D(Size);
+	Posed->RefreshBoneTransforms();
+	Last = Posed->BoneSpaceTransforms;
+	UPoseableMeshComponent* Keep = Posed;
+	Posed = nullptr;
+	Release();
+	Posed = Keep;
+	if (GetUpBlend > 0.f)
+	{
+		// The animation runs on, unseen, while the copy blends into it.
+		Mesh->SetVisibility(false, true);
+		WasTick = Mesh->VisibilityBasedAnimTickOption;
+		Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		Blend = GetUpBlend;
+	}
+	else
+	{
+		Posed->DestroyComponent();
+		Posed = nullptr;
+	}
+}
+
+void UDeliriumRagdollComponent::Release()
+{
+	if (Posed) { Posed->DestroyComponent(); Posed = nullptr; }
+	if (Mesh)
+	{
+		Mesh->SetVisibility(true, true);
+		Mesh->bPauseAnims = false;
+	}
+	if (ACharacter* C = Cast<ACharacter>(GetOwner()))
+		if (C->GetCharacterMovement()->MovementMode == MOVE_None) C->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	if (Rig) nm_rig_destroy(Rig);
+	if (Agent) nm_agent_destroy(Agent);
+	if (Build) nm_build_destroy(Build);
+	if (World)
+	{
+		const int32 I = Shared.IndexOfByPredicate([&](const FShared& W) { return W.World == World; });
+		if (I >= 0 && Shared[I].Refs > 1) Shared[I].Refs--;
+		else
+		{
+			if (I >= 0) Shared.RemoveAt(I);
+			nm_world_destroy(World);
+		}
+	}
+	Rig = nullptr;
+	Agent = nullptr;
+	Build = nullptr;
+	World = nullptr;
+}
+
+void UDeliriumRagdollComponent::EndPlay(const EEndPlayReason::Type Reason)
+{
+	Release();
+	Super::EndPlay(Reason);
+}

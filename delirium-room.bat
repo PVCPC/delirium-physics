@@ -3,7 +3,7 @@ rem Delirium room. Drag your game's disc image (.iso) or its PC game folder (the
 setlocal
 cd /d "%~dp0"
 rem On its own (downloaded from the release page): fetch this version's ready-built room beside it, no build needed.
-set "VERSION=0.2.7"
+set "VERSION=0.5.2"
 if exist "%~dp0Cargo.toml" goto build
 rem Beside the ready-built room (unzipped together): run it.
 set "VIEWER=%~dp0delirium-room.exe"
@@ -43,6 +43,7 @@ rem The graphics driver crashed before the room's first frames (its marker left)
 rem crashes in a row the room starts one step safer (plain Vulkan, then DirectX 12).
 set /a TRIES+=1
 if not "%CODE%"=="0" if %TRIES% LEQ 4 if exist "%APPDATA%\delirium\starting" (echo. & echo The graphics driver crashed starting the room: starting it again... & goto run)
+if not "%CODE%"=="0" if exist "%APPDATA%\delirium\crash.dmp" (echo. & echo The room crashed ^(code %CODE%^). Please send %APPDATA%\delirium\crash.dmp with your report. & pause & exit /b 0)
 if not "%CODE%"=="0" (echo. & echo The room stopped unexpectedly ^(code %CODE%^): the lines above say why. & pause)
 exit /b 0
 

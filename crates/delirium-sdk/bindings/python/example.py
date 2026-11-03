@@ -1,5 +1,5 @@
 """A ped stands, is shot in the chest, staggers. usage:
-   GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python example.py <fred.xrt> <build.txt> [taskparams.txt]"""
+   GTAIV_EXE=<your PC GTAIV.exe> DELIRIUM_PHYSICS_LIB=<dir with delirium_physics.dll> python example.py <character.xrt> <build.txt> [taskparams.txt]"""
 import ctypes, os, sys
 from delirium_physics import lib, vec, text, check, NM_MODE_LEAD
 from ctypes import c_float

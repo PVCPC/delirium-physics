@@ -19,7 +19,7 @@
 
 A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
 
-Delirium is a reverse-engineered port of Euphoria, NaturalMotion's ragdoll and character physics engine, as it runs in GTA IV: rewritten in Rust from the game's own program code and checked against the running game. It comes with an SDK (C, C++, C#, Unity, Python) and the room you see here. It was written with AI coding tools (Claude). It isn't affiliated with or endorsed by Rockstar Games, Take-Two Interactive or NaturalMotion. An earlier version of this README said the behaviours were written from scratch by separate people; that was wrong, and it has been removed.
+Delirium is a reverse-engineered port of Euphoria, NaturalMotion's ragdoll and character physics engine, as it runs in GTA IV: rewritten in Rust from the game's own program code and checked against the running game. It comes with an SDK (C, C++, C#, Python), plugins for Unity, Unreal Engine 5 and Godot 4, and the room you see here. It was written with AI coding tools (Claude). It isn't affiliated with or endorsed by Rockstar Games, Take-Two Interactive or NaturalMotion. An earlier version of this README said the behaviours were written from scratch by separate people; that was wrong, and it has been removed.
 
 <p align="center">
   <img src="docs/playroom.png" alt="The Playroom: Homer on the left panel's Character tab, his skeleton and joints shown" width="800">
@@ -92,13 +92,13 @@ Choose reactions under **Reactions** in the left dock. **Scene** contains locati
 The Playroom is one application built on Delirium. For a mod, use the engine and SDK below rather than the Playroom executable. The repository includes the source and integration examples; your game's adapter and any required game assets are supplied by your project. The SDK needs the player's own PC GTA IV too: call `nm_unlock` with their `GTAIV.exe` or the Xbox 360 disc's `default.xex` (or the folder either is in) first; until then `nm_init` and `nm_agent_create` fail. The examples read it from the `GTAIV_EXE` environment variable.
 
 - `crates/delirium`: the engine
-- `crates/delirium-sdk`: the C API (`include/delirium_physics.h`) and bindings for C++, C#, Unity and Python, with examples
+- `crates/delirium-sdk`: the C API (`include/delirium_physics.h`), bindings for C++, C# and Python, plugins for Unity, Unreal Engine 5 and Godot 4, with examples
 - `crates/delirium-room`: the room
 - `crates/delirium-data`: readers for the game's file formats
 
 Build by hand: `cargo build --release -p delirium-room`.
 
-Full guides: [How it works](docs/how-it-works.md) (the engine, body, step loop and behaviours) and [Modding](docs/modding.md) (each language's quick start, every message and its parameters, Playroom scripting and settings).
+Modders: start with [Modding: start here](docs/start-here.md) (the Unity, Unreal and Godot plugins, your first ragdoll in three steps). Full guides: [How it works](docs/how-it-works.md) (the engine, body, step loop and behaviours) and [Modding](docs/modding.md) (each language's quick start, every message and its parameters, Playroom scripting and settings).
 
 Maintainers' to-do list: [delirium-todo](https://github.com/PVCPC/delirium-todo) (private; only the maintainers can open it).
 

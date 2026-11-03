@@ -33,6 +33,75 @@
 - Examples: `regress` (a fingerprint of fixed scenes, to check a change leaves the physics alone), `rdr2_try` (tries
   an extra message on a standing body) and `rdr2_body` (converts an RDR2 body and stands it up).
 
+## 0.5.2
+
+### Fixed
+- **About 3.5 times the frame rate with a sky on** (the Bevy sky is the default): the room's portal views each
+  worked out the sky's lighting every frame, even when no portal was open. On an RTX 3090 at low settings with the
+  Bevy sky: 72 FPS before, 268 now.
+- Shadows all the way off (Shadow quality "off") now turns off contact shadows too; they still drew a grainy
+  shadow. Their slider greys out while shadows are off.
+
+### Changed
+- `LICENSE`: an added permission to combine Delirium with Unreal Engine and share the result, free of charge only.
+  No selling, and never any game data.
+- The SDK's comments and examples load the exported `character.xrt`. On PC the game keeps it loose, as a `.art`
+  file; `delirium-room --export` writes it out for you.
+
+## 0.5.1
+
+### Fixed
+- The Playroom quit at the start with ray tracing on and Resolution not at 100%. Resolution now steps aside while
+  ray tracing is on, as it does for DLSS, FSR 3 and XeSS.
+
+### Added
+- **Click to fight** examples for each engine: aim at a character, click to shoot, F to punch, G for a blast.
+  Unity: the package's Click to fight sample. Godot: `examples/click_to_fight.gd`. Unreal: the Delirium Click To
+  Fight component. Each plugin's README says how to add it.
+- [Modding: start here](docs/start-here.md): which download to use, your first ragdoll in three steps, and what
+  to do when the log shows an error.
+- `llms.txt`, so AI tools can find the docs and the API.
+
+### Changed
+- The modding guide's examples start the SDK with the player's own copy of the game, as the public build needs.
+
+
+## 0.5.0 - The Modders Guide
+
+Delirium in other games and engines: Unity, Unreal, Godot, or your own.
+
+### Added
+- **Plugins for three engines**, each with the same calls (shoot, shoot along the aim, push, punch, explode, set on
+  fire, long fall, cut off a limb, kill, get up):
+  - Unity: the `DeliriumRagdolls` component in the Unity package (`bindings/unity`), for your own game.
+  - Unreal Engine 5: the Delirium Ragdoll component (`bindings/unreal`).
+  - Godot 4.5+: the `DeliriumRagdoll` node, from GDScript or C# (`bindings/godot`).
+  - Mono Unity games (BepInEx 5): aim at any character and press F9. Ready-built in the `unity-mod-kit` download.
+- **No snaps**: a character goes into ragdoll in the pose its animation had it in, moving as it was moving
+  (`nm_rig_take`), and blends back into its animation when it gets up.
+- **Any skeleton, any bone count**: the rig (`nm_rig_*`) drives your game's own bones by turning them only, so
+  nothing stretches. Elbows and knees bend the right way whatever the skeleton's conventions; twist bones, fingers
+  and tails ride along; fewer spine bones, or no neck or clavicles, work too. Unity humanoid, Mixamo, 3ds Max Biped
+  and Unreal bone names are recognised. `nm_rig_check` says why a skeleton contorts.
+- **Odd shapes and sizes**: bodies are fitted to the character's own bone lengths and weighed from its skin; each
+  kind of body gets its own balance settings, searched once in the background and kept for later runs. Giants and
+  tiny characters run at a person's size in a scaled world, so they balance and fall at their own pace.
+- **New reactions in the SDK**: explosions, catching fire (fire spreads between bodies), melee hits, long falls,
+  jumping out of a moving car, bracing for a car, being hit by a car, being dragged from a car, grabbing, tackles,
+  falling down, cut-off limbs, water, and pushed down stairs he gives up and rolls. Headshots kill.
+- Bodies in one world push and pile on each other; dead bodies lying still rest until touched.
+- Strength: every body's muscles times a number (1.5-2 for tough enemies).
+- The Playroom: a Random body (with a Symmetric toggle and a Variance slider) and three odd-shaped peds
+  (Waddler, Guard, Brute) in the body picker.
+- The Playroom's `--export <folder>` writes the three files a mod loads out of your own game. Never ship them with
+  a mod: each player exports their own.
+- The Playroom writes `crash.dmp` when it crashes in a way it can't catch, and the launcher asks you to send it.
+- Modding guide: start here, any engine step by step, every call with what it does.
+
+### Changed
+- The Unity package's `NmCharacter` only turns bones below the hips (moving them stretched skeletons shaped
+  differently from the body).
+
 ## 0.2.7
 
 ### Added

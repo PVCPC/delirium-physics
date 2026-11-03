@@ -1,0 +1,17 @@
+# The Godot 4 extension: `cargo build --release` here, then copy the library into your project with delirium.gdextension.
+[package]
+name = "delirium-godot"
+version = "0.5.2"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = { version = "0.5", features = ["api-4-5"] }
+delirium-sdk = { path = "../.." }
+
+# Not part of the engine's workspace: its own build, so Godot isn't a dependency of the rest.
+[workspace]
