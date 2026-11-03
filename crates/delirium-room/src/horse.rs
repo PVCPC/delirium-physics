@@ -1,92 +1,75 @@
-//! Red Dead Redemption 2's horse, from its body file (horse.xml, from the player's own copy): a physics horse that
-//! stands, takes hits, and goes down when a leg is lamed or it's killed. RDR2's file gives where its parts are; the
-//! shapes and masses are Delirium's own, for a horse of about 600 kg, and its trunk is one rigid barrel. Its legs,
-//! neck, head and tail are jointed to the barrel and held in their pose by muscles (the neck's can't hold the head up,
-//! so it hangs low, as if grazing). There's no balance yet: see `step`. Down and alive, it does what RDR2's
-//! `quadrupedbase` does on the ground (see `Quadruped`).
+//! Red Dead Redemption 2's horse, built from the player's own copies of its two files: its ragdoll (the fragment,
+//! meta_base_horse_01.yft, read by `rdr2frag`) and its Euphoria body (horse.xml). From the fragment: its 26 capsules
+//! (size, place, turn, mass and inertia, 617 kg in all), its 22 joints' frames and which links collide with each
+//! other; from horse.xml: each joint's limits and its muscle (strength and damping). Each of RDR2's 23 links is a
+//! part; the three made of two capsules (the top of the neck, its middle and the head) get their second capsule as a
+//! part of its own, held to the first. While it's sound it's held in its pose, as RDR2 holds its horses on their
+//! animation; lamed or killed it falls as RDR2's ragdoll, and down and alive it does what RDR2's `quadrupedbase` does
+//! on the ground (see `Quadruped`).
 //!
-//! No part weighs under 10 kg, the tail and the top of the neck included: Delirium's joint solver blows up with a very
-//! light part on the end of a chain under a heavy one (a 1 kg tail tip on a 260 kg barrel), which a person's body
-//! never has. Every part at 6 kg or more held in tests; 10 leaves room.
+//! Where it isn't RDR2's: Delirium's parts hold their mass at their capsule's centre, so the 0.2 m RDR2 moves the
+//! pelvis's and the three spine links' centre of mass off theirs isn't there. The second capsules are held to their
+//! first by a stiff joint with a little play, not rigidly. The knees, hocks, elbows and fetlocks, which RDR2 makes
+//! three-way joints that bend on their twist with ±0.07 rad of lean, are hinges on that same axis and range, without
+//! the lean. The pelvis is the root, with RDR2's root link hanging from it on the same joint (see `Horse::new`).
+//! RDR2's standing pose has its pelvis, hips' twist and hind knees past RDR2's own limits; it starts turned just
+//! inside them (see `in_limits`). And the muscles' Euphoria stiffness (0.5, for the blend of a joint's drive) isn't
+//! used: Delirium's muscle takes RDR2's strength and damping.
+use crate::rdr2frag;
 use bevy::prelude::*;
 use delirium::collision::Collision;
 use delirium::ragdoll::{Build, Capsule, Drive, Limit, Muscle, Obstacle, PartDef, Ragdoll, GRAVITY};
 
-/// Where a capsule starts or ends: one of RDR2's parts' places, that offset (in RDR2's frame: up, forward, left), or
-/// offset from the start.
-#[derive(Clone, Copy)]
-enum At {
-    Part(usize),
-    Off(usize, [f32; 3]),
-    Stub([f32; 3]),
-}
-
-/// A part: Delirium's name for it (the hooves end in "Foot" for their grip), its capsule's start and end, the part it
-/// hangs from, its radius and mass, and which muscle group it's in (see `STIFF`).
-struct Shape {
-    name: &'static str,
-    from: At,
-    to: At,
-    parent: Option<usize>,
-    radius: f32,
-    mass: f32,
-    muscle: usize,
-}
-
-const fn leg(name: &'static str, from: usize, to: At, parent: usize, radius: f32, mass: f32) -> Shape {
-    Shape { name, from: At::Part(from), to, parent: Some(parent), radius, mass, muscle: 1 }
-}
-
-const HOOF: At = At::Stub([-0.1, 0.03, 0.0]);
-
-const SHAPES: [Shape; 19] = [
-    // the barrel, from behind RDR2's pelvis to its third spine part
-    Shape { name: "Body", from: At::Off(1, [0.0, -0.5, 0.0]), to: At::Part(12), parent: None, radius: 0.33, mass: 260.0, muscle: 0 },
-    leg("R_Thigh", 2, At::Part(6), 0, 0.13, 38.0),
-    leg("R_Calf", 6, At::Part(7), 1, 0.06, 20.0),
-    leg("R_HindFoot", 7, HOOF, 2, 0.06, 12.0),
-    leg("L_Thigh", 3, At::Part(8), 0, 0.13, 38.0),
-    leg("L_Calf", 8, At::Part(9), 4, 0.06, 20.0),
-    leg("L_HindFoot", 9, HOOF, 5, 0.06, 12.0),
-    leg("R_UpperArm", 13, At::Part(16), 0, 0.11, 30.0),
-    leg("R_Forearm", 16, At::Part(17), 7, 0.06, 18.0),
-    leg("R_ForeFoot", 17, HOOF, 8, 0.06, 12.0),
-    leg("L_UpperArm", 14, At::Part(18), 0, 0.11, 30.0),
-    leg("L_Forearm", 18, At::Part(19), 10, 0.06, 18.0),
-    leg("L_ForeFoot", 19, HOOF, 11, 0.06, 12.0),
-    Shape { name: "Neck1", from: At::Part(15), to: At::Part(20), parent: Some(0), radius: 0.14, mass: 14.0, muscle: 2 },
-    Shape { name: "Neck3", from: At::Part(20), to: At::Part(21), parent: Some(13), radius: 0.12, mass: 11.0, muscle: 2 },
-    Shape { name: "Neck5", from: At::Part(21), to: At::Part(22), parent: Some(14), radius: 0.11, mass: 10.0, muscle: 2 },
-    Shape { name: "Head", from: At::Part(22), to: At::Stub([-0.25, 0.42, 0.0]), parent: Some(15), radius: 0.11, mass: 18.0, muscle: 3 },
-    Shape { name: "Tail1", from: At::Part(4), to: At::Part(10), parent: Some(0), radius: 0.05, mass: 10.0, muscle: 4 },
-    Shape { name: "Tail4", from: At::Part(10), to: At::Stub([-0.35, -0.08, 0.0]), parent: Some(17), radius: 0.04, mass: 10.0, muscle: 4 },
+/// The parts, in the fragment's order but for the pelvis first (see `Horse::new`): which of RDR2's links each is (two for a link of two capsules) and Delirium's
+/// name for it (the hooves end in "Foot" for their grip).
+const PARTS: [(&str, &str); 26] = [
+    ("skel_pelvis", "Pelvis"), ("skel_spine_root", "Root"), ("skel_r_thigh", "R_Thigh"), ("skel_l_thigh", "L_Thigh"),
+    ("skel_tail1", "Tail1"), ("skel_spine1", "Spine1"), ("skel_r_calf", "R_Calf"), ("skel_r_foot", "R_HindFoot"),
+    ("skel_l_calf", "L_Calf"), ("skel_l_foot", "L_HindFoot"), ("skel_tail4", "Tail4"), ("skel_spine2", "Spine2"),
+    ("skel_spine3", "Spine3"), ("skel_r_upperarm", "R_UpperArm"), ("skel_l_upperarm", "L_UpperArm"), ("skel_neck1", "Neck1"),
+    ("skel_neck1", "Neck1b"), ("skel_r_forearm", "R_Forearm"), ("skel_r_hand", "R_ForeFoot"), ("skel_l_forearm", "L_Forearm"),
+    ("skel_l_hand", "L_ForeFoot"), ("skel_neck3", "Neck3"), ("skel_neck3", "Neck3b"), ("skel_neck5", "Neck5"),
+    ("skel_head", "Head"), ("skel_head", "Headb"),
 ];
-
-/// RDR2's horse has 23 parts.
-const RDR2_PARTS: usize = 23;
-/// Muscle stiffness (natural frequency, rad/s) by group: trunk, legs, neck, head, tail. Damping ratio 1.
-const STIFF: [f32; 5] = [0.0, 30.0, 35.0, 25.0, 5.0];
-/// What's left of a group's stiffness once dead.
-const LIMP: f32 = 0.0;
 /// The legs, as (thigh or upper arm, lower, hoof): hind right, hind left, fore right, fore left.
-pub const LEGS: [[usize; 3]; 4] = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]];
-pub const HEAD: usize = 16;
+pub const LEGS: [[usize; 3]; 4] = [[2, 6, 7], [3, 8, 9], [13, 17, 18], [14, 19, 20]];
+pub const HEAD: usize = 24;
+/// Its neck and head.
+pub const NECK_HEAD: [usize; 7] = [15, 16, 21, 22, 23, 24, 25];
+const NECK1: usize = 15;
+/// The barrel: pelvis, spine 1 to 3; its middle (spine 2) is what its height, level and saddle are taken from.
+const BARREL: [usize; 4] = [0, 5, 11, 12];
+const PELVIS: usize = 0;
+/// RDR2's links for the root and the pelvis.
+const ROOT_LINK: usize = 0;
+const PELVIS_LINK: usize = 1;
+const MID: usize = 11;
+const SHOULDERS: usize = 12;
+/// A link's second capsule's joint to its first: its play, rad, and the muscle holding it, rad/s.
+const WELD_PLAY: f32 = 0.05;
+const WELD: f32 = 60.0;
+/// The second capsules (of the top of the neck, its middle, the head).
+const WELDED: [usize; 3] = [16, 22, 25];
 const HEALTH: f32 = 400.0;
 /// Damage a leg takes before it gives.
 const LAME: f32 = 60.0;
 /// s it stays up after the hit that lames or kills it.
 const GIVE: f32 = 0.2;
-/// Share of its weight the lift carries (the legs stand under the rest), and the springs holding the barrel's
-/// height (1/s², 1/s) and keeping it level (1/s², 1/s).
-const CARRY: f32 = 0.85;
-const HEIGHT: (f32, f32) = (20.0, 10.0);
-const LEVEL: (f32, f32) = (20.0, 9.0);
-/// The saddle: how far along the barrel from its back end (a share of its length), and how high a rider's pelvis sits
-/// over the barrel's top, m.
-const SADDLE: f32 = 0.6;
+/// How high a rider's pelvis sits over the top of the barrel's middle, m.
 const SEAT: f32 = 0.15;
 /// Down, with alwayslifthead: the share of its neck and head's weight lifted, fresh (0.6 of it once faded).
 const HEAD_LIFT: f32 = 1.3;
+
+/// Which muscle group a part is in: barrel, legs, neck, head, tail.
+fn group(k: usize) -> usize {
+    match k {
+        0 | 1 | 5 | 11 | 12 => 0,
+        _ if LEGS.iter().any(|l| l.contains(&k)) => 1,
+        15 | 16 | 21 | 22 | 23 => 2,
+        24 | 25 => 3,
+        _ => 4,
+    }
+}
 
 /// RDR2's `quadrupedbase` behaviour's settings, by its names and with its defaults (read from RDR2's own table); what
 /// each does here is read from its name, not from RDR2's code. Down and alive, the horse lifts its head, paddles its
@@ -177,124 +160,245 @@ pub struct Horse {
     pub build: Build,
     pub doll: Ragdoll,
     targets: Vec<Quat>,
+    /// each part's own muscle from horse.xml: stiffness (rad/s) and damping ratio
+    muscles: Vec<(f32, f32)>,
     pub health: f32,
     pub legs: [f32; 4],
     pub dead: bool,
     /// s since it was lamed or killed: past `GIVE` it goes down
     sunk: f32,
     kept: delirium::ragdoll::Kept,
-    /// the barrel's height and the floor's when it stood, and which way the barrel's up pointed in its own frame
-    stand: (f32, f32, Vec3),
-    /// which way its left pointed in the barrel's frame
-    left: Vec3,
+    /// which way the sky and its forward were in the barrel's middle's frame as it stood
+    stand: Vec3,
+    fwd: Vec3,
+    /// the sky's up and its left, in each part's frame as it stood
+    ups: Vec<Vec3>,
+    lefts: Vec<Vec3>,
     pub q: Quadruped,
     /// tipped past `failangle`, it went down
     pub fell: bool,
     /// s since its last hit, and since it went down alive
     since_hit: f32,
     pub down: f32,
-    /// a rider's weight, kg, carried at the saddle (he doesn't collide with it: held in the seat, he'd press it
-    /// into the ground as if he weighed everything)
-    pub rider: f32,
+    /// the pose it stands in, held while it's sound; whether it's held still; the hits' pushes meanwhile, given
+    /// to it as it goes down
+    pose: Vec<Transform>,
+    held: bool,
+    pushes: Vec<(usize, Vec3, Vec3)>,
 }
 
-/// The numbers in a tag's text, or an attribute's value.
+/// RAGE's margin inside a joint's limits, rad, as the fragment stores them.
+const RAGE_MARGIN: f32 = 0.03;
+/// What's kept off a limit when the pose is turned inside it, rad (the solver's own margin is 0.03).
+const INSIDE: f32 = 0.04;
+/// A joint with less lean than this either way, rad, and more twist, is a hinge.
+const HINGE_LEAN: f32 = 0.1;
+const HINGE_TWIST: f32 = 0.5;
+
+/// `frames` with each joint turned to the nearest it may (RDR2's model pose has a few joints past RDR2's own limits:
+/// the pelvis on its root, the hips' twist, the hind knees' lean, which in the game a ragdoll never starts from),
+/// rebuilt from the root out and stood back on the floor at `floor`.
+fn in_limits(parts: &mut [PartDef], frames: &[Transform], floor: f32) -> Vec<Transform> {
+    let mut out = frames.to_vec();
+    for k in 0..parts.len() {
+        let Some(p) = parts[k].parent else { continue };
+        let turn = match parts[k].limit {
+            Limit::Bone { pf, cf, lean, twist } => {
+                let rel = (frames[p].rotation * pf).inverse() * (frames[k].rotation * cf);
+                // (the quaternion with w >= 0, so the twist comes out within half a turn)
+                let rel = if rel.w < 0.0 { -rel } else { rel };
+                // swing and twist (about the joint's z)
+                let tw = Quat::from_xyzw(0.0, 0.0, rel.z, rel.w).normalize();
+                let sw = (rel * tw.inverse()).to_scaled_axis();
+                let (a, b) = ((lean[0] - INSIDE).max(1e-3), (lean[1] - INSIDE).max(1e-3));
+                let e = ((sw.y / a).powi(2) + (sw.x / b).powi(2)).sqrt().max(1.0);
+                let t = (2.0 * tw.z.atan2(tw.w)).clamp(-(twist - INSIDE).max(0.0), (twist - INSIDE).max(0.0));
+                let rel = Quat::from_scaled_axis(sw / e) * Quat::from_rotation_z(t);
+                out[p].rotation * pf * rel * cf.inverse()
+            }
+            Limit::BoneHinge { pf, cf, hi, .. } => {
+                let rel = (frames[p].rotation * pf).inverse() * (frames[k].rotation * cf);
+                let rel = if rel.w < 0.0 { -rel } else { rel };
+                let tw = Quat::from_xyzw(0.0, 0.0, rel.z, rel.w).normalize();
+                let t = (2.0 * tw.z.atan2(tw.w)).clamp(-(hi - INSIDE).max(0.0), (hi - INSIDE).max(0.0));
+                out[p].rotation * pf * Quat::from_rotation_z(t) * cf.inverse()
+            }
+            _ => out[p].rotation * frames[p].rotation.inverse() * frames[k].rotation,
+        };
+        let at = out[p].translation + out[p].rotation * parts[k].anchor_parent - turn * parts[k].anchor;
+        out[k] = Transform::from_translation(at).with_rotation(turn);
+    }
+    let low = out.iter().zip(parts.iter()).map(|(f, p)| f.translation.z - (f.rotation * Vec3::Y).z.abs() * p.half - p.radius).fold(f32::MAX, f32::min);
+    for (f, p) in out.iter_mut().zip(parts.iter_mut()) {
+        f.translation.z += floor + 0.02 - low;
+        p.bind = f.rotation;
+    }
+    out
+}
+
+/// A turn on the whole barrel, shared out over its links.
+fn spread(torque: &mut [Vec3], t: Vec3) {
+    for &k in &BARREL {
+        torque[k] += t / BARREL.len() as f32;
+    }
+}
+
+/// The numbers in a tag's text.
 fn field(block: &str, tag: &str) -> Option<f32> {
     let a = block.find(&format!("<{tag}>"))? + tag.len() + 2;
     block[a..a + block[a..].find('<')?].trim().parse().ok()
 }
 
-fn attr(line: &str, name: &str) -> Option<f32> {
-    let a = line.find(&format!("{name}=\""))? + name.len() + 2;
-    line[a..a + line[a..].find('"')?].parse().ok()
+/// One of horse.xml's joints: the part it moves (joint number + 1), the part it hangs from, its limits (lean 1,
+/// lean 2, twist: min, max) and its muscle (stiffness, strength, damping).
+struct XmlJoint {
+    child: usize,
+    parent: usize,
+    limits: [(f32, f32); 3],
+    muscle: [f32; 3],
 }
 
-/// RDR2's frame (x up, y forward, z left) to the room's (x forward, y left, z up).
-fn room(v: [f32; 3]) -> Vec3 {
-    Vec3::new(v[1], v[2], v[0])
-}
-
-/// Reads horse.xml: each of RDR2's parts' places.
-fn read(text: &str) -> Result<Vec<Vec3>, String> {
+fn read_xml(text: &str) -> Result<Vec<XmlJoint>, String> {
     if !text.contains("<bodyType>quadruped</bodyType>") {
         return Err("not RDR2's horse.xml (not a quadruped's body)".into());
     }
-    let mut at = vec![None; RDR2_PARTS];
-    for block in text.split("<bodyPart ").skip(1) {
-        let block = &block[..block.find("</bodyPart>").unwrap_or(block.len())];
-        let k = field(block, "partNumber").ok_or("a part without its number")? as usize;
-        let r3 = block.lines().find(|l| l.trim_start().starts_with("<r3")).ok_or("a part without its place")?;
-        let [Some(x), Some(y), Some(z)] = [attr(r3, "c0"), attr(r3, "c1"), attr(r3, "c2")] else {
-            return Err("a part's place isn't numbers".into());
-        };
-        if let Some(slot) = at.get_mut(k) {
-            *slot = Some(room([x, y, z]));
-        }
-    }
-    let seen = at.iter().flatten().count();
-    if seen != RDR2_PARTS {
-        return Err(format!("not RDR2's horse.xml ({seen} of {RDR2_PARTS} parts)"));
-    }
-    Ok(at.into_iter().flatten().collect())
+    text.split("<threedof ").skip(1).map(|b| {
+        let b = &b[..b.find("</threedof>").unwrap_or(b.len())];
+        let n = |t: &str| field(b, t).ok_or_else(|| format!("a joint without its {t}"));
+        Ok(XmlJoint {
+            child: n("jointNumber")? as usize + 1, parent: n("parentIndex")? as usize,
+            limits: [(n("minfirstleanangle")?, n("maxfirstleanangle")?), (n("minsecondleanangle")?, n("maxsecondleanangle")?),
+                     (n("mintwistangle")?, n("maxtwistangle")?)],
+            muscle: [n("defaultMuscleStiffness")?, n("defaultMuscleStrength")?, n("defaultMuscleDamping")?],
+        })
+    }).collect()
+}
+
+/// The fragment's frame (x left, y back, z up) to the room's (x forward, y left, z up).
+fn room(v: Vec3) -> Vec3 {
+    Vec3::new(-v.y, v.x, v.z)
+}
+
+fn room_turn(m: Mat3) -> Quat {
+    Quat::from_mat3(&Mat3::from_cols(room(m.x_axis), room(m.y_axis), room(m.z_axis))).normalize()
 }
 
 impl Horse {
-    /// A horse standing with its hooves on the floor at `at`, facing `facing` (radians about up).
-    pub fn new(text: &str, at: Vec3, facing: f32) -> Result<Horse, String> {
-        let place = read(text)?;
-        let point = |a: At, from: Vec3| match a {
-            At::Part(k) => place[k],
-            At::Off(k, d) => place[k] + room(d),
-            At::Stub(d) => from + room(d),
-        };
-        let raw: Vec<(Vec3, Vec3)> = SHAPES.iter().map(|s| {
-            let a = point(s.from, Vec3::ZERO);
-            (a, point(s.to, a))
-        }).collect();
-        // lifted so the lowest capsule (a hoof) just clears the floor, and turned to face `facing`
-        let low = SHAPES.iter().zip(&raw).map(|(s, (a, b))| a.z.min(b.z) - s.radius).fold(f32::MAX, f32::min);
+    /// A horse standing with its hooves on the floor at `at`, facing `facing` (radians about up), from horse.xml's text
+    /// and the fragment's bytes.
+    pub fn new(xml: &str, frag: &[u8], at: Vec3, facing: f32) -> Result<Horse, String> {
+        let joints = read_xml(xml)?;
+        let fr = rdr2frag::read(frag)?;
+        // the parts: each link's capsules in turn
+        // the pelvis is the root: RDR2's root link (0.475 kg, under the 111 kg pelvis on a joint with almost no play)
+        // at the base of the body unsettled the solver every time that joint met its limit, so it hangs from the
+        // pelvis instead, on the same joint seen from the other side
+        let mut part_of = vec![];
+        for l in [1, 0].into_iter().chain(2..fr.links.len()) {
+            for c in 0..fr.links.get(l).map_or(0, |k| k.capsules.len()) {
+                part_of.push((l, c));
+            }
+        }
+        if part_of.len() != PARTS.len() || part_of.iter().zip(&PARTS).any(|(&(l, _), (name, _))| fr.links[l].name != *name) {
+            return Err("not RDR2's horse fragment (meta_base_horse_01.yft): its links aren't the horse's".into());
+        }
+        let first = |l: usize| part_of.iter().position(|&(k, c)| k == l && c == 0).unwrap_or(0);
+        // placed: lifted so its lowest capsule (a hoof) just clears the floor, and turned to face `facing`
+        let low = fr.links.iter().flat_map(|l| &l.capsules).map(|c| c.at.z - c.turn.y_axis.z.abs() * (c.half - c.radius) - c.radius).fold(f32::MAX, f32::min);
         let turn = Quat::from_rotation_z(facing);
-        let world = |p: Vec3| at + turn * (p + Vec3::Z * (0.02 - low));
-        let ends: Vec<(Vec3, Vec3)> = raw.iter().map(|&(a, b)| (world(a), world(b))).collect();
-        let frames: Vec<Transform> = ends.iter().map(|&(a, b)| {
-            Transform::from_translation((a + b) * 0.5).with_rotation(Quat::from_rotation_arc(Vec3::Y, (b - a).normalize_or(Vec3::Z)))
+        let place = |p: Vec3| at + turn * (room(p) + Vec3::Z * (0.02 - low));
+        let frames: Vec<Transform> = part_of.iter().map(|&(l, c)| {
+            let cap = &fr.links[l].capsules[c];
+            Transform::from_translation(place(cap.at)).with_rotation(turn * room_turn(cap.turn))
         }).collect();
-        let parts = SHAPES.iter().enumerate().map(|(k, s)| {
+        let mut muscles = vec![(0.0, 1.0); part_of.len()];
+        let mut parts = vec![];
+        for (k, &(l, c)) in part_of.iter().enumerate() {
+            let cap = &fr.links[l].capsules[c];
             let f = frames[k];
-            let joint = ends[k].0;
-            let (rest, anchor_parent) = s.parent.map_or((Quat::IDENTITY, Vec3::ZERO), |q| {
+            let (parent, limit, joint) = if c > 0 {
+                // a link's second capsule, held to its first: Delirium's locked joint is only for a root (between two
+                // parts its zero-width limit turned the solver's numbers invalid), so a joint with almost no play
+                muscles[k] = (WELD, 1.0);
+                (Some(first(l)), Limit::Cone { swing: WELD_PLAY, twist: WELD_PLAY }, f.translation)
+            } else if let Some((j, flip)) = if l == ROOT_LINK { fr.joints.iter().find(|j| j.child == PELVIS_LINK && j.parent == ROOT_LINK).map(|j| (j, true)) }
+                                             else if l == PELVIS_LINK { None } else { fr.joints.iter().find(|j| j.child == l).map(|j| (j, false)) } {
+                let x = joints.iter().find(|x| x.child == j.child).ok_or_else(|| format!("horse.xml has no joint for {}", fr.links[j.child].name))?;
+                if x.parent != j.parent {
+                    return Err(format!("horse.xml and the fragment disagree on what {} hangs from", fr.links[j.child].name));
+                }
+                // (its stiffness, 0.5, is for Euphoria's blend of the joint's drive, not used here)
+                let [_, strength, damping] = x.muscle;
+                let s = strength.max(0.0).sqrt();
+                muscles[k] = (s, if s > 0.0 { damping / (2.0 * s) } else { 1.0 });
+                let half = |(lo, hi): (f32, f32)| (hi - lo) * 0.5;
+                // the fragment keeps the same ranges, less RAGE's margin: a check the two files belong together
+                let theirs = Vec3::new(half(x.limits[0]), half(x.limits[1]), half(x.limits[2])) - Vec3::splat(RAGE_MARGIN);
+                if (theirs.max(Vec3::ZERO) - j.half).abs().max_element() > 0.01 {
+                    return Err(format!("horse.xml and the fragment disagree on {}'s limits: not the same horse", fr.links[j.child].name));
+                }
+                // its frames are in the links' frames, which turn as their first capsules do
+                let qq = |x: Mat3| Quat::from_mat3(&x).normalize();
+                let (in_parent, in_child) = if flip { (j.in_child, j.in_parent) } else { (j.in_parent, j.in_child) };
+                let limit = Limit::Bone { pf: qq(in_parent), cf: qq(in_child),
+                                          lean: [half(x.limits[0]), half(x.limits[1])], twist: half(x.limits[2]) };
+                // a joint RDR2 uses as a hinge (its bend on the twist axis, almost no lean either way): Delirium's hinge
+                // on that axis, through RDR2's twist range (its ball joint with so little lean overcorrected under
+                // load and threw the legs about; only GTA IV's true hinges had ever been through it)
+                let limit = match limit {
+                    Limit::Bone { pf, cf, lean, twist } if lean[0] < HINGE_LEAN && lean[1] < HINGE_LEAN && twist > HINGE_TWIST => Limit::BoneHinge { pf, cf, lo: -twist, hi: twist },
+                    l => l,
+                };
+                let (up, at_up) = if flip { (j.child, j.at_child) } else { (j.parent, j.at_parent) };
+                let (pturn, pat) = fr.links[up].frame();
+                (Some(first(up)), limit, place(pat + pturn * at_up))
+            } else {
+                (None, Limit::Locked, f.translation)
+            };
+            let (rest, anchor_parent) = parent.map_or((Quat::IDENTITY, Vec3::ZERO), |q| {
                 let pf = frames[q];
                 (f.rotation.inverse() * pf.rotation, pf.rotation.inverse() * (joint - pf.translation))
             });
-            let (swing, twist) = if s.muscle == 1 || s.muscle == 4 { (1.5, 0.5) } else { (0.8, 0.3) };
-            PartDef { size: 1.0, heft: 1.0, grown: 1.0, bone: k, parent: s.parent, mass: s.mass, radius: s.radius,
-                      half: (ends[k].1 - ends[k].0).length() * 0.5, offset: Transform::IDENTITY, rest, anchor_parent,
-                      anchor: f.rotation.inverse() * (joint - f.translation),
-                      limit: if s.parent.is_some() { Limit::Cone { swing, twist } } else { Limit::Locked },
-                      lower: s.muscle == 1, reach: false, name: s.name.to_string(), bind: f.rotation, boxed: None,
-                      inertia: Vec3::ZERO, length: 0.0 }
-        }).collect();
+            parts.push(PartDef { size: 1.0, heft: 1.0, grown: 1.0, bone: k, parent, mass: cap.mass, radius: cap.radius,
+                                 half: (cap.half - cap.radius).max(0.0), offset: Transform::IDENTITY, rest, anchor_parent,
+                                 anchor: f.rotation.inverse() * (joint - f.translation), limit, lower: group(k) == 1, reach: false,
+                                 name: PARTS[k].1.to_string(), bind: f.rotation, boxed: None, inertia: cap.inertia, length: 0.0 });
+        }
+        let frames = in_limits(&mut parts, &frames, at.z);
         let build = Build { parts, nm: delirium::nmrs::HOMER, links: vec![] };
-        let targets = SHAPES.iter().enumerate().map(|(k, s)| s.parent.map_or(Quat::IDENTITY, |p| frames[p].rotation.inverse() * frames[k].rotation)).collect();
-        let doll = Ragdoll::new(&build, &frames, Vec3::ZERO);
-        let stand = (frames[0].translation.z, at.z, frames[0].rotation.inverse() * Vec3::Z);
-        let left = frames[0].rotation.inverse() * (turn * Vec3::Y);
-        Ok(Horse { build, doll, targets, health: HEALTH, legs: [0.0; 4], dead: false, sunk: 0.0, kept: Default::default(), stand,
-                   left, q: Quadruped::default(), fell: false, since_hit: f32::MAX, down: 0.0, rider: 0.0 })
+        let targets = (0..part_of.len()).map(|k| build.parts[k].parent.map_or(Quat::IDENTITY, |p| frames[p].rotation.inverse() * frames[k].rotation)).collect();
+        let mut doll = Ragdoll::new(&build, &frames, Vec3::ZERO);
+        // the links RDR2 lets collide with each other, each capsule of one with each of the other
+        let mut pairs = vec![];
+        for &(a, b) in &fr.pairs {
+            for (i, _) in part_of.iter().enumerate().filter(|(_, p)| p.0 == a) {
+                for (j, _) in part_of.iter().enumerate().filter(|(_, p)| p.0 == b) {
+                    pairs.push((i.min(j), i.max(j)));
+                }
+            }
+        }
+        pairs.sort();
+        pairs.dedup();
+        doll.pairs = pairs;
+        let mid = frames[MID].rotation;
+        let stand = mid.inverse() * Vec3::Z;
+        let fwd = mid.inverse() * (frames[SHOULDERS].translation - frames[PELVIS].translation).normalize_or(turn * Vec3::X);
+        let ups = frames.iter().map(|f| f.rotation.inverse() * Vec3::Z).collect();
+        let lefts = frames.iter().map(|f| f.rotation.inverse() * (turn * Vec3::Y)).collect();
+        Ok(Horse { build, doll, targets, muscles, health: HEALTH, legs: [0.0; 4], dead: false, sunk: 0.0, kept: Default::default(),
+                   stand, fwd, ups, lefts, q: Quadruped::default(), fell: false, since_hit: f32::MAX, down: 0.0,
+                   pose: frames.clone(), held: true, pushes: vec![] })
     }
 
-    /// One physics step. While it's sound it stands, as RDR2's horses do on their animation: the muscles hold the legs,
-    /// neck, head and tail in their pose (a hurt leg's weaker), and since Delirium's muscles push by how light the part
-    /// below them is, not by the weight on the hoof, they couldn't hold it up alone; so, as Euphoria's oppose gravity
-    /// does, while a hoof is down most of its weight is carried by a lift on the barrel at the hips and the shoulders,
-    /// held to the height it stood at, and a turn keeps the barrel level. A moment after the hit that lames or kills
-    /// it, or once it's tipped past `failangle`, it goes down: the lift lets go and it falls as a ragdoll. Dead, it
-    /// lies limp; alive, it does `Quadruped`'s ground behaviours.
+    /// One physics step. While it's sound it's held in its pose, as RDR2 holds its horses on their animation (which
+    /// isn't here; standing on Delirium's muscles, a ragdoll this heavy folded or tipped within seconds). A moment
+    /// after the hit that lames or kills it it goes down: let go, it falls as RDR2's ragdoll with the hits' pushes, on
+    /// RDR2's own muscles (horse.xml's). Dead, it lies limp; alive, it does `Quadruped`'s ground behaviours.
     pub fn step(&mut self, world: &Collision, dt: f32, obstacles: &[Obstacle], others: &[Capsule]) {
         let (legs, dead) = (self.legs, self.dead);
-        let (height, floor, level) = self.stand;
+        let level = self.stand;
         let fr: Vec<Transform> = self.doll.frames().collect();
-        let back = fr[0].rotation * level;
+        let back = fr[MID].rotation * level;
         if self.sunk == 0.0 && back.z < self.q.fail_angle {
             self.fell = true;
         }
@@ -311,60 +415,51 @@ impl Horse {
         let weak = ((self.since_hit - q.weak_zero) / q.weak_ramp.max(1e-3)).clamp(0.0, 1.0);
         // down, its strength fades: 1 fresh, 0 at the `..Min` stiffnesses
         let strength = (-q.strength_decay * self.down).exp();
-        let stiff = |fresh: f32, min: f32| (min + (fresh - min) * strength) / 15.0;
         let n = self.build.parts.len();
         let (mut force, mut torque) = (vec![Vec3::ZERO; n], vec![Vec3::ZERO; n]);
-        let start = |k: usize| fr[k].translation - fr[k].rotation * Vec3::Y * self.build.parts[k].half;
-        if up && LEGS.iter().any(|l| fr[l[2]].translation.z < floor + 0.35) {
-            let m = self.doll.mass();
-            let body = fr[0].translation;
-            let (v, w) = self.doll.vel(0);
-            let hold = (HEIGHT.0 * (height - body.z) - HEIGHT.1 * v.z).clamp(-0.3 * GRAVITY(), 0.3 * GRAVITY());
-            for ends in [[1, 4], [7, 10]] {
-                let f = Vec3::Z * (m * 0.5 * (GRAVITY() * CARRY + hold));
-                let at = (start(ends[0]) + start(ends[1])) * 0.5;
-                force[0] += f;
-                torque[0] += (at - body).cross(f);
+        // standing, held in its pose as RDR2 holds it on its animation; down, let go to fall as a ragdoll, with the
+        // push of the hit that brought it down
+        if up {
+            for (k, &p) in self.pose.iter().enumerate() {
+                self.doll.pin(k, p);
             }
-            let tilt = (fr[0].rotation * level).cross(Vec3::Z);
-            // scaled by its turning inertia, roughly its mass at 0.6 m
-            torque[0] += (tilt * LEVEL.0 - (w - Vec3::Z * w.z) * LEVEL.1) * m * 0.36;
-        }
-        if self.rider > 0.0 {
-            let (seat, ..) = self.saddle();
-            let f = Vec3::NEG_Z * self.rider * GRAVITY();
-            force[0] += f;
-            torque[0] += (seat - fr[0].translation).cross(f);
+        } else if self.held {
+            self.held = false;
+            self.doll.unpin();
+            for (k, at, imp) in std::mem::take(&mut self.pushes) {
+                self.doll.impulse(k, at, imp);
+            }
         }
         let mut targets = self.targets.clone();
         let ground = !up && !dead;
         if ground {
             let m = self.doll.mass();
-            let (_, w) = self.doll.vel(0);
-            let fwd = fr[0].rotation * Vec3::Y;
+            let (_, w) = self.doll.vel(MID);
+            let fwd = fr[MID].rotation * self.fwd;
             // how much a turn about its length toward lying on its chest is wanted (+ or -)
             let toward = back.cross(Vec3::Z).dot(fwd);
             if q.lift_head {
                 // lying, its neck's pose points along the ground: it bends it up toward the sky
-                let posed = fr[0].rotation * self.targets[13] * Vec3::Y;
-                let axis = fr[0].rotation.inverse() * posed.cross(Vec3::Z);
+                let parent = fr[SHOULDERS].rotation;
+                let posed = parent * self.targets[NECK1] * Vec3::Y;
+                let axis = parent.inverse() * posed.cross(Vec3::Z);
                 if let Some(axis) = axis.try_normalize() {
                     let a = 0.7 * (1.0 - posed.z.max(0.0));
-                    targets[13] = Quat::from_axis_angle(axis, a) * targets[13];
+                    targets[NECK1] = Quat::from_axis_angle(axis, a) * targets[NECK1];
                 }
-                if fr[HEAD].translation.z < fr[0].translation.z + 0.6 {
-                    let neck: f32 = (13..=HEAD).map(|k| self.doll.part_mass(k)).sum();
+                if fr[HEAD].translation.z < fr[MID].translation.z + 0.6 {
+                    let neck: f32 = NECK_HEAD.iter().map(|&k| self.doll.part_mass(k)).sum();
                     force[HEAD] += Vec3::Z * neck * GRAVITY() * HEAD_LIFT * (0.6 + 0.4 * strength) * weak;
                 }
             }
             if q.righting > 0.0 {
-                torque[0] += fwd * toward * q.righting * m * GRAVITY() * 0.1;
+                spread(&mut torque, fwd * toward * q.righting * m * GRAVITY() * 0.1);
             }
             if q.roll && back.z < 0.7 {
                 // it rocks: every other second it heaves toward its chest, up to `roll_velocity`
                 let way = toward.signum();
                 let want = q.roll_velocity * (self.down * std::f32::consts::PI).sin().max(0.0);
-                torque[0] += fwd * way * (want - way * w.dot(fwd)).max(0.0) * q.roll_scale * m * GRAVITY() * 0.6 * weak;
+                spread(&mut torque, fwd * way * (want - way * w.dot(fwd)).max(0.0) * q.roll_scale * m * GRAVITY() * 0.6 * weak);
             }
             let t = self.down;
             // on its side, its legs paddle: hind right with fore left, hind left with fore right
@@ -373,38 +468,49 @@ impl Horse {
                 let reach = 0.25 + 0.45 * strength;
                 for (l, leg) in LEGS.iter().enumerate() {
                     let phase = t * speed + [0.0, std::f32::consts::PI, std::f32::consts::PI, 0.0][l];
-                    targets[leg[0]] = Quat::from_axis_angle(self.left, reach * phase.sin()) * self.targets[leg[0]];
+                    let parent = self.build.parts[leg[0]].parent.unwrap_or(MID);
+                    targets[leg[0]] = Quat::from_axis_angle(self.lefts[parent], reach * phase.sin()) * self.targets[leg[0]];
                     // hocks bend back, knees forward
-                    let knee = self.targets[leg[0]].inverse() * self.left;
                     let bend = if l < 2 { -1.0 } else { 1.0 };
-                    targets[leg[1]] = Quat::from_axis_angle(knee, bend * reach * 0.8 * (0.5 + 0.5 * phase.cos())) * self.targets[leg[1]];
+                    targets[leg[1]] = Quat::from_axis_angle(self.lefts[leg[0]], bend * reach * 0.8 * (0.5 + 0.5 * phase.cos())) * self.targets[leg[1]];
                 }
             }
             if q.writhe {
                 let phase = t * q.writhe_speed * std::f32::consts::TAU;
-                let side = level.cross(self.left).normalize_or(Vec3::Z);
+                let (left, sky) = (self.lefts[SHOULDERS], self.ups[SHOULDERS]);
+                let side = sky.cross(left).normalize_or(Vec3::Z);
                 let (a, b) = (0.25 * strength.max(0.3), 0.2 * strength.max(0.3));
-                targets[13] = Quat::from_axis_angle(self.left, a * phase.sin()) * Quat::from_axis_angle(side, b * (phase * 0.7).sin()) * targets[13];
+                targets[NECK1] = Quat::from_axis_angle(left, a * phase.sin()) * Quat::from_axis_angle(side, b * (phase * 0.7).sin()) * targets[NECK1];
             }
         }
         self.kept.force = force;
         self.kept.torque = torque;
-        self.kept.muscles = SHAPES.iter().enumerate().map(|(k, s)| {
-            let mut w = STIFF[s.muscle] * weak.max(0.05);
+        self.kept.muscles = (0..n).map(|k| {
+            let g = group(k);
             let leg = LEGS.iter().position(|l| l.contains(&k));
+            let (own, ratio) = self.muscles[k];
+            let mut w = if WELDED.contains(&k) {
+                WELD
+            } else if up {
+                own
+            } else if ground {
+                // RDR2's muscle, or quadrupedbase's stiffness (Euphoria's stiffness is the muscle's frequency)
+                let fade = |fresh: f32, min: f32| min + (fresh - min) * strength;
+                match g {
+                    1 => fade(q.leg_stiffness, q.leg_stiffness_min),
+                    0 | 2 => fade(q.spine_stiffness, q.spine_stiffness_min),
+                    _ => own,
+                }
+            } else {
+                0.0
+            };
+            if !WELDED.contains(&k) {
+                w *= weak.max(0.05);
+            }
             if let Some(leg) = leg {
                 w *= (1.0 - legs[leg] / LAME).clamp(0.08, 1.0);
             }
-            if ground {
-                w *= match (leg, s.muscle) {
-                    (Some(_), _) => stiff(q.leg_stiffness, q.leg_stiffness_min),
-                    (None, 2 | 3) => stiff(q.spine_stiffness, q.spine_stiffness_min),
-                    _ => 1.0,
-                };
-            } else if !up {
-                w = LIMP;
-            }
-            Muscle { target: targets[k], stiffness: w, damping: 1.0 }
+            Muscle { target: targets[k], stiffness: w, damping: ratio }
         }).collect();
         let drive: Drive = self.kept.drive();
         self.doll.step(&self.build, world, dt, drive, obstacles, others);
@@ -415,15 +521,14 @@ impl Horse {
         self.sunk <= GIVE
     }
 
-    /// Its saddle: where a rider's pelvis sits, the barrel's up and which way it faces, and the stirrups (left,
-    /// right), all world.
+    /// Its saddle: where a rider's pelvis sits (over the barrel's middle), the barrel's up and which way it faces, and
+    /// the stirrups (left, right), all world.
     pub fn saddle(&self) -> (Vec3, Vec3, Vec3, [Vec3; 2]) {
-        let f = self.doll.frames().next().unwrap_or_default();
-        let fwd = f.rotation * Vec3::Y;
-        let up = f.rotation * self.stand.2;
-        let left = up.cross(fwd);
-        let back = f.translation - fwd * self.build.parts[0].half;
-        let seat = back + fwd * (2.0 * self.build.parts[0].half * SADDLE) + up * (self.build.parts[0].radius + SEAT);
+        let f = self.doll.frames().nth(MID).unwrap_or_default();
+        let (up, fwd) = (f.rotation * self.stand, f.rotation * self.fwd);
+        let left = up.cross(fwd).normalize_or(Vec3::Y);
+        let top = self.build.parts[MID].half + self.build.parts[MID].radius;
+        let seat = f.translation + up * (top + SEAT);
         let stirrup = |side: f32| seat - up * 0.62 + left * (0.42 * side) + fwd * 0.15;
         (seat, up, fwd, [stirrup(1.0), stirrup(-1.0)])
     }
@@ -458,10 +563,14 @@ impl Horse {
     pub fn hit(&mut self, part: usize, at: Vec3, impulse: Vec3, damage: f32) -> String {
         // (a zero impulse, with it going limp, turned the solver's numbers invalid)
         if impulse != Vec3::ZERO {
-            self.doll.impulse(part, at, impulse);
+            if self.held {
+                self.pushes.push((part, at, impulse));
+            } else {
+                self.doll.impulse(part, at, impulse);
+            }
         }
         if self.dead {
-            return format!("{}: hit, dead already", SHAPES[part].name);
+            return format!("{}: hit, dead already", self.build.parts[part].name);
         }
         if damage > 0.0 {
             self.since_hit = 0.0;
@@ -470,7 +579,7 @@ impl Horse {
             }
         }
         self.health -= damage;
-        let mut s = format!("{} hit: health {:.0}", SHAPES[part].name, self.health.max(0.0));
+        let mut s = format!("{} hit: health {:.0}", self.build.parts[part].name, self.health.max(0.0));
         if let Some(leg) = LEGS.iter().position(|l| l.contains(&part)) {
             let was = self.legs[leg];
             self.legs[leg] = (self.legs[leg] + damage).min(LAME);

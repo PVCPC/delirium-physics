@@ -19,8 +19,10 @@
   start), feet in the stirrups, chest upright, hands on the reins; he's thrown when he or the seat tips too far, a hit
   knocks him, or on `throw`, optionally dragged by a caught foot. Extras can now take updates sent without start.
 - Playroom: Homer can ride the horse (Ride it, `!horse ride`).
-- Playroom: Red Dead Redemption 2's horse, from your own horse.xml: a physics horse that stands, takes hits, and goes
-  down as a ragdoll when a leg is lamed or it's killed (Character, `!horse`). Down and alive it does RDR2's
+- Playroom: Red Dead Redemption 2's horse, built from your own copies of its Euphoria body (horse.xml) and its ragdoll
+  (an OpenIV export of meta_base_horse_01.yft): RDR2's capsules, masses, inertias, joint frames, limits, muscles and
+  self-collision. Held in its pose while sound, as RDR2's animation holds it; lamed or killed, it falls as that
+  ragdoll (Character, `!horse`). Down and alive it does RDR2's
   `quadrupedbase` on the ground, by its names and defaults: lifts its head, paddles its legs on its side, writhes its
   neck, its strength fading; a hit weakens it a moment, and tipped past `failangle` it goes down (`!horse set`).
 - Playroom: Red Dead Redemption 2 weapons (lasso, bolas, dynamite, fire bottle, tomahawk, bow), each with its own

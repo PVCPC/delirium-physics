@@ -445,13 +445,31 @@ Hero:
 
 #### RDR2 horse (playroom)
 
-Character, "Red Dead Redemption 2 horse": with the path to RDR2's horse body file (horse.xml, from your own copy:
-common_0.rpf, data/naturalmotion), Bring the horse puts a physics horse 2.5 m beside Homer (`!horse [path]`; `!horse
-off` takes it away; the path is kept in settings.txt as `rdr2_horse`). It's built from where RDR2's file puts its
-parts, with Delirium's own shapes and masses (about 600 kg, the trunk one rigid barrel). While it's sound it stands, as
-RDR2's horses do on their animation: muscles hold its pose and a lift on the barrel carries most of its weight. Shoot,
-blast, tomahawk or arrow it: a leg hit twice gives and it goes down; tipped past `failangle` it goes down; killed (400
-health) it goes down limp. It meets Homer, the room's floor and walls.
+Character, "Red Dead Redemption 2 horse": RDR2's horse, built from your own copies of its two files.
+- **horse.xml**, its Euphoria body: common_0.rpf, data/naturalmotion (`rdr2_horse` in settings.txt).
+- **Its ragdoll**, the fragment meta_base_horse_01.yft: packs_0.rpf, packs/base/models/metaped_fragments.rpf. In
+  OpenIV right-click it, Save content, and give the `.yft.sys` it writes (`rdr2_horse_frag`; `!horse frag <path>`).
+
+Bring the horse puts it 2.5 m beside Homer (`!horse`; `!horse off` takes it away). From the fragment come its 26
+capsules (size, place, turn, mass and inertia: 617 kg in all), its 22 joints' frames and which links collide with each
+other; from horse.xml each joint's limits and muscle. The two files are checked against each other (the fragment keeps
+the same joint ranges, less RAGE's 0.03 margin). While it's sound it's held in its pose, as RDR2 holds its horses on
+their animation; shoot, blast, tomahawk or arrow it: a leg hit twice gives, or killed (400 health), and it falls as
+RDR2's ragdoll with the hits' pushes.
+
+Where it isn't RDR2's, because of what Delirium's solver does:
+- **Centre of mass:** a part's sits at its capsule's centre, so the 0.2 m RDR2 moves the pelvis's and the spine links'
+  off theirs isn't there.
+- **Two-capsule links:** the top of the neck, its middle and the head each have two capsules in RDR2. The second is held
+  to the first by a stiff joint with a little play (Delirium's locked joint is only for a body's root).
+- **Hinge-like joints:** knees, hocks, elbows and fetlocks, which RDR2 makes three-way joints bending on their twist
+  with ±0.07 rad of lean, are hinges on the same axis and range (Delirium's three-way limit with that little lean threw
+  the legs about).
+- **Root:** the pelvis is the root, with RDR2's 0.475 kg root link hanging from it on the same joint.
+- **Starting pose:** RDR2's standing pose has its pelvis, hips' twist and hind knees past RDR2's own limits; it starts
+  turned just inside them.
+- **Muscle stiffness:** the muscles' Euphoria stiffness (0.5) isn't used; Delirium's muscle takes RDR2's strength and
+  damping.
 
 Down and alive it does what RDR2's `quadrupedbase` behaviour does on the ground, with its names and defaults (from
 RDR2's own table; what each does here is read from its name, not RDR2's code). Under "On the ground" in the horse's
@@ -467,7 +485,7 @@ section, or `!horse set <name> <value>`:
 | `strengthdecay` | how fast, per s, it fades from fresh to faded (0.5) |
 | `initialWeaknessZeroDuration`, `initialWeaknessRampDuration` | after a hit, s it's limp, then s to recover (0, 0.4) |
 | `snap`, `snapMag` | a hit jolts its whole body too (on, 1) |
-| `failangle` | standing, tipped till its back's up is this cosine from the sky's, it goes down (0.6) |
+| `failangle` | tipped till its back's up is this cosine from the sky's, it goes down (0.6; held in its pose while sound, it isn't tipped) |
 | `rollonground`, `rollvelocity`, `rollscale` | it heaves to roll onto its chest every other second (off, 0.7, 0.7) |
 | `rightingTorque` | a steady turn toward lying on its chest (0) |
 
@@ -475,13 +493,10 @@ Rolling onto its chest doesn't get there yet: lying on its side, its legs stick 
 later (with balance).
 
 Ride it (or `!horse ride`) puts Homer on it with `rdr2Sit`: swung up into the saddle, his seat following the saddle
-every step. Ridden, his body doesn't press on the horse (held in the seat, he'd push it into the ground as if he weighed
-everything); his weight is put on it at the saddle instead. Throw him off (`!horse getoff`), shoot or blast him hard
+every step; ridden, his body doesn't push on the horse (held in the seat, it would act as if he weighed
+everything). Throw him off (`!horse getoff`), shoot or blast him hard
 enough (`knockSpeed`), or bring the horse down, and he's thrown; set `drag` in Parameters for a foot caught in the
 stirrup.
-
-No part of it weighs under 10 kg: Delirium's joint solver blows up with a very light part on the end of a chain under
-a heavy one (RDR2's 1 kg tail tip on the barrel), which a person never has.
 
 #### RDR2 reactions on hits (optional)
 
@@ -621,6 +636,7 @@ Names in brackets are optional. Part indices are the 0 to 20 above.
 | `!gunat dx,dy,dz`, `!gunreach K [up]`, `!gun dx,dy,dz`, `!gunfire` | Floating-gun controls: aim, reach, aim off the chest and fire, fire. |
 | `!horse [path]`, `!horse off` | Bring Red Dead Redemption 2's horse (from your horse.xml) beside him; take it away. |
 | `!horse set name value` | Set one of the horse's quadrupedbase settings by RDR2's name (yes/no as 1/0). |
+| `!horse frag path` | Where your export of the horse's ragdoll (meta_base_horse_01.yft.sys) is. |
 | `!horse ride`, `!horse getoff` | Homer gets on the horse (rdr2Sit); he's thrown off. |
 | `!rope dx,dy,dz` | With a lasso round him: pull the rope to that far from the roped part (`!rope off` lets go). |
 | `!portal gun` | Pick the portal gun (needs portal mode). |
@@ -680,6 +696,7 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 | `rdr2_reactions` | 0/1 | Reaction style: 0 GTA IV (the default), 1 Red Dead Redemption 2. |
 | `param` | `behaviour.parameter value` | A value changed in the Parameters tab, one line each (e.g. `param shotFallToKnees.ftkPitchForce 150`). |
 | `rdr2_horse` | path | Your RDR2 horse.xml, for the horse. |
+| `rdr2_horse_frag` | path | Your OpenIV export of RDR2's meta_base_horse_01.yft (the `.yft.sys`), the horse's ragdoll. |
 | `rdr2_pick` | 7 numbers | The RDR2 reaction picker, when changed: snap, spin chance, knees chance, where-hit, reach chance, melee, balance. |
 
 ## Tips and troubleshooting
