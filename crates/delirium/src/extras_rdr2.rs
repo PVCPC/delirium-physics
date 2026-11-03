@@ -1,8 +1,14 @@
 //! Behaviours from Red Dead Redemption 2's Euphoria, written from descriptions of how they behave (see the RDR2
-//! Euphoria notes); none of RDR2's code. The parameter names are RDR2's, and some defaults are RDR2's own default
-//! values (rdr2Balance's, shotFromBehind's sfbPeriod, shotInjuredArm's injuredArmTime, several of wallCollision's and
-//! reachForWound's, among others); the rest are Delirium's own. Any of them can be sent as parameters. They are extra
-//! messages: nothing here runs unless one is sent with start=true, so every existing behaviour is unchanged.
+//! Euphoria notes); none of RDR2's code, so what each does is Delirium's reading of it, not RDR2's own. Most parameter
+//! names are RDR2's; some are Delirium's own, where the behaviour needs a setting RDR2's table doesn't show (rdr2Sit's
+//! seat and stirrups, wallCollision's wall, keyframe's hold, the injured limbs' looseness and the like). A default is
+//! RDR2's own value (as RDR2's descriptor table gives it) wherever the parameter means the same here: times in seconds,
+//! distances, shares 0..1, bends and rates. Where RDR2's value is on a scale of its own (its forces, torques and
+//! "amount" multipliers: shotFromBehind's and shotInGuts' amounts, shotSpin's turn and torque, shotInjuredArm's hipYaw,
+//! reachForWound's armStiffness, wallCollision's snapMag), the default is Delirium's, in the units its doc gives.
+//! rdr2Bolas and setFallingReaction's hands-and-knees settings are Delirium's own throughout. Any of them can be sent
+//! as parameters. They are extra messages: nothing here runs unless one is sent with start=true, so every existing
+//! behaviour is unchanged.
 use crate::extras::{Extra, P};
 use crate::msg::{Error, Kind, Message, Param};
 use crate::nmdbm::LeanMode;
@@ -75,17 +81,17 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "wallHalfWidth", kind: Kind::Float, used: true, doc: "the wall reaches this far either side of the point, m (0: on and on)" },
         Param { name: "slumpMode", kind: Kind::Int, used: true, doc: "0: slump when his back meets it, 1: always slump, 2: never (0)" },
         Param { name: "braceWall", kind: Kind::Bool, used: true, doc: "facing it: both hands on the wall (true); false: just a rebound" },
-        Param { name: "braceDistance", kind: Kind::Float, used: true, doc: "brace when his chest is within this of it, m (0.9)" },
+        Param { name: "braceDistance", kind: Kind::Float, used: true, doc: "brace when his chest is within this of it, m (2)" },
         Param { name: "braceArmStiffness", kind: Kind::Float, used: true, doc: "the bracing arms' stiffness (12)" },
         Param { name: "reactTime", kind: Kind::Float, used: true, doc: "s the impact weakens his legs (0.3)" },
         Param { name: "impactLegStiffReduction", kind: Kind::Float, used: true, doc: "leg stiffness lost at the impact (3)" },
         Param { name: "snapMag", kind: Kind::Float, used: true, doc: "the snap away from the wall at the impact, as shotSnap's (0.3)" },
         Param { name: "sitStartTime", kind: Kind::Float, used: true, doc: "slumping: s before he lets go of balance (0.3)" },
         Param { name: "sitRate", kind: Kind::Float, used: true, doc: "slumping: how fast his legs give, per s (1)" },
-        Param { name: "glanceSpinMag", kind: Kind::Float, used: true, doc: "side on: the spin away from the wall, N m (60)" },
+        Param { name: "glanceSpinMag", kind: Kind::Float, used: true, doc: "side on: the spin away from the wall, N m (50)" },
         Param { name: "glanceSpinTime", kind: Kind::Float, used: true, doc: "side on: s that spin decays over (0.5)" },
-        Param { name: "timeToForward", kind: Kind::Float, used: true, doc: "s the hands hold the wall before he pushes off it (0.8)" },
-        Param { name: "reboundForce", kind: Kind::Float, used: true, doc: "the push off the wall, N (150)" },
+        Param { name: "timeToForward", kind: Kind::Float, used: true, doc: "s the hands hold the wall before he pushes off it (0.5)" },
+        Param { name: "reboundForce", kind: Kind::Float, used: true, doc: "the push off the wall, N (0: none)" },
         Param { name: "stiffness", kind: Kind::Float, used: true, doc: "his stiffness (10)" },
     ] },
     Message { name: "reachForWound", params: &[
@@ -97,9 +103,9 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "allowInjuredThighReach", kind: Kind::Bool, used: true, doc: "reach for a thigh, bending down to it (true)" },
         Param { name: "allowInjuredLowerLegReach", kind: Kind::Bool, used: true, doc: "reach for a shin or foot, bending further (false)" },
         Param { name: "armStiffness", kind: Kind::Float, used: true, doc: "the reaching arm's stiffness (10)" },
-        Param { name: "bend2spine", kind: Kind::Float, used: true, doc: "forward bend of the spine for a leg wound, rad (0.5)" },
+        Param { name: "bend2spine", kind: Kind::Float, used: true, doc: "forward bend of the spine for a leg wound, rad (0.7)" },
         Param { name: "bend2hip", kind: Kind::Float, used: true, doc: "hip bend for a leg wound, rad (0.6)" },
-        Param { name: "bend2leg", kind: Kind::Float, used: true, doc: "knee bend for a leg wound, rad (0.4)" },
+        Param { name: "bend2leg", kind: Kind::Float, used: true, doc: "knee bend for a leg wound, rad (0.6)" },
         Param { name: "spineTwistMag", kind: Kind::Float, used: true, doc: "twist of the spine round to a trunk wound, rad (0.2)" },
         Param { name: "bendTimeUp", kind: Kind::Float, used: true, doc: "s the bend comes in over (0.4)" },
         Param { name: "bendTimeDown", kind: Kind::Float, used: true, doc: "s it goes over after (0.5)" },
@@ -112,7 +118,7 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "sfbKneeAmount", kind: Kind::Float, used: true, doc: "how far the knees give, rad (0.15)" },
         Param { name: "sfbPeriod", kind: Kind::Float, used: true, doc: "s the arch swells and goes over (0.7)" },
         Param { name: "sfbArmsOnset", kind: Kind::Float, used: true, doc: "s before the arms go loose (0)" },
-        Param { name: "sfbKneesOnset", kind: Kind::Float, used: true, doc: "s before the knees give (0.05)" },
+        Param { name: "sfbKneesOnset", kind: Kind::Float, used: true, doc: "s before the knees give (0)" },
         Param { name: "sfbNoiseGain", kind: Kind::Float, used: true, doc: "tremble in the arch, 0..2 (0)" },
         Param { name: "stiffness", kind: Kind::Float, used: true, doc: "trunk stiffness while arching (10)" },
     ] },
@@ -127,13 +133,13 @@ pub static MESSAGES: [Message; 27] = [
     Message { name: "shotInjuredLeg", params: &[
         Param { name: "bodyPart", kind: Kind::Int, used: true, doc: "the part hit: 1..3 left leg, 4..6 right (-1: leftLeg says)" },
         Param { name: "leftLeg", kind: Kind::Bool, used: true, doc: "the left leg, when bodyPart doesn't say (true)" },
-        Param { name: "legLiftTime", kind: Kind::Float, used: true, doc: "s the leg jerks up for (0.25)" },
-        Param { name: "legInjuryLift", kind: Kind::Float, used: true, doc: "how far it jerks up: hip flex, rad; the knee bends twice that (0.3)" },
-        Param { name: "legInjuryTime", kind: Kind::Float, used: true, doc: "s the leg stays weak (1.5)" },
-        Param { name: "legInjury", kind: Kind::Float, used: true, doc: "share of the leg's strength lost, 0..1 (0.4)" },
-        Param { name: "legInjuryHipPitch", kind: Kind::Float, used: true, doc: "hip flex on the weak leg, rad (0.1)" },
-        Param { name: "legInjurySpineBend", kind: Kind::Float, used: true, doc: "forward bend of the spine meanwhile, rad (0.15)" },
-        Param { name: "legLimpBend", kind: Kind::Float, used: true, doc: "knee bend on the weak leg, rad (0.2)" },
+        Param { name: "legLiftTime", kind: Kind::Float, used: true, doc: "s the leg jerks up for (0: none)" },
+        Param { name: "legInjuryLift", kind: Kind::Float, used: true, doc: "how far it jerks up: hip flex, rad; the knee bends twice that (0)" },
+        Param { name: "legInjuryTime", kind: Kind::Float, used: true, doc: "s the leg stays weak (0.4)" },
+        Param { name: "legInjury", kind: Kind::Float, used: true, doc: "share of the leg's strength lost, 0..1 (0.3)" },
+        Param { name: "legInjuryHipPitch", kind: Kind::Float, used: true, doc: "hip flex on the weak leg, rad (0)" },
+        Param { name: "legInjurySpineBend", kind: Kind::Float, used: true, doc: "forward bend of the spine meanwhile, rad (0.1)" },
+        Param { name: "legLimpBend", kind: Kind::Float, used: true, doc: "knee bend on the weak leg, rad (0)" },
         Param { name: "legLean", kind: Kind::Float, used: true, doc: "push sagging him towards the weak leg, N (15)" },
         Param { name: "legSag", kind: Kind::Float, used: true, doc: "how far the balancer sinks him meanwhile, m (0.04)" },
         Param { name: "legBlend", kind: Kind::Float, used: true, doc: "s it fades over after (0.5)" },
@@ -145,7 +151,7 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "bulletDir", kind: Kind::Vec3, used: true, doc: "the bullet's direction (zero: from in front)" },
         Param { name: "injuredArmTime", kind: Kind::Float, used: true, doc: "s the shoulder is knocked round for (0.25)" },
         Param { name: "hipYaw", kind: Kind::Float, used: true, doc: "torque turning the trunk with the bullet, N m (80)" },
-        Param { name: "hipRoll", kind: Kind::Float, used: true, doc: "torque dropping the hit shoulder, N m (30)" },
+        Param { name: "hipRoll", kind: Kind::Float, used: true, doc: "torque dropping the hit shoulder, N m (0: none)" },
         Param { name: "armLoose", kind: Kind::Float, used: true, doc: "share of the arm's stiffness lost, 0..1 (0.7)" },
         Param { name: "armLooseTime", kind: Kind::Float, used: true, doc: "s the arm hangs loose (1)" },
         Param { name: "stiffness", kind: Kind::Float, used: true, doc: "the arm's stiffness when well (10)" },
@@ -154,17 +160,17 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "where the blow landed, world (zero)" },
         Param { name: "hitNormal", kind: Kind::Vec3, used: true, doc: "the body's surface normal there, outwards; the blow pushes against it (zero: no push or snap)" },
         Param { name: "hitPart", kind: Kind::Int, used: true, doc: "the part hit, 0..20 (-1: none)" },
-        Param { name: "csLooseness", kind: Kind::Float, used: true, doc: "how loose the upper body goes, 0..1 (0.5)" },
+        Param { name: "csLooseness", kind: Kind::Float, used: true, doc: "how loose the upper body goes, 0..1 (0.4)" },
         Param { name: "csPeriod", kind: Kind::Float, used: true, doc: "s it stays loose (0.3)" },
-        Param { name: "Lean", kind: Kind::Float, used: true, doc: "push leaning him away from the blow, N (80)" },
-        Param { name: "leanPeriod", kind: Kind::Float, used: true, doc: "s of that push (0.25)" },
+        Param { name: "Lean", kind: Kind::Float, used: true, doc: "push leaning him away from the blow, N (0: none)" },
+        Param { name: "leanPeriod", kind: Kind::Float, used: true, doc: "s of that push (1)" },
         Param { name: "Flinch", kind: Kind::Bool, used: true, doc: "flinch: a small forward hunch (true)" },
-        Param { name: "flinchPeriod", kind: Kind::Float, used: true, doc: "s of the flinch (0.6)" },
+        Param { name: "flinchPeriod", kind: Kind::Float, used: true, doc: "s of the flinch (0.7)" },
         Param { name: "armsType", kind: Kind::Int, used: true, doc: "0: arms as they are, 1: hands up to guard the face while flinching (1)" },
         Param { name: "snap", kind: Kind::Bool, used: true, doc: "snap the hit part's joints along the blow (true)" },
-        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "that snap's size, as shotSnap's (0.3)" },
+        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "that snap's size, as shotSnap's (1)" },
         Param { name: "rfw", kind: Kind::Bool, used: true, doc: "reach for the spot hit afterwards (true)" },
-        Param { name: "rfwDelay", kind: Kind::Float, used: true, doc: "s before reaching (0.3)" },
+        Param { name: "rfwDelay", kind: Kind::Float, used: true, doc: "s before reaching (0.2)" },
         Param { name: "rfwPeriod", kind: Kind::Float, used: true, doc: "s of reaching (1)" },
         Param { name: "stiffness", kind: Kind::Float, used: true, doc: "upper body stiffness (10)" },
     ] },
@@ -185,9 +191,9 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "spin", kind: Kind::Float, used: true, doc: "the hit's spin, m (none: from hitPoint and bulletDir: the lever arm about his centre across the bullet)" },
         Param { name: "hitPoint", kind: Kind::Vec3, used: true, doc: "where the bullet hit, world (zero)" },
         Param { name: "bulletDir", kind: Kind::Vec3, used: true, doc: "the bullet's direction (zero)" },
-        Param { name: "shotSpinMin", kind: Kind::Float, used: true, doc: "spins smaller than this (m) do nothing (0.01)" },
-        Param { name: "shotSpinTime", kind: Kind::Float, used: true, doc: "s the heading swings round over, with the yaw torque on (0.4)" },
-        Param { name: "shotSpinSettle", kind: Kind::Float, used: true, doc: "s it then holds the new heading; the feet stay planted, so he eases part way back after (0.8)" },
+        Param { name: "shotSpinMin", kind: Kind::Float, used: true, doc: "spins smaller than this (m) do nothing (0.02)" },
+        Param { name: "shotSpinTime", kind: Kind::Float, used: true, doc: "s the heading swings round over, with the yaw torque on (0.3)" },
+        Param { name: "shotSpinSettle", kind: Kind::Float, used: true, doc: "s it then holds the new heading; the feet stay planted, so he eases part way back after (0.3)" },
         Param { name: "shotSpinTwistMult", kind: Kind::Float, used: true, doc: "rad of turn per m of spin (10)" },
         Param { name: "shotSpinTwist", kind: Kind::Float, used: true, doc: "most turn, rad; stops once he has turned this far (1.5)" },
         Param { name: "shotSpinTwistVel", kind: Kind::Float, used: true, doc: "stops while he already turns faster than this, rad/s (6)" },
@@ -199,11 +205,11 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "attackerPos", kind: Kind::Vec3, used: true, doc: "where the shooter is, world (zero)" },
     ] },
     Message { name: "duck", params: &[
-        Param { name: "magMin", kind: Kind::Float, used: true, doc: "least share of each joint's remaining range the duck bends into, 0..1 (0.25)" },
+        Param { name: "magMin", kind: Kind::Float, used: true, doc: "least share of each joint's remaining range the duck bends into, 0..1 (0.2)" },
         Param { name: "magMax", kind: Kind::Float, used: true, doc: "most share (1); the share is random between the two" },
-        Param { name: "lsRate", kind: Kind::Float, used: true, doc: "lower spine's bend rate, rad/s (0.5)" },
-        Param { name: "usRate", kind: Kind::Float, used: true, doc: "upper spine's bend rate, rad/s (0.5)" },
-        Param { name: "headRate", kind: Kind::Float, used: true, doc: "neck's bend rate, rad/s (0.5)" },
+        Param { name: "lsRate", kind: Kind::Float, used: true, doc: "lower spine's bend rate, rad/s (0.4)" },
+        Param { name: "usRate", kind: Kind::Float, used: true, doc: "upper spine's bend rate, rad/s (0.4)" },
+        Param { name: "headRate", kind: Kind::Float, used: true, doc: "neck's bend rate, rad/s (0.4)" },
         Param { name: "spineTwistRate", kind: Kind::Float, used: true, doc: "spine's side-lean and twist rate, rad/s (0.5)" },
         Param { name: "neckTwistRate", kind: Kind::Float, used: true, doc: "neck's side-lean and twist rate, rad/s (0.5)" },
         Param { name: "timeBeforeDuck", kind: Kind::Float, used: true, doc: "s before the duck starts (0)" },
@@ -216,12 +222,12 @@ pub static MESSAGES: [Message; 27] = [
         Param { name: "stiffness", kind: Kind::Float, used: true, doc: "spine and neck stiffness while ducking (10)" },
     ] },
     Message { name: "shotSnap", params: &[
-        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "the kick's size; negative kicks the other way (0.5)" },
+        Param { name: "snapMag", kind: Kind::Float, used: true, doc: "the kick's size; negative kicks the other way (0.4)" },
         Param { name: "snapDelay", kind: Kind::Float, used: true, doc: "s before the kick (0)" },
         Param { name: "snapDuration", kind: Kind::Float, used: true, doc: "s the kick is spread over; 0: all at once (0)" },
-        Param { name: "unSnapInterval", kind: Kind::Float, used: true, doc: "s after the kick before the counter-kick (0.05)" },
-        Param { name: "unSnapRatio", kind: Kind::Float, used: true, doc: "the counter-kick's size against the kick's, back the other way; 0: none (0.5)" },
-        Param { name: "snapDirectionRandomness", kind: Kind::Float, used: true, doc: "0: about the axis across the bullet, 1: a random axis (0.25)" },
+        Param { name: "unSnapInterval", kind: Kind::Float, used: true, doc: "s after the kick before the counter-kick (0.01)" },
+        Param { name: "unSnapRatio", kind: Kind::Float, used: true, doc: "the counter-kick's size against the kick's, back the other way; 0: none (0.7)" },
+        Param { name: "snapDirectionRandomness", kind: Kind::Float, used: true, doc: "0: about the axis across the bullet, 1: a random axis (0.3)" },
         Param { name: "snapMovingMult", kind: Kind::Float, used: true, doc: "kick times this when moving on his feet (1)" },
         Param { name: "snapBalancingMult", kind: Kind::Float, used: true, doc: "when standing still on his feet (1)" },
         Param { name: "snapAirborneMult", kind: Kind::Float, used: true, doc: "when nothing touches the ground (1)" },
@@ -387,8 +393,8 @@ pub struct Duck {
 impl Duck {
     fn new(p: &mut P) -> Result<Duck, Error> {
         Ok(Duck {
-            mag: [p.f("magMin", 0.25)?.clamp(0.0, 1.0), p.f("magMax", 1.0)?.clamp(0.0, 1.0)],
-            rates: [p.f("lsRate", 0.5)?, p.f("usRate", 0.5)?, p.f("headRate", 0.5)?, p.f("spineTwistRate", 0.5)?, p.f("neckTwistRate", 0.5)?],
+            mag: [p.f("magMin", 0.2)?.clamp(0.0, 1.0), p.f("magMax", 1.0)?.clamp(0.0, 1.0)],
+            rates: [p.f("lsRate", 0.4)?, p.f("usRate", 0.4)?, p.f("headRate", 0.4)?, p.f("spineTwistRate", 0.5)?, p.f("neckTwistRate", 0.5)?],
             wait: p.f("timeBeforeDuck", 0.0)?.max(0.0), time: p.f("duckTime", 0.5)?.max(0.0), blend: p.f("blendTime", 0.5)?.max(0.01),
             twist: p.b("leanTwistStart", true)?, forward: p.b("bendForward", true)?, left: p.b("duckLeft", false)?,
             crouch: p.f("crouch", 0.05)?.max(0.0), stiffness: p.f("stiffness", 10.0)?,
@@ -482,10 +488,10 @@ pub struct Snap {
 
 impl Snap {
     fn new(p: &mut P) -> Result<Snap, Error> {
-        let mag = p.f("snapMag", 0.5)?;
+        let mag = p.f("snapMag", 0.4)?;
         let (delay, duration) = (p.f("snapDelay", 0.0)?.max(0.0), p.f("snapDuration", 0.0)?.max(0.0));
-        let (interval, ratio) = (p.f("unSnapInterval", 0.05)?.max(0.0), p.f("unSnapRatio", 0.5)?);
-        let random = p.f("snapDirectionRandomness", 0.25)?.clamp(0.0, 1.0);
+        let (interval, ratio) = (p.f("unSnapInterval", 0.01)?.max(0.0), p.f("unSnapRatio", 0.7)?);
+        let random = p.f("snapDirectionRandomness", 0.3)?.clamp(0.0, 1.0);
         let mult = [p.f("snapMovingMult", 1.0)?, p.f("snapBalancingMult", 1.0)?, p.f("snapAirborneMult", 1.0)?];
         let moving = p.f("snapMovingThresh", 1.0)?;
         let (use_dir, dir) = (p.b("snapUseBulletDir", true)?, p.v("bulletDir", Vec3::ZERO)?);
@@ -615,7 +621,7 @@ impl Spin {
         let spin = p.f("spin", f32::NAN)?;
         Ok(Spin {
             spin: (!spin.is_nan()).then_some(spin), hit: p.v("hitPoint", Vec3::ZERO)?, dir: p.v("bulletDir", Vec3::ZERO)?,
-            min: p.f("shotSpinMin", 0.01)?.max(0.0), time: p.f("shotSpinTime", 0.4)?.max(0.0), settle: p.f("shotSpinSettle", 0.8)?.max(0.0),
+            min: p.f("shotSpinMin", 0.02)?.max(0.0), time: p.f("shotSpinTime", 0.3)?.max(0.0), settle: p.f("shotSpinSettle", 0.3)?.max(0.0),
             mult: p.f("shotSpinTwistMult", 10.0)?, max_twist: p.f("shotSpinTwist", 1.5)?.abs(), max_vel: p.f("shotSpinTwistVel", 6.0)?.abs(),
             torque: p.f("shotSpinTorque", 150.0)?, torque_max: p.f("shotSpinTorqueMax", 300.0)?.abs(),
             step_type: p.i("stepTurnType", 0)?, step_wait: p.f("stepTurnWait", 0.3)?.max(0.0), step_time: p.f("stepTurnTime", 2.0)?.max(0.0),
@@ -834,13 +840,13 @@ impl Melee {
         let point = p.v("hitPoint", Vec3::ZERO)?;
         let normal = p.v("hitNormal", Vec3::ZERO)?;
         let part = p.i("hitPart", -1)?;
-        let (snap, snap_mag) = (p.b("snap", true)?, p.f("snapMag", 0.3)?);
+        let (snap, snap_mag) = (p.b("snap", true)?, p.f("snapMag", 1.0)?);
         let push = -normal.normalize_or_zero();
         Ok(Melee {
-            point, push, part, loose: p.f("csLooseness", 0.5)?.clamp(0.0, 1.0), loose_time: p.f("csPeriod", 0.3)?.max(0.0),
-            lean: p.f("Lean", 80.0)?, lean_time: p.f("leanPeriod", 0.25)?.max(0.0),
-            flinch: p.b("Flinch", true)?, flinch_time: p.f("flinchPeriod", 0.6)?.max(0.0), guard: p.i("armsType", 1)? == 1,
-            rfw: p.b("rfw", true)?, rfw_delay: p.f("rfwDelay", 0.3)?.max(0.0), rfw_time: p.f("rfwPeriod", 1.0)?.max(0.0),
+            point, push, part, loose: p.f("csLooseness", 0.4)?.clamp(0.0, 1.0), loose_time: p.f("csPeriod", 0.3)?.max(0.0),
+            lean: p.f("Lean", 0.0)?, lean_time: p.f("leanPeriod", 1.0)?.max(0.0),
+            flinch: p.b("Flinch", true)?, flinch_time: p.f("flinchPeriod", 0.7)?.max(0.0), guard: p.i("armsType", 1)? == 1,
+            rfw: p.b("rfw", true)?, rfw_delay: p.f("rfwDelay", 0.2)?.max(0.0), rfw_time: p.f("rfwPeriod", 1.0)?.max(0.0),
             stiffness: p.f("stiffness", 10.0)?,
             snap: (snap && push != Vec3::ZERO).then(|| Snap::at(snap_mag, part, push)), t: 0.0, offset: None,
         })
@@ -971,7 +977,7 @@ impl FromBehind {
         Ok(FromBehind {
             amounts: [p.f("sfbSpineAmount", 0.5)?, p.f("sfbNeckAmount", 0.3)?, p.f("sfbHipAmount", 0.25)?, p.f("sfbKneeAmount", 0.15)?],
             period: p.f("sfbPeriod", 0.7)?.max(0.05), arms_onset: p.f("sfbArmsOnset", 0.0)?.max(0.0),
-            knees_onset: p.f("sfbKneesOnset", 0.05)?.max(0.0), noise: p.f("sfbNoiseGain", 0.0)?.max(0.0),
+            knees_onset: p.f("sfbKneesOnset", 0.0)?.max(0.0), noise: p.f("sfbNoiseGain", 0.0)?.max(0.0),
             stiffness: p.f("stiffness", 10.0)?, t: 0.0, trunk: None, knees: None,
         })
     }
@@ -1059,9 +1065,9 @@ impl InjuredLeg {
         let left = p.b("leftLeg", true)?;
         Ok(InjuredLeg {
             side: part_side(part).unwrap_or(if left { 0 } else { 1 }),
-            lift_time: p.f("legLiftTime", 0.25)?.max(0.0), lift: p.f("legInjuryLift", 0.3)?,
-            time: p.f("legInjuryTime", 1.5)?.max(0.0), injury: p.f("legInjury", 0.4)?.clamp(0.0, 1.0),
-            hip_pitch: p.f("legInjuryHipPitch", 0.1)?, spine_bend: p.f("legInjurySpineBend", 0.15)?, limp: p.f("legLimpBend", 0.2)?,
+            lift_time: p.f("legLiftTime", 0.0)?.max(0.0), lift: p.f("legInjuryLift", 0.0)?,
+            time: p.f("legInjuryTime", 0.4)?.max(0.0), injury: p.f("legInjury", 0.3)?.clamp(0.0, 1.0),
+            hip_pitch: p.f("legInjuryHipPitch", 0.0)?, spine_bend: p.f("legInjurySpineBend", 0.1)?, limp: p.f("legLimpBend", 0.0)?,
             lean: p.f("legLean", 15.0)?, sag: p.f("legSag", 0.04)?.max(0.0), blend: p.f("legBlend", 0.5)?.max(0.05), stiffness: p.f("stiffness", 10.0)?,
             t: 0.0, lift_b: None, limp_b: None,
         })
@@ -1126,7 +1132,7 @@ impl InjuredArm {
         let left = p.b("leftArm", true)?;
         Ok(InjuredArm {
             side: part_side(part).unwrap_or(if left { 0 } else { 1 }), dir: p.v("bulletDir", Vec3::ZERO)?,
-            time: p.f("injuredArmTime", 0.25)?.max(0.0), yaw: p.f("hipYaw", 80.0)?, roll: p.f("hipRoll", 30.0)?,
+            time: p.f("injuredArmTime", 0.25)?.max(0.0), yaw: p.f("hipYaw", 80.0)?, roll: p.f("hipRoll", 0.0)?,
             loose: p.f("armLoose", 0.7)?.clamp(0.0, 1.0), loose_time: p.f("armLooseTime", 1.0)?.max(0.0),
             stiffness: p.f("stiffness", 10.0)?, t: 0.0,
         })
@@ -1246,7 +1252,7 @@ impl ReachForWound {
             wait: p.f("timeBeforeReachForWound", 0.2)?.max(0.0), hold: p.f("grabHoldTime", 2.0)?.max(0.0),
             one_hand: p.b("reachWithOneHand", true)?, thigh: p.b("allowInjuredThighReach", true)?,
             lower_leg: p.b("allowInjuredLowerLegReach", false)?, arm_stiffness: p.f("armStiffness", 10.0)?,
-            spine_bend: p.f("bend2spine", 0.5)?, hip_bend: p.f("bend2hip", 0.6)?, knee_bend: p.f("bend2leg", 0.4)?,
+            spine_bend: p.f("bend2spine", 0.7)?, hip_bend: p.f("bend2hip", 0.6)?, knee_bend: p.f("bend2leg", 0.6)?,
             twist: p.f("spineTwistMag", 0.2)?, up: p.f("bendTimeUp", 0.4)?.max(0.01), down: p.f("bendTimeDown", 0.5)?.max(0.01),
             stiffness: p.f("spineStiffness", 12.0)?,
             t: 0.0, wound: None, hands: [false; 2], sign: [1.0; 2], bends: None, arm: [None; 2],
@@ -1418,11 +1424,11 @@ impl WallCollision {
         Ok(WallCollision {
             at: p.v("objectBehindVictimPos", Vec3::ZERO)?, normal: p.v("objectBehindVictimNormal", Vec3::ZERO)?,
             solid: p.b("solidWall", true)?, slump_mode: p.i("slumpMode", 0)?, brace: p.b("braceWall", true)?,
-            brace_dist: p.f("braceDistance", 0.9)?, brace_stiffness: p.f("braceArmStiffness", 12.0)?,
+            brace_dist: p.f("braceDistance", 2.0)?, brace_stiffness: p.f("braceArmStiffness", 12.0)?,
             react: p.f("reactTime", 0.3)?.max(0.0), impact_legs: p.f("impactLegStiffReduction", 3.0)?.max(0.0),
             sit_start: p.f("sitStartTime", 0.3)?.max(0.0), sit_rate: p.f("sitRate", 1.0)?.max(0.01),
-            glance: p.f("glanceSpinMag", 60.0)?, glance_time: p.f("glanceSpinTime", 0.5)?.max(0.01),
-            rebound: p.f("reboundForce", 150.0)?, forward_time: p.f("timeToForward", 0.8)?.max(0.0),
+            glance: p.f("glanceSpinMag", 50.0)?, glance_time: p.f("glanceSpinTime", 0.5)?.max(0.01),
+            rebound: p.f("reboundForce", 0.0)?, forward_time: p.f("timeToForward", 0.5)?.max(0.0),
             stiffness: p.f("stiffness", 10.0)?, snap_mag: p.f("snapMag", 0.3)?, wall_k: p.f("wallStiffness", 400.0)?,
             half_width: p.f("wallHalfWidth", 0.0)?.max(0.0),
             t: 0.0, mode: None, snap: None, arm: [None; 2], legs: 0.0,

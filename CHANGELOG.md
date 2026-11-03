@@ -33,6 +33,12 @@
 - Examples: `regress` (a fingerprint of fixed scenes, to check a change leaves the physics alone), `rdr2_try` (tries
   an extra message on a standing body) and `rdr2_body` (converts an RDR2 body and stands it up).
 
+### Changed
+- RDR2 extras: defaults are RDR2's own (from its descriptor table) wherever the parameter means the same here: 33
+  of them across shotSnap, shotSpin's timing, meleeReact, duck, wallCollision, reachForWound, shotFromBehind's
+  onset and the injured leg and arm. Where RDR2's value is on its own scale (forces, torques, "amount"
+  multipliers) the default stays Delirium's, and the docs say which.
+
 ## 0.5.2
 
 ### Fixed
