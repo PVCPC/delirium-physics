@@ -9206,7 +9206,7 @@ impl Sim {
     }
 
     fn learned_done(&mut self) {
-        if self.learned.as_ref().is_none_or(|l| l.2 < learn::STEPS) {
+        if self.learned.as_ref().is_none_or(|l| l.2 < learn::STEPS()) {
             return;
         }
         self.learned = None;
@@ -9536,7 +9536,7 @@ fn step(mut sim: NonSendMut<Sim>, time: Res<Time>, mut timing: Local<(f32, f32, 
     if let Some(w) = sim.watch.as_mut() {
         w.t += dt;
         w.check += time.delta_secs();
-        if w.t > learn::STEPS as f32 / 60.0 + 1.0 {
+        if w.t > learn::STEPS() as f32 / 60.0 + 1.0 {
             w.t = 0.0;
         }
         if w.check > 1.0 {

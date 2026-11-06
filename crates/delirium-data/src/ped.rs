@@ -26,31 +26,31 @@ pub fn KILLED() -> u8 { crate::kv!(7 int) }
 pub mod flags {
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NOT_BY_GROUP() -> u32 { crate::kv!(646 int) }
+    pub fn NOT_BY_GROUP() -> u32 { crate::kv!(648 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn ONLY_BY_GROUP() -> u32 { crate::kv!(816 int) }
+    pub fn ONLY_BY_GROUP() -> u32 { crate::kv!(818 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn EXPLOSION_PROOF() -> u32 { crate::kv!(818 int) }
+    pub fn EXPLOSION_PROOF() -> u32 { crate::kv!(820 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn ONLY_BY_PLAYER() -> u32 { crate::kv!(823 int) }
+    pub fn ONLY_BY_PLAYER() -> u32 { crate::kv!(825 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INVINCIBLE() -> u32 { crate::kv!(824 int) }
+    pub fn INVINCIBLE() -> u32 { crate::kv!(826 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MELEE_PROOF() -> u32 { crate::kv!(820 int) }
+    pub fn MELEE_PROOF() -> u32 { crate::kv!(822 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn COLLISION_PROOF() -> u32 { crate::kv!(821 int) }
+    pub fn COLLISION_PROOF() -> u32 { crate::kv!(823 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn FIRE_PROOF() -> u32 { crate::kv!(814 int) }
+    pub fn FIRE_PROOF() -> u32 { crate::kv!(816 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn BULLET_PROOF() -> u32 { crate::kv!(923 int) }
+    pub fn BULLET_PROOF() -> u32 { crate::kv!(925 int) }
 }
 
 pub fn set_proofs(bits: u32, [bullet, fire, explosion, collision, melee]: [bool; 5]) -> u32 {
@@ -128,7 +128,7 @@ impl<'a> Hit<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_CUT() -> f32 { crate::kv!(935) }
+pub fn NO_CUT() -> f32 { crate::kv!(937) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Victim {
@@ -190,13 +190,13 @@ fn bone_share(bone: u16) -> f32 {
 
 #[allow(non_snake_case)]
 #[inline]
-fn HEAD() -> u16 { crate::kv!(204 int) }
+fn HEAD() -> u16 { crate::kv!(209 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn NECK() -> u16 { crate::kv!(205 int) }
+fn NECK() -> u16 { crate::kv!(210 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn SPINE() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || [crate::kv!(774 int), crate::kv!(207 int), crate::kv!(775 int), crate::kv!(208 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SPINE() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || [crate::kv!(776 int), crate::kv!(212 int), crate::kv!(777 int), crate::kv!(213 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn scale(hit: &Hit, victim: &Victim) -> f32 {
     let kind = damage_type(hit.weapon);
@@ -225,7 +225,7 @@ pub fn scale(hit: &Hit, victim: &Victim) -> f32 {
     };
     if cut {
         let third = a * crate::kv!(135);
-        a = if crate::kv!(936) - third >= 0.0 { third } else { crate::kv!(936) };
+        a = if crate::kv!(938) - third >= 0.0 { third } else { crate::kv!(938) };
     }
     a
 }
@@ -274,7 +274,7 @@ pub fn damage(h: &mut Health, hit: &Hit, victim: &Victim, rand: &mut Rand) -> Ou
     }
     let d = (a - out.absorbed).max(0.0);
     if hit.floor {
-        let left = (h.health - d).max(crate::kv!(937));
+        let left = (h.health - d).max(crate::kv!(939));
         out.lost = h.health - left;
         h.health = left;
     } else if h.health - d >= INJURED_BELOW() {
@@ -311,16 +311,16 @@ pub fn blast_hurts(hurt: &mut Vec<u64>, id: u64, ped_ragdoll_state: Option<i32>)
 
 pub fn allowed(hit: &Hit, victim: &Victim) -> bool {
     let (weapon, kind) = (hit.number.unwrap_or_else(|| weapon_id(hit.weapon)), damage_type(hit.weapon));
-    if (weapon == crate::kv!(288 int) && !victim.drowning_ok) || (weapon == crate::kv!(400 int) && !victim.weapon58_ok) {
+    if (weapon == crate::kv!(292 int) && !victim.drowning_ok) || (weapon == crate::kv!(404 int) && !victim.weapon58_ok) {
         return false;
     }
     if victim.vest && hit.weapon.has("GUN") && (*SPINE()).contains(&hit.bone) {
         return false;
     }
-    if victim.player && (!victim.hurtable || (victim.fire_proof && kind == crate::kv!(1 int)) || (weapon == crate::kv!(397 int) && !victim.blades_ok)) {
+    if victim.player && (!victim.hurtable || (victim.fire_proof && kind == crate::kv!(1 int)) || (weapon == crate::kv!(401 int) && !victim.blades_ok)) {
         return false;
     }
-    if matches!(hit.attacker, Attacker::Ped) && hit.same_group && weapon != crate::kv!(449 int) {
+    if matches!(hit.attacker, Attacker::Ped) && hit.same_group && weapon != crate::kv!(453 int) {
         return false;
     }
     if kind == 2 && victim.in_vehicle && !victim.shootable_in_vehicle {
@@ -372,7 +372,7 @@ pub fn car_hit(speed: f32, vz: f32, along: bool) -> Option<(&'static str, f32)> 
 
 pub fn car_hit_player(speed: f32, vz: f32, train: bool) -> Option<(&'static str, f32)> {
     let speed = speed.min(crate::kv!(82));
-    (speed > crate::kv!(31) || (vz < -crate::kv!(20) && speed > crate::kv!(5))).then_some(("RAMMEDBYCAR", if train { crate::kv!(244) } else { crate::kv!(27) }))
+    (speed > crate::kv!(31) || (vz < -crate::kv!(20) && speed > crate::kv!(5))).then_some(("RAMMEDBYCAR", if train { crate::kv!(249) } else { crate::kv!(27) }))
 }
 
 pub fn fall_damage(fell: f32, player: bool, health: f32) -> f32 {
@@ -386,7 +386,7 @@ pub mod control {
     pub fn SCRIPT() -> u32 { crate::kv!(7 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn OTHER() -> u32 { crate::kv!(720 int) }
+    pub fn OTHER() -> u32 { crate::kv!(722 int) }
 }
 
 pub fn police_armour(model: &str) -> f32 {
@@ -403,7 +403,7 @@ fn instant(hit: &Hit, victim: &Victim, rand: &mut Rand) -> bool {
             || (victim.swat && rand.next() & crate::kv!(0 int) != 0)
             || sniper
             || matches!(hit.attacker, Attacker::Player { sure: true })
-            || rand.next() & crate::kv!(198 int) == 0;
+            || rand.next() & crate::kv!(189 int) == 0;
         if kill {
             return true;
         }

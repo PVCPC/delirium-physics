@@ -35,10 +35,10 @@ pub struct Writhe {
 
 impl Writhe {
     pub fn new(ch: &mut Character) -> Writhe {
-        Writhe { arm_stiffness: delirium_data::kv!(195), back_stiffness: delirium_data::kv!(195), leg_stiffness: delirium_data::kv!(195), arm_damping: 0.5, back_damping: 0.5,
+        Writhe { arm_stiffness: delirium_data::kv!(201), back_stiffness: delirium_data::kv!(201), leg_stiffness: delirium_data::kv!(201), arm_damping: 0.5, back_damping: 0.5,
                  leg_damping: 0.5, arm_period: 1.0, back_period: 1.0, leg_period: 1.0, arm_amplitude: 1.0, back_amplitude: 1.0,
                  leg_amplitude: 1.0, elbow_amplitude: 1.0, knee_amplitude: 1.0, roll_over: false, mask: "fb", t: 0.0, t_noise: 0.0,
-                 noise_at: delirium_data::kv!(239) * ch.random(), roll_rate: delirium_data::kv!(12), roll_force: 1.0, roll_timer: delirium_data::kv!(12), active: false }
+                 noise_at: delirium_data::kv!(244) * ch.random(), roll_rate: delirium_data::kv!(12), roll_force: 1.0, roll_timer: delirium_data::kv!(12), active: false }
     }
 
     fn stiffness(&self, ch: &mut Character) {
@@ -58,7 +58,7 @@ impl Writhe {
     }
 
     fn start(&mut self, ch: &mut Character) {
-        self.t_noise = delirium_data::kv!(239) * ch.random();
+        self.t_noise = delirium_data::kv!(244) * ch.random();
         for j in Character::mask("fb") {
             ch.eff[j].reset(&ch.joints[j]);
             ch.eff[j].desired = [0.0; 3];
@@ -121,27 +121,27 @@ impl Writhe {
             ch.set_relative(j, 2, sn * k);
         }
         let b = self.t / self.back_period * TAU;
-        let back = [self.back_amplitude * sin((b + p23) * delirium_data::kv!(20)) * delirium_data::kv!(17), p24 * delirium_data::kv!(9), self.back_amplitude * sin(b + p16) * delirium_data::kv!(240 f32)];
+        let back = [self.back_amplitude * sin((b + p23) * delirium_data::kv!(20)) * delirium_data::kv!(17), p24 * delirium_data::kv!(9), self.back_amplitude * sin(b + p16) * delirium_data::kv!(245 f32)];
         for j in (*SPINE()) {
             ch.eff[j].desired = back.map(|x| x * delirium_data::kv!(17));
         }
-        let g = self.t / self.leg_period * delirium_data::kv!(241);
+        let g = self.t / self.leg_period * delirium_data::kv!(246);
         let la = self.leg_amplitude;
         let (l, r) = (limb(2), limb(delirium_data::kv!(0 int)));
         ch.eff[l.e[1]].desired[0] = sin(g + p22 + 2.0) * la * 0.5;
         ch.eff[l.e[2]].desired[0] = (self.knee_amplitude * cos(g + p15)).fma(delirium_data::kv!(28), -0.5);
         ch.eff[l.e[1]].desired[1] = (-(sin(g * delirium_data::kv!(119)) * la)).fma(delirium_data::kv!(60), -delirium_data::kv!(78));
-        ch.eff[l.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(242), 1.0)) * la * delirium_data::kv!(24);
+        ch.eff[l.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(247), 1.0)) * la * delirium_data::kv!(24);
         ch.eff[r.e[1]].desired[0] = cos(g + p23) * la * -0.5;
         ch.eff[r.e[2]].desired[0] = (-(self.knee_amplitude * sin(g + p24))).fma(delirium_data::kv!(28), -0.5);
         ch.eff[r.e[1]].desired[1] = (-(cos(g * delirium_data::kv!(119)) * la)).fma(delirium_data::kv!(60), -delirium_data::kv!(78));
-        ch.eff[r.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(243), -1.0)) * la * delirium_data::kv!(24);
+        ch.eff[r.e[1]].desired[2] = sin(g.fma(delirium_data::kv!(248), -1.0)) * la * delirium_data::kv!(24);
         if !self.roll_over {
             return;
         }
         let up = crate::nmdbm::vnorm(c.b.joint_pos((*SPINE())[delirium_data::kv!(0 int)]) - c.b.joint_pos((*SPINE())[0]));
         let k = (sin(self.roll_rate * self.t) + 1.0) * 0.5 - delirium_data::kv!(74);
-        let f = up * (k.clamp(0.0, 1.0) * self.roll_force * delirium_data::kv!(244));
+        let f = up * (k.clamp(0.0, 1.0) * self.roll_force * delirium_data::kv!(249));
         let down = c.b.doll.collided(&[r.p[delirium_data::kv!(0 int)], l.p[delirium_data::kv!(0 int)], delirium_data::kv!(104 int), 0]);
         if crate::nmdbm::slen(c.angvel, b"yxz") < delirium_data::kv!(25) && down {
             for k in [delirium_data::kv!(81 int), delirium_data::kv!(104 int), delirium_data::kv!(23 int), delirium_data::kv!(22 int)] {

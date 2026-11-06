@@ -38,6 +38,13 @@ Add a **Delirium Ragdoll** component to the character. From Blueprint or C++:
 | `Kill()` | Limp, stays down |
 | `Sever(Point, Impulse)` | Cuts off the limb nearest `Point` (hide its mesh and spawn your gib yourself) |
 | `GetUp()` | Hands it back: the actor stands where the body lies, mesh, animation and movement back on |
+| `ShootWeapon(Weapon, From, Aim, Health)` / `Shotgun(From, Aim, Weapon, Health)` | A shot from the weapons table (setting `Weapons`: `name=set:push:damage[:pellets:between:clip:accuracy:range]` or the game's weaponinfo.xml; empty: pistol, smg, rifle, shotgun), returning the health left / a blast's pellets fanned as the game's, returning how many struck. `WeaponNames()`, `LoadWeapons(Text)` |
+| `SetReactions(Bits)` / `NearMiss(From, Direction)` / `SetDive(Gap)` / `ThrownAt(At, Velocity, bLook, bAvoid)` | The Playroom's extra reactions (EDeliriumReaction) / a bullet that missed / a dive when shot at again soon after / something thrown at it |
+| `Jump(bDive, Direction)` / `Balance(LookAt)` / `Stop()` | Jumps or dives / the game's balance / stops the running task |
+| `Sit(LookAt, Seat)` / `TakePose(Low, High)` / `RollUpRelax(...)` / `Script(Ms)` | Sits / the animation's pose as muscle targets / rolls up then goes limp / only your `React` lines move it |
+| `MuscleRise(bOn, Help)` / `LearnedGetUp(Net)` / `LearnedWalk(bOn, Net, Cycle)` + `SetStick(bOn, X, Y, CameraYaw)` | Gets up with its own muscles / as the learned network did (settings `GetUpNet`, `WalkNet`: the release's getup.net, walk.net) / walks under the stick |
+| `SetAttacker(Actor, bArmed)` / `GunReady()` | Who it's up against (it looks at them; armed, says when to fire) |
+| `GetParam(...)` / `Raycast(From, To, Point, Normal)` / `CheckSetup()` / `Messages()` | A behaviour parameter as it runs / the part a segment hits / what's off in its setup / every message and parameter, for pickers |
 
 `OnLyingStill(bFaceUp, Facing)` fires once it has lain still half a second: start your get-up animation there and
 call `GetUp`. Or set `Get Up After` (seconds) and it hands itself back.
@@ -50,6 +57,10 @@ keeps it). `Overrides` changes behaviour parameters as the Playroom's Parameters
 (`shot.bodyStiffness=7, bodyBalance.useHeadLook=0`); `SetOverride(Behaviour, Param, Value)` and `ClearOverrides()`
 from Blueprint. The mesh keeps its look (its bones follow the body's turns), so pick a body near the mesh: a Brawler under a tall mesh
 shows its feet off the ground.
+
+Settings `bStepLimit` (the game's balance runs out of steps; off: the Playroom's) and `bFireReaction`. A physical
+material's friction and restitution reach NM (ice slides); a turning mover carries what it touches round. A panic in
+the SDK writes `Saved/delirium_physics-crash.txt`.
 
 Places are Unreal's (cm); impulses are N s. Ragdolls within 5 m share one world, so they push and pile on each other.
 
@@ -76,12 +87,14 @@ meshes) is read once when it's taken, plus a floor under its feet.
 
 `UnrealEditor-Cmd.exe YourProject.uproject /Engine/Maps/Entry -ExecCmds="Automation RunTests Delirium.Ragdoll;Quit"
 -unattended -RenderOffscreen`: Manny stands 5 s, stays up through a 60 N s push, goes down to a 200 N s one, to a
-killing shot and without a leg.
+killing shot and without a leg; then every call above once, and ice under a shove (`DELIRIUM_NETS=<folder with
+getup-reward.net and walk.net>` adds the learned get-up and walk; `DELIRIUM_TEST_ENGINE=1` runs it all with Chaos bodies).
 
 ## State and events
 
 `GetState()` returns FDeliriumState: bRagdolled, bBalancing, bFallen, bCatchingFall, bRolledUp, bRelaxing, bDead,
-bInWater, bBurning, Tackling (2 diving, 1 holding), LyingFor (s), Centre, Velocity, Mass. Events: `OnFell` once per
+bInWater, bBurning, Tackling (2 diving, 1 holding), LyingFor (s), Centre, Velocity, Mass, bSettled, bAwake, bJumping,
+bTaskRunning, bLearnedGetUp, bResting, bHasStance / Stance, Contacts (21 flags). Events: `OnFell` once per
 fall, `OnFeedback(Name, Slot, Value)` for NM's own behaviour messages (the Playroom's Feedback list), plus `OnLyingStill`
 and `OnCarHit`.
 

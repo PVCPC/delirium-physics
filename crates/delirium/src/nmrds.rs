@@ -36,7 +36,7 @@ pub struct RollDownStairs {
 impl Default for RollDownStairs {
     fn default() -> RollDownStairs {
         RollDownStairs { stiffness: delirium_data::kv!(117), damping: delirium_data::kv!(179), forcemag: delirium_data::kv!(132), asymmetry: 0.0, asymmetrical_legs: 0.0,
-                         use_arm_to_slow_down: -delirium_data::kv!(186), arm_reach_amount: delirium_data::kv!(179), use_zero_pose: false, spin_when_in_air: false,
+                         use_arm_to_slow_down: -delirium_data::kv!(192), arm_reach_amount: delirium_data::kv!(179), use_zero_pose: false, spin_when_in_air: false,
                          leg_push: 1.0, arm_reach_length: delirium_data::kv!(116), stiffness_decay_time: -1.0, stiffness_decay_target: delirium_data::kv!(137),
                          use_custom_roll_dir: false, z_axis_spin_reduction: 0.0, custom_roll_dir: Vec3::ZERO, helper_only: false, mass: -1.0,
                          dir: Vec3::ZERO, sum: Vec3::ZERO, t: 0.0, slope: 0.0, active: false }

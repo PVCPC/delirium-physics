@@ -75,6 +75,24 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Force")
 	float ExplosionForce = 1.f;
 
+	/** ShootWeapon's and Shotgun's table: name=set:push:damage[:pellets:between:clip:accuracy:range], comma separated (set the reaction: PISTOL_WEAPON, SMG_WEAPON, POWERFUL_WEAPON, * the defaults; push N s; damage health; pellets a shotgun's), or the game's weaponinfo.xml. Empty: pistol, smg, rifle, shotgun. */
+	UPROPERTY(Config, EditAnywhere, Category = "Force")
+	FString Weapons;
+
+	/** The game's balance runs out of steps (a push he can't take up in so many drops him). Off: he keeps stepping (the Playroom's). */
+	UPROPERTY(Config, EditAnywhere, Category = "Feel")
+	bool bStepLimit = true;
+
+	/** A burning character reacts (flails, staggers, writhes). Off: he burns but carries on. */
+	UPROPERTY(Config, EditAnywhere, Category = "Feel")
+	bool bFireReaction = true;
+
+	/** LearnedGetUp's and LearnedWalk's networks (the release's getup.net and walk.net). */
+	UPROPERTY(Config, EditAnywhere, Category = "Data")
+	FString GetUpNet = TEXT("getup.net");
+	UPROPERTY(Config, EditAnywhere, Category = "Data")
+	FString WalkNet = TEXT("walk.net");
+
 	UFUNCTION()
 	static TArray<FString> SizeModes() { return { TEXT("Auto"), TEXT("Real"), TEXT("Homer") }; }
 

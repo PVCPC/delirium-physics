@@ -1,7 +1,7 @@
 use godot::classes::{
     AnimatableBody3D, BoxShape3D, CapsuleShape3D, CharacterBody3D, CollisionObject3D, CollisionShape3D, ConcavePolygonShape3D,
     Engine, ISkeletonModifier3D, Node, Node3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings,
-    RigidBody3D, SkeletonModifier3D, SphereShape3D,
+    RigidBody3D, SkeletonModifier3D, SphereShape3D, StaticBody3D,
 };
 use godot::prelude::*;
 use delirium_physics::rig::*;
@@ -47,7 +47,7 @@ fn path(p: &str) -> String {
     ProjectSettings::singleton().globalize_path(&format!("res://{p}")).to_string()
 }
 
-struct Shared { world: *mut NmWorld, scale: f32, at: Vector3, refs: i32 }
+struct Shared { world: *mut NmWorld, scale: f32, at: Vector3, refs: i32, space: Rid }
 
 thread_local! {
     static BASE: RefCell<Option<*mut NmBuild>> = const { RefCell::new(None) };
@@ -101,7 +101,7 @@ fn heard(a: *mut NmAgent) -> Vec<(String, i32, f32)> {
     }).collect()
 }
 
-struct Car { node: Gd<Node3D>, centre: Vector3, half: Vector3, last: Vector3, vel: Vector3, frame: u64, player: bool, kind: i32, brace: bool, knock_down: bool }
+struct Car { node: Gd<Node3D>, centre: Vector3, half: Vector3, last: Vector3, vel: Vector3, turned: Quaternion, spin: Vector3, frame: u64, player: bool, kind: i32, brace: bool, knock_down: bool }
 static TUNED: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
 
 fn base() -> Option<*mut NmBuild> {
@@ -121,8 +121,31 @@ fn base() -> Option<*mut NmBuild> {
             return None;
         }
         nm_set_headshot_kills(setting_b("headshot_kills", true) as i32);
+        unsafe { nm_crash_report(c(&ProjectSettings::singleton().globalize_path("user://").to_string()).as_ptr()) };
+        nm_set_step_limit(setting_b("step_limit", true) as i32);
+        nm_set_fire_reaction(setting_b("fire_reaction", true) as i32);
+        let weapons = path(&setting_s("weapons", ""));
+        if weapons.ends_with(".xml") {
+            check(unsafe { nm_weapons_load_info(c(&weapons).as_ptr()) }, "weapons");
+        } else if !weapons.is_empty() {
+            check(unsafe { nm_weapons_parse(c(&weapons).as_ptr()) }, "weapons");
+        }
         *b = Some(build);
         Some(build)
+    })
+}
+
+fn surface(friction: f32, bounce: f32) -> u8 {
+    thread_local! { static ROWS: RefCell<Vec<(f32, f32)>> = const { RefCell::new(Vec::new()) } }
+    if friction == 1.0 && bounce == 0.0 { return 0 }
+    ROWS.with_borrow_mut(|r| {
+        let k = r.iter().position(|&m| m == (friction, bounce)).unwrap_or_else(|| {
+            r.push((friction, bounce));
+            r.len() - 1
+        });
+        let row = 200 + k.min(55) as i32;
+        if k == r.len() - 1 && k < 56 { unsafe { nm_set_surface(row, friction, bounce.clamp(0.0, 1.0)) }; }
+        row as u8
     })
 }
 
@@ -134,12 +157,14 @@ fn level(node: &Gd<Node3D>, at: Vector3, radius: f32, world: *mut NmWorld) -> us
     q.set_shape(&sphere);
     q.set_transform(Transform3D::new(Basis::IDENTITY, at));
     let hits = space.intersect_shape_ex(&q).max_results(512).done();
-    let (mut pts, mut tris) = (Vec::<f32>::new(), Vec::<u32>::new());
+    let (mut pts, mut tris, mut mats) = (Vec::<f32>::new(), Vec::<u32>::new(), Vec::<u8>::new());
     let mut seen = Vec::new();
     for h in hits.iter_shared() {
         let Some(body) = h.get("collider").and_then(|v| v.try_to::<Gd<Node>>().ok()) else { continue };
         if body.is_class("CharacterBody3D") || body.is_class("RigidBody3D") || seen.contains(&body.instance_id()) { continue }
         seen.push(body.instance_id());
+        let mat = body.clone().try_cast::<StaticBody3D>().ok().and_then(|b| b.get_physics_material_override())
+            .map_or(0, |m| surface(m.get_friction(), m.get_bounce()));
         for child in body.get_children().iter_shared() {
             let Ok(cs) = child.try_cast::<CollisionShape3D>() else { continue };
             if cs.is_disabled() { continue }
@@ -159,10 +184,11 @@ fn level(node: &Gd<Node3D>, at: Vector3, radius: f32, world: *mut NmWorld) -> us
                 for p in faces.as_slice() { pts.extend(nm(t * *p)) }
                 for k in (0..faces.len() as u32).step_by(3) { tris.extend([first + k, first + k + 2, first + k + 1]) }
             }
+            mats.resize(tris.len() / 3, mat);
         }
     }
     if tris.is_empty() { return 0 }
-    check(unsafe { nm_world_add_mesh(world, pts.as_ptr(), (pts.len() / 3) as i32, tris.as_ptr(), (tris.len() / 3) as i32, std::ptr::null()) }, "level");
+    check(unsafe { nm_world_add_mesh(world, pts.as_ptr(), (pts.len() / 3) as i32, tris.as_ptr(), (tris.len() / 3) as i32, mats.as_ptr()) }, "level");
     tris.len() / 3
 }
 
@@ -274,6 +300,15 @@ impl DeliriumRagdoll {
             d.set("tackling", nm_agent_tackle_state(a));
             d.set("lying_for", nm_agent_get_lying(a, head.as_mut_ptr(), &mut up));
             d.set("mass", nm_agent_get_mass(a));
+            for (k, f) in [("settled", nm_agent_is_settled as unsafe extern "C" fn(*const NmAgent) -> i32), ("awake", nm_agent_is_awake),
+                           ("jumping", nm_agent_jumping), ("learned_getup", nm_agent_learned_getup_running), ("task_running", nm_agent_task_running)] {
+                d.set(k, f(a) == 1);
+            }
+            d.set("resting", nm_agent_is_resting(a, self.world) == 1);
+            let mut st = [0f32; 3];
+            if nm_agent_get_stance(a, st.as_mut_ptr()) == 1 { d.set("stance", gd(&st)); }
+            let contacts: PackedInt32Array = (0..nm_agent_part_count(a)).map(|k| nm_agent_get_part_contact(a, k).max(0)).collect();
+            d.set("contacts", &contacts);
         }
         d.set("centre", gd(&p));
         d.set("velocity", gd(&v));
@@ -311,7 +346,8 @@ impl DeliriumRagdoll {
             (centre, half) = (car.get_global_transform().affine_inverse() * at, sz / 2.0);
         }
         let last = car.get_global_position();
-        CARS.with_borrow_mut(|cs| cs.push(Car { node: car, centre, half, last, vel: Vector3::ZERO, frame: Engine::singleton().get_process_frames(),
+        let turned = turn(&car.get_global_transform());
+        CARS.with_borrow_mut(|cs| cs.push(Car { node: car, centre, half, last, vel: Vector3::ZERO, turned, spin: Vector3::ZERO, frame: Engine::singleton().get_process_frames(),
                                                 player: player_driven, kind, brace, knock_down }));
     }
 
@@ -514,6 +550,230 @@ impl DeliriumRagdoll {
         self.release();
         self.blend = self.get_up_blend.max(0.0);
     }
+
+    #[func]
+    fn stop(&mut self) -> bool {
+        !self.agent.is_null() && check(unsafe { nm_agent_task_stop(self.agent) }, "stop")
+    }
+
+    #[func]
+    fn balance(&mut self, look: Vector3) -> bool {
+        let l = nm(look);
+        self.take() && check(unsafe { nm_agent_task_balance(self.agent, self.world, std::ptr::null(), if look == Vector3::ZERO { std::ptr::null() } else { l.as_ptr() }) }, "balance")
+    }
+
+    #[func]
+    fn shoot_weapon(&mut self, weapon: GString, point: Vector3, direction: Vector3, health: f32) -> f32 {
+        if !self.take() { return -1.0 }
+        let k = unsafe { nm_weapon_find(c(&weapon.to_string()).as_ptr()) };
+        if k < 0 {
+            godot_warn!("Delirium shoot_weapon: no weapon {weapon}");
+            return -1.0;
+        }
+        let at = nm(point);
+        let part = unsafe { nm_agent_nearest_part(self.agent, at.as_ptr()) }.max(0);
+        unsafe { nm_agent_shoot_weapon(self.agent, self.world, k, part, at.as_ptr(), nm(direction.normalized()).as_ptr(), health) }
+    }
+
+    #[func]
+    fn shotgun(&mut self, weapon: GString, from: Vector3, aim: Vector3, health: f32, seed: i32) -> i32 {
+        if !self.take() { return -1 }
+        let k = unsafe { nm_weapon_find(c(&weapon.to_string()).as_ptr()) };
+        let (mut v, mut set) = ([0f32; 7], [0 as c_char; 64]);
+        if k < 0 || unsafe { nm_weapon_get(k, std::ptr::null_mut(), 0, set.as_mut_ptr(), 64, v.as_mut_ptr()) } < 0 {
+            godot_warn!("Delirium shotgun: no weapon {weapon}");
+            return -1;
+        }
+        let n = v[2].max(1.0) as i32;
+        let (mut dirs, mut seed) = (vec![0f32; (n as usize + 1) * 3], seed);
+        let made = unsafe { nm_shotgun_fan(nm(aim.normalized()).as_ptr(), v[5], v[6], n, &mut seed, dirs.as_mut_ptr()) };
+        let mut hits = vec![];
+        for d in dirs.chunks(3).take(made.max(0) as usize).skip(1) {
+            let mut at = [0f32; 3];
+            let part = unsafe { nm_agent_aim_hit(self.agent, nm(from).as_ptr(), d.as_ptr(), at.as_mut_ptr()) };
+            if part >= 0 { hits.extend([part as f32, at[0], at[1], at[2], d[0], d[1], d[2]]) }
+        }
+        let count = hits.len() as i32 / 7;
+        if count == 0 { return 0 }
+        if check(unsafe { nm_agent_task_shotgun(self.agent, self.world, set.as_ptr(), hits.as_ptr(), count, health, v[0] * setting_f("shot_force", 1.0)) }, "shotgun") { count } else { -1 }
+    }
+
+    #[func]
+    fn weapon_names() -> PackedStringArray {
+        (0..nm_weapon_count()).map(|i| {
+            let mut n = [0 as c_char; 64];
+            unsafe { nm_weapon_get(i, n.as_mut_ptr(), 64, std::ptr::null_mut(), 0, std::ptr::null_mut()) };
+            GString::from(unsafe { std::ffi::CStr::from_ptr(n.as_ptr()) }.to_string_lossy().as_ref())
+        }).collect()
+    }
+
+    #[func]
+    fn load_weapons(text: GString) -> i32 {
+        let t = text.to_string();
+        let r = if t.ends_with(".xml") { unsafe { nm_weapons_load_info(c(&path(&t)).as_ptr()) } }
+                else { unsafe { nm_weapons_parse(if t.is_empty() { std::ptr::null() } else { c(&t).as_ptr() }) } };
+        check(r, "load_weapons");
+        r
+    }
+
+    #[func]
+    fn set_reactions(&mut self, bits: i32) -> bool {
+        self.take() && check(unsafe { nm_agent_set_reactions(self.agent, bits) }, "set_reactions")
+    }
+    #[constant] const REACT_WINDMILL: i32 = NM_XR_WINDMILL;
+    #[constant] const REACT_CURL_UP: i32 = NM_XR_CURL_UP;
+    #[constant] const REACT_CURL_SHOT: i32 = NM_XR_CURL_SHOT;
+    #[constant] const REACT_LOOK_HIT: i32 = NM_XR_LOOK_HIT;
+    #[constant] const REACT_LEDGE: i32 = NM_XR_LEDGE;
+    #[constant] const REACT_SMART_FALL: i32 = NM_XR_SMART_FALL;
+    #[constant] const REACT_DODGE: i32 = NM_XR_DODGE;
+    #[constant] const REACT_WALL: i32 = NM_XR_WALL;
+    #[constant] const REACT_ARMS_OUT: i32 = NM_XR_ARMS_OUT;
+
+    #[func]
+    fn near_miss(&mut self, from: Vector3, direction: Vector3) -> bool {
+        self.take() && check(unsafe { nm_agent_near_miss(self.agent, self.world, nm(from).as_ptr(), nm(direction.normalized()).as_ptr()) }, "near_miss")
+    }
+
+    #[func]
+    fn set_dive(&mut self, gap: f32) -> bool {
+        self.take() && check(unsafe { nm_agent_set_dive(self.agent, gap) }, "set_dive")
+    }
+
+    #[func]
+    fn jump(&mut self, dive: bool, direction: Vector3) -> bool {
+        self.take() && check(unsafe { nm_agent_jump(self.agent, dive as i32, nm(direction).as_ptr()) }, "jump")
+    }
+
+    #[func]
+    fn thrown_at(&mut self, at: Vector3, velocity: Vector3, look: bool, avoid: bool) -> bool {
+        self.take() && check(unsafe { nm_agent_thrown_at(self.agent, self.world, nm(at).as_ptr(), nm(velocity).as_ptr(), look as i32, avoid as i32) }, "thrown_at")
+    }
+
+    #[func]
+    fn sit(&mut self, look: Vector3, seat: Vector3) -> bool {
+        let (l, st) = (nm(look), nm(seat));
+        let ptr = |v: Vector3, f: &[f32; 3]| if v == Vector3::ZERO { std::ptr::null() } else { f.as_ptr() };
+        self.take() && { self.follow = true; check(unsafe { nm_agent_task_sit(self.agent, self.world, ptr(look, &l), ptr(seat, &st)) }, "sit") }
+    }
+
+    #[func]
+    fn pose(&mut self, low: f32, high: f32) -> bool {
+        self.take() && { self.follow = true; check(unsafe { nm_agent_task_pose(self.agent, self.world, low, high) }, "pose") }
+    }
+
+    #[func]
+    fn muscle_rise(&mut self, on: bool, help: f32) -> bool {
+        self.take() && { self.follow |= on; check(unsafe { nm_agent_muscle_rise(self.agent, self.world, on as i32, help) }, "muscle_rise") }
+    }
+
+    #[func]
+    fn learned_getup(&mut self, net: GString) -> bool {
+        let n = if net.is_empty() { setting_s("getup_net", "getup.net") } else { net.to_string() };
+        self.take() && check(unsafe { nm_agent_learned_getup(self.agent, c(&path(&n)).as_ptr()) }, "learned_getup")
+    }
+
+    #[func]
+    fn learned_walk(&mut self, net: GString, cycle: f32) -> bool {
+        if !self.take() { return false }
+        let n = c(&path(&net.to_string()));
+        check(unsafe { nm_agent_learned_walk(self.agent, self.world, if net.is_empty() { std::ptr::null() } else { n.as_ptr() }, cycle) }, "learned_walk")
+    }
+
+    #[func]
+    fn set_stick(&mut self, on: bool, x: f32, y: f32, camera: f32) -> bool {
+        self.take() && check(unsafe { nm_agent_set_stick(self.agent, on as i32, x, y, camera) }, "set_stick")
+    }
+
+    #[func]
+    fn roll_up_relax(&mut self, stiffness: f32, damping: f32, roll_ms: i32) -> bool {
+        self.take() && check(unsafe { nm_agent_task_roll_up_relax(self.agent, self.world, stiffness, damping, roll_ms) }, "roll_up_relax")
+    }
+
+    #[func]
+    fn script(&mut self, ms: i32) -> bool {
+        self.take() && check(unsafe { nm_agent_task_script(self.agent, ms) }, "script")
+    }
+
+    #[func]
+    fn set_attacker(&mut self, attacker: Option<Gd<DeliriumRagdoll>>, armed: bool) -> bool {
+        if !self.take() { return false }
+        let Some(at) = attacker else { return check(unsafe { nm_agent_set_attacker(self.agent, std::ptr::null(), 0) }, "set_attacker") };
+        let h = at.bind().get_hips();
+        let up = Vector3::UP * at.bind().scale;
+        let bones: Vec<f32> = [0.0, 0.2, 0.4, 0.65].iter().flat_map(|&k| nm(h + up * k)).collect();
+        check(unsafe { nm_agent_set_attacker(self.agent, bones.as_ptr(), armed as i32) }, "set_attacker")
+    }
+
+    #[func]
+    fn gun_ready(&mut self) -> bool {
+        !self.agent.is_null() && unsafe { nm_agent_gun_ready(self.agent) } == 1
+    }
+
+    #[func]
+    fn get_param(&self, message: GString, param: GString) -> Variant {
+        if self.agent.is_null() { return Variant::nil() }
+        let (m, p) = (c(&message.to_string()), c(&param.to_string()));
+        let mut v = [0f32; 3];
+        match unsafe { nm_agent_get_param(self.agent, m.as_ptr(), p.as_ptr(), v.as_mut_ptr()) } {
+            1 => v[0].to_variant(),
+            3 => Vector3::new(v[0], v[1], v[2]).to_variant(),
+            0 => {
+                let mut b = [0 as c_char; 256];
+                if unsafe { nm_agent_get_param_string(self.agent, m.as_ptr(), p.as_ptr(), b.as_mut_ptr(), 256) } < 0 { return Variant::nil() }
+                GString::from(unsafe { std::ffi::CStr::from_ptr(b.as_ptr()) }.to_string_lossy().as_ref()).to_variant()
+            }
+            _ => Variant::nil(),
+        }
+    }
+
+    #[func]
+    fn raycast(&self, from: Vector3, to: Vector3) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        if self.agent.is_null() { return d }
+        let (mut p, mut n) = ([0f32; 3], [0f32; 3]);
+        let k = unsafe { nm_agent_raycast(self.agent, nm(from).as_ptr(), nm(to).as_ptr(), p.as_mut_ptr(), n.as_mut_ptr()) };
+        if k >= 0 {
+            d.set("part", k);
+            d.set("point", gd(&p));
+            d.set("normal", gd(&n));
+        }
+        d
+    }
+
+    #[func]
+    fn check_setup(&self) -> GString {
+        if self.agent.is_null() { return "not ragdolled".into() }
+        let mut b = vec![0 as c_char; 4096];
+        unsafe { nm_agent_check(self.agent, b.as_mut_ptr(), b.len() as i32) };
+        GString::from(unsafe { std::ffi::CStr::from_ptr(b.as_ptr()) }.to_string_lossy().as_ref())
+    }
+
+    #[func]
+    fn messages() -> VarArray {
+        let text = |f: &dyn Fn(*mut c_char, i32) -> i32| {
+            let mut b = vec![0 as c_char; 1024];
+            f(b.as_mut_ptr(), 1024);
+            GString::from(unsafe { std::ffi::CStr::from_ptr(b.as_ptr()) }.to_string_lossy().as_ref())
+        };
+        (0..nm_message_count()).map(|m| {
+            let mut d = VarDictionary::new();
+            d.set("name", &text(&|b, n| unsafe { nm_message_name(m, b, n) }));
+            let ps: VarArray = (0..nm_message_param_count(m).max(0)).map(|p| {
+                let mut e = VarDictionary::new();
+                e.set("name", &text(&|b, n| unsafe { nm_message_param_name(m, p, b, n) }));
+                e.set("kind", nm_message_param_kind(m, p));
+                e.set("used", nm_message_param_used(m, p) == 1);
+                e.set("doc", &text(&|b, n| unsafe { nm_message_param_doc(m, p, b, n) }));
+                let mut v = [0f32; 3];
+                let k = unsafe { nm_message_param_default(m, p, v.as_mut_ptr()) };
+                e.set("default", &if k == 3 { Vector3::new(v[0], v[1], v[2]).to_variant() } else if k == 1 { v[0].to_variant() } else { Variant::nil() });
+                e.to_variant()
+            }).collect();
+            d.set("params", &ps);
+            d.to_variant()
+        }).collect()
+    }
 }
 
 impl DeliriumRagdoll {
@@ -522,15 +782,22 @@ impl DeliriumRagdoll {
     }
 
     fn ground(&self, at: Vector3) -> f32 {
-        let Some(mut space) = self.base().get_world_3d().and_then(|w| w.get_direct_space_state()) else { return at.y };
-        let Some(mut q) = PhysicsRayQueryParameters3D::create(at, at - Vector3::UP * 5.0) else { return at.y };
+        self.ground_hit(at).map_or(at.y, |h| h.0)
+    }
+
+    fn ground_hit(&self, at: Vector3) -> Option<(f32, u8)> {
+        let mut space = self.base().get_world_3d().and_then(|w| w.get_direct_space_state())?;
+        let mut q = PhysicsRayQueryParameters3D::create(at, at - Vector3::UP * 5.0)?;
         if let Some(ch) = self.owner().and_then(|o| o.try_cast::<CharacterBody3D>().ok()) {
             let mut ex = Array::new();
             ex.push(ch.get_rid());
             q.set_exclude(&ex);
         }
         let hit = space.intersect_ray(&q);
-        hit.get("position").and_then(|v| v.try_to::<Vector3>().ok()).map_or(at.y, |p| p.y)
+        let y = hit.get("position").and_then(|v| v.try_to::<Vector3>().ok())?.y;
+        let mat = hit.get("collider").and_then(|v| v.try_to::<Gd<StaticBody3D>>().ok()).and_then(|b| b.get_physics_material_override())
+            .map_or(0, |m| surface(m.get_friction(), m.get_bounce()));
+        Some((y, mat))
     }
 
     fn cars(&mut self, seconds: f32, car: Option<&Gd<Node3D>>) -> i32 {
@@ -542,8 +809,14 @@ impl DeliriumRagdoll {
             cs.iter_mut().flat_map(|c| {
                 let t = c.node.get_global_transform();
                 if c.frame != frame {
-                    if seconds > 0.0 { c.vel = (t.origin - c.last) / seconds }
-                    (c.last, c.frame) = (t.origin, frame);
+                    let q = turn(&t);
+                    if seconds > 0.0 {
+                        c.vel = (t.origin - c.last) / seconds;
+                        let d = q * c.turned.inverse();
+                        let d = if d.w < 0.0 { -d } else { d };
+                        c.spin = if d.w >= 1.0 - 1e-7 { Vector3::ZERO } else { d.get_axis() * d.get_angle() / seconds };
+                    }
+                    (c.last, c.turned, c.frame) = (t.origin, q, frame);
                 }
                 if c.knock_down && c.vel.length() > 2.0 {
                     let l = t.affine_inverse() * (here - c.vel * 0.25) - c.centre;
@@ -565,6 +838,8 @@ impl DeliriumRagdoll {
             check(unsafe { nm_world_set_boxes(self.world, boxes.as_ptr(), n) }, "set_boxes");
             let kinds: Vec<i32> = CARS.with_borrow(|cs| cs.iter().map(|c| c.kind | if c.player { NM_HIT_PLAYER } else { 0 }).collect());
             check(unsafe { nm_world_set_box_kinds(self.world, kinds.as_ptr(), n) }, "set_box_kinds");
+            let spins: Vec<f32> = CARS.with_borrow(|cs| cs.iter().flat_map(|c| nm(c.spin)).collect());
+            check(unsafe { nm_world_set_box_spins(self.world, spins.as_ptr(), n) }, "set_box_spins");
             if let Some(id) = self.bracing {
                 self.brace_left -= seconds;
                 let at = CARS.with_borrow(|cs| cs.iter().find(|c| c.node.instance_id() == id).map(|c| (c.node.get_global_transform(), c.centre)));
@@ -680,14 +955,15 @@ impl DeliriumRagdoll {
         let floor = self.ground(hips_now);
         let spot = Vector3::new(hips_now.x, floor, hips_now.z);
         let scale = self.scale;
+        let space = self.base().get_world_3d().map_or(Rid::Invalid, |w| w.get_space());
         let (world, fresh) = SHARED.with_borrow_mut(|sh| {
-            if let Some(w) = sh.iter_mut().find(|w| w.scale == scale && (w.at.y - floor).abs() < 0.5 * scale && w.at.distance_to(spot) < 5.0 * scale) {
+            if let Some(w) = sh.iter_mut().find(|w| w.space == space && w.scale == scale && (w.at.y - floor).abs() < 0.5 * scale && w.at.distance_to(spot) < 5.0 * scale) {
                 w.refs += 1;
                 return (w.world, false);
             }
             let world = nm_world_create();
             check(unsafe { nm_world_set_scale(world, scale) }, "world_set_scale");
-            sh.push(Shared { world, scale, at: spot, refs: 1 });
+            sh.push(Shared { world, scale, at: spot, refs: 1, space });
             (world, true)
         });
         self.world = world;
@@ -696,7 +972,14 @@ impl DeliriumRagdoll {
             let tris = level(&me, hips_now, 15.0, self.world);
             godot_print!("Delirium: {tris} level triangles");
             let f = nm(spot);
-            check(unsafe { nm_world_add_floor(self.world, f[0], f[1], f[2], 100.0 * scale) }, "world_add_floor");
+            match self.ground_hit(spot + Vector3::UP * 0.5 * scale) {
+                Some((_, mat)) if mat != 0 => {
+                    let h = 100.0 * scale;
+                    let v = [f[0] - h, f[1] - h, f[2], f[0] + h, f[1] - h, f[2], f[0] + h, f[1] + h, f[2], f[0] - h, f[1] + h, f[2]];
+                    check(unsafe { nm_world_add_mesh(self.world, v.as_ptr(), 4, [0u32, 1, 2, 0, 2, 3].as_ptr(), 2, [mat, mat].as_ptr()) }, "world_add_floor");
+                }
+                _ => { check(unsafe { nm_world_add_floor(self.world, f[0], f[1], f[2], 100.0 * scale) }, "world_add_floor"); }
+            }
         }
         let r = (g * s.get_bone_global_rest(hips)).origin;
         let start = nm(Vector3::new(r.x, floor, r.z));
@@ -892,11 +1175,16 @@ impl DeliriumRagdoll {
         for h in space.intersect_shape_ex(&q).max_results(64).done().iter_shared() {
             let Some(body) = h.get("collider").and_then(|v| v.try_to::<Gd<Node>>().ok()).and_then(|n| n.try_cast::<RigidBody3D>().ok()) else { continue };
             if CARS.with_borrow(|cs| cs.iter().any(|c| c.node.instance_id() == body.instance_id())) { continue }
-            let Some((centre, size)) = body.get_children().iter_shared().filter_map(|c| c.try_cast::<CollisionShape3D>().ok()).find_map(|cs| {
-                let bounds = cs.get_shape()?.get_debug_mesh()?.get_aabb();
-                Some((cs.get_position() + bounds.center(), bounds.size))
-            }) else { continue };
-            Self::register_mover(body.upcast(), Self::MOVER_OBJECT, size, false, false, false, centre);
+            let mut bounds: Option<Aabb> = None;
+            for cs in body.get_children().iter_shared().filter_map(|c| c.try_cast::<CollisionShape3D>().ok()) {
+                let (Some(b), t) = (cs.get_shape().and_then(|s| s.get_debug_mesh()).map(|m| m.get_aabb()), cs.get_transform()) else { continue };
+                for k in 0..8 {
+                    let p = t * (b.position + b.size * Vector3::new((k & 1) as f32, (k >> 1 & 1) as f32, (k >> 2 & 1) as f32));
+                    bounds = Some(bounds.map_or(Aabb::new(p, Vector3::ZERO), |a| a.expand(p)));
+                }
+            }
+            let Some(bounds) = bounds else { continue };
+            Self::register_mover(body.upcast(), Self::MOVER_OBJECT, bounds.size, false, false, false, bounds.center());
         }
     }
 

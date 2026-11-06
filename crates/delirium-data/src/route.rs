@@ -10,7 +10,7 @@ pub fn MAX_POINTS() -> usize { crate::kv!(23 int) }
 pub const LEG_END: u32 = 1302;
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX_BUMPS() -> i32 { crate::kv!(278 int) }
+pub fn MAX_BUMPS() -> i32 { crate::kv!(282 int) }
 pub const ARRIVE: f32 = 0.5;
 #[allow(non_snake_case)]
 #[inline]
@@ -222,7 +222,7 @@ impl Arrive {
     }
 
     pub fn set_state(&mut self, sides: u32, prev: Point) {
-        (self.sides, self.prev) = (sides & crate::kv!(198 int), prev);
+        (self.sides, self.prev) = (sides & crate::kv!(189 int), prev);
     }
 
     pub fn state(&self) -> (u32, Point) {
@@ -240,7 +240,7 @@ impl Arrive {
         } else if pos[1] > target[1] {
             self.sides |= crate::kv!(23 int);
         }
-        (pos[2] - target[2]).abs() < self.tolerance && self.sides == crate::kv!(198 int)
+        (pos[2] - target[2]).abs() < self.tolerance && self.sides == crate::kv!(189 int)
     }
 
     pub fn test(&mut self, look: &Look, target: Point) -> bool {

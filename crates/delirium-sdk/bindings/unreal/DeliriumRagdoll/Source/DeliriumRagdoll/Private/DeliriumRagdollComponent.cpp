@@ -9,12 +9,14 @@
 #include "Components/PoseableMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "Physics/PhysicsInterfaceCore.h"
 
@@ -27,13 +29,16 @@ namespace
 	TMap<FString, NmBuild*> Tuned;
 	FCriticalSection TunedLock;
 
-	/** Worlds ragdolls share, so they push and pile on each other: one per spot (same size, ground within 50 cm,
-	 *  within 5 m of where it was made, its level read there), freed with its last ragdoll. */
-	struct FShared { NmWorld* World; float Scale; FVector At; int32 Refs; };
+	/** Worlds ragdolls share, so they push and pile on each other: one per spot (the same Unreal world and size, ground
+	 *  within 50 cm, within 5 m of where it was made, its level read there), freed with its last ragdoll. */
+	struct FShared { NmWorld* World; float Scale; FVector At; int32 Refs; TWeakObjectPtr<UWorld> In; };
 	TArray<FShared> Shared;
 
-	/** RegisterCar's: the actor, its box (centre in its frame, half size, cm), its place and speed (once a frame). */
-	struct FCar { TWeakObjectPtr<AActor> Actor; FVector Centre, Half, Last, Vel; uint64 Frame; bool bPlayer; EDeliriumMover Kind; bool bBrace, bKnockDown; };
+	/** RegisterCar's: the actor, its box (centre in its frame, half size, cm), its place and speed (once a frame); Comp
+	 *  (EnginePhysics' movers) a simulating part of the actor tracked instead of the actor. */
+	struct FCar { TWeakObjectPtr<AActor> Actor; FVector Centre, Half, Last, Vel; uint64 Frame; bool bPlayer; EDeliriumMover Kind; bool bBrace, bKnockDown; TWeakObjectPtr<UPrimitiveComponent> Comp;
+		/** Its turn last frame (zero: none yet) and its spin (rad/s). */
+		FQuat Turned = FQuat(0, 0, 0, 0); FVector Spin = FVector::ZeroVector; };
 	TArray<FCar> CarList;
 
 	FString LastError()
@@ -157,6 +162,24 @@ namespace
 	// EnginePhysics: a part's body is the part turned so its Y (NM's capsules' axis) is the body's Z (Unreal's).
 	const FQuat PartToBody(FVector::XAxisVector, -UE_HALF_PI);
 
+	/** A component's physical material as a surface row: 0 the engine's default, else one of rows 200 up, made for it the
+	 *  first time (friction against the default's 0.7, restitution; nm_set_surface: ice's friction 0.05 slides). */
+	uint8 Surface(const UPrimitiveComponent* C)
+	{
+		static TArray<TPair<float, float>> Rows;
+		const UPhysicalMaterial* M = C ? const_cast<UPrimitiveComponent*>(C)->BodyInstance.GetSimplePhysicalMaterial() : nullptr;
+		if (!M || M == GEngine->DefaultPhysMaterial || (M->Friction == 0.7f && M->Restitution == 0.3f)) return 0;
+		const TPair<float, float> Key(M->Friction / 0.7f, M->Restitution);
+		int32 K = Rows.IndexOfByKey(Key);
+		if (K < 0)
+		{
+			K = Rows.Add(Key);
+			// ponytail: 56 distinct materials; past that they share the last row.
+			if (K < 56) nm_set_surface(200 + K, Key.Key, FMath::Clamp(Key.Value, 0.f, 1.f));
+		}
+		return uint8(200 + FMath::Min(K, 55));
+	}
+
 	FString Resolve(const FString& P)
 	{
 		return P.IsEmpty() || !FPaths::IsRelative(P) ? P : FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / P);
@@ -171,6 +194,7 @@ namespace
 		W->OverlapMultiByObjectType(Hits, At, FQuat::Identity, FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionShape::MakeSphere(Radius), Q);
 		TArray<float> Pts;
 		TArray<uint32> Tris;
+		TArray<uint8> Mats;
 		auto Vert = [&](const FVector& V) { const int32 I = Pts.Num(); Pts.AddUninitialized(3); ToNm(V, &Pts[I]); return uint32(I / 3); };
 		for (const FOverlapResult& H : Hits)
 		{
@@ -205,11 +229,13 @@ namespace
 				auto Add = [&](const auto& Buf) { for (const auto& Tri : Buf) Tris.Append({ First + Tri[0], First + Tri[1], First + Tri[2] }); };
 				if (E.RequiresLargeIndices()) Add(E.GetLargeIndexBuffer()); else Add(E.GetSmallIndexBuffer());
 			}
+			const uint8 Mat = Surface(C);
+			while (Mats.Num() < Tris.Num() / 3) Mats.Add(Mat);
 		}
 		if (Tris.Num() == 0) return 0;
 		// The y flip mirrors them: turn each back to face the same way.
 		for (int32 I = 0; I < Tris.Num(); I += 3) Swap(Tris[I + 1], Tris[I + 2]);
-		Check(nm_world_add_mesh(World, Pts.GetData(), Pts.Num() / 3, Tris.GetData(), Tris.Num() / 3, nullptr), TEXT("nm_world_add_mesh"));
+		Check(nm_world_add_mesh(World, Pts.GetData(), Pts.Num() / 3, Tris.GetData(), Tris.Num() / 3, Mats.GetData()), TEXT("nm_world_add_mesh"));
 		return Tris.Num() / 3;
 	}
 }
@@ -245,6 +271,11 @@ bool UDeliriumRagdollComponent::Start()
 		return false;
 	}
 	nm_set_headshot_kills(S->bHeadshotKills ? 1 : 0);
+	// Native crashes land in the editor's or game's own dump; a panic in the SDK writes delirium_physics-crash.txt in Saved.
+	nm_crash_report(TCHAR_TO_UTF8(*FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir())));
+	nm_set_step_limit(S->bStepLimit ? 1 : 0);
+	nm_set_fire_reaction(S->bFireReaction ? 1 : 0);
+	if (!S->Weapons.IsEmpty()) LoadWeapons(S->Weapons.EndsWith(TEXT(".xml")) ? Resolve(S->Weapons) : S->Weapons);
 	State = 1;
 	return true;
 }
@@ -369,7 +400,7 @@ bool UDeliriumRagdollComponent::Take()
 	const float Floor = Ground(Now);
 	const FVector Spot(Now.X, Now.Y, Floor);
 	const int32 Near = Shared.IndexOfByPredicate([&](const FShared& W)
-		{ return W.Scale == Scale && FMath::Abs(W.At.Z - Floor) < 50.f * Scale && FVector::Dist(W.At, Spot) < 500.f * Scale; });
+		{ return W.In.Get() == GetWorld() && W.Scale == Scale && FMath::Abs(W.At.Z - Floor) < 50.f * Scale && FVector::Dist(W.At, Spot) < 500.f * Scale; });
 	if (Near >= 0)
 	{
 		World = Shared[Near].World;
@@ -379,12 +410,24 @@ bool UDeliriumRagdollComponent::Take()
 	{
 		World = nm_world_create();
 		Check(nm_world_set_scale(World, Scale), TEXT("nm_world_set_scale"));
-		Shared.Add({ World, Scale, Spot, 1 });
+		Shared.Add({ World, Scale, Spot, 1, GetWorld() });
 		const int32 Tris = Level(GetWorld(), GetOwner(), Now, 1500.f, World);
 		UE_LOG(LogDelirium, Log, TEXT("%s: %d level triangles"), *GetOwner()->GetName(), Tris);
 		float F[3];
 		ToNm(Spot, F);
-		Check(nm_world_add_floor(World, F[0], F[1], F[2], 100.f * Scale), TEXT("nm_world_add_floor"));
+		// The floor of the ground's material under him (ice stays ice past the level's reach).
+		FHitResult Under;
+		FCollisionQueryParams UnderQ(TEXT("DeliriumGround"), false, GetOwner());
+		const uint8 FloorMat = GetWorld()->LineTraceSingleByObjectType(Under, Now, Now - FVector(0, 0, 500), FCollisionObjectQueryParams(ECC_WorldStatic), UnderQ) ? Surface(Under.GetComponent()) : 0;
+		if (FloorMat == 0) Check(nm_world_add_floor(World, F[0], F[1], F[2], 100.f * Scale), TEXT("nm_world_add_floor"));
+		else
+		{
+			const float Half = 100.f * Scale;
+			const float Corners[12] = { F[0] - Half, F[1] - Half, F[2], F[0] + Half, F[1] - Half, F[2], F[0] + Half, F[1] + Half, F[2], F[0] - Half, F[1] + Half, F[2] };
+			const uint32 Two[6] = { 0, 1, 2, 0, 2, 3 };
+			const uint8 Mats[2] = { FloorMat, FloorMat };
+			Check(nm_world_add_mesh(World, Corners, 4, Two, 2, Mats), TEXT("nm_world_add_floor"));
+		}
 	}
 	float At[3];
 	ToNm(FVector(HipsAt.X, HipsAt.Y, Floor), At);
@@ -745,6 +788,263 @@ bool UDeliriumRagdollComponent::SetWater(float Level)
 	return Agent && Check(nm_agent_set_water(Agent, World, Level / 100.f), TEXT("SetWater"));
 }
 
+bool UDeliriumRagdollComponent::Task(TFunctionRef<int32()> F, const TCHAR* What)
+{
+	return Take() && Check(F(), What);
+}
+
+void UDeliriumRagdollComponent::Feed()
+{
+	// Follow's feed (Step hands NM the hidden mesh's pose each step while bFollow).
+	if (bFollow || !Mesh) return;
+	bFollow = true;
+	FollowTick = Mesh->VisibilityBasedAnimTickOption;
+	Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Mesh->bPauseAnims = false;
+	Incoming.SetNum(Bones.Num() * 7);
+}
+
+namespace
+{
+	/** A weapon of the table: its reaction set, and push, damage, pellets, ms between shots, clip, accuracy, range (m). */
+	bool Weapon(const FString& Name, FString& Set, float* V)
+	{
+		char S[64] = {};
+		const int32 K = nm_weapon_find(TCHAR_TO_UTF8(*Name));
+		if (K < 0 || nm_weapon_get(K, nullptr, 0, S, sizeof S, V) < 0) return false;
+		Set = UTF8_TO_TCHAR(S);
+		return true;
+	}
+
+	/** A text call's answer (its buffer grown till it fits). */
+	FString Text(TFunctionRef<int32(char*, int32)> F)
+	{
+		TArray<char> B;
+		B.SetNumZeroed(1024);
+		const int32 N = F(B.GetData(), B.Num());
+		if (N >= B.Num()) { B.SetNumZeroed(N + 1); F(B.GetData(), B.Num()); }
+		return N <= 0 ? FString() : FString(UTF8_TO_TCHAR(B.GetData()));
+	}
+}
+
+float UDeliriumRagdollComponent::ShootWeapon(FString Name, FVector From, FVector Aim, float Health)
+{
+	FString Set;
+	float V[7] = { 40.f, 0.f };
+	if (!Weapon(Name, Set, V))
+	{
+		UE_LOG(LogDelirium, Warning, TEXT("ShootWeapon: no weapon \"%s\" in the Weapons setting; shot with the defaults, no damage"), *Name);
+		Set = TEXT("*");
+	}
+	const float Left = FMath::Max(Health - V[1], 0.f);
+	return ShootAlong(From, Aim, V[0], Set, Left) ? Left : -1.f;
+}
+
+int32 UDeliriumRagdollComponent::Shotgun(FVector From, FVector Aim, FString Name, float Health)
+{
+	static int32 Seed = 1;
+	FString Set;
+	float V[7];
+	if (!Weapon(Name, Set, V)) { UE_LOG(LogDelirium, Warning, TEXT("Shotgun: no weapon \"%s\""), *Name); return -1; }
+	if (!Take()) return -1;
+	const int32 N = FMath::Max(int32(V[2]), 1);
+	TArray<float> Dirs;
+	Dirs.SetNumZeroed((N + 1) * 3);
+	float A[3], F[3], At[3];
+	ToNmDir(Aim.GetSafeNormal(), A);
+	ToNm(From, F);
+	const int32 Made = nm_shotgun_fan(A, V[5], V[6], N, &Seed, Dirs.GetData());
+	TArray<float> Hits;
+	for (int32 I = 1; I < Made; I++)
+	{
+		const int32 Part = nm_agent_aim_hit(Agent, F, &Dirs[I * 3], At);
+		if (Part >= 0) Hits.Append({ float(Part), At[0], At[1], At[2], Dirs[I * 3], Dirs[I * 3 + 1], Dirs[I * 3 + 2] });
+	}
+	if (Hits.Num() == 0) return 0;
+	const float Force = V[0] * GetDefault<UDeliriumSettings>()->ShotForce;
+	return Check(nm_agent_task_shotgun(Agent, World, TCHAR_TO_UTF8(*Set), Hits.GetData(), Hits.Num() / 7, Health, Force), TEXT("Shotgun")) ? Hits.Num() / 7 : -1;
+}
+
+TArray<FString> UDeliriumRagdollComponent::WeaponNames()
+{
+	TArray<FString> Out;
+	if (!Start()) return Out;
+	for (int32 I = 0, N = nm_weapon_count(); I < N; I++) Out.Add(Text([I](char* B, int32 L) { return nm_weapon_get(I, B, L, nullptr, 0, nullptr) < 0 ? 0 : 1; }));
+	return Out;
+}
+
+int32 UDeliriumRagdollComponent::LoadWeapons(FString T)
+{
+	const int32 R = T.EndsWith(TEXT(".xml")) ? nm_weapons_load_info(TCHAR_TO_UTF8(*Resolve(T))) : nm_weapons_parse(T.IsEmpty() ? nullptr : TCHAR_TO_UTF8(*T));
+	Check(R, TEXT("Weapons"));
+	return R;
+}
+
+bool UDeliriumRagdollComponent::Balance(FVector LookAt)
+{
+	float L[3];
+	ToNm(LookAt, L);
+	return Task([&] { return nm_agent_task_balance(Agent, World, nullptr, LookAt.IsZero() ? nullptr : L); }, TEXT("Balance"));
+}
+
+bool UDeliriumRagdollComponent::Stop() { return Task([&] { return nm_agent_task_stop(Agent); }, TEXT("Stop")); }
+
+bool UDeliriumRagdollComponent::SetReactions(int32 Reactions) { return Task([&] { return nm_agent_set_reactions(Agent, Reactions); }, TEXT("SetReactions")); }
+
+bool UDeliriumRagdollComponent::SetDive(float Gap) { return Task([&] { return nm_agent_set_dive(Agent, Gap); }, TEXT("SetDive")); }
+
+bool UDeliriumRagdollComponent::Jump(bool bDive, FVector Direction)
+{
+	float D[3];
+	ToNmDir(Direction.GetSafeNormal(), D);
+	return Take() && nm_agent_jump(Agent, bDive, Direction.IsZero() ? nullptr : D) == 1;
+}
+
+bool UDeliriumRagdollComponent::NearMiss(FVector From, FVector Direction)
+{
+	float F[3], D[3];
+	ToNm(From, F);
+	ToNmDir(Direction.GetSafeNormal(), D);
+	return Take() && nm_agent_near_miss(Agent, World, F, D) == 1;
+}
+
+bool UDeliriumRagdollComponent::ThrownAt(FVector At, FVector Velocity, bool bLook, bool bAvoid)
+{
+	float A[3], V[3];
+	ToNm(At, A);
+	ToNm(Velocity, V);
+	return Task([&] { return nm_agent_thrown_at(Agent, World, A, V, bLook, bAvoid); }, TEXT("ThrownAt"));
+}
+
+bool UDeliriumRagdollComponent::Sit(FVector LookAt, FVector Seat)
+{
+	float L[3], S[3];
+	ToNm(LookAt, L);
+	ToNm(Seat, S);
+	if (!Take()) return false;
+	Feed();
+	return Check(nm_agent_task_sit(Agent, World, LookAt.IsZero() ? nullptr : L, Seat.IsZero() ? nullptr : S), TEXT("Sit"));
+}
+
+bool UDeliriumRagdollComponent::TakePose(float Low, float High)
+{
+	if (!Take()) return false;
+	Feed();
+	return Check(nm_agent_task_pose(Agent, World, Low, High), TEXT("Pose"));
+}
+
+bool UDeliriumRagdollComponent::RollUpRelax(float Stiffness, float Damping, int32 RollMs)
+{
+	return Task([&] { return nm_agent_task_roll_up_relax(Agent, World, Stiffness, Damping, RollMs); }, TEXT("RollUpRelax"));
+}
+
+bool UDeliriumRagdollComponent::Script(int32 Ms) { return Task([&] { return nm_agent_task_script(Agent, Ms); }, TEXT("Script")); }
+
+bool UDeliriumRagdollComponent::MuscleRise(bool bOn, float Help)
+{
+	if (!Take()) return false;
+	Feed();
+	return Check(nm_agent_muscle_rise(Agent, World, bOn, Help), TEXT("MuscleRise"));
+}
+
+bool UDeliriumRagdollComponent::LearnedGetUp(FString Net)
+{
+	const FString P = Resolve(Net.IsEmpty() ? GetDefault<UDeliriumSettings>()->GetUpNet : Net);
+	return Task([&] { return nm_agent_learned_getup(Agent, TCHAR_TO_UTF8(*P)); }, TEXT("LearnedGetUp"));
+}
+
+bool UDeliriumRagdollComponent::LearnedWalk(bool bOn, FString Net, float Cycle)
+{
+	const FString P = Resolve(Net.IsEmpty() ? GetDefault<UDeliriumSettings>()->WalkNet : Net);
+	return Task([&] { return nm_agent_learned_walk(Agent, World, bOn ? TCHAR_TO_UTF8(*P) : nullptr, Cycle); }, TEXT("LearnedWalk"));
+}
+
+bool UDeliriumRagdollComponent::SetStick(bool bOn, float X, float Y, float CameraYaw)
+{
+	// Unreal's yaw turns clockwise seen from above (Y flipped): NM's heading the other way.
+	return Task([&] { return nm_agent_set_stick(Agent, bOn, X, Y, -FMath::DegreesToRadians(CameraYaw)); }, TEXT("SetStick"));
+}
+
+bool UDeliriumRagdollComponent::SetAttacker(AActor* Attacker, bool bArmed)
+{
+	float Them[12];
+	if (Attacker)
+	{
+		UDeliriumRagdollComponent* D = Attacker->FindComponentByClass<UDeliriumRagdollComponent>();
+		if (D && D->Agent)
+		{
+			const int32 Parts[4] = { 0, 7, 9, 12 };
+			for (int32 K = 0; K < 4; K++) nm_agent_get_part_transform(D->Agent, Parts[K], Them + K * 3, nullptr);
+		}
+		else
+		{
+			// A person's pelvis, spine, chest and head heights, in its bounds.
+			const FBox B = Attacker->GetComponentsBoundingBox();
+			const float Tall = B.IsValid ? B.GetSize().Z : 180.f;
+			const FVector Foot = B.IsValid ? FVector(B.GetCenter().X, B.GetCenter().Y, B.Min.Z) : Attacker->GetActorLocation();
+			const float Up[4] = { 0.53f, 0.64f, 0.75f, 0.9f };
+			for (int32 K = 0; K < 4; K++) ToNm(Foot + FVector(0, 0, Tall * Up[K]), Them + K * 3);
+		}
+	}
+	return Task([&] { return nm_agent_set_attacker(Agent, Attacker ? Them : nullptr, bArmed); }, TEXT("SetAttacker"));
+}
+
+bool UDeliriumRagdollComponent::GunReady() { return Agent && nm_agent_gun_ready(Agent) == 1; }
+
+int32 UDeliriumRagdollComponent::GetParam(FString Message, FString Param, float& Value, FVector& Vector, FString& Txt) const
+{
+	if (!Agent) return -1;
+	float V[3] = {};
+	const FTCHARToUTF8 M(*Message), P(*Param);
+	const int32 K = nm_agent_get_param(Agent, M.Get(), P.Get(), V);
+	if (K == 1) { Value = V[0]; return 0; }
+	if (K == 3) { Vector = FVector(V[0], V[1], V[2]); return 3; }
+	if (K != 0) return -1;
+	char B[256] = {};
+	if (nm_agent_get_param_string(Agent, M.Get(), P.Get(), B, sizeof B) < 0) return -1;
+	Txt = UTF8_TO_TCHAR(B);
+	return 4;
+}
+
+int32 UDeliriumRagdollComponent::Raycast(FVector From, FVector To, FVector& Point, FVector& Normal) const
+{
+	if (!Agent) return -1;
+	float F[3], T[3], P[3], N[3];
+	ToNm(From, F);
+	ToNm(To, T);
+	const int32 K = nm_agent_raycast(Agent, F, T, P, N);
+	if (K >= 0) { Point = FromNm(P); Normal = FVector(N[0], -N[1], N[2]); }
+	return K;
+}
+
+FString UDeliriumRagdollComponent::CheckSetup() const
+{
+	return Agent ? Text([this](char* B, int32 L) { return nm_agent_check(Agent, B, L); }) : FString();
+}
+
+TArray<FDeliriumMessage> UDeliriumRagdollComponent::Messages()
+{
+	TArray<FDeliriumMessage> Out;
+	if (!Start()) return Out;
+	for (int32 M = 0, N = nm_message_count(); M < N; M++)
+	{
+		FDeliriumMessage& Msg = Out.AddDefaulted_GetRef();
+		Msg.Name = Text([M](char* B, int32 L) { return nm_message_name(M, B, L); });
+		for (int32 P = 0, PN = nm_message_param_count(M); P < PN; P++)
+		{
+			FDeliriumParam& Q = Msg.Params.AddDefaulted_GetRef();
+			Q.Name = Text([M, P](char* B, int32 L) { return nm_message_param_name(M, P, B, L); });
+			Q.Kind = nm_message_param_kind(M, P);
+			Q.bUsed = nm_message_param_used(M, P) == 1;
+			Q.Doc = Text([M, P](char* B, int32 L) { return nm_message_param_doc(M, P, B, L); });
+			float V[3] = {};
+			const int32 K = nm_message_param_default(M, P, V);
+			Q.Default = K == 3 ? FVector(V[0], V[1], V[2]) : K == 1 ? FVector(V[0], 0, 0) : FVector::ZeroVector;
+		}
+	}
+	return Out;
+}
+
 FDeliriumState UDeliriumRagdollComponent::GetState() const
 {
 	FDeliriumState S;
@@ -768,6 +1068,15 @@ FDeliriumState UDeliriumRagdollComponent::GetState() const
 	S.Centre = FromNm(P);
 	S.Velocity = FromNm(V);
 	S.Mass = nm_agent_get_mass(Agent);
+	S.bSettled = nm_agent_is_settled(Agent) == 1;
+	S.bAwake = nm_agent_is_awake(Agent) == 1;
+	S.bJumping = nm_agent_jumping(Agent) == 1;
+	S.bTaskRunning = nm_agent_task_running(Agent) == 1;
+	S.bLearnedGetUp = nm_agent_learned_getup_running(Agent) == 1;
+	S.bResting = nm_agent_is_resting(Agent, World) == 1;
+	S.bHasStance = nm_agent_get_stance(Agent, P) == 1;
+	if (S.bHasStance) S.Stance = FromNm(P);
+	for (int32 K = 0; K < 21; K++) S.Contacts.Add(nm_agent_get_part_contact(Agent, K));
 	return S;
 }
 
@@ -798,7 +1107,7 @@ void UDeliriumRagdollComponent::UnregisterCar(AActor* Car)
 
 int32 UDeliriumRagdollComponent::Cars(AActor* Car)
 {
-	CarList.RemoveAll([](const FCar& C) { return !C.Actor.IsValid(); });
+	CarList.RemoveAll([](const FCar& C) { return !C.Actor.IsValid() || (!C.Comp.IsExplicitlyNull() && !C.Comp.IsValid()); });
 	if (CarList.Num() == 0) return Car ? -1 : 0;
 	const float Dt = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
 	TArray<float> Boxes;
@@ -808,12 +1117,24 @@ int32 UDeliriumRagdollComponent::Cars(AActor* Car)
 	for (int32 K = 0; K < CarList.Num(); K++)
 	{
 		FCar& C = CarList[K];
-		const FTransform T = C.Actor->GetActorTransform();
+		const FTransform T = C.Comp.IsValid() ? FTransform(C.Comp->GetComponentQuat(), C.Comp->GetComponentLocation()) : C.Actor->GetActorTransform();
 		// Its speed once a frame (every ragdoll asks).
 		if (C.Frame != GFrameCounter)
 		{
-			if (Dt > 0.f) C.Vel = (T.GetLocation() - C.Last) / Dt;
+			const FQuat Turn = T.GetRotation();
+			if (Dt > 0.f)
+			{
+				C.Vel = (T.GetLocation() - C.Last) / Dt;
+				// Its spin: the turn since last frame, the short way round, over the frame.
+				FQuat Delta = Turn * C.Turned.Inverse();
+				if (Delta.W < 0.f) Delta = FQuat(-Delta.X, -Delta.Y, -Delta.Z, -Delta.W);
+				FVector Axis;
+				float Angle;
+				Delta.ToAxisAndAngle(Axis, Angle);
+				C.Spin = C.Turned.SizeSquared() > 0.f && Angle > 1e-6f ? Axis * (Angle / Dt) : FVector::ZeroVector;
+			}
 			C.Last = T.GetLocation();
+			C.Turned = Turn;
 			C.Frame = GFrameCounter;
 		}
 		const FVector At = T.TransformPosition(C.Centre);
@@ -844,6 +1165,10 @@ int32 UDeliriumRagdollComponent::Cars(AActor* Car)
 	TArray<int32> Kinds;
 	for (const FCar& C : CarList) Kinds.Add(int32(C.Kind) | (C.bPlayer ? NM_HIT_PLAYER : 0));
 	Check(nm_world_set_box_kinds(World, Kinds.GetData(), Kinds.Num()), TEXT("nm_world_set_box_kinds"));
+	// A spin is a turn: (x, y, z) becomes (-x, y, -z), as a rotation's.
+	TArray<float> Spins;
+	for (const FCar& C : CarList) Spins.Append({ -float(C.Spin.X), float(C.Spin.Y), -float(C.Spin.Z) });
+	Check(nm_world_set_box_spins(World, Spins.GetData(), CarList.Num()), TEXT("nm_world_set_box_spins"));
 	if (AActor* Braced = Bracing.Get())
 	{
 		const int32 K = CarList.IndexOfByPredicate([Braced](const FCar& C) { return C.Actor == Braced; });
@@ -944,11 +1269,13 @@ void UDeliriumRagdollComponent::MoversNear()
 	{
 		UPrimitiveComponent* C = H.GetComponent();
 		AActor* A = H.GetActor();
-		// ponytail: only actors whose root simulates (a mover is tracked by its actor's place); others need RegisterMover
-		// with their own actor.
-		if (!C || !A || A == GetOwner() || !C->IsSimulatingPhysics() || A->GetRootComponent() != C) continue;
-		if (CarList.ContainsByPredicate([A](const FCar& Car) { return Car.Actor == A; })) continue;
-		RegisterMover(A, EDeliriumMover::Object, FVector::ZeroVector, false, false, true, FVector::ZeroVector);
+		if (!C || !A || A == GetOwner() || !C->IsSimulatingPhysics()) continue;
+		if (CarList.ContainsByPredicate([A, C](const FCar& Car) { return Car.Actor == A && (Car.Comp.IsExplicitlyNull() || Car.Comp == C); })) continue;
+		if (A->GetRootComponent() == C) { RegisterMover(A, EDeliriumMover::Object, FVector::ZeroVector, false, false, true, FVector::ZeroVector); continue; }
+		// A simulating part that isn't the root moves apart from its actor: tracked by itself, boxed by its own bounds
+		// (on its axes, at its scale).
+		const FBoxSphereBounds L = C->CalcBounds(FTransform(FQuat::Identity, FVector::ZeroVector, C->GetComponentScale()));
+		CarList.Add({ A, L.Origin, L.BoxExtent, C->GetComponentLocation(), FVector::ZeroVector, GFrameCounter, false, EDeliriumMover::Object, false, true, C });
 	}
 }
 
@@ -1006,7 +1333,7 @@ void UDeliriumRagdollComponent::Release()
 	}
 	bFollow = false;
 	if (ACharacter* C = Cast<ACharacter>(GetOwner()))
-		if (C->GetCharacterMovement()->MovementMode == MOVE_None) C->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		if (UCharacterMovementComponent* M = C->GetCharacterMovement(); M && M->MovementMode == MOVE_None) M->SetMovementMode(MOVE_Walking);
 	if (Rig) nm_rig_destroy(Rig);
 	Lead.Remove(Agent);
 	if (Agent) nm_agent_destroy(Agent);
@@ -1031,4 +1358,11 @@ void UDeliriumRagdollComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
 	Release();
 	Super::EndPlay(Reason);
+}
+
+void UDeliriumRagdollComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
+{
+	// A world torn down without play (no EndPlay) still frees its ragdolls.
+	if (Agent || World) Release();
+	Super::OnComponentDestroyed(bDestroyingHierarchy);
 }

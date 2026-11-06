@@ -94,6 +94,8 @@ pub mod collision;
 pub mod explosion;
 pub mod falldown;
 pub mod highfall;
+pub mod jump;
+pub mod learned;
 pub mod jumproll;
 pub mod onfire;
 pub mod taskctor;

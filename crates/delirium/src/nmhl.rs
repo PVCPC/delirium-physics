@@ -75,7 +75,7 @@ impl HeadLook {
         let (nl, hl) = (ch.limits(neck), ch.limits(head));
         let sp = b.pmat(SPINE3());
         let m = sp.m;
-        let q = q_scaled(m.b * -delirium_data::kv!(518));
+        let q = q_scaled(m.b * -delirium_data::kv!(521));
         let (a, c) = (qrot(q, m.a, false), qrot(q, m.c, false));
         let h = a.mul_add(Vec3::splat(self.len), b.at(SPINE3()));
         let t = (((self.pos - m.d).vx(sp.w) - sp.v) + self.vel).mul_add(Vec3::splat(damping / strength), self.pos);
@@ -120,9 +120,9 @@ impl HeadLook {
         let (s2, s3) = ((*SPINE())[2], (*SPINE())[delirium_data::kv!(0 int)]);
         let (l2, l3) = (ch.limits(s2), ch.limits(s3));
         let x3 = over.fma(delirium_data::kv!(8), ch.eff[s3].desired[2]);
-        ch.eff[s3].desired[2] = x3.max(l3[delirium_data::kv!(1 int)] * delirium_data::kv!(519)).min(l3[delirium_data::kv!(2 int)] * delirium_data::kv!(519));
+        ch.eff[s3].desired[2] = x3.max(l3[delirium_data::kv!(1 int)] * delirium_data::kv!(522)).min(l3[delirium_data::kv!(2 int)] * delirium_data::kv!(522));
         let x2 = over.fma(delirium_data::kv!(140), ch.eff[s2].desired[2]);
-        ch.eff[s2].desired[2] = x2.max(l2[delirium_data::kv!(1 int)] * delirium_data::kv!(519)).min(l2[delirium_data::kv!(2 int)] * delirium_data::kv!(519));
+        ch.eff[s2].desired[2] = x2.max(l2[delirium_data::kv!(1 int)] * delirium_data::kv!(522)).min(l2[delirium_data::kv!(2 int)] * delirium_data::kv!(522));
         for (n, x, lo, hi) in [(2, twist, delirium_data::kv!(1 int), delirium_data::kv!(2 int)), (0, lean1, 0, 1), (1, lean2, 2, delirium_data::kv!(0 int))] {
             let (xn, xh) = split(x, nl[lo], nl[hi], hl[lo], hl[hi]);
             ch.eff[neck].desired[n] = xn.clamp(-delirium_data::kv!(137), delirium_data::kv!(137));

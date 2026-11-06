@@ -226,7 +226,7 @@ impl<P: Copy + PartialEq> Groups<P> {
 
     pub fn handle(&mut self, i: usize) -> i32 {
         let g = &mut self.0[i];
-        g.generation = if g.generation >= crate::kv!(938 int) { 1 } else { g.generation + 1 };
+        g.generation = if g.generation >= crate::kv!(940 int) { 1 } else { g.generation + 1 };
         (i32::from(g.generation) << crate::kv!(54 int)) | (i as i32 & crate::kv!(53 int))
     }
 
@@ -322,19 +322,19 @@ pub fn script_formation(n: i32) -> Option<u8> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn TURNS() -> u32 { crate::kv!(939 int) }
+fn TURNS() -> u32 { crate::kv!(941 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_LEADER() -> u32 { crate::kv!(940 int) }
+fn FACE_LEADER() -> u32 { crate::kv!(942 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_AWAY() -> u32 { crate::kv!(822 int) }
+fn FACE_AWAY() -> u32 { crate::kv!(824 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LEAD() -> u32 { crate::kv!(815 int) }
+pub fn LEAD() -> u32 { crate::kv!(817 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CROWD() -> u32 { crate::kv!(817 int) }
+pub fn CROWD() -> u32 { crate::kv!(819 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Place {
@@ -361,15 +361,15 @@ pub struct Formation {
 impl Formation {
     pub fn new(kind: u8) -> Formation {
         let (spacing, flags) = match kind {
-            LOOSE => (crate::kv!(33), crate::kv!(941 int)),
-            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(942 int)),
-            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(943 int)),
-            FOLLOW_IN_LINE => (2.0, crate::kv!(944 int)),
-            _ => (2.0, crate::kv!(945 int)),
+            LOOSE => (crate::kv!(33), crate::kv!(943 int)),
+            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(944 int)),
+            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(945 int)),
+            FOLLOW_IN_LINE => (2.0, crate::kv!(946 int)),
+            _ => (2.0, crate::kv!(947 int)),
         };
         let catch_up = if kind == FOLLOW_IN_LINE { [1.0, crate::kv!(64)] } else { [crate::kv!(5), crate::kv!(139)] };
         Formation { kind, spacing, catch_up, flags, places: Default::default(), leader: Place::default(), count: 0,
-            last: [crate::kv!(946 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
+            last: [crate::kv!(948 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
             trail_near: [0.0; 8] }
     }
 
@@ -393,7 +393,7 @@ impl Formation {
     }
 
     fn surround(&mut self, l: &Member, followers: &[Option<Member>; 7]) {
-        let step = crate::kv!(616 f32) / followers.iter().flatten().count() as f32;
+        let step = crate::kv!(618 f32) / followers.iter().flatten().count() as f32;
         let mut a = 0.0f32;
         for (place, _) in self.places.iter_mut().zip(followers).filter(|(_, m)| m.is_some()) {
             let at = if self.flags & TURNS() != 0 { wrap(l.facing + a) } else { a };

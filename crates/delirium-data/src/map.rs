@@ -25,9 +25,9 @@ impl ObjectDef {
         #[allow(non_snake_case)]
         #[inline]
         fn MOVES() -> &'static [(u32, u32); 14] { static V: std::sync::OnceLock<[(u32, u32); 14]> = std::sync::OnceLock::new(); let f = || [
-            (crate::kv!(646 int), crate::kv!(1 int)), (crate::kv!(52 int), crate::kv!(181 int)), (crate::kv!(720 int), crate::kv!(54 int)), (crate::kv!(7 int), crate::kv!(710 int)), (crate::kv!(252 int), crate::kv!(646 int)), (crate::kv!(814 int), crate::kv!(184 int)), (crate::kv!(815 int), crate::kv!(816 int)),
-            (crate::kv!(817 int), crate::kv!(818 int)), (crate::kv!(819 int), crate::kv!(820 int)), (crate::kv!(820 int), crate::kv!(674 int)), (crate::kv!(821 int), crate::kv!(183 int)), (crate::kv!(822 int), crate::kv!(720 int)), (crate::kv!(182 int), crate::kv!(823 int)),
-            (crate::kv!(183 int), crate::kv!(824 int)),
+            (crate::kv!(648 int), crate::kv!(1 int)), (crate::kv!(52 int), crate::kv!(181 int)), (crate::kv!(722 int), crate::kv!(54 int)), (crate::kv!(7 int), crate::kv!(712 int)), (crate::kv!(257 int), crate::kv!(648 int)), (crate::kv!(816 int), crate::kv!(184 int)), (crate::kv!(817 int), crate::kv!(818 int)),
+            (crate::kv!(819 int), crate::kv!(820 int)), (crate::kv!(821 int), crate::kv!(822 int)), (crate::kv!(822 int), crate::kv!(676 int)), (crate::kv!(823 int), crate::kv!(183 int)), (crate::kv!(824 int), crate::kv!(722 int)), (crate::kv!(182 int), crate::kv!(825 int)),
+            (crate::kv!(183 int), crate::kv!(826 int)),
         ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
         let mut out = (self.kind as u32) << crate::kv!(107 int);
         for (from, to) in (*MOVES()) {
@@ -61,7 +61,7 @@ pub fn hash_bytes(name: &[u8], seed: u32) -> u32 {
     }
     h = h.wrapping_add(h << crate::kv!(0 int));
     h ^= h >> crate::kv!(113 int);
-    h.wrapping_add(h << crate::kv!(198 int))
+    h.wrapping_add(h << crate::kv!(189 int))
 }
 
 pub struct Xpl<'a> {
@@ -81,7 +81,7 @@ pub struct Xpl<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn XPL_SECTIONS() -> &'static [(usize, usize); 11] { static V: std::sync::OnceLock<[(usize, usize); 11]> = std::sync::OnceLock::new(); let f = || [(crate::kv!(1 int), crate::kv!(93 int)), (crate::kv!(23 int), crate::kv!(326 int)), (crate::kv!(55 int), crate::kv!(93 int)), (crate::kv!(54 int), crate::kv!(319 int)), (crate::kv!(127 int), crate::kv!(411 int)), (crate::kv!(107 int), crate::kv!(411 int)), (crate::kv!(85 int), crate::kv!(127 int)), (crate::kv!(254 int), crate::kv!(364 int)), (crate::kv!(94 int), crate::kv!(254 int)), (crate::kv!(95 int), crate::kv!(778 int)), (crate::kv!(411 int), crate::kv!(107 int))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn XPL_SECTIONS() -> &'static [(usize, usize); 11] { static V: std::sync::OnceLock<[(usize, usize); 11]> = std::sync::OnceLock::new(); let f = || [(crate::kv!(1 int), crate::kv!(93 int)), (crate::kv!(23 int), crate::kv!(330 int)), (crate::kv!(55 int), crate::kv!(93 int)), (crate::kv!(54 int), crate::kv!(323 int)), (crate::kv!(127 int), crate::kv!(415 int)), (crate::kv!(107 int), crate::kv!(415 int)), (crate::kv!(85 int), crate::kv!(127 int)), (crate::kv!(188 int), crate::kv!(368 int)), (crate::kv!(94 int), crate::kv!(188 int)), (crate::kv!(95 int), crate::kv!(780 int)), (crate::kv!(415 int), crate::kv!(107 int))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn be32(d: &[u8], at: usize) -> Option<u32> {
     d.get(at..at + crate::kv!(1 int)).map(|b| u32::from_be_bytes(b.try_into().unwrap()))
@@ -93,7 +93,7 @@ impl<'a> Xpl<'a> {
         if version != crate::kv!(0 int) {
             return Err(format!("Unknown xpl version {version}"));
         }
-        let mut at = crate::kv!(326 int);
+        let mut at = crate::kv!(330 int);
         let mut parts: Vec<&[u8]> = vec![];
         for (head, size) in (*XPL_SECTIONS()) {
             let len = be32(d, head).ok_or("Truncated xpl")? as usize * size;
@@ -138,7 +138,7 @@ pub struct MloPlus {
 }
 
 pub fn read_xpl_mlo(d: &[u8]) -> Result<Vec<MloPlus>, String> {
-    Ok(records(Xpl::read(d)?.mlo, crate::kv!(254 int))
+    Ok(records(Xpl::read(d)?.mlo, crate::kv!(188 int))
         .map(|r| {
             let mut record = [u32::MAX; 12];
             for (k, w) in record[..crate::kv!(22 int)].iter_mut().enumerate() {
@@ -165,7 +165,7 @@ pub struct CarGen {
 }
 
 pub fn read_xpl_cars(d: &[u8]) -> Result<Vec<CarGen>, String> {
-    Ok(records(Xpl::read(d)?.cars, crate::kv!(319 int))
+    Ok(records(Xpl::read(d)?.cars, crate::kv!(323 int))
         .map(|r| CarGen {
             position: [float(r, 0), float(r, 1), float(r, 2)],
             dir: [float(r, crate::kv!(0 int)), float(r, crate::kv!(1 int))],
@@ -207,10 +207,10 @@ pub struct LodGroup {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SLOW_ZONES_MAX() -> usize { crate::kv!(375 int) }
+pub fn SLOW_ZONES_MAX() -> usize { crate::kv!(379 int) }
 
 pub fn slow_zone_turn(vehicle_id: u16, frame: u32) -> bool {
-    (vehicle_id as u32).wrapping_add(frame) & crate::kv!(198 int) == 0
+    (vehicle_id as u32).wrapping_add(frame) & crate::kv!(189 int) == 0
 }
 
 pub fn in_slow_zone(zones: &[([f32; 3], [f32; 3])], p: [f32; 3]) -> bool {
@@ -237,7 +237,7 @@ pub fn read_xpl_extras(d: &[u8]) -> Result<(Vec<Garage>, Vec<TimeCycleBox>, Vec<
     let garages = records(x.grge, crate::kv!(93 int))
         .map(|r| Garage { floats: std::array::from_fn(|k| float(r, k)), flags: word(r, crate::kv!(23 int)), kind: word(r, crate::kv!(104 int)), name: text(&r[crate::kv!(95 int)..crate::kv!(93 int)]) })
         .collect();
-    let tcyc = records(x.tcyc, crate::kv!(411 int))
+    let tcyc = records(x.tcyc, crate::kv!(415 int))
         .map(|r| TimeCycleBox {
             min: [float(r, 0), float(r, 1), float(r, 2)],
             max: [float(r, crate::kv!(0 int)), float(r, crate::kv!(1 int)), float(r, crate::kv!(2 int))],
@@ -248,15 +248,15 @@ pub fn read_xpl_extras(d: &[u8]) -> Result<(Vec<Garage>, Vec<TimeCycleBox>, Vec<
         })
         .collect();
     let slow = records(x.slow, crate::kv!(107 int)).map(|r| ([float(r, 0), float(r, 1), float(r, 2)], [float(r, crate::kv!(0 int)), float(r, crate::kv!(1 int)), float(r, crate::kv!(2 int))])).collect();
-    let lodm = records(x.lodm, crate::kv!(778 int))
+    let lodm = records(x.lodm, crate::kv!(780 int))
         .map(|r| {
             let head = word(r, crate::kv!(6 int));
-            let n = ((head & crate::kv!(198 int)) as usize).min(crate::kv!(81 int));
+            let n = ((head & crate::kv!(189 int)) as usize).min(crate::kv!(81 int));
             LodGroup {
                 min: [float(r, 0), float(r, 1), float(r, 2)],
                 max: [float(r, crate::kv!(0 int)), float(r, crate::kv!(1 int)), float(r, crate::kv!(2 int))],
                 byte: (head >> crate::kv!(107 int)) as u8,
-                models: (0..n).map(|k| (word(r, crate::kv!(22 int) + k), text(&r[crate::kv!(326 int) + k * crate::kv!(7 int)..crate::kv!(197 int) + k * crate::kv!(7 int)]))).collect(),
+                models: (0..n).map(|k| (word(r, crate::kv!(22 int) + k), text(&r[crate::kv!(330 int) + k * crate::kv!(7 int)..crate::kv!(203 int) + k * crate::kv!(7 int)]))).collect(),
             }
         })
         .collect();

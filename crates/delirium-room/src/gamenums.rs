@@ -64,11 +64,11 @@ pub fn PELLET_REACH() -> f32 { delirium_data::kv!(116) }
 pub fn BURN_DAMAGE() -> f32 { delirium_data::kv!(38) }
 
 pub fn gun_spread(kind: &str, held: f32, len: f32, acc: f32, mut rnd: impl FnMut() -> f32) -> (f32, f32) {
-    let full = match kind { "pistol" | "deagle" => delirium_data::kv!(926), "smg" => delirium_data::kv!(12), "ak47" => delirium_data::kv!(5), _ => f32::INFINITY };
+    let full = match kind { "pistol" | "deagle" => delirium_data::kv!(928), "smg" => delirium_data::kv!(12), "ak47" => delirium_data::kv!(5), _ => f32::INFINITY };
     let ped = 2.0 * (held / full).min(1.0);
     let p = ped * (delirium_data::kv!(78) + rnd());
     let w = rnd() * acc * if p < 0.5 { (2.0 * p).max(delirium_data::kv!(60)) } else { 1.0 };
-    let most = ped * delirium_data::kv!(138) + acc * if ped * delirium_data::kv!(138) < 0.5 { (delirium_data::kv!(533) * ped).max(delirium_data::kv!(60)) } else { 1.0 };
+    let most = ped * delirium_data::kv!(138) + acc * if ped * delirium_data::kv!(138) < 0.5 { (delirium_data::kv!(536) * ped).max(delirium_data::kv!(60)) } else { 1.0 };
     (delirium_data::kv!(118) * len * (p + w), delirium_data::kv!(118) * len * most)
 }
 
@@ -92,13 +92,13 @@ pub fn ONE_SIDE_REACH() -> f32 { delirium_data::kv!(179) }
 pub fn SHOVE_PART() -> i32 { delirium_data::kv!(81 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LIFT_IMPULSE() -> f32 { delirium_data::kv!(751) }
+pub fn LIFT_IMPULSE() -> f32 { delirium_data::kv!(753) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn STUN_MAG() -> f32 { delirium_data::kv!(116) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn DRUNK_TIMEOUT() -> f32 { delirium_data::kv!(1074) }
+pub fn DRUNK_TIMEOUT() -> f32 { delirium_data::kv!(190) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn DRUNK_LEAN() -> f32 { delirium_data::kv!(60) }

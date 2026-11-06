@@ -1,13 +1,9 @@
 use bevy::prelude::*;
 use delirium::collision::Collision;
 use delirium::msg::{self, Value};
-use delirium::nm::Agent;
+pub use delirium::learned::*;
 use delirium::ragdoll::{Build, Ragdoll};
 
-const HEAD: usize = 12;
-const CHEST: usize = 9;
-pub const STEPS: usize = 480;
-const HIDDEN: usize = 64;
 const PAIRS: usize = 64;
 const SIGMA: f32 = 0.04;
 const LR: f32 = 0.02;
@@ -80,230 +76,8 @@ pub fn path() -> String {
     at.or_else(|| Some(e.parent()?.parent()?.parent()?.parent()?.join("getup.net"))).map_or("getup.net".into(), |p| p.to_string_lossy().into_owned())
 }
 
-pub struct Net {
-    pub sizes: [usize; 4],
-    pub w: Vec<f32>,
-    frozen: std::sync::OnceLock<Vec<f32>>,
-}
-
-impl Net {
-    fn len(s: [usize; 4]) -> usize {
-        (0..3).map(|l| s[l] * s[l + 1] + s[l + 1]).sum()
-    }
-
-    pub fn forward(&self, w: &[f32], x: &[f32]) -> Vec<f32> {
-        let mut a = x.to_vec();
-        let mut o = 0;
-        for l in 0..3 {
-            let (n, m) = (self.sizes[l], self.sizes[l + 1]);
-            let (wl, b) = (&w[o..o + n * m], &w[o + n * m..o + n * m + m]);
-            a = (0..m).map(|j| (b[j] + (0..n).map(|i| wl[j * n + i] * a[i]).sum::<f32>()).tanh()).collect();
-            o += n * m + m;
-        }
-        a
-    }
-
-    pub fn frozen(&self, x: &[f32]) -> Vec<f32> {
-        let t = self.frozen.get_or_init(|| {
-            let (mut t, mut o) = (Vec::new(), 0);
-            for l in 0..3 {
-                let (n, m) = (self.sizes[l], self.sizes[l + 1]);
-                t.extend((0..n * m).map(|k| self.w[o + (k % m) * n + k / m]));
-                o += n * m + m;
-            }
-            t
-        });
-        let mut a = x.to_vec();
-        let (mut o, mut q) = (0, 0);
-        for l in 0..3 {
-            let (n, m) = (self.sizes[l], self.sizes[l + 1]);
-            let mut s = vec![-0.0f32; m];
-            for (i, &x) in a[..n].iter().enumerate() {
-                for (s, &w) in s.iter_mut().zip(&t[q + i * m..q + (i + 1) * m]) { *s += w * x; }
-            }
-            a = s.iter().zip(&self.w[o + n * m..o + n * m + m]).map(|(&s, &b)| (b + s).tanh()).collect();
-            o += n * m + m; q += n * m;
-        }
-        a
-    }
-
-    pub fn grown(mut self, out: usize) -> Net {
-        let m = self.sizes[3];
-        if out > m {
-            let n = self.sizes[2];
-            let b = self.w.split_off(self.w.len() - m);
-            self.w.extend(std::iter::repeat_n(0.0, (out - m) * n));
-            self.w.extend(b);
-            self.w.extend(std::iter::repeat_n(0.0, out - m));
-            self.sizes[3] = out;
-        }
-        self
-    }
-
-    pub fn save(&self, path: &str) -> std::io::Result<()> {
-        let mut b: Vec<u8> = self.sizes.iter().flat_map(|&s| (s as u32).to_le_bytes()).collect();
-        b.extend(self.w.iter().flat_map(|x| x.to_le_bytes()));
-        std::fs::write(path, b)
-    }
-
-    pub fn load(path: &str) -> Option<Net> {
-        let b = std::fs::read(path).ok()?;
-        if b.len() < 16 || (b.len() - 16) % 4 != 0 { return None; }
-        let u = |i: usize| u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap()) as usize;
-        let sizes = [u(0), u(1), u(2), u(3)];
-        let count = (0..3).try_fold(0usize, |n, l| n.checked_add(sizes[l].checked_mul(sizes[l + 1])?.checked_add(sizes[l + 1])?))?;
-        if sizes.contains(&0) || count != (b.len() - 16) / 4 { return None; }
-        let w: Vec<f32> = b[16..].chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
-        w.iter().all(|x| x.is_finite()).then_some(Net { sizes, w, frozen: Default::default() })
-    }
-}
-
-pub fn obs(d: &Ragdoll, on: usize) -> Vec<f32> {
-    body_obs(d, on, false)
-}
-
-pub(crate) fn body_obs(d: &Ragdoll, on: usize, walking: bool) -> Vec<f32> {
-    let fr: Vec<Transform> = d.frames().collect();
-    let root = fr[0];
-    let f = if walking { Vec3::Z.cross(fr[4].translation - fr[1].translation) } else { root.rotation * Vec3::X };
-    let f = f.with_z(0.0).normalize_or(Vec3::X);
-    let inv = Quat::from_rotation_z(-f.y.atan2(f.x));
-    let mut o = vec![root.translation.z];
-    o.extend((inv * (root.rotation * Vec3::Z)).to_array());
-    let v0 = d.motion(0).0;
-    for (k, t) in fr.iter().enumerate() {
-        o.extend((inv * (t.translation - root.translation)).to_array());
-        o.extend((inv * (d.motion(k).0 - v0) * 0.2).to_array());
-        o.extend((inv * (t.rotation * Vec3::Z)).to_array());
-    }
-    o.extend((inv * v0 * 0.2).to_array());
-    o.extend((0..MENU.len()).map(|k| (k == on) as u8 as f32));
-    o
-}
-
-pub fn drive(a: &mut Agent, act: &[f32], zero: &[Quat], build: &Build) {
-    let root = a.doll.frames().next().unwrap_or_default();
-    let mut rot: Vec<Quat> = Vec::with_capacity(zero.len());
-    for (i, p) in build.parts.iter().enumerate() {
-        let r = match p.parent {
-            None => root.rotation,
-            Some(j) => rot[j] * zero[i] * Quat::from_scaled_axis(Vec3::new(act[3 * (i - 1)], act[3 * (i - 1) + 1], act[3 * (i - 1) + 2]) * 1.2),
-        };
-        rot.push(r);
-    }
-    let n = 3 * (build.parts.len() - 1);
-    a.set_stiffness(8.0 + 4.0 * act[n], 1.0);
-    a.muscle_stiffness_x(act.get(n + 1).map_or(1.0, |&m| 4f32.powf(m)));
-    delirium::nm::task_pose_control(a, rot.into_iter().map(|r| Transform::from_rotation(r)).collect());
-}
-
-pub fn zero(build: &Build, frames: &[Transform]) -> Vec<Quat> {
-    build.parts.iter().enumerate().map(|(i, p)| p.parent.map_or(frames[i].rotation, |j| frames[j].rotation.inverse() * frames[i].rotation)).collect()
-}
-
-pub fn agent(build: &Build, start: &[Transform]) -> Agent {
-    Agent::new(build, Ragdoll::new(build, start, Vec3::ZERO), Quat::IDENTITY, 0.3)
-}
-
-pub const MENU: [(&str, bool); 40] = [
-    ("muscles", true), ("balance", true), ("drunk", true), ("windmill", true), ("pedal", true), ("writhe", true), ("rollup", true),
-    ("catchfall", true), ("highfall", true), ("stairs", true), ("flinch", true), ("brace", true), ("look", true), ("point", true),
-    ("lean", true), ("relax", true), ("stayup", true), ("foetal", true), ("grab", true),
-    ("electrocute", true), ("teeter", true), ("stumble", true), ("staggerFall", true), ("smartFall", true),
-    ("balancerCollisionsReaction", true), ("injuredOnGround", true), ("learnedCrawl", true), ("yanked", true), ("dragged", true),
-    ("dangle", true), ("carried", true), ("buoyancy", true), ("animPose", true), ("armsWindmill", true), ("spineTwist", true),
-    ("wave", true), ("", false), ("", false), ("", false), ("", false)];
-const PICK_EVERY: usize = 15;
 const HURT_EVERY: u64 = 3;
 const HURT: f32 = 0.5;
-
-#[derive(Clone, Copy, Default)]
-pub struct Pick {
-    pub on: usize,
-    pub n: usize,
-}
-
-fn menu(slot: usize, a: &Agent, dir: Vec3, amt: f32) -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
-    let fr: Vec<Transform> = a.doll.frames().collect();
-    let (head, chest) = (fr[HEAD].translation, fr[CHEST].translation);
-    let on = || ("start", Value::Bool(true));
-    let left = Vec3::Z.cross(dir);
-    match MENU[slot].0 {
-        "balance" => vec![("bodyBalance", vec![on()])],
-        "drunk" => vec![("bodyBalance", vec![on(), ("armsOutOnPushTimeout", Value::Float(999.0))]),
-                        ("leanInDirection", vec![on(), ("leanAmount", Value::Float(0.2)), ("dir", Value::Vec3(dir))])],
-        "windmill" => vec![("bodyBalance", vec![on()]), ("armsWindmillAdaptive", vec![on()])],
-        "pedal" => vec![("pedalLegs", vec![on()])],
-        "writhe" => vec![("bodyWrithe", vec![on()])],
-        "rollup" => vec![("bodyRollUp", vec![on()])],
-        "catchfall" => vec![("catchFall", vec![on()])],
-        "highfall" => vec![("highFall", vec![on()])],
-        "stairs" => vec![("rollDownStairs", vec![on()])],
-        "flinch" => vec![("upperBodyFlinch", vec![on(), ("pos", Value::Vec3(head + dir * 2.0))])],
-        "brace" => vec![("braceForImpact", vec![on(), ("pos", Value::Vec3(chest + dir)), ("look", Value::Vec3(chest + dir))])],
-        "look" => vec![("headLook", vec![on(), ("alwaysLook", Value::Bool(true)), ("pos", Value::Vec3(head + dir * 2.0))])],
-        "point" => vec![("pointArm", vec![on(), ("target", Value::Vec3(chest + dir * 2.0))])],
-        "lean" => vec![("bodyBalance", vec![on()]), ("leanInDirection", vec![on(), ("leanAmount", Value::Float(0.4 * amt)), ("dir", Value::Vec3(dir))])],
-        "relax" => vec![("bodyRelax", vec![on()])],
-        "stayup" => vec![("stayUpright", vec![on(), ("stiffness", Value::Float(3.0))])],
-        "foetal" => vec![("bodyFoetal", vec![on()])],
-        "grab" => {
-            let at = chest + dir * 0.45;
-            vec![("grab", vec![on(), ("linegrab", Value::Bool(true)), ("useLeft", Value::Bool(true)), ("useRight", Value::Bool(true)),
-                               ("dontLetGo", Value::Bool(true)), ("pos1", Value::Vec3(at + left * 0.5)), ("pos2", Value::Vec3(at - left * 0.5))])]
-        }
-        x if !x.is_empty() && x != "muscles" => vec![(x, vec![on()])],
-        _ => vec![],
-    }
-}
-
-pub fn step(net: &Net, w: &[f32], a: &mut Agent, build: &Build, world: &Collision, zero: &[Quat], p: &mut Pick) {
-    let act = net.forward(w, &obs(&a.doll, p.on));
-    let n = 3 * (build.parts.len() - 1) + 2;
-    if p.n % PICK_EVERY == 0 && act.len() >= n + MENU.len() + 3 {
-        let pick = (0..MENU.len()).filter(|&k| MENU[k].1).fold(0, |b, k| if act[n + k] > act[n + b] { k } else { b });
-        if pick != p.on {
-            let root = a.doll.frames().next().unwrap_or_default();
-            let f = (root.rotation * Vec3::X).with_z(0.0).normalize_or(Vec3::X);
-            let l = Vec2::new(act[n + MENU.len()], act[n + MENU.len() + 1]);
-            let dir = Quat::from_rotation_z(f.y.atan2(f.x)) * l.normalize_or(Vec2::X).extend(0.0);
-            let amt = 0.5 + 0.5 * act[n + MENU.len() + 2];
-            let mut st = std::mem::take(&mut a.msgs);
-            for (name, ps) in std::iter::once(("stopAllBehaviours", vec![])).chain(menu(pick, a, dir, amt)) {
-                let _ = msg::send(a, build, world, &mut st, name, &ps);
-            }
-            a.msgs = st;
-            p.on = pick;
-        }
-    }
-    p.n += 1;
-    for l in std::mem::take(&mut a.extras.outbox).iter().filter(|l| !l.starts_with("#say ")) {
-        send_line(a, build, world, l);
-    }
-    if p.on == 0 {
-        drive(a, &act, zero, build);
-    }
-    a.doll.kick(Vec3::ZERO);
-    a.step(build, world, 1.0 / 60.0, &[], &[]);
-}
-
-pub(crate) fn send_line(a: &mut Agent, build: &Build, world: &Collision, line: &str) {
-    let mut w = line.split_whitespace();
-    let Some(m) = w.next().and_then(msg::find) else { return };
-    let ps: Vec<(&str, Value)> = w.filter_map(|kv| {
-        let (k, v) = kv.split_once('=')?;
-        let kind = if k == "start" { msg::Kind::Bool } else { m.params.iter().find(|p| p.name == k)?.kind };
-        Some((k, crate::parse(kind, v)?))
-    }).collect();
-    let mut st = std::mem::take(&mut a.msgs);
-    let _ = msg::send(a, build, world, &mut st, m.name, &ps);
-    a.msgs = st;
-}
-
-pub fn standing(d: &Ragdoll) -> bool {
-    let fr: Vec<Transform> = d.frames().collect();
-    fr[HEAD].translation.z > 1.4 && fr[0].translation.z > 0.8
-}
 
 fn stage(h: f32, p: f32) -> usize {
     [(1.4, 0.8), (1.1, 0.6), (0.8, 0.35), (0.5, 0.0)].iter().position(|&(hh, pp)| h > hh && p > pp).map_or(0, |i| 4 - i)
@@ -319,7 +93,7 @@ fn mimic(frames: &[Transform]) -> Option<Vec<[Vec3; 11]>> {
         (v.len() == 33).then(|| std::array::from_fn(|i| Vec3::new(v[3 * i], v[3 * i + 1], v[3 * i + 2])))
     }).collect();
     let top = r.iter().map(|k| k[4].z).fold(0.0, f32::max);
-    let s = frames[HEAD].translation.z / top.max(0.1);
+    let s = frames[HEAD()].translation.z / top.max(0.1);
     r.iter_mut().flatten().for_each(|p| *p *= s);
     (!r.is_empty()).then_some(r)
 }
@@ -365,58 +139,8 @@ pub fn walk_path(run: bool) -> String {
     std::path::Path::new(&path()).with_file_name(if run { "run.net" } else { "walk.net" }).to_string_lossy().into_owned()
 }
 
-pub(crate) fn walk_obs(d: &Ragdoll, phase: f32) -> Vec<f32> {
-    let mut x = body_obs(d, 1, true);
-    let (s, c) = (phase * std::f32::consts::TAU).sin_cos();
-    x.extend([s, c]);
-    x
-}
-
-pub fn walk_sizes(d: &Ragdoll) -> [usize; 4] {
-    [walk_obs(d, 0.0).len(), HIDDEN, HIDDEN, 4]
-}
-
-pub const WALK_STEP_BUDGET: u32 = 10_000;
-
-pub fn walk_agent(build: &Build, world: &Collision, frames: &[Transform]) -> Result<Agent, String> {
-    let mut a = agent(build, frames);
-    start_walk_balance(&mut a,build,world)?;
-    Ok(a)
-}
-
-pub fn start_walk_balance(a:&mut Agent,build:&Build,world:&Collision)->Result<(),String>{
-    let mut st = std::mem::take(&mut a.msgs);
-    msg::send(a, build, world, &mut st, "bodyBalance", &[("maxSteps", Value::Int(WALK_STEP_BUDGET as i32)), ("start", Value::Bool(true))]).map_err(|e| format!("bodyBalance: {e:?}"))?;
-    a.msgs = st;
-    Ok(())
-}
-
-pub fn walk_input(a: &mut Agent, build: &Build, world: &Collision, st: &mut msg::State, dir: Vec3,
-                  wander: &mut delirium::playerctl::Wander, rand: &mut delirium_data::rng::Rand) {
-    let ped = a.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
-    let m = delirium::playerctl::control(a, (0, -127), (-dir.x).atan2(dir.y), ped, wander, rand);
-    delirium::shottask::apply(a, build, world, st, &m);
-}
-
-fn walk_config(act: &[f32]) -> delirium::nm::ConfigureBalance {
-    delirium::nm::ConfigureBalance { leg_stiffness: 12.0 + 4.0 * act[0], step_height: 0.1 * 4f32.powf(act[1]),
-        step_clamp_scale: 2f32.powf(act[2]), ..Default::default() }
-}
-
-pub fn drive_walk(net: &Net, w: &[f32], a: &mut Agent, phase: &mut f32, duration: f32) {
-    let act = net.forward(w, &walk_obs(&a.doll, *phase));
-    tune_walk(a, &act);
-    a.doll.kick(Vec3::ZERO);
-    *phase = (*phase + 1.0 / (60.0 * duration)).rem_euclid(1.0);
-}
-
-pub fn tune_walk(a: &mut Agent, act: &[f32]) {
-    a.configure_balance(walk_config(act));
-    a.muscle_stiffness_x(2f32.powf(act[3]));
-}
-
 fn walk_reward(fr: &[Transform], velocity: Vec3, reference: &[Vec3; 11], forward: Vec3, speed: f32) -> Option<f32> {
-    let h = fr[HEAD].translation.z;
+    let h = fr[HEAD()].translation.z;
     if !h.is_finite() || h < 0.8 || !velocity.is_finite() { return None; }
     let me = local(KEYS.map(|k| fr[k].translation));
     let err = me.iter().zip(reference).map(|(a, b)| a.distance_squared(*b)).sum::<f32>();
@@ -432,7 +156,7 @@ fn episode_walk(net: &Net, w: Option<&[f32]>, start: &[Transform], build: &Build
     let forward = Vec3::Z.cross(start[4].translation - start[1].translation).with_z(0.0).normalize_or(Vec3::X);
     let (mut phase, mut reward, mut distance, mut steps) = (0.0, 0.0, 0.0, 0);
     let (mut wander, mut rand) = (Default::default(), delirium_data::rng::Rand::new(1));
-    for i in 0..STEPS {
+    for i in 0..STEPS() {
         if i % 2 == 0 {
             let mut st = std::mem::take(&mut a.msgs);
             walk_input(&mut a, build, world, &mut st, forward, &mut wander, &mut rand);
@@ -453,12 +177,12 @@ fn episode_walk(net: &Net, w: Option<&[f32]>, start: &[Transform], build: &Build
             Some(r) => reward += r,
             None => {
                 reward -= 10.0;
-                if let Some(rec) = rec.as_mut() { rec.resize(STEPS, fr); }
+                if let Some(rec) = rec.as_mut() { rec.resize(STEPS(), fr); }
                 break;
             }
         }
     }
-    (reward / STEPS as f32, distance, steps)
+    (reward / STEPS() as f32, distance, steps)
 }
 
 fn episode(net: &Net, w: &[f32], start: &[Transform], hurt: Option<&str>, build: &Build, world: &Collision, zero: &[Quat],
@@ -469,13 +193,13 @@ fn episode(net: &Net, w: &[f32], start: &[Transform], hurt: Option<&str>, build:
     }
     let mut r = 0.0;
     let (mut best, mut at, mut pick) = (0usize, 0usize, Pick::default());
-    for _ in 0..STEPS {
+    for _ in 0..STEPS() {
         step(net, w, &mut a, build, world, zero, &mut pick);
         let fr: Vec<Transform> = a.doll.frames().collect();
         if let Some(rec) = rec.as_mut() {
             rec.push(fr.clone());
         }
-        let (h, p) = (fr[HEAD].translation.z, fr[0].translation.z);
+        let (h, p) = (fr[HEAD()].translation.z, fr[0].translation.z);
         if !h.is_finite() {
             return -100.0;
         }
@@ -500,7 +224,7 @@ fn episode(net: &Net, w: &[f32], start: &[Transform], hurt: Option<&str>, build:
             r -= 3.0 * a.doll.motion(0).0.truncate().length().min(1.0);
         }
     }
-    r / STEPS as f32
+    r / STEPS() as f32
 }
 
 fn hurt(seed: u64, n: usize) -> Option<&'static str> {
@@ -551,7 +275,7 @@ pub fn train_walk(build: &Build, world: &Collision, frames: &[Transform], clips:
         return Err(format!("{path}: invalid or incompatible walk network; use a new file (existing file preserved)"));
     }
     println!("learn-{}: clip {:.3} s, root {:.3} m/s; head {:.3} m, pelvis {:.3} m; WASD + balance + learned muscles; CPU only",
-        if run { "run" } else { "walk" }, walk.duration, walk.speed, frames[HEAD].translation.z, frames[0].translation.z);
+        if run { "run" } else { "walk" }, walk.duration, walk.speed, frames[HEAD()].translation.z, frames[0].translation.z);
     let initial = if run && !std::path::Path::new(path).exists() {
         let seed = walk_path(false);
         let net = Net::load(&seed).filter(|n| n.sizes == sizes).ok_or_else(|| format!("train walk first: no compatible {seed}"))?;
@@ -579,7 +303,7 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
     let refm = if walk.is_none() { mimic(frames) } else { None };
     let refm = refm.as_deref();
     let d = Ragdoll::new(build, frames, Vec3::ZERO);
-    let sizes = if walk.is_some() { walk_sizes(&d) } else { [obs(&d, 0).len(), HIDDEN, HIDDEN, 3 * (build.parts.len() - 1) + 2 + MENU.len() + 3] };
+    let sizes = if walk.is_some() { walk_sizes(&d) } else { [obs(&d, 0).len(), HIDDEN(), HIDDEN(), 3 * (build.parts.len() - 1) + 2 + MENU.len() + 3] };
     let mut net = Net::load(path).or(initial).map(|n| n.grown(sizes[3])).filter(|n| n.sizes == sizes).unwrap_or_else(|| {
         let mut w: Vec<f32> = (0..Net::len(sizes)).map(|_| rng.n() * 0.05).collect();
         if walk.is_some() {
@@ -598,7 +322,7 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
     }
     let (mut m1, mut m2) = (vec![0.0f32; np], vec![0.0f32; np]);
     let threads = std::thread::available_parallelism().map_or(8, |n| n.get()).saturating_sub(4).max(1);
-    let fallen = pool.iter().filter(|s| s[HEAD].translation.z < 0.5).count();
+    let fallen = pool.iter().filter(|s| s[HEAD()].translation.z < 0.5).count();
     if let Some(m) = refm {
         println!("learn: copying MIMIC's {} steps", m.len());
     }
@@ -678,9 +402,9 @@ fn train_mode(build: &Build, world: &Collision, frames: &[Transform], gens: usiz
             let up = pool.iter().take(8).filter(|s| {
                 let mut a = agent(build, s);
                 let mut p = Pick::default();
-                (0..STEPS).for_each(|i| {
+                (0..STEPS()).for_each(|i| {
                     step(&net, &net.w, &mut a, build, world, &z, &mut p);
-                    on[p.on] += (i % PICK_EVERY == 0) as usize;
+                    on[p.on] += (i % PICK_EVERY() == 0) as usize;
                 });
                 standing(&a.doll)
             }).count();

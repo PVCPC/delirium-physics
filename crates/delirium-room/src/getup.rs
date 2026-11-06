@@ -135,7 +135,7 @@ fn img_read(table: &[img::Entry], f: &mut std::fs::File, name: &str) -> Result<r
     let e = table.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or(format!("{name} not found"))?;
     let mut raw = vec![];
     f.seek(SeekFrom::Start(e.offset)).map_err(|e| e.to_string())?;
-    f.take(e.used_blocks as u64 * delirium_data::kv!(720 int)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
+    f.take(e.used_blocks as u64 * delirium_data::kv!(722 int)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
     resource::parse(&raw)
 }
 

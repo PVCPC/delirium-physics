@@ -15,7 +15,7 @@ pub struct Foetal {
 
 impl Default for Foetal {
     fn default() -> Foetal {
-        Foetal { stiffness: delirium_data::kv!(137), damping_factor: delirium_data::kv!(179), asymmetry: 0.0, back_twist: 0.0, random_seed: delirium_data::kv!(197 int), mask: "fb", active: false }
+        Foetal { stiffness: delirium_data::kv!(137), damping_factor: delirium_data::kv!(179), asymmetry: 0.0, back_twist: 0.0, random_seed: delirium_data::kv!(203 int), mask: "fb", active: false }
     }
 }
 
@@ -27,9 +27,9 @@ impl Rng {
     }
 
     fn next(&mut self) -> f32 {
-        let n = self.0 as u64 * delirium_data::kv!(192 int) + self.1 as u64;
+        let n = self.0 as u64 * delirium_data::kv!(198 int) + self.1 as u64;
         (self.0, self.1) = (n as u32, (n >> delirium_data::kv!(7 int)) as u32);
-        (self.0 & delirium_data::kv!(190 int)) as f32 * delirium_data::kv!(225)
+        (self.0 & delirium_data::kv!(196 int)) as f32 * delirium_data::kv!(230)
     }
 }
 
@@ -86,7 +86,7 @@ impl Foetal {
         for i in [1, 0] {
             let l = limb(i);
             ch.eff[l.e[1]].desired[2] = -delirium_data::kv!(24);
-            ch.eff[l.e[1]].desired[0] = delirium_data::kv!(226);
+            ch.eff[l.e[1]].desired[0] = delirium_data::kv!(231);
             ch.eff[l.e[2]].desired[0] = 2.0;
         }
         for i in 2..delirium_data::kv!(1 int) {

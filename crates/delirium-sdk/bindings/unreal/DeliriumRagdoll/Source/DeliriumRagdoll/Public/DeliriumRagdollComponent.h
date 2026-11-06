@@ -42,6 +42,58 @@ struct FDeliriumState
 	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FVector Centre = FVector::ZeroVector;
 	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FVector Velocity = FVector::ZeroVector;
 	UPROPERTY(BlueprintReadOnly, Category = "Delirium") float Mass = 0.f;
+	/** Settled (still and balanced), awake (its physics running), jumping, a task running, the learned get-up running,
+	 *  resting (lying still on the ground). */
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bSettled = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bAwake = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bJumping = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bTaskRunning = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bLearnedGetUp = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bResting = false;
+	/** Where the balancer stands (between its feet, cm); bHasStance false when it isn't balancing. */
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bHasStance = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FVector Stance = FVector::ZeroVector;
+	/** Each of the 21 parts' contact flags (0: touching nothing). */
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") TArray<int32> Contacts;
+};
+
+/** A parameter of a message NM takes (Messages). */
+USTRUCT(BlueprintType)
+struct FDeliriumParam
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FString Name;
+	/** 0 float, 1 int, 2 bool, 3 vector, 4 string. */
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") int32 Kind = 0;
+	/** The game's behaviours read it. */
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") bool bUsed = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FString Doc;
+	/** Its default: a number's in X, a vector's (NM's space: metres, Y flipped) whole. */
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FVector Default = FVector::ZeroVector;
+};
+
+/** A message NM takes (React) and its parameters. */
+USTRUCT(BlueprintType)
+struct FDeliriumMessage
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") FString Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Delirium") TArray<FDeliriumParam> Params;
+};
+
+/** The Playroom's extra reactions, on top of the game's (SetReactions; each its own bit). */
+UENUM(BlueprintType, meta = (Bitflags, UseEnumValuesAsMaskValuesInEditor = "true"))
+enum class EDeliriumReaction : uint8
+{
+	None = 0 UMETA(Hidden),
+	Windmill = 1 << 0,
+	CurlUp = 1 << 1,
+	CurlShot = 1 << 2,
+	LookHit = 1 << 3,
+	Ledge = 1 << 4,
+	SmartFall = 1 << 5,
+	Dodge = 1 << 6,
+	Wall = 1 << 7,
 };
 
 /** What a registered mover is, for the game's damage and reaction when it hits. */
@@ -222,6 +274,119 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Delirium")
 	bool SetWater(float Level);
 
+	/** A shot from the Weapons table along the shooter's aim (as ShootAlong): its reaction, push and damage. Returns the
+	 *  health left (`Health` less its damage), or -1 when there's no ragdoll. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	float ShootWeapon(FString Weapon, FVector From, FVector Aim, float Health = 200.f);
+
+	/** A shotgun blast from the table's `Weapon` along the aim: its pellets fanned as the game's (its accuracy and range),
+	 *  those striking him pushing as one shot. Returns how many struck (-1: refused). `Health` his after the blast. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	int32 Shotgun(FVector From, FVector Aim, FString Weapon = TEXT("shotgun"), float Health = 150.f);
+
+	/** The weapons table's names (the default pistol, smg, rifle, shotgun, or the Weapons setting's). */
+	UFUNCTION(BlueprintPure, Category = "Delirium")
+	static TArray<FString> WeaponNames();
+
+	/** The weapons table from text (as the Weapons setting; empty: the default four) or a weaponinfo.xml. Returns how many
+	 *  (negative: unreadable, the reason in the log). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	static int32 LoadWeapons(FString Text);
+
+	/** Its balance (the game's TaskNMBalance), looking at `LookAt` (zero: straight on). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool Balance(FVector LookAt = FVector::ZeroVector);
+
+	/** Stops the task it's running (Sit, Pose, Script, ...). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool Stop();
+
+	/** The Playroom's extra reactions on (EDeliriumReaction bits; 0: the game's alone). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool SetReactions(UPARAM(meta = (Bitmask, BitmaskEnum = "/Script/DeliriumRagdoll.EDeliriumReaction")) int32 Reactions);
+
+	/** Shot at again within `Gap` s of a near miss, it dives (NearMiss). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool SetDive(float Gap = 3.5f);
+
+	/** The Playroom's jump on its balance (loads, pushes off, flies, lands); `bDive` head first along `Direction` (zero:
+	 *  its facing). False when it can't (not balancing). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool Jump(bool bDive = false, FVector Direction = FVector::ZeroVector);
+
+	/** A bullet that missed it, from `From` along `Direction`: close by its head or chest it flinches and looks there.
+	 *  True when it noticed. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool NearMiss(FVector From, FVector Direction);
+
+	/** Something thrown or dropped at it from `At` moving at `Velocity` (cm/s): `bLook` it follows it with its head,
+	 *  `bAvoid` it flinches from it. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool ThrownAt(FVector At, FVector Velocity, bool bLook = true, bool bAvoid = true);
+
+	/** Sits (the game's TaskNMSit; the animation's pose as its clip), looking at `LookAt`, at `Seat` (zero: straight on,
+	 *  where it is). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool Sit(FVector LookAt = FVector::ZeroVector, FVector Seat = FVector::ZeroVector);
+
+	/** Its muscles take the animation's pose (the game's TaskNMPose) at a body stiffness from `Low` to `High` (negative: 4),
+	 *  until Stop. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool TakePose(float Low = -1.f, float High = -1.f);
+
+	/** Rolls up for `RollMs`, then goes limp at `Stiffness` / `Damping` (negative: the game's). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool RollUpRelax(float Stiffness = -1.f, float Damping = -1.f, int32 RollMs = 1000);
+
+	/** The ragdoll is yours for `Ms` (0: until Stop): moved only by the messages you send (React). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool Script(int32 Ms = 0);
+
+	/** Gets up with its own muscles, the animation's get-up clip as its pose and a spring helping its pelvis at most `Help`
+	 *  of its weight (negative: half); it can fail. `bOn` false: done, it balances. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool MuscleRise(bool bOn = true, float Help = -1.f);
+
+	/** Lying, it gets up as the learned network did (`Net`, empty: the GetUpNet setting's): 8 s with its own muscles. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool LearnedGetUp(FString Net = TEXT(""));
+
+	/** Walks under the stick (SetStick) with the learned network tuning its balance (`Net`, empty: the WalkNet setting's;
+	 *  `Cycle` the walk clip's length it learned with). `bOn` false: its balance as it was. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool LearnedWalk(bool bOn = true, FString Net = TEXT(""), float Cycle = 1.f);
+
+	/** The game's drunk control: pushes it along the stick (`X`, `Y` -1..1, up the stick forward) from the camera's yaw
+	 *  `CameraYaw` (degrees); `bOn` false lets go. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool SetStick(bool bOn, float X = 0.f, float Y = 0.f, float CameraYaw = 0.f);
+
+	/** Who it's up against: it looks at `Attacker`'s head (a ragdoll's, else a person's height in its bounds) and, `bArmed`,
+	 *  points its gun at it (GunReady says when to fire). Null: no one. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool SetAttacker(AActor* Attacker, bool bArmed = false);
+
+	/** Armed against an attacker: true once it's ready to fire (you fire the shot). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool GunReady();
+
+	/** A behaviour's parameter as it runs now (as last sent, else its default): its kind (0 float, 3 vector, 4 string;
+	 *  -1 none), the value in `Value`, `Vector` (NM's space) or `Text`. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	int32 GetParam(FString Message, FString Param, float& Value, FVector& Vector, FString& Text) const;
+
+	/** The body part a segment hits first (and where, its normal); -1 when none. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	int32 Raycast(FVector From, FVector To, FVector& Point, FVector& Normal) const;
+
+	/** What's off in its setup (one line each; empty: nothing). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	FString CheckSetup() const;
+
+	/** The messages NM takes (React) and their parameters. */
+	UFUNCTION(BlueprintPure, Category = "Delirium")
+	static TArray<FDeliriumMessage> Messages();
+
 	/** Anything you call a car (a car, a truck, a platform, a wrecking ball): ragdolls can't go into its box and meet it
 	 *  at its speed, a standing character it's about to hit is ragdolled, and a hit reacts as the game's (brace, roll up,
 	 *  stagger, limp) with OnCarHit. `Size`: its box (cm; zero: its components' bounds); `bPlayerDriven`: the player
@@ -273,6 +438,7 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+	virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
 
 	/** Loads the SDK (once; Project Settings > Plugins > Delirium Ragdoll); false with the reason in the log. */
 	static bool Start();
@@ -286,6 +452,10 @@ private:
 	 *  and drives couldn't hold its short or heavy bodies up: they lack the original engine's joint armature), the bodies follow (Step)
 	 *  and push Chaos's bodies. */
 	void BuildParts();
+	/** Sit, Pose, MuscleRise: the hidden mesh animates on for NM to take its pose (as Follow's). */
+	void Feed();
+	/** One of the game's tasks on it (ragdolled first); false when it couldn't be. */
+	bool Task(TFunctionRef<int32()> F, const TCHAR* What);
 	/** EnginePhysics: physics objects (simulating roots) within 5 m not yet registered, to NM as Object movers. */
 	void MoversNear();
 

@@ -268,7 +268,7 @@ pub struct Dof {
 pub fn blend_n(dest: &mut [Dof], sources: &[&[Dof]], weights: &[f32], priority: Option<&[u8]>) {
     let total = weights.iter().fold(0.0f32, |s, &w| s + w);
     let total = if total - 1.0 >= 0.0 { 1.0 } else { total };
-    let rest = if total > crate::kv!(264) { 0.0 } else { 1.0 - total };
+    let rest = if total > crate::kv!(268) { 0.0 } else { 1.0 - total };
     let mut w = vec![0.0f32; weights.len()];
     for (d, dof) in dest.iter_mut().enumerate() {
         for (i, s) in sources.iter().enumerate() {
@@ -313,7 +313,7 @@ fn blend_dof(d: &mut Dof, s: &Dof, t: f32) {
         }
         1 => (d.value, d.invalid) = (s.value, false),
         0 if t > crate::kv!(134) => {
-            if t < crate::kv!(264) && !d.invalid {
+            if t < crate::kv!(268) && !d.invalid {
                 for (a, &b) in d.value.iter_mut().zip(&s.value) {
                     *a = (b - *a).mul_add(t, *a);
                 }
@@ -323,7 +323,7 @@ fn blend_dof(d: &mut Dof, s: &Dof, t: f32) {
             d.invalid = false;
         }
         0 => {}
-        2 if t < crate::kv!(264) && !d.invalid => (d.value[0], d.invalid) = ((s.value[0] - d.value[0]).mul_add(t, d.value[0]), s.invalid),
+        2 if t < crate::kv!(268) && !d.invalid => (d.value[0], d.invalid) = ((s.value[0] - d.value[0]).mul_add(t, d.value[0]), s.invalid),
         2 if t > crate::kv!(134) => (d.value[0], d.invalid) = (s.value[0], s.invalid),
         2 => {}
         _ if t >= 0.5 => (d.value[0], d.invalid) = (s.value[0], false),
@@ -345,7 +345,7 @@ pub struct MoverPlayer {
 pub fn FULL_MOVER_WEIGHT() -> u32 { crate::kv!(184 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn OWN_CHANNEL() -> u32 { crate::kv!(646 int) }
+pub fn OWN_CHANNEL() -> u32 { crate::kv!(648 int) }
 
 pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     use crate::staticcount::{MOVER_BITS, NO_MOVER_TRACK};
@@ -353,7 +353,7 @@ pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     let (mut count0, mut lowest) = (0, 0);
     for (k, p) in players.iter().enumerate().filter(|(_, p)| p.clip) {
         let root = |mask: u32| mask == 0 || mask_passes(mask as u8, 0);
-        let counts = p.flags & NO_MOVER_TRACK() == 0 && p.mover_track && p.flags & OWN_CHANNEL() == 0 && root(p.flags & crate::kv!(198 int))
+        let counts = p.flags & NO_MOVER_TRACK() == 0 && p.mover_track && p.flags & OWN_CHANNEL() == 0 && root(p.flags & crate::kv!(189 int))
             || p.flags & MOVER_BITS() != 0;
         if counts && p.layer == 0 {
             (count0, lowest) = (count0 + 1, w.len());
@@ -385,7 +385,7 @@ pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     if count0 == 1 {
         w[lowest] = 1.0;
     }
-    layer_weights(&mut w, &layer.iter().map(|&l| u8::try_from(l).unwrap_or(crate::kv!(391 int))).collect::<Vec<_>>(), crate::kv!(104 int));
+    layer_weights(&mut w, &layer.iter().map(|&l| u8::try_from(l).unwrap_or(crate::kv!(395 int))).collect::<Vec<_>>(), crate::kv!(104 int));
     let mut out = vec![0.0; players.len() + 1];
     for (&k, &x) in from.iter().zip(&w) {
         out[k] = x;
@@ -398,18 +398,18 @@ pub const MASK_BONES: [u16; 1] = [0];
 #[allow(non_snake_case)]
 #[inline]
 pub fn MASKS() -> &'static [&'static [(u8, u8)]; 12] { static V: std::sync::OnceLock<[&'static [(u8, u8)]; 12]> = std::sync::OnceLock::new(); let f = || [
-    Box::leak(Box::new([(0, crate::kv!(364 int))])).as_slice(),
-    Box::leak(Box::new([(2, crate::kv!(37 int)), (crate::kv!(397 int), crate::kv!(397 int)), (crate::kv!(254 int), crate::kv!(364 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(368 int))])).as_slice(),
+    Box::leak(Box::new([(2, crate::kv!(37 int)), (crate::kv!(401 int), crate::kv!(401 int)), (crate::kv!(188 int), crate::kv!(368 int))])).as_slice(),
     Box::leak(Box::new([(2, crate::kv!(22 int))])).as_slice(),
     Box::leak(Box::new([(crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(104 int), crate::kv!(333 int))])).as_slice(),
-    Box::leak(Box::new([(0, crate::kv!(254 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(357 int), crate::kv!(375 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(320 int), crate::kv!(197 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(333 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(104 int), crate::kv!(337 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(188 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(361 int), crate::kv!(379 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(324 int), crate::kv!(203 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(337 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
     Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(333 int))])).as_slice(),
-    Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(55 int)), (crate::kv!(7 int), crate::kv!(312 int)), (crate::kv!(351 int), crate::kv!(400 int)), (crate::kv!(343 int), crate::kv!(253 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(337 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(55 int)), (crate::kv!(7 int), crate::kv!(316 int)), (crate::kv!(355 int), crate::kv!(404 int)), (crate::kv!(347 int), crate::kv!(258 int))])).as_slice(),
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn mask_passes(mask: u8, bone: u16) -> bool {
@@ -445,7 +445,7 @@ pub fn split_ratio(ratio: f32) -> [(i32, f32); 2] {
 
 #[allow(non_snake_case)]
 #[inline]
-fn LIST_SLACK() -> f32 { crate::kv!(647) }
+fn LIST_SLACK() -> f32 { crate::kv!(649) }
 
 pub fn normalize_list(w: &mut [f32]) {
     let Some(last) = w.len().checked_sub(1) else { return };
@@ -471,8 +471,8 @@ pub fn normalize_list(w: &mut [f32]) {
 }
 
 pub fn old_set_rate(old: i32, new: i32, own: i32) -> f32 {
-    let slow = (old == crate::kv!(37 int) && new == own) || (old == own && new == crate::kv!(37 int)) || (old == crate::kv!(351 int) && new == crate::kv!(36 int))
-        || (old == crate::kv!(36 int) && new == crate::kv!(351 int));
+    let slow = (old == crate::kv!(37 int) && new == own) || (old == own && new == crate::kv!(37 int)) || (old == crate::kv!(355 int) && new == crate::kv!(36 int))
+        || (old == crate::kv!(36 int) && new == crate::kv!(355 int));
     if slow { 1.0 } else { 2.0 }
 }
 

@@ -35,7 +35,7 @@ pub struct Set {
 
 #[allow(non_snake_case)]
 #[inline]
-fn ACTIVITY() -> u32 { delirium_data::kv!(562 int) }
+fn ACTIVITY() -> u32 { delirium_data::kv!(564 int) }
 
 const NAMES: [&str; 24] = ["onFireStumbleLeanAmount",
     "writheStandingArmStiffness", "writheStandingArmDamping", "writheStandingArmPeriod", "writheStandingArmAmplitude",
@@ -172,7 +172,7 @@ impl OnFire {
         }
         if self.free && self.rethink != 0 && self.flags & 1 != 0 && now > self.rethink {
             self.rethink = set.rethink.wrapping_add(now);
-            let half = set.variance * delirium_data::kv!(563) * 0.5;
+            let half = set.variance * delirium_data::kv!(565) * 0.5;
             let d = heading(p);
             let a = rand.float_in_range(0.0 - half, half);
             let (sin, cos) = ((a as f64).sin() as f32, (a as f64).cos() as f32);
@@ -180,10 +180,10 @@ impl OnFire {
             m.push(("leanInDirection", vec![("dir", Value::Vec3(self.dir))]));
         }
         if self.roll == 0 {
-            if self.lying && rand.int_in_range(0, delirium_data::kv!(564 int)) < delirium_data::kv!(40 int) {
-                self.roll = (rand.int_in_range(delirium_data::kv!(40 int), delirium_data::kv!(213 int)) as u32).wrapping_add(now);
+            if self.lying && rand.int_in_range(0, delirium_data::kv!(566 int)) < delirium_data::kv!(40 int) {
+                self.roll = (rand.int_in_range(delirium_data::kv!(40 int), delirium_data::kv!(218 int)) as u32).wrapping_add(now);
                 m.push(("bodyWrithe", vec![("mask", text("lb"))]));
-                m.push(("bodyRollUp", vec![("start", B(true)), ("mask", text("ub")), ("stiffness", F(delirium_data::kv!(195))), ("armReachAmount", F(delirium_data::kv!(12))),
+                m.push(("bodyRollUp", vec![("start", B(true)), ("mask", text("ub")), ("stiffness", F(delirium_data::kv!(201))), ("armReachAmount", F(delirium_data::kv!(12))),
                                            ("useArmToSlowDown", F(0.0))]));
             }
         } else if now > self.roll {

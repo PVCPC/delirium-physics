@@ -53,6 +53,26 @@ Also `ragdoll()`, `shoot(point, dir, force, set, health)`, `on_fire(burning, hea
 right_normal, hold)`, `jump_roll()`, `flinch(from)`, `tackle(target, low, keep)`, `set_water(level)`;
 cars: `DeliriumRagdoll.register_car(node, size, player_driven)` (anything you call a car; zero size: its BoxShape3D's),
 `unregister_car(node)`, `car_coming(car)` (brace), `car_door(car)`, signal `car_hit(damage, car)`; setting `arms_out_early`; `get_up_after` gets it up by itself after that many seconds lying still.
+A turning mover (a wrecking ball, a turntable) carries what it touches round with it.
+
+**The Playroom's other tools:**
+
+- Weapons: `shoot_weapon(name, point, dir, health)` returns the health left; `shotgun(name, from, aim, health, seed)` fans
+  the weapon's pellets as the game does and returns how many struck. `DeliriumRagdoll.weapon_names()`,
+  `DeliriumRagdoll.load_weapons(text_or_xml)`; setting `delirium/weapons` (`name=set:push:damage[:pellets:between:clip:accuracy:range]`,
+  or the game's `weaponinfo.xml`; empty: pistol, smg, rifle, shotgun).
+- Reactions: `set_reactions(REACT_WINDMILL | REACT_DODGE | ...)` (the Playroom's extra reactions), `near_miss(from, dir)`,
+  `set_dive(gap)` (shot at again soon after a near miss, it dives), `thrown_at(at, velocity, look, avoid)`.
+- Moves: `jump(dive, dir)`, `balance(look)`, `stop()`, `sit(look, seat)`, `pose(low, high)` (the animation's pose as muscle
+  targets), `roll_up_relax(stiffness, damping, roll_ms)`, `script(ms)` (only your `react` messages move it).
+- Getting up: `muscle_rise(on, help)` (its own muscles, the animation's get-up clip as targets), `learned_getup(net)`
+  (the release's `getup.net`; setting `delirium/getup_net`); `learned_walk(net, cycle)` with `set_stick(on, x, y, camera)`.
+- Fights: `set_attacker(other_ragdoll, armed)` (it looks at them; armed, `gun_ready()` says when to fire).
+- Reading: `get_param(message, param)`, `raycast(from, to)` ({part, point, normal}), `check_setup()`,
+  `DeliriumRagdoll.messages()` (every message and parameter with its kind, default and doc, for pickers).
+- Settings `delirium/step_limit` (the game's balance runs out of steps; off: the Playroom's endless stepping) and
+  `delirium/fire_reaction`. A physics material's friction and bounce on a static body reach NM (ice slides). A panic in
+  the SDK writes `user://delirium_physics-crash.txt`.
 
 - **Bodies and parameters (the Playroom's):** `body` is `Fitted` (its own skeleton's, the default), `Small`,
   `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute`, `Brawler` or `Bruiser` (that shape of this
@@ -70,12 +90,14 @@ cars: `DeliriumRagdoll.register_car(node, size, player_driven)` (anything you ca
   world and pile on each other.
 
 `test.gd` is a headless check (`godot --headless --fixed-fps 60 --path <project> --script test.gd`): a skeleton
-stands, takes a shove, goes down to a hard push, a shot and a leg cut, and gets up.
+stands, takes a shove, goes down to a hard push, a shot and a leg cut, and gets up; then every call above once, and
+ice under a shove (`DELIRIUM_NETS=<folder with getup-reward.net and walk.net>` adds the learned get-up and walk).
 
 ## State and events
 
 `get_state()` returns a Dictionary: ragdolled, balancing, fallen, catching_fall, rolled_up, relaxing, dead, in_water,
-burning, tackling (2 diving, 1 holding), lying_for (s), centre, velocity, mass. Signals: `fell()` once per fall,
+burning, tackling (2 diving, 1 holding), lying_for (s), centre, velocity, mass, settled, awake, jumping, task_running,
+learned_getup, resting, stance (where the balancer stands; absent when not balancing), contacts (21 flags). Signals: `fell()` once per fall,
 `feedback(name, slot, value)` for NM's own behaviour messages (the Playroom's Feedback list), plus `lying_still` and
 `car_hit`.
 

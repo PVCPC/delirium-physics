@@ -26,14 +26,14 @@ impl Default for FallOverWallParams {
     fn default() -> FallOverWallParams {
         FallOverWallParams { fall_over_point: Vec3::ZERO, fall_over_edge: Vec3::ZERO, damping: 0.5, body_stiffness: delirium_data::kv!(137),
                              mag_of_force: delirium_data::kv!(24), max_time: 1.0, min_up: -delirium_data::kv!(60), max_distance_from_pel_to_hit_point: delirium_data::kv!(17),
-                             twist_min: delirium_data::kv!(38), twist_max: delirium_data::kv!(500), use_specified_point: false }
+                             twist_min: delirium_data::kv!(38), twist_max: delirium_data::kv!(503), use_specified_point: false }
     }
 }
 
 impl FallOverWallParams {
     pub fn body_twist(&mut self, t: f32) {
         let t = t.clamp(0.0, 1.0);
-        (self.twist_min, self.twist_max) = (t * delirium_data::kv!(500), t * delirium_data::kv!(189));
+        (self.twist_min, self.twist_max) = (t * delirium_data::kv!(503), t * delirium_data::kv!(195));
     }
 }
 
@@ -94,7 +94,7 @@ impl FallOverWall {
         if dir.z < 0.0 {
             dir.z = 0.0;
         }
-        let f = (mk / mass * self.force * self.p.mag_of_force).clamp(-delirium_data::kv!(501), delirium_data::kv!(501)) * scale * delirium_data::kv!(103);
+        let f = (mk / mass * self.force * self.p.mag_of_force).clamp(-delirium_data::kv!(504), delirium_data::kv!(504)) * scale * delirium_data::kv!(103);
         (d.y.mul_add(d.y, d.x * d.x).sqrt() < self.p.max_distance_from_pel_to_hit_point * 2.0 && d.z > 0.0).then_some(dir * f)
     }
 
@@ -158,14 +158,14 @@ impl FallOverWall {
                 self.found = true;
                 self.at = p.fall_over_point;
                 self.edge = crate::nmdbm::vnorm(p.fall_over_edge);
-                self.force *= 1.0 / delirium_data::kv!(195);
+                self.force *= 1.0 / delirium_data::kv!(201);
                 if (pel - self.at).normalize_or_zero().vx(self.edge).vd(up) > 0.0 {
                     self.force = -self.force;
                 }
             }
             if self.found {
                 c.ch.set_stiffness(p.body_stiffness, p.damping, "fb", None);
-                self.split = (c.ch.random_bits() & delirium_data::kv!(190 int)) as f32 * delirium_data::kv!(502) - delirium_data::kv!(60);
+                self.split = (c.ch.random_bits() & delirium_data::kv!(196 int)) as f32 * delirium_data::kv!(505) - delirium_data::kv!(60);
                 self.side = c.ch.random_bits() & 1 != 0;
             }
         }
@@ -180,8 +180,8 @@ impl FallOverWall {
         }
         let a = (std::f32::consts::PI - delirium_data::kv!(24)) as f64;
         let (s, co) = (delirium_data::mathrt::sin(a) as f32, delirium_data::mathrt::cos(a) as f32);
-        for (i, elbow, cl, sh) in [(0, delirium_data::kv!(503), [s.mul_add(delirium_data::kv!(119), -delirium_data::kv!(60)), co - 0.5], [s * 0.5, co * delirium_data::kv!(12), s.mul_add(-delirium_data::kv!(33), -1.0)]),
-                                   (1, delirium_data::kv!(504), [s.mul_add(delirium_data::kv!(505), -delirium_data::kv!(145)), co - delirium_data::kv!(74)], [s * delirium_data::kv!(116), co * delirium_data::kv!(488), s.mul_add(-delirium_data::kv!(506), -delirium_data::kv!(138))])] {
+        for (i, elbow, cl, sh) in [(0, delirium_data::kv!(506), [s.mul_add(delirium_data::kv!(119), -delirium_data::kv!(60)), co - 0.5], [s * 0.5, co * delirium_data::kv!(12), s.mul_add(-delirium_data::kv!(33), -1.0)]),
+                                   (1, delirium_data::kv!(507), [s.mul_add(delirium_data::kv!(508), -delirium_data::kv!(145)), co - delirium_data::kv!(74)], [s * delirium_data::kv!(116), co * delirium_data::kv!(491), s.mul_add(-delirium_data::kv!(509), -delirium_data::kv!(138))])] {
             let l = limb(i);
             c.ch.eff[l.e[2]].desired[0] = elbow;
             (c.ch.eff[l.e[0]].desired[0], c.ch.eff[l.e[0]].desired[1]) = (cl[0], cl[1]);
@@ -209,7 +209,7 @@ impl FallOverWall {
         if self.side {
             d = -d;
         }
-        let r = (c.ch.random_bits() & delirium_data::kv!(190 int)) as f32 * delirium_data::kv!(225);
+        let r = (c.ch.random_bits() & delirium_data::kv!(196 int)) as f32 * delirium_data::kv!(230);
         let k = p.twist_min + (p.twist_max - p.twist_min) * r;
         c.out.torque(spine[0], d * k);
         c.out.torque(spine[1], d * k);

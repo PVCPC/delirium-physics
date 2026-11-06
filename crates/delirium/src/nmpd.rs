@@ -36,7 +36,7 @@ pub struct Pedal {
 
 impl Default for Pedal {
     fn default() -> Pedal {
-        Pedal { radius: delirium_data::kv!(17), radius_variance: delirium_data::kv!(116), random_seed: delirium_data::kv!(197 int), pedal_offset: delirium_data::kv!(9), leg_stiffness: delirium_data::kv!(31), angular_speed: delirium_data::kv!(31),
+        Pedal { radius: delirium_data::kv!(17), radius_variance: delirium_data::kv!(116), random_seed: delirium_data::kv!(203 int), pedal_offset: delirium_data::kv!(9), leg_stiffness: delirium_data::kv!(31), angular_speed: delirium_data::kv!(31),
                 speed_asymmetry: delirium_data::kv!(65), leg_angle_variance: 0.5, drag_multiplier: delirium_data::kv!(24), centre_forwards: 0.0, centre_up: 0.0,
                 left: true, right: true, back_pedal: false, adaptive: false, t: 0.0, t2: 0.0, damping: 0.5, speed: [0.0; 2],
                 axis: [Vec3::ZERO; 2], at: [Vec3::ZERO; 2], centre: [Vec3::ZERO; 2], active: false }
@@ -67,7 +67,7 @@ impl Pedal {
     }
 
     fn centres(&mut self, c: &Ctx) {
-        let r = self.radius + (noise01(self.t + delirium_data::kv!(31), self.t2, c.ch.agent as f32) - 0.5) * self.radius_variance - delirium_data::kv!(520);
+        let r = self.radius + (noise01(self.t + delirium_data::kv!(31), self.t2, c.ch.agent as f32) - 0.5) * self.radius_variance - delirium_data::kv!(523);
         let p = c.b.part(0).m;
         for (i, k) in [(0, -self.pedal_offset - self.centre_up), (1, self.pedal_offset - self.centre_up)] {
             let m = c.b.eff3(limb(i + 2).e[1]).m;
@@ -81,8 +81,8 @@ impl Pedal {
             return;
         }
         self.active = true;
-        self.t = delirium_data::kv!(216) * c.ch.random();
-        self.t2 = delirium_data::kv!(216) * c.ch.random();
+        self.t = delirium_data::kv!(221) * c.ch.random();
+        self.t2 = delirium_data::kv!(221) * c.ch.random();
         self.radius = self.radius.clamp(0.0, delirium_data::kv!(10));
         self.centres(c);
         self.axis = [Vec3::NEG_Y; 2];
@@ -113,7 +113,7 @@ impl Pedal {
         if self.adaptive {
             let s = c.b.part(delirium_data::kv!(22 int));
             let v = s.v;
-            w = (v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)).sqrt() / self.radius * self.drag_multiplier).clamp(0.0, delirium_data::kv!(195));
+            w = (v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)).sqrt() / self.radius * self.drag_multiplier).clamp(0.0, delirium_data::kv!(201));
             if crate::nmdbm::sdot(crate::rigid::nrm(v).vx(c.up), s.m.b, b"zyx") > 0.0 {
                 back = !self.back_pedal;
             }

@@ -60,15 +60,15 @@ pub fn balance_start(tp: &TaskParams, set: &str, hit: &Hit) -> Vec<Msg> {
                      ("returningToBalanceArmsOut", F(nb("balanceReturningToBalanceArmsOut", 0.0))),
                      ("angVelMultiplier", V(v3("balanceAngVelMultiplier", Vec3::new(delirium_data::kv!(84), 1.0, delirium_data::kv!(84))))),
                      ("angVelThreshold", V(v3("balanceAngVelThreshold", Vec3::new(delirium_data::kv!(136), delirium_data::kv!(5), delirium_data::kv!(136))))),
-                     ("elbowAngleOnContact", F(nb("balanceElbowAngleOnContact", delirium_data::kv!(186)))), ("bendElbowsTime", F(nb("balanceBendElbowsTime", delirium_data::kv!(24)))),
+                     ("elbowAngleOnContact", F(nb("balanceElbowAngleOnContact", delirium_data::kv!(192)))), ("bendElbowsTime", F(nb("balanceBendElbowsTime", delirium_data::kv!(24)))),
                      ("bendElbowsGait", F(nb("balanceBendElbowsGait", delirium_data::kv!(74)))), ("headLookAtVelProb", F(nb("balanceHeadLookAtVelProb", -1.0))),
                      ("turnOffProb", F(nb("balanceTurnOffProb", delirium_data::kv!(78)))), ("turn2VelProb", F(nb("balanceTurn2VelProb", delirium_data::kv!(24)))),
-                     ("turnAwayProb", F(nb("balanceTurnAwayProb", delirium_data::kv!(9)))), ("turnLeftProb", F(nb("balanceTurnLeftProb", delirium_data::kv!(187)))),
-                     ("turnRightProb", F(nb("balanceTurnRightProb", delirium_data::kv!(187)))), ("turn2TargetProb", F(nb("balanceTurn2TargetProb", delirium_data::kv!(60))))];
+                     ("turnAwayProb", F(nb("balanceTurnAwayProb", delirium_data::kv!(9)))), ("turnLeftProb", F(nb("balanceTurnLeftProb", delirium_data::kv!(193)))),
+                     ("turnRightProb", F(nb("balanceTurnRightProb", delirium_data::kv!(193)))), ("turn2TargetProb", F(nb("balanceTurn2TargetProb", delirium_data::kv!(60))))];
     if let Some(head) = hit.attacker_head {
         if nb("balanceArmsOutOnPush", 1.0) != 0.0 {
             p.extend([("armsOutOnPush", B(true)), ("armsOutStraightenElbows", F(nb("balanceArmsOutStraightenElbows", 0.0))),
-                      ("armsOutMinLean2", F(nb("balanceArmsOutMinLean2", -delirium_data::kv!(188)))), ("armsOutOnPushMultiplier", F(nb("balanceArmsOutOnPushMultiplier", 1.0))),
+                      ("armsOutMinLean2", F(nb("balanceArmsOutMinLean2", -delirium_data::kv!(194)))), ("armsOutOnPushMultiplier", F(nb("balanceArmsOutOnPushMultiplier", 1.0))),
                       ("armsOutOnPushTimeout", F(nb("balanceArmsOutOnPushTimeout", delirium_data::kv!(138))))]);
         }
         p.extend([("useHeadLook", B(true)), ("headLookPos", V(head)), ("headLookAlwaysTimeout", F(nb("balanceHeadLookTimeout", delirium_data::kv!(31))))]);

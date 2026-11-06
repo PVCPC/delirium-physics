@@ -22,6 +22,16 @@ pub const NM_E_TYPE: i32 = -6;
 pub const NM_E_STATE: i32 = -7;
 pub const NM_E_FOLLOW: i32 = -8;
 
+pub const NM_XR_WINDMILL: i32 = 1;
+pub const NM_XR_CURL_UP: i32 = 2;
+pub const NM_XR_CURL_SHOT: i32 = 4;
+pub const NM_XR_LOOK_HIT: i32 = 8;
+pub const NM_XR_LEDGE: i32 = 16;
+pub const NM_XR_SMART_FALL: i32 = 32;
+pub const NM_XR_DODGE: i32 = 64;
+pub const NM_XR_WALL: i32 = 128;
+pub const NM_XR_ARMS_OUT: i32 = 256;
+
 pub const NM_MODE_LEAD: i32 = 0;
 pub const NM_MODE_FOLLOW: i32 = 1;
 
@@ -30,6 +40,7 @@ thread_local! {
 }
 static TP: RwLock<Option<TaskParams>> = RwLock::new(None);
 static HEADSHOT_KILLS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static FIRE_REACTION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 static RAND: std::sync::Mutex<delirium_data::rng::Rand> = std::sync::Mutex::new(delirium_data::rng::Rand { seed: 1 });
 const SHOT_FORCE: f32 = 400.0;
@@ -81,6 +92,28 @@ fn with_tp<R>(f: impl FnOnce(&TaskParams) -> R) -> R {
 #[unsafe(no_mangle)]
 pub extern "C" fn nm_version() -> i32 {
     100
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_crash_report(dir: *const c_char) -> i32 {
+    static DIR: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+    let d = unsafe { text(dir) }.map_or_else(|| std::path::PathBuf::from("."), std::path::PathBuf::from);
+    if DIR.lock().unwrap_or_else(|e| e.into_inner()).replace(d).is_some() {
+        return 0;
+    }
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if info.location().is_some_and(|l| ["delirium", "delirium-data"].iter().any(|c| l.file().contains(c))) {
+            let p = DIR.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default().join("delirium_physics-crash.txt");
+            let text = format!("Delirium Physics SDK {} crashed: {info}\n\nSystem: {} {}\n\n{}", env!("CARGO_PKG_VERSION"),
+                               std::env::consts::OS, std::env::consts::ARCH, std::backtrace::Backtrace::force_capture());
+            if std::fs::write(&p, text).is_ok() {
+                eprintln!("\nDelirium Physics crashed. Please send this file with your report: {}", p.display());
+            }
+        }
+        default(info);
+    }));
+    0
 }
 
 #[unsafe(no_mangle)]
@@ -797,7 +830,61 @@ pub struct NmAgent {
     frame: f64,
     still: f32,
     u: Units,
+    more: More,
 }
+
+#[derive(Default)]
+struct More {
+    sit: Option<delirium::nmsit::Sit>,
+    pose: Option<delirium::nmpose::Pose>,
+    roll: Option<nm::RollUpAndRelax>,
+    script: Option<(delirium::nmscript::Script, u32)>,
+    attacker: Option<([Vec3; 4], Option<nm::PointGun>)>,
+    stick: Option<((i32, i32), f32, delirium::playerctl::Wander)>,
+    jroll: Option<(f64, Vec3)>,
+    look: Option<Vec3>,
+    zero: Vec<Quat>,
+    tune: Vec<(&'static str, f32)>,
+    learned: Option<(std::sync::Arc<delirium::learned::Net>, delirium::learned::Pick, usize)>,
+    walk: Option<(std::sync::Arc<delirium::learned::Net>, f32, f32)>,
+    musc: Option<f32>,
+    jump: Option<delirium::jump::Jump>,
+    xr: i32,
+    xs: Xs,
+    dive_gap: f32,
+}
+
+#[derive(Default)]
+struct Xs {
+    was_fallen: bool,
+    curl: Option<f64>,
+    curled: bool,
+    near_at: Option<f64>,
+    dived: bool,
+    airborne: bool,
+    hold: Option<f64>,
+    dodge_at: f64,
+    fall: Option<(f64, bool)>,
+    look_after: Option<f64>,
+    dodging: bool,
+    look_stop: Option<f64>,
+    lean_stop: Option<f64>,
+}
+
+fn coin() -> bool {
+    use std::hash::BuildHasher;
+    std::collections::hash_map::RandomState::new().hash_one(0u8) & 1 == 0
+}
+
+const DODGE_LEAN: f32 = 0.7;
+const BRACE_LEAN: f32 = 0.6;
+const ARMS_OUT_TIMEOUT: f32 = 1.1;
+const TUMBLE: f32 = 7.0;
+const WHIZZ: f32 = 1.5;
+const NEAR_BURST: f32 = 0.5;
+const DIVE: (f32, f32) = (3.5, 3.0);
+const CHEST: usize = 9;
+const HEAD: usize = 12;
 
 fn placed(b: &NmBuild, pos: Vec3, yaw: f32) -> Vec<Transform> {
     let floor = b.build.parts.iter().zip(&b.frames).map(|(p, f)| f.translation.z - p.radius - p.half).fold(f32::MAX, f32::min);
@@ -820,7 +907,7 @@ pub unsafe extern "C" fn nm_agent_create(b: *const NmBuild, pos: *const f32, yaw
     let frames = placed(b, pos, yaw);
     let agent = Agent::new(&b.build, Ragdoll::new(&b.build, &frames, Vec3::ZERO), Quat::from_rotation_z(yaw), seed);
     let n = frames.len();
-    let mut a = Box::new(NmAgent { agent, build: b.build.clone(), mode: NM_MODE_LEAD, set: vec![false; n], pending: None, shot: None, blast: None, dead: false, fire: None, fall: None, grab: None, car: (None, f32::MAX), door: None, bank: 0.0, world: 0, stairs: (None, 0, false), cuts: vec![], tackle: None, water: (None, false), singe: 0.0, shock: 0.0, clock: 0.0,
+    let mut a = Box::new(NmAgent { agent, build: b.build.clone(), mode: NM_MODE_LEAD, set: vec![false; n], pending: None, shot: None, blast: None, dead: false, fire: None, fall: None, grab: None, car: (None, f32::MAX), door: None, bank: 0.0, world: 0, stairs: (None, 0, false), cuts: vec![], tackle: None, water: (None, false), singe: 0.0, shock: 0.0, more: More { zero: delirium::learned::zero(&b.build, &b.frames), tune: b.tune.clone(), ..Default::default() }, clock: 0.0,
                                      frame: 0.0, still: 0.0, u: Units(b.scale) });
     tuned(&mut a, &b.tune);
     Box::into_raw(a)
@@ -967,6 +1054,247 @@ fn agent_step(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -
     r
 }
 
+fn more_step(a: &mut NmAgent, w: &NmWorld, dt: f32) {
+    let now = a.clock as u32;
+    if let Some(s) = a.more.sit.as_mut() {
+        nm::task_sit(&mut a.agent, &a.build, &w.0, s, now, None, None);
+    }
+    if let Some(p) = a.more.pose.as_mut() {
+        nm::task_pose_start(&mut a.agent, &a.build, &w.0, p, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), now);
+        if !a.agent.incoming.is_empty() {
+            a.agent.active_pose(None);
+        }
+    }
+    if let Some(r) = a.more.roll.as_mut() {
+        r.control(&mut a.agent, &a.build, &w.0, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), dt);
+    }
+    if let Some((s, flags)) = a.more.script.as_mut() {
+        if s.update(now, flags) {
+            a.more.script = None;
+        }
+    }
+    if let Some((bones, gun)) = a.more.attacker.as_mut() {
+        let task = if a.shot.is_some() { nm::Task::Shot } else { nm::Task::Balance };
+        let b = *bones;
+        nm::task_control(&mut a.agent, task, |id| match id { 417 => Some(b[0]), 1203 => Some(b[1]), 13985 => Some(b[2]), 1204 | 1205 => Some(b[3]), _ => None });
+        if let Some(g) = gun.as_mut() {
+            let at = match g.bone() { 417 => b[0], 1203 => b[1], 13985 => b[2], _ => b[3] };
+            g.control(&mut a.agent, dt, at);
+        }
+    }
+    if a.frame == a.clock {
+        if let Some((stick, camera, wander)) = a.more.stick.as_mut() {
+            let ped = a.agent.doll.frames().next().unwrap_or_default().translation;
+            let m = delirium::playerctl::control(&mut a.agent, *stick, *camera, ped, wander, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()));
+            nm::send_task_msgs(&mut a.agent, &a.build, &w.0, &m);
+        }
+    }
+    if let Some(mut j) = a.more.jump.take() {
+        let mut said = delirium::jump::Said::default();
+        if j.frame(&mut a.agent, dt, &mut said) {
+            a.more.jump = Some(j);
+        }
+        if said.catch_fall {
+            send(a, w, "catchFall", &[("start", Value::Bool(true))]);
+        }
+    }
+    if let Some((net, phase, len)) = a.more.walk.as_mut() {
+        delirium::learned::drive_walk(net, &net.w, &mut a.agent, phase, *len);
+    }
+    if let (Some(help), false) = (a.more.musc, a.agent.incoming.is_empty()) {
+        let (at, v) = (a.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation), a.agent.doll.com().1);
+        let m = a.agent.doll.mass();
+        let f = (m * (40.0 * (a.agent.incoming[0].translation - at) - 8.0 * v)).clamp_length_max(help * m * 9.81);
+        a.agent.push.push((0, at, f));
+        a.agent.active_pose(None);
+    }
+    if let Some(at) = a.more.look.take() {
+        look_hit(a, w, at);
+    }
+    reactions(a, w);
+    if let Some((_, vel)) = a.more.jroll.filter(|j| a.clock >= j.0) {
+        with_tp(|tp| nm::task_jump_roll_up(&mut a.agent, &a.build, &w.0, tp, vel));
+        a.more.jroll = None;
+    }
+}
+
+fn reactions(a: &mut NmAgent, w: &NmWorld) {
+    let on = |a: &NmAgent, b: i32| a.more.xr & b != 0;
+    let now = a.clock;
+    let b = |v: bool| Value::Bool(v);
+    let fallen = a.agent.fallen;
+    if on(a, NM_XR_WINDMILL) && fallen && !a.more.xs.was_fallen && coin() {
+        send(a, w, "armsWindmillAdaptive", &[("start", b(true)), ("disableOnImpact", b(true))]);
+    }
+    a.more.xs.was_fallen = fallen;
+    if a.more.xs.curl.is_some_and(|t| now >= t) {
+        a.more.xs.curl = None;
+        a.still = 0.0;
+        send(a, w, "bodyFoetal", &[("start", b(false))]);
+    }
+    if a.agent.balancing() {
+        a.more.xs.curled = false;
+    } else if on(a, NM_XR_CURL_UP) && !a.dead && !a.more.xs.curled && a.still >= 1.0 {
+        a.more.xs.curled = true;
+        if coin() {
+            a.more.xs.curl = Some(now + 3000.0);
+            send(a, w, "bodyFoetal", &[("start", b(true))]);
+        }
+    }
+    if a.more.xs.lean_stop.is_some_and(|t| now >= t) {
+        a.more.xs.lean_stop = None;
+        send(a, w, "leanInDirection", &[("start", b(false))]);
+    }
+    if a.more.xs.look_stop.is_some_and(|t| now >= t) {
+        a.more.xs.look_stop = None;
+        send(a, w, "headLook", &[("start", b(false))]);
+        if std::mem::take(&mut a.more.xs.dodging) && a.agent.balancing() {
+            send(a, w, "stopAllBehaviours", &[]);
+            send(a, w, "bodyBalance", &[("start", b(true))]);
+        }
+    }
+    if a.more.xs.hold.is_some_and(|t| now >= t) {
+        a.more.xs.hold = None;
+        send(a, w, "grab", &[("start", b(false))]);
+    }
+    let xs = &a.more.xs;
+    if a.dead || !(on(a, NM_XR_LEDGE) || on(a, NM_XR_DODGE) || on(a, NM_XR_WALL)) && xs.fall.is_none() && xs.look_after.is_none() && !xs.airborne {
+        return;
+    }
+    let arms_out = |a: &mut NmAgent| send(a, w, "bodyBalance", &[("start", b(true)), ("armsOutOnPush", b(true)), ("armsOutOnPushMultiplier", Value::Float(1.0)), ("armsOutOnPushTimeout", Value::Float(ARMS_OUT_TIMEOUT))]);
+    let lean = |a: &mut NmAgent, amount: f32, dir: Vec3| send(a, w, "leanInDirection", &[("start", b(true)), ("applyAsForce", b(true)), ("leanAmount", Value::Float(amount)), ("dir", Value::Vec3(dir))]);
+    let (me, mv) = a.agent.doll.com();
+    let f: Vec<Transform> = a.agent.doll.frames().collect();
+    let fwd = Vec3::Z.cross(f[4].translation - f[1].translation).with_z(0.0).normalize_or(Vec3::X);
+    let mine = a as *const NmAgent as usize;
+    let things: Vec<(Vec3, Vec3, bool)> = w.1.iter().map(|o| (o.centre, o.vel, true))
+        .chain(w.3.lock().unwrap_or_else(|e| e.into_inner()).1.iter().filter(|e| e.0 != mine).filter_map(|e| e.2.first().map(|c| ((c.0 + c.1) * 0.5, c.3, false))))
+        .collect();
+    let overhead = || things.iter().filter_map(|&(p, v, _)| {
+        let (r, down) = (p - me, -v.z);
+        let h = r.z - 0.8;
+        (h > 0.0 && r.with_z(0.0).length() < 2.5 && down > 1.0).then(|| (p, v, (-down + (down * down + 2.0 * 9.81 * h).sqrt()) / 9.81))
+    }).filter(|x| x.2 < 3.0).min_by(|a, b| a.2.total_cmp(&b.2));
+    if a.more.xs.look_after.is_some_and(|t| now >= t) {
+        a.more.xs.look_after = None;
+        if std::mem::take(&mut a.more.xs.dodging) {
+            send(a, w, "stopAllBehaviours", &[]);
+            arms_out(a);
+        }
+        let down = things.iter().map(|x| x.0).filter(|p| (*p - me).length() < 4.0).min_by(|x, y| (*x - me).length().total_cmp(&(*y - me).length()));
+        if let Some(at) = down {
+            look_hit(a, w, at);
+            a.more.xs.look_stop = Some(now + 2500.0);
+        }
+    }
+    let land = w.0.cast(me, -Vec3::Z, 50.0).map_or(f32::MAX, |(t, _)| (t - 0.95) / (-mv.z).max(0.1));
+    if a.more.xs.airborne {
+        if land < 0.12 || mv.z > 0.0 {
+            a.more.xs.airborne = false;
+            send(a, w, "bodyBalance", &[("start", b(true))]);
+        }
+    } else if on(a, NM_XR_LEDGE) && mv.z < -0.8 && land > 0.4 && a.agent.balancing() {
+        if mv.truncate().length() > 0.8 && land > 0.8 {
+            send(a, w, "stopAllBehaviours", &[]);
+            send(a, w, "smartFall", &[("start", b(true)), ("tumble", Value::Float(TUMBLE))]);
+        } else {
+            a.more.xs.airborne = true;
+            send(a, w, "highFall", &[("start", b(true))]);
+        }
+    }
+    let (go, chest) = (mv.with_z(0.0), f[CHEST].translation);
+    if on(a, NM_XR_WALL) && a.more.xs.hold.is_none() && a.more.xs.fall.is_none() && go.length() > 0.4 && chest.z - me.z > 0.2 {
+        let d = go.normalize();
+        let reach = 0.35 + (0.3 * go.length()).min(0.7);
+        let hit = [chest.z, me.z, me.z - 0.3].into_iter().find_map(|z| {
+            let from = me.with_z(z);
+            w.0.cast(from, d, reach).filter(|h| h.1.z.abs() < 0.5).map(|(t, n)| (from + d * t, n.with_z(0.0).normalize()))
+        });
+        if let Some((h, n)) = hit {
+            let head = chest.z + 0.45;
+            let right = (-n).cross(Vec3::Z);
+            let top = (h - n * 0.03).with_z(head);
+            let top = top.with_z(head - w.0.cast(top, -Vec3::Z, 1.5).map_or(0.0, |x| x.0));
+            let v = Value::Vec3;
+            let held = if w.0.cast(me.with_z(head), d, reach + 0.2).is_some() {
+                let at = h.with_z(chest.z);
+                send(a, w, "grab", &[("start", b(true)), ("justbrace", b(true)), ("useLeft", b(true)), ("useRight", b(true)), ("pos1", v(at + right * 0.25)), ("pos2", v(at - right * 0.25)), ("normalR", v(n)), ("normalL", v(n))]);
+                true
+            } else if top.z > me.z - 0.15 {
+                send(a, w, "grab", &[("start", b(true)), ("linegrab", b(true)), ("useLeft", b(true)), ("useRight", b(true)), ("pos1", v(top + right * 0.3)), ("pos2", v(top - right * 0.3))]);
+                true
+            } else {
+                false
+            };
+            if held {
+                a.more.xs.hold = Some(now + 2000.0);
+            }
+        }
+    }
+    if let Some((land, braced)) = a.more.xs.fall {
+        let seen = overhead();
+        if seen.is_none() && now > land + 300.0 || now > land + 1500.0 {
+            (a.more.xs.fall, a.more.xs.look_after) = (None, Some(now + 400.0));
+            return;
+        }
+        let Some((at, _, t)) = seen else { return };
+        const BRACE: f32 = 0.45;
+        a.more.xs.fall = Some((now + t as f64 * 1000.0, braced || t < BRACE));
+        if !braced && t < BRACE {
+            let away = (me - at).with_z(0.0).normalize_or(-fwd);
+            a.more.xs.dodging = true;
+            a.more.xs.lean_stop = Some(now + 800.0);
+            send(a, w, "pointArm", &[("start", b(false))]);
+            arms_out(a);
+            send(a, w, "upperBodyFlinch", &[("start", b(true)), ("pos", Value::Vec3(at)), ("newHit", b(true))]);
+            lean(a, DODGE_LEAN, away);
+        } else if !braced && (now / (1000.0 / 6.0)) as i64 != ((now - 1000.0 / 60.0) / (1000.0 / 6.0)) as i64 {
+            send(a, w, "pointArm", &[("start", b(true)), ("target", Value::Vec3(at))]);
+        }
+        return;
+    }
+    if !on(a, NM_XR_DODGE) || now < a.more.xs.dodge_at || !a.agent.balancing() {
+        return;
+    }
+    if let Some((at, v, t)) = overhead() {
+        a.more.xs.dodge_at = now + 3000.0;
+        if (at - me).with_z(0.0).dot(fwd) < -0.2 {
+            a.more.xs.look_after = Some(now + (t as f64 + 0.7) * 1000.0);
+            return arms_out(a);
+        }
+        a.more.xs.fall = Some((now + t as f64 * 1000.0, false));
+        a.more.xs.look_stop = None;
+        send(a, w, "headLook", &[("start", b(true)), ("pos", Value::Vec3(at)), ("vel", Value::Vec3(v)), ("alwaysLook", b(true))]);
+        send(a, w, "pointArm", &[("start", b(true)), ("target", Value::Vec3(at))]);
+        return;
+    }
+    const DODGE_DUE: f32 = 1.0;
+    let due = |p: Vec3, v: Vec3| (me - p).length() / (me - p).normalize_or_zero().dot(v - mv).max(1e-3);
+    let Some(&(at, v, thrown)) = things.iter().find(|&&(p, v, _)| (me - p).length() < 30.0 && (me - p).normalize_or_zero().dot(v - mv) > 3.0 && due(p, v) < DODGE_DUE)
+    else { return };
+    let away = (me - at).with_z(0.0).normalize_or(-fwd);
+    a.more.xs.dodge_at = now + 3000.0;
+    a.more.xs.look_stop = Some(now + 2000.0);
+    a.more.xs.lean_stop = Some(now + DODGE_DUE as f64 * 1000.0);
+    let look = [("start", b(true)), ("pos", Value::Vec3(at)), ("vel", Value::Vec3(v)), ("alwaysLook", b(true))];
+    if thrown {
+        a.more.xs.dodging = true;
+        send(a, w, "headLook", &look);
+        send(a, w, "upperBodyFlinch", &[("start", b(true)), ("pos", Value::Vec3(at)), ("newHit", b(true))]);
+    } else {
+        arms_out(a);
+        send(a, w, "headLook", &look);
+    }
+    lean(a, BRACE_LEAN, away);
+}
+
+fn look_hit(a: &mut NmAgent, w: &NmWorld, at: Vec3) {
+    if a.more.xr & NM_XR_LOOK_HIT != 0 && !a.dead {
+        send(a, w, "headLook", &[("start", Value::Bool(true)), ("pos", Value::Vec3(at)), ("alwaysLook", Value::Bool(true))]);
+        a.more.xs.look_stop = Some(a.clock + 2000.0);
+    }
+}
+
 fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::Capsule]) -> i32 {
     if resting(a, w) {
         a.clock += dt as f64 * 1000.0;
@@ -1027,7 +1355,11 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
             a.fall = Some(f);
         }
     }
-    if let Some((mut f, burning, health)) = a.fire.take() {
+    if !FIRE_REACTION.load(std::sync::atomic::Ordering::Relaxed) {
+        if a.fire.as_ref().is_some_and(|f| !f.1) {
+            a.fire = None;
+        }
+    } else if let Some((mut f, burning, health)) = a.fire.take() {
         if a.agent.feedback.iter().any(|f| f.slot == 8 && f.name == "balance") {
             f.balance_failed();
         }
@@ -1036,6 +1368,7 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
             a.fire = Some((f, burning, health));
         }
     }
+    more_step(a, w, dt);
     a.clock += dt as f64 * 1000.0;
     if a.mode == NM_MODE_FOLLOW {
         a.agent.step_follow(&a.build, &w.0, dt, &w.1, others);
@@ -1046,6 +1379,12 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
         for (k, j, l) in d.kicks.as_mut().map(std::mem::take).unwrap_or_default() {
             d.out[k].0 += j / dt;
             d.out[k].1 += l / dt;
+        }
+    } else if let Some((net, pick, n)) = a.more.learned.as_mut() {
+        delirium::learned::step(net, &net.w, &mut a.agent, &a.build, &w.0, &a.more.zero, pick);
+        *n += 1;
+        if *n >= delirium::learned::STEPS() {
+            learned_done(a, w);
         }
     } else {
         a.agent.step(&a.build, &w.0, dt, &w.1, others);
@@ -1229,7 +1568,9 @@ pub unsafe extern "C" fn nm_agent_apply_impulse(a: *mut NmAgent, i: i32, at: *co
         return fail(NM_E_ARG, "null vector");
     }
     let u = a.u;
-    a.agent.doll.impulse(k, unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
+    let (at, imp) = (unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
+    a.agent.doll.impulse(k, at, imp);
+    a.more.look = Some(at - imp.normalize_or_zero() * 2.0);
     0
 }
 
@@ -1240,7 +1581,9 @@ pub unsafe extern "C" fn nm_agent_apply_push(a: *mut NmAgent, at: *const f32, im
         return fail(NM_E_ARG, "null vector");
     }
     let u = a.u;
-    a.agent.doll.push(&a.build, unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
+    let (at, imp) = (unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
+    a.agent.doll.push(&a.build, at, imp);
+    a.more.look = Some(at - imp.normalize_or_zero() * 2.0);
     0
 }
 
@@ -1337,8 +1680,12 @@ pub unsafe extern "C" fn nm_agent_get_zero_pose(a: *const NmAgent, pos: *mut f32
     0
 }
 
+fn messages() -> impl Iterator<Item = &'static msg::Message> {
+    msg::MESSAGES.iter().chain(delirium::extras::messages())
+}
+
 fn message(m: i32) -> Option<&'static msg::Message> {
-    msg::MESSAGES.get(m as usize).filter(|_| m >= 0)
+    usize::try_from(m).ok().and_then(|m| messages().nth(m))
 }
 
 fn param(m: i32, p: i32) -> Option<&'static msg::Param> {
@@ -1347,7 +1694,7 @@ fn param(m: i32, p: i32) -> Option<&'static msg::Param> {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn nm_message_count() -> i32 {
-    msg::MESSAGES.len() as i32
+    messages().count() as i32
 }
 
 #[unsafe(no_mangle)]
@@ -1361,7 +1708,7 @@ pub unsafe extern "C" fn nm_message_name(m: i32, buf: *mut c_char, len: i32) -> 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_message_find(name: *const c_char) -> i32 {
     let n = unsafe { text(name) }.unwrap_or("");
-    msg::MESSAGES.iter().position(|m| m.name == n).map_or_else(|| fail(NM_E_MESSAGE, format!("no message {n}")), |i| i as i32)
+    messages().position(|m| m.name == n).map_or_else(|| fail(NM_E_MESSAGE, format!("no message {n}")), |i| i as i32)
 }
 
 #[unsafe(no_mangle)]
@@ -1671,6 +2018,16 @@ pub unsafe extern "C" fn nm_agent_is_resting(a: *const NmAgent, w: *const NmWorl
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn nm_set_step_limit(on: i32) {
+    delirium::nmdbm::STEP_LIMIT.store(on != 0, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nm_set_fire_reaction(on: i32) {
+    FIRE_REACTION.store(on != 0, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn nm_set_headshot_kills(on: i32) {
     HEADSHOT_KILLS.store(on != 0, std::sync::atomic::Ordering::Relaxed);
 }
@@ -1689,7 +2046,7 @@ pub unsafe extern "C" fn nm_agent_set_dead(a: *mut NmAgent, dead: i32) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_should_get_up(a: *const NmAgent, after: f32) -> i32 {
     let a = agent_ref!(a);
-    (!a.dead && !legless(a) && after > 0.0 && a.still * a.u.time() >= after) as i32
+    (!a.dead && !legless(a) && a.more.xs.curl.is_none() && after > 0.0 && a.still * a.u.time() >= after) as i32
 }
 
 fn legless(a: &NmAgent) -> bool {
@@ -1857,10 +2214,204 @@ pub unsafe extern "C" fn nm_agent_task_shot_force(a: *mut NmAgent, w: *const NmW
     0
 }
 
+#[derive(Clone)]
+struct Weapon {
+    name: String,
+    set: String,
+    v: [f32; 7],
+}
+
+static WEAPONS: RwLock<Vec<Weapon>> = RwLock::new(Vec::new());
+const WEAPONS_DEFAULT: &str = "pistol=PISTOL_WEAPON:30:25:1:300:17:0.5:50, smg=SMG_WEAPON:25:15:1:70:30:0.5:50, rifle=POWERFUL_WEAPON:45:35:1:130:30:0.5:70, shotgun=POWERFUL_WEAPON:90:80:16:1200:8:0.1:35";
+
+fn weapons() -> std::sync::RwLockReadGuard<'static, Vec<Weapon>> {
+    if WEAPONS.read().unwrap_or_else(|e| e.into_inner()).is_empty() {
+        let mut t = WEAPONS.write().unwrap_or_else(|e| e.into_inner());
+        if t.is_empty() {
+            *t = parse_weapons(WEAPONS_DEFAULT).unwrap_or_default();
+        }
+    }
+    WEAPONS.read().unwrap_or_else(|e| e.into_inner())
+}
+
+fn parse_weapons(t: &str) -> Result<Vec<Weapon>, String> {
+    let mut out = vec![];
+    for row in t.split(',').map(str::trim).filter(|r| !r.is_empty()) {
+        let bad = || format!("{row}: want name=set:push:damage[:pellets:between:clip:accuracy:range]");
+        let (name, rest) = row.split_once('=').ok_or_else(bad)?;
+        let mut f = rest.split(':').map(str::trim);
+        let set = f.next().filter(|s| !s.is_empty()).ok_or_else(bad)?.to_string();
+        let mut v = [0.0, 0.0, 1.0, 300.0, 30.0, 0.5, 50.0];
+        let nums: Vec<f32> = f.map(|x| x.parse().map_err(|_| bad())).collect::<Result<_, _>>()?;
+        if !(2..=7).contains(&nums.len()) {
+            return Err(bad());
+        }
+        v[..nums.len()].copy_from_slice(&nums);
+        out.push(Weapon { name: name.trim().to_string(), set, v });
+    }
+    Ok(out)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_weapons_parse(text_: *const c_char) -> i32 {
+    match parse_weapons(unsafe { text(text_) }.unwrap_or(WEAPONS_DEFAULT)) {
+        Ok(t) => {
+            let n = t.len() as i32;
+            *WEAPONS.write().unwrap_or_else(|e| e.into_inner()) = t;
+            n
+        }
+        Err(e) => fail(NM_E_ARG, e),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_weapons_load_info(path: *const c_char) -> i32 {
+    let Some(p) = (unsafe { text(path) }) else { return fail(NM_E_ARG, "nm_weapons_load_info: no path") };
+    let xml = match std::fs::read_to_string(p) {
+        Ok(t) => t,
+        Err(e) => return fail(NM_E_IO, format!("{p}: {e}")),
+    };
+    let read = delirium_data::weapons::read(&xml);
+    let mut t = weapons().clone();
+    for w in &read {
+        let row = Weapon { name: w.name.to_lowercase(), set: nm::weapon_set(w, 3).to_string(),
+            v: [w.force, w.damage, if w.slot == "SHOTGUN" { 16.0 } else { 1.0 }, w.between_shots, w.clip as f32, w.accuracy, w.range] };
+        match t.iter_mut().find(|x| x.name == row.name) {
+            Some(x) => *x = row,
+            None => t.push(row),
+        }
+    }
+    *WEAPONS.write().unwrap_or_else(|e| e.into_inner()) = t;
+    read.len() as i32
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nm_weapon_count() -> i32 {
+    weapons().len() as i32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_weapon_find(name: *const c_char) -> i32 {
+    let n = unsafe { text(name) }.unwrap_or("");
+    weapons().iter().position(|w| w.name.eq_ignore_ascii_case(n)).map_or_else(|| fail(NM_E_ARG, format!("no weapon {n}")), |i| i as i32)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_weapon_get(i: i32, name: *mut c_char, name_len: i32, set: *mut c_char, set_len: i32, v: *mut f32) -> i32 {
+    let t = weapons();
+    let Some(w) = usize::try_from(i).ok().and_then(|i| t.get(i)) else { return fail(NM_E_ARG, "no such weapon") };
+    if !name.is_null() {
+        unsafe { put(&w.name, name, name_len) };
+    }
+    if !set.is_null() {
+        unsafe { put(&w.set, set, set_len) };
+    }
+    if !v.is_null() {
+        unsafe { std::ptr::copy_nonoverlapping(w.v.as_ptr(), v, 7) };
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_shoot_weapon(a: *mut NmAgent, w: *const NmWorld, weapon: i32, part: i32, at: *const f32, dir: *const f32, health: f32) -> f32 {
+    let Some(wp) = usize::try_from(weapon).ok().and_then(|i| weapons().get(i).cloned()) else { return fail(NM_E_ARG, "no such weapon") as f32 };
+    if at.is_null() || dir.is_null() {
+        return fail(NM_E_ARG, "null vector") as f32;
+    }
+    let d = unsafe { v3(dir) }.normalize_or_zero() * wp.v[0];
+    let r = unsafe { nm_agent_apply_push(a, at, d.to_array().as_ptr()) };
+    if r < 0 {
+        return r as f32;
+    }
+    let left = (health - wp.v[1]).max(0.0);
+    let set = std::ffi::CString::new(wp.set).unwrap_or_default();
+    let r = unsafe { nm_agent_task_shot(a, w, set.as_ptr(), part, at, dir, left) };
+    if r < 0 { r as f32 } else { left }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_shotgun_fan(dir: *const f32, accuracy: f32, range: f32, pellets: i32, seed: *mut i32, out: *mut f32) -> i32 {
+    if dir.is_null() || seed.is_null() || out.is_null() || pellets < 1 {
+        return fail(NM_E_ARG, "nm_shotgun_fan: null dir, seed or out, or no pellets");
+    }
+    const PELLET_REACH: f32 = 0.4;
+    let dir = unsafe { v3(dir) }.normalize_or_zero();
+    let reach = PELLET_REACH * range;
+    let side = dir.cross(Vec3::Z).normalize_or(Vec3::X);
+    let (up, half) = (side.cross(dir), reach * accuracy);
+    let mut r = delirium_data::rng::Rand::new(unsafe { *seed } as u32);
+    (0..3).for_each(|_| _ = r.next());
+    for k in 0..=pellets as usize {
+        let end = if k == 0 {
+            dir * range
+        } else {
+            let x = r.float_in_range(-half, half);
+            let y = r.float_in_range(-half, half);
+            dir * reach + side * x + up * y
+        };
+        unsafe { put3(out.add(k * 3), end.normalize_or_zero()) };
+    }
+    unsafe { *seed = r.seed as i32 };
+    pellets + 1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_task_shotgun(a: *mut NmAgent, w: *const NmWorld, set: *const c_char, hits: *const f32, count: i32, health: f32, force: f32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if hits.is_null() || count < 1 || !(force > 0.0 && force.is_finite()) {
+        return fail(NM_E_ARG, "nm_agent_task_shotgun: no hits, or force not over 0");
+    }
+    let n = a.build.parts.len();
+    let (l, t) = (a.u.len(), a.u.time());
+    let mut all = vec![];
+    for k in 0..count as usize {
+        let h = unsafe { std::slice::from_raw_parts(hits.add(k * 7), 7) };
+        let part = h[0] as i32;
+        if !(0..n as i32).contains(&part) {
+            return fail(NM_E_ARG, "nm_agent_task_shotgun: no such part");
+        }
+        let (at, d) = (Vec3::new(h[1], h[2], h[3]) / l, Vec3::new(h[4], h[5], h[6]).normalize_or_zero());
+        all.push((part as usize, at, delirium::shottask::bullet(at, at - d * 3.0, force / t, false), -d));
+    }
+    for &(p, at, vel, _) in &all {
+        let f = vel * a.agent.doll.share(p) * 60.0;
+        a.agent.push.push((p, at, f));
+    }
+    let was_dead = a.dead;
+    let health = if all.iter().any(|h| h.0 == 12) && HEADSHOT_KILLS.load(std::sync::atomic::Ordering::Relaxed) { 0.0 } else { health };
+    a.dead |= health < 50.0;
+    if was_dead {
+        return 0;
+    }
+    let set = unsafe { text(set) }.unwrap_or("*");
+    let hit = nm::Hit { health, ..nm::Hit::ragdoll(&a.agent) };
+    let now = a.clock as u32;
+    let mut rand = RAND.lock().unwrap_or_else(|e| e.into_inner());
+    let (tk, msgs, next) = match a.shot.take() {
+        Some((mut tk, _)) => {
+            let msgs = with_tp(|tp| all.iter().flat_map(|&(p, at, vel, nn)| tk.next_hit(&mut rand, tp, &hit, now, set, p, at, vel, nn)).collect());
+            (tk, msgs, true)
+        }
+        None => {
+            let &(p, at, vel, nn) = all.last().unwrap();
+            let mut tk = delirium::shottask::ShotTask::new(&hit, set, p, at, vel, nn);
+            let msgs = with_tp(|tp| tk.update(&mut rand, tp, &hit, now).msgs);
+            (tk, msgs, false)
+        }
+    };
+    drop(rand);
+    with_tp(|tp| nm::task_shot_msgs(&mut a.agent, &a.build, &w.0, tp, &hit, &tk, &msgs, next));
+    a.shot = Some((tk, health));
+    a.frame = a.clock;
+    0
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_task_running(a: *const NmAgent) -> i32 {
     let Some(a) = (unsafe { a.as_ref() }) else { return fail(NM_E_ARG, "null agent") };
-    (a.shot.is_some() || a.blast.is_some() || a.fire.is_some()) as i32
+    let m = &a.more;
+    (a.shot.is_some() || a.blast.is_some() || a.fire.is_some() || m.sit.is_some() || m.pose.is_some() || m.roll.is_some() || m.script.is_some()) as i32
 }
 
 #[unsafe(no_mangle)]
@@ -1884,6 +2435,8 @@ pub unsafe extern "C" fn nm_agent_check(a: *const NmAgent, buf: *mut c_char, len
 pub unsafe extern "C" fn nm_agent_task_stop(a: *mut NmAgent) -> i32 {
     let a = agent!(a);
     (a.shot, a.blast, a.fire) = (None, None, None);
+    let m = &mut a.more;
+    (m.sit, m.pose, m.roll, m.script, m.jroll) = (None, None, None, None, None);
     0
 }
 
@@ -1936,7 +2489,9 @@ pub unsafe extern "C" fn nm_agent_task_on_fire(a: *mut NmAgent, w: *const NmWorl
         return 0;
     }
     let mut f = nm::OnFire::new("*");
-    with_tp(|tp| f.start(&mut a.agent, &a.build, &w.0, tp, &mut RAND.lock().unwrap_or_else(|e| e.into_inner())));
+    if FIRE_REACTION.load(std::sync::atomic::Ordering::Relaxed) {
+        with_tp(|tp| f.start(&mut a.agent, &a.build, &w.0, tp, &mut RAND.lock().unwrap_or_else(|e| e.into_inner())));
+    }
     a.fire = Some((f, true, health));
     0
 }
@@ -1999,6 +2554,10 @@ pub unsafe extern "C" fn nm_agent_task_high_fall(a: *mut NmAgent, w: *const NmWo
     let a = agent!(a);
     let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
     let set = unsafe { text(set) }.unwrap_or("*");
+    if a.more.xr & NM_XR_SMART_FALL != 0 {
+        send(a, w, "smartFall", &[("start", Value::Bool(true))]);
+        return 0;
+    }
     with_tp(|tp| nm::task_high_fall(&mut a.agent, &a.build, &w.0, tp, set, player != 0));
     0
 }
@@ -2050,6 +2609,291 @@ pub unsafe extern "C" fn nm_agent_task_jump_roll(a: *mut NmAgent, w: *const NmWo
     let a = agent!(a);
     let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
     with_tp(|tp| nm::task_jump_roll(&mut a.agent, &a.build, &w.0, tp));
+    let vel = a.agent.doll.vel(0).0;
+    a.more.jroll = Some((a.clock + with_tp(nm::jump_roll_up_time) as f64 * 1000.0, vel));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_set_reactions(a: *mut NmAgent, bits: i32) -> i32 {
+    agent!(a).more.xr = bits;
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_set_dive(a: *mut NmAgent, gap: f32) -> i32 {
+    agent!(a).more.dive_gap = gap.max(0.0);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_jump(a: *mut NmAgent, dive: i32, dir: *const f32) -> i32 {
+    let a = agent!(a);
+    let toward = (!dir.is_null()).then(|| unsafe { v3(dir) }.with_z(0.0).normalize_or_zero()).filter(|d| *d != Vec3::ZERO);
+    a.more.jump = delirium::jump::Jump::start(&mut a.agent, dive != 0, toward);
+    a.more.jump.is_some() as i32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_jumping(a: *const NmAgent) -> i32 {
+    agent_ref!(a).more.jump.is_some() as i32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_near_miss(a: *mut NmAgent, w: *const NmWorld, from: *const f32, dir: *const f32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if from.is_null() || dir.is_null() {
+        return fail(NM_E_ARG, "null vector");
+    }
+    let (from, dir) = (unsafe { v3(from) } / a.u.len(), unsafe { v3(dir) }.normalize_or_zero());
+    let f: Vec<Transform> = a.agent.doll.frames().collect();
+    let by = |p: Vec3| from + dir * (p - from).dot(dir).max(0.0);
+    let (h, c) = (by(f[HEAD].translation), by(f[CHEST].translation));
+    let (dh, dc) = (h.distance(f[HEAD].translation), c.distance(f[CHEST].translation));
+    let (p, d) = if dh < dc { (h, dh) } else { (c, dc) };
+    if d > WHIZZ {
+        return 0;
+    }
+    let (now, gap) = (a.clock, a.more.dive_gap as f64 * 1000.0);
+    let b = |v: bool| Value::Bool(v);
+    let look = [("start", b(true)), ("pos", Value::Vec3(p)), ("alwaysLook", b(true))];
+    let since = a.more.xs.near_at.map_or(f64::INFINITY, |t| now - t);
+    if since >= gap {
+        a.more.xs.dived = false;
+    }
+    if a.dead || !a.agent.balancing() {
+        if !a.dead && a.more.xr & NM_XR_CURL_SHOT != 0 {
+            send(a, w, "bodyFoetal", &[("start", b(true))]);
+            a.still = 0.0;
+            send(a, w, "headLook", &look);
+        }
+        return 1;
+    }
+    if since >= gap || since < 0.0 {
+        a.more.xs.near_at = Some(now);
+    }
+    if gap > 0.0 && (NEAR_BURST as f64 * 1000.0..gap).contains(&since) && !a.more.xs.dived {
+        (a.more.xs.near_at, a.more.xs.dived) = (Some(now), true);
+        let chest = f[CHEST].translation;
+        let off = (chest - by(chest)).with_z(0.0);
+        let away = if off.length() > 0.05 { off.normalize() } else { dir.cross(Vec3::Z).normalize_or(Vec3::X) };
+        if a.more.jump.is_none() {
+            a.more.jump = delirium::jump::Jump::start(&mut a.agent, true, Some(away));
+        }
+        if a.more.jump.is_none() {
+            a.agent.doll.kick(away * DIVE.0 + Vec3::Z * DIVE.1);
+            send(a, w, "shootDodge", &[("start", b(true)), ("rightArmTarget", Value::Vec3(from)), ("leftArmTarget", Value::Vec3(from))]);
+        }
+        return 1;
+    }
+    send(a, w, "bodyBalance", &[("start", b(true))]);
+    send(a, w, "upperBodyFlinch", &[("start", b(true)), ("pos", Value::Vec3(p)), ("newHit", b(true))]);
+    send(a, w, "headLook", &look);
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_thrown_at(a: *mut NmAgent, w: *const NmWorld, at: *const f32, vel: *const f32, look: i32, avoid: i32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if at.is_null() || vel.is_null() {
+        return fail(NM_E_ARG, "null vector");
+    }
+    if a.dead {
+        return 0;
+    }
+    let (p, v) = (unsafe { v3(at) } / a.u.len(), unsafe { v3(vel) } / a.u.len() * a.u.time());
+    if look != 0 {
+        send(a, w, "headLook", &[("start", Value::Bool(true)), ("pos", Value::Vec3(p)), ("vel", Value::Vec3(v)), ("instanceIndex", Value::Int(-1)), ("alwaysLook", Value::Bool(true))]);
+    }
+    if avoid != 0 {
+        send(a, w, "upperBodyFlinch", &[("start", Value::Bool(true)), ("pos", Value::Vec3(p)), ("newHit", Value::Bool(true))]);
+        (a.more.xs.dodging, a.more.xs.look_stop) = (true, Some(a.clock + 2000.0));
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_muscle_rise(a: *mut NmAgent, w: *const NmWorld, on: i32, help: f32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if on == 0 {
+        if a.more.musc.take().is_some() {
+            send(a, w, "bodyBalance", &[("start", Value::Bool(true))]);
+        }
+        return 0;
+    }
+    nm::task_pose(&mut a.agent, &a.build, &w.0, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), 11.0, 12.0);
+    a.more.musc = Some(if help < 0.0 { 0.5 } else { help });
+    a.still = 0.0;
+    0
+}
+
+fn net(path: *const c_char) -> Result<std::sync::Arc<delirium::learned::Net>, i32> {
+    static NETS: std::sync::Mutex<Vec<(String, std::sync::Arc<delirium::learned::Net>)>> = std::sync::Mutex::new(Vec::new());
+    let Some(p) = (unsafe { text(path) }) else { return Err(fail(NM_E_ARG, "no network path")) };
+    let mut nets = NETS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(n) = nets.iter().find(|n| n.0 == p) {
+        return Ok(n.1.clone());
+    }
+    let n = std::sync::Arc::new(delirium::learned::Net::load(p).ok_or_else(|| fail(NM_E_IO, format!("{p}: not a network")))?);
+    nets.push((p.to_string(), n.clone()));
+    Ok(n)
+}
+
+fn fresh_agent(a: &mut NmAgent) {
+    let fr = frames(a);
+    a.agent = delirium::learned::agent(&a.build, &fr);
+    let tune = std::mem::take(&mut a.more.tune);
+    tuned(a, &tune);
+    a.more.tune = tune;
+}
+
+fn learned_done(a: &mut NmAgent, w: &NmWorld) {
+    a.more.learned = None;
+    let up = delirium::learned::standing(&a.agent.doll);
+    fresh_agent(a);
+    if up {
+        send(a, w, "bodyBalance", &[("start", Value::Bool(true))]);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_learned_getup(a: *mut NmAgent, net_path: *const c_char) -> i32 {
+    let a = agent!(a);
+    let n = match net(net_path) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    if a.mode == NM_MODE_FOLLOW {
+        return fail(NM_E_STATE, "nm_agent_learned_getup: NM_MODE_LEAD only (the network steps the body itself)");
+    }
+    (a.shot, a.blast, a.fire, a.fall) = (None, None, None, None);
+    fresh_agent(a);
+    a.more.learned = Some((n, Default::default(), 0));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_learned_getup_running(a: *const NmAgent) -> i32 {
+    agent_ref!(a).more.learned.is_some() as i32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_learned_walk(a: *mut NmAgent, w: *const NmWorld, net_path: *const c_char, cycle: f32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if net_path.is_null() {
+        if a.more.walk.take().is_some() {
+            a.agent.configure_balance(Default::default());
+            a.agent.muscle_stiffness_x(1.0);
+            send(a, w, "bodyBalance", &[("start", Value::Bool(true))]);
+        }
+        return 0;
+    }
+    if !(cycle > 0.0) {
+        return fail(NM_E_ARG, "nm_agent_learned_walk: cycle over 0");
+    }
+    let n = match net(net_path) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    if n.sizes != delirium::learned::walk_sizes(&a.agent.doll) {
+        return fail(NM_E_ARG, "nm_agent_learned_walk: not a walk network for this body");
+    }
+    fresh_agent(a);
+    if let Err(e) = delirium::learned::start_walk_balance(&mut a.agent, &a.build, &w.0) {
+        return fail(NM_E_STATE, e);
+    }
+    a.more.walk = Some((n, 0.0, cycle / a.u.time()));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_task_sit(a: *mut NmAgent, w: *const NmWorld, look: *const f32, seat: *const f32) -> i32 {
+    let a = agent!(a);
+    if w.is_null() {
+        return fail(NM_E_ARG, "null world");
+    }
+    let l = a.u.len();
+    let at = |p: *const f32| (!p.is_null()).then(|| unsafe { v3(p) } / l);
+    let here = a.agent.doll.frames().next().unwrap_or_default().translation;
+    a.more.sit = Some(delirium::nmsit::Sit::new(at(look).unwrap_or(Vec3::ZERO), at(seat).unwrap_or(here), !a.agent.incoming.is_empty()));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_task_pose(a: *mut NmAgent, w: *const NmWorld, low: f32, high: f32) -> i32 {
+    let a = agent!(a);
+    if w.is_null() {
+        return fail(NM_E_ARG, "null world");
+    }
+    a.more.pose = Some(delirium::nmpose::Pose::new(low, high, 0, 0, false));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_task_roll_up_relax(a: *mut NmAgent, w: *const NmWorld, stiffness: f32, damping: f32, roll_ms: i32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    (a.shot, a.blast, a.fall) = (None, None, None);
+    let r = with_tp(|tp| nm::RollUpAndRelax::start(&mut a.agent, &a.build, &w.0, tp, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), stiffness, damping, roll_ms.max(0) as u32));
+    a.more.roll = Some(r);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_task_script(a: *mut NmAgent, ms: i32) -> i32 {
+    let a = agent!(a);
+    a.more.script = Some((delirium::nmscript::Script::new(ms.max(0) as u32, false), 0));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_set_attacker(a: *mut NmAgent, bones: *const f32, armed: i32) -> i32 {
+    let a = agent!(a);
+    let old = a.more.attacker.take().and_then(|x| x.1);
+    if bones.is_null() || armed == 0 {
+        if let Some(g) = old {
+            g.stop(&mut a.agent);
+        }
+        if bones.is_null() {
+            return 0;
+        }
+    }
+    let l = a.u.len();
+    let b: [Vec3; 4] = std::array::from_fn(|k| unsafe { v3(bones.add(k * 3)) } / l);
+    let gun = if armed == 0 {
+        None
+    } else {
+        old.or_else(|| {
+            let t = with_tp(|tp| delirium::brace::Set::read(tp, "*")).gun;
+            Some(nm::PointGun::draw(&mut RAND.lock().unwrap_or_else(|e| e.into_inner()), true, t, false))
+        })
+    };
+    a.more.attacker = Some((b, gun));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_gun_ready(a: *mut NmAgent) -> i32 {
+    let a = agent!(a);
+    let Some((_, Some(g))) = a.more.attacker.as_mut() else { return 0 };
+    if !g.ready(200.0) {
+        return 0;
+    }
+    let t = with_tp(|tp| delirium::brace::Set::read(tp, "*")).gun;
+    g.next = RAND.lock().unwrap_or_else(|e| e.into_inner()).int_in_range(t[2], t[3]) as f32 * 1e-3;
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_set_stick(a: *mut NmAgent, on: i32, x: f32, y: f32, camera: f32) -> i32 {
+    let a = agent!(a);
+    let k = |v: f32| (v.clamp(-1.0, 1.0) * 127.0) as i32;
+    let wander = a.more.stick.take().map(|s| s.2).unwrap_or_default();
+    a.more.stick = (on != 0).then(|| ((k(x), -k(y)), camera, wander));
     0
 }
 
@@ -2067,6 +2911,9 @@ pub unsafe extern "C" fn nm_agent_task_brace(a: *mut NmAgent, w: *const NmWorld,
     let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
     let set = unsafe { text(set) }.unwrap_or("*");
     with_tp(|tp| nm::task_brace(&mut a.agent, &a.build, &w.0, tp, set, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), false));
+    if a.more.xr & NM_XR_ARMS_OUT != 0 {
+        send(a, w, "braceForImpact", &[("braceDistance", Value::Float(1.3)), ("targetPredictionTime", Value::Float(0.45))]);
+    }
     0
 }
 

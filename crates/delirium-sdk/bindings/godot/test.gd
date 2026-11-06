@@ -14,6 +14,7 @@ const BONES = [
 	["RightFoot", "RightLeg", Vector3(-0.1, 0.08, 0)], ["RightToeBase", "RightFoot", Vector3(-0.1, 0.02, 0.12)],
 ]
 var failed := 0
+var ground: StaticBody3D
 
 func expect(what: String, ok: bool) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
@@ -54,6 +55,7 @@ func run(what: String, hit: Callable, setup := Callable()) -> float:
 
 func _initialize() -> void:
 	var floor := StaticBody3D.new()
+	ground = floor
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(20, 1, 20)
@@ -119,6 +121,52 @@ func go() -> void:
 	await run("jump roll", func(d): expect("jump_roll", d.jump_roll()))
 	await run("flinch", func(d): expect("flinch", d.flinch(d.get_hips() + Vector3(1, 0.6, 0))))
 	await run("react", func(d): expect("react", d.react("bodyRollUp start=true")))
+	# Surfaces: the floor's physics material (ice, friction 0.05) under a shove's feet: he slides further.
+	var slid := {}
+	for f in [1.0, 0.05]:
+		var m := PhysicsMaterial.new()
+		m.friction = f
+		ground.physics_material_override = m
+		await run("friction %.2f" % f, func(d):
+			var from: Vector3 = d.get_hips()
+			get_root().get_tree().create_timer(2.0).timeout.connect(func(): slid[f] = (d.get_hips() - from).length())
+			d.push(Vector3(120, 0, 0)))
+	ground.physics_material_override = null
+	print("slid: ", slid)
+	expect("ice slides further", slid.get(0.05, 0.0) > slid.get(1.0, 0.0) + 0.05)
+	# The Playroom's other tasks and reads (the SDK's parity calls).
+	var R = ClassDB.instantiate("DeliriumRagdoll")
+	expect("weapons: the default four", R.weapon_names().size() == 4)
+	var msgs: Array = R.messages()
+	expect("messages listed (%d)" % msgs.size(), msgs.size() > 50 and msgs[0].params.size() > 0)
+	R.free()
+	await run("weapon shot", func(d): expect("pistol leaves 175", is_equal_approx(d.shoot_weapon("pistol", d.get_hips() + Vector3(0, 0.4, 0), Vector3(1, 0, 0), 200.0), 175.0)))
+	await run("shotgun", func(d): expect("pellets strike", d.shotgun("shotgun", d.get_hips() + Vector3(-3, 0.3, 0), Vector3(1, 0, 0), 150.0, 7) > 0))
+	await run("state reads", func(d):
+		var st: Dictionary = d.get_state()
+		expect("stance while balancing", st.has("stance") and st.contacts.size() == 21 and st.awake)
+		expect("raycast hits a part", d.raycast(d.get_hips() + Vector3(-2, 0.3, 0), d.get_hips() + Vector3(2, 0.3, 0)).has("part"))
+		expect("get_param", d.get_param("bodyBalance", "useHeadLook") != null)
+		expect("check_setup clean", d.check_setup() == "")
+		expect("balance, stop", d.balance(Vector3.ZERO) and d.stop()))
+	await run("reactions", func(d):
+		expect("set_reactions", d.set_reactions(d.REACT_WINDMILL | d.REACT_DODGE | d.REACT_LOOK_HIT))
+		expect("set_dive", d.set_dive(3.5))
+		expect("near_miss", d.near_miss(d.get_hips() + Vector3(-5, 0.5, 0.3), Vector3(1, 0, 0)))
+		expect("thrown_at", d.thrown_at(d.get_hips() + Vector3(2, 1, 0), Vector3(-5, 0, 0), true, true)))
+	await run("jump", func(d): expect("jump", d.jump(false, Vector3(0, 0, 1)) and d.get_state().jumping))
+	await run("sit", func(d): expect("sit", d.sit(Vector3.ZERO, Vector3.ZERO) and d.get_state().task_running))
+	await run("pose", func(d): expect("pose", d.pose(4, 6)))
+	await run("roll up relax", func(d): expect("roll_up_relax", d.roll_up_relax(-1, -1, 1000)))
+	await run("script", func(d): expect("script", d.script(500)))
+	await run("muscles", func(d): expect("muscle_rise", d.muscle_rise(true, -1) and d.muscle_rise(false, 0)))
+	await run("stick", func(d): expect("set_stick", d.set_stick(true, 0, 1, 0)))
+	var nets := OS.get_environment("DELIRIUM_NETS")
+	if nets != "":
+		await run("learned get-up", func(d):
+			d.push(Vector3(200, 0, 0))
+			expect("learned_getup", d.learned_getup(nets + "/getup-reward.net") and d.get_state().learned_getup))
+		await run("learned walk", func(d): expect("learned_walk", d.learned_walk(nets + "/walk.net", 1.0) and d.set_stick(true, 0, 1, 0)))
 	# engine_physics: NM's own physics moves him, his parts as Godot bodies pushing Godot's; loose bodies hit him.
 	ProjectSettings.set_setting("delirium/engine_physics", true)
 	expect("engine: stands", await run("engine standing 5 s", func(d): pass) > 0.7)

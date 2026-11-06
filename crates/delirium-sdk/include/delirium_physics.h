@@ -25,6 +25,15 @@ typedef struct NmRig NmRig;
 #define NM_E_TYPE (-6)
 #define NM_E_STATE (-7)
 #define NM_E_FOLLOW (-8)
+#define NM_XR_WINDMILL (1)
+#define NM_XR_CURL_UP (2)
+#define NM_XR_CURL_SHOT (4)
+#define NM_XR_LOOK_HIT (8)
+#define NM_XR_LEDGE (16)
+#define NM_XR_SMART_FALL (32)
+#define NM_XR_DODGE (64)
+#define NM_XR_WALL (128)
+#define NM_XR_ARMS_OUT (256)
 #define NM_MODE_LEAD (0)
 #define NM_MODE_FOLLOW (1)
 #define NM_HIT_CAR (0)
@@ -42,6 +51,8 @@ typedef struct NmRig NmRig;
 
 /* The SDK's version, as major * 10000 + minor * 100 + patch. */
 NM_API int32_t nm_version(void);
+/* Crash reports: an error inside the SDK (a panic: its own bug) writes delirium_physics-crash.txt in `dir` (null: the host's working folder) with the error, where, the backtrace, the SDK's version and system, for the modder to send in; then the host stops as it would. A native crash in it is in the host's own crash dump (the engine's crash reporter), named by the release's delirium_physics.pdb. Off until called; call once (again: a new folder). */
+NM_API int32_t nm_crash_report(const char* dir);
 /* The calling thread's last error message. */
 NM_API int32_t nm_last_error(char* buf, int32_t len);
 /* NM's character (character.xrt's bytes, from `delirium-room --export`): its joints, masses, effector limits and self-collision. Call once before any agent; agents made without it run the port's simpler stand-ins. Later calls are ignored (returns 1). */
@@ -159,6 +170,7 @@ NM_API int32_t nm_agent_get_joint(const NmAgent* a, int32_t i, int32_t* parent, 
 NM_API int32_t nm_agent_get_part_body(const NmAgent* a, int32_t i, float* mass, float* inertia, float* box);
 /* Every part's place with each joint at its zero (its frame as the parent holds it = as the child does), the root where it is now: `pos` 3 and `rot` 4 floats a part (world), `parts` of them. An engine's joints take their zero from the pose they're made in: a FOLLOW host makes them with its bodies here, then moves the bodies to where NM has them. */
 NM_API int32_t nm_agent_get_zero_pose(const NmAgent* a, float* pos, float* rot, int32_t parts);
+/* How many messages there are: the game's, then Delirium's extras (electrocute, teeter, stumble, smartFall, ...). */
 NM_API int32_t nm_message_count(void);
 NM_API int32_t nm_message_name(int32_t m, char* buf, int32_t len);
 /* A message's index by name, or NM_E_MESSAGE. */
@@ -207,6 +219,10 @@ NM_API int32_t nm_agent_has_fallen(const NmAgent* a);
 NM_API float nm_agent_get_lying(const NmAgent* a, float* head, int32_t* face_up);
 /* 1 while a dead body rests (its steps skipped; see nm_agent_step): nothing to pose or read changes. */
 NM_API int32_t nm_agent_is_resting(const NmAgent* a, const NmWorld* w);
+/* On (default) the game's balance runs out of steps (maxSteps: a shot's push he can't take up in so many steps drops him); 0: he keeps stepping as long as it takes (the Playroom's default). */
+NM_API void nm_set_step_limit(int32_t on);
+/* On (default) a burning character reacts (nm_agent_task_on_fire's flailing, staggering and writhing); 0: he burns (nm_agent_is_burning, the fire spreads) but carries on as he was. Takes effect on the next fire. */
+NM_API void nm_set_fire_reaction(int32_t on);
 /* On (default) a shot (nm_agent_task_shot) whose part is the head kills: health 0. */
 NM_API void nm_set_headshot_kills(int32_t on);
 /* 1 once killed: shot with health under 50 (100 and over staggers and fights to stay up, under 100 goes down), shot in the head (nm_set_headshot_kills), or nm_agent_set_dead. */
@@ -238,7 +254,23 @@ NM_API int32_t nm_agent_feedback_get(const NmAgent* a, int32_t i, char* buf, int
 NM_API int32_t nm_agent_task_shot(NmAgent* a, const NmWorld* w, const char* set, int32_t part, const float* at, const float* dir, float health);
 /* nm_agent_task_shot with the bullet's speed `force` (the weapon's weaponinfo force, +144; over 0) in place of 400. */
 NM_API int32_t nm_agent_task_shot_force(NmAgent* a, const NmWorld* w, const char* set, int32_t part, const float* at, const float* dir, float health, float force);
-/* 1 while a shot task runs (nm_agent_task_shot until it ends itself or nm_agent_task_stop), else 0. */
+/* The weapons table from text: "name=set:push:damage[:pellets:between:clip:accuracy:range]" rows, comma separated (`set` the reaction's taskparams set: PISTOL_WEAPON, SMG_WEAPON, POWERFUL_WEAPON, * the defaults; push N s; damage health; pellets 1 or a shotgun's; ms between shots; clip rounds; accuracy; range m). Replaces the table (null: the defaults, pistol / smg / rifle / shotgun). Returns how many weapons. */
+NM_API int32_t nm_weapons_parse(const char* text_);
+/* The game's weapons (weaponinfo.xml, common.rpf's data/) into the table, by their game names lower case (pistol, deagle, mp5, ak47, sniperrifle, shotgun, baseballbat, ...): each its reaction's set (as the game picks it for an agile ped), force as the push, damage, a shotgun's 16 pellets, ms between shots, clip, accuracy and range. Rows of the same name are replaced. Returns how many it read. */
+NM_API int32_t nm_weapons_load_info(const char* path);
+/* How many weapons the table has. */
+NM_API int32_t nm_weapon_count(void);
+/* A weapon's index by name (any case), or NM_E_ARG. */
+NM_API int32_t nm_weapon_find(const char* name);
+/* Weapon `i`: its name and taskparams set into the buffers (either null to skip), `v` (null to skip) 7 floats: push (N s), damage, pellets, ms between shots, clip, accuracy, range (m). Returns 0, or NM_E_ARG for no such weapon. */
+NM_API int32_t nm_weapon_get(int32_t i, char* name, int32_t name_len, char* set, int32_t set_len, float* v);
+/* A shot from weapon `weapon` (the table's index): its push along `dir` at `at` (nm_agent_apply_push) and its reaction (nm_agent_task_shot with its set), the ped's `health` less its damage. Returns the health left (take it as yours), or a negative error. A shotgun's pellets: nm_shotgun_fan and nm_agent_task_shotgun. */
+NM_API float nm_agent_shoot_weapon(NmAgent* a, const NmWorld* w, int32_t weapon, int32_t part, const float* at, const float* dir, float health);
+/* A shotgun's pellets as the game fans them: `out` gets `pellets` + 1 directions (3 floats each), the aim itself first (to `range`), then each pellet's end on a square across the aim at 0.4 x `range`, +-`accuracy` x that (weaponinfo's) each way. `seed` the C runtime's rand() state, run on (keep it from blast to blast; any start). Cast each from `from` (the aim's to `range`, the pellets' to 0.4 x `range`) and hand what hit him to nm_agent_task_shotgun. Returns how many directions. */
+NM_API int32_t nm_shotgun_fan(const float* dir, float accuracy, float range, int32_t pellets, int32_t* seed, float* out);
+/* A shotgun blast's hits on him as one shot (the game's): `hits` `count` x 7 floats (part, then where it hit, then the pellet's direction), each pellet pushing at once (the bullet at `force`, weighted by its part's mass) as one step's force. A shot task running takes each as its next hit in order; else a new one is the last pellet's. `health` the ped's after the blast's damage (the host's). Dead (health under 50 before): only the push. */
+NM_API int32_t nm_agent_task_shotgun(NmAgent* a, const NmWorld* w, const char* set, const float* hits, int32_t count, float health, float force);
+/* 1 while a task runs (a shot, explosion, fire, sit, pose, roll-up or script task, until it ends itself or nm_agent_task_stop), else 0. */
 NM_API int32_t nm_agent_task_running(const NmAgent* a);
 /* Why a character only ragdolls: one line per problem into `buf` (the setup calls missed, FOLLOW mode, nothing started, asleep); returns how many (0: it should react). */
 NM_API int32_t nm_agent_check(const NmAgent* a, char* buf, int32_t len);
@@ -268,6 +300,40 @@ NM_API int32_t nm_agent_task_fall_down(NmAgent* a, const NmWorld* w, float headi
 NM_API int32_t nm_agent_task_grab(NmAgent* a, const NmWorld* w, const float* left, const float* right, float hold);
 /* TaskNMJumpRollFromRoadVehicle's start: jumping out of a moving car, it tucks and rolls. */
 NM_API int32_t nm_agent_task_jump_roll(NmAgent* a, const NmWorld* w);
+/* The Playroom's additional experimental reactions, each its own switch: `bits` NM_XR_* or'd (0: none, the game's alone; the default). */
+NM_API int32_t nm_agent_set_reactions(NmAgent* a, int32_t bits);
+/* Shot at again within `gap` s of a near miss (nm_agent_near_miss; past the same burst's 0.5 s), he dives out of the bullet's line (the Playroom's Dive when shot at). 0 (the default): never. */
+NM_API int32_t nm_agent_set_dive(NmAgent* a, float gap);
+/* Delirium's jump on his balance (the Playroom's Jump / Dive): he loads, pushes off, flies and lands (catchFall if he comes down hard); `dive` 1 head first along `dir` (null: his facing) onto catchFall. 0 when he can't (not balancing). */
+NM_API int32_t nm_agent_jump(NmAgent* a, int32_t dive, const float* dir);
+/* 1 while nm_agent_jump's jump runs. */
+NM_API int32_t nm_agent_jumping(const NmAgent* a);
+/* A bullet that missed him, fired from `from` along `dir`: passing within 1.5 m of his head or chest he flinches from where it went by and looks there (down: nothing, or NM_XR_CURL_SHOT's curl); shot at again soon after he dives (nm_agent_set_dive). 1 when he noticed, 0 too far off. */
+NM_API int32_t nm_agent_near_miss(NmAgent* a, const NmWorld* w, const float* from, const float* dir);
+/* Something thrown or dropped at him from `at` moving at `vel` (the Playroom's Look at objects / Avoid objects): `look` 1 he follows it with his head; `avoid` 1 he flinches from it (let go 2 s on). Dead: nothing. */
+NM_API int32_t nm_agent_thrown_at(NmAgent* a, const NmWorld* w, const float* at, const float* vel, int32_t look, int32_t avoid);
+/* The Playroom's muscles get-up: `on` 1 he gets up with his own muscles, your get-up animation's pose each step (nm_agent_set_incoming_transforms) as NMPose's (stiffness 11-12), a spring helping his pelvis to the clip's at most `help` of his weight (negative: 0.5); he can fail. 0: done, he balances. */
+NM_API int32_t nm_agent_muscle_rise(NmAgent* a, const NmWorld* w, int32_t on, float help);
+/* The Playroom's learned get-up: lying, he gets up as the network `net` (the release's getup.net) learned, with his own muscles and Delirium's behaviours, for 8 s; then standing he balances, else he lies. 1 while it runs (nm_agent_learned_getup_running). */
+NM_API int32_t nm_agent_learned_getup(NmAgent* a, const char* net_path);
+/* 1 while nm_agent_learned_getup's get-up runs. */
+NM_API int32_t nm_agent_learned_getup_running(const NmAgent* a);
+/* The Playroom's learned walk: `net` (the release's walk.net, or run.net) tunes his balance each step as he walks under the stick (nm_agent_set_stick), `cycle` the walk clip's length it learned with (s). Null `net`: off, his balance as it was. */
+NM_API int32_t nm_agent_learned_walk(NmAgent* a, const NmWorld* w, const char* net_path, float cycle);
+/* TaskNMSit: sits (catchFall, the host's pose clip through nm_agent_set_incoming_transforms if any), looking at `look` (null: straight on). `seat` the seat's place (null: where he is). Runs until nm_agent_task_stop. */
+NM_API int32_t nm_agent_task_sit(NmAgent* a, const NmWorld* w, const float* look, const float* seat);
+/* TaskNMPose: the muscles take your animation's pose (nm_agent_set_incoming_transforms each step) at a body stiffness drawn from `low`..`high` (negative: 4). Runs until nm_agent_task_stop. */
+NM_API int32_t nm_agent_task_pose(NmAgent* a, const NmWorld* w, float low, float high);
+/* TaskNMRollUpAndRelax: rolls up for `roll_ms`, then goes limp at `stiffness` / `damping` (negative: the game's). */
+NM_API int32_t nm_agent_task_roll_up_relax(NmAgent* a, const NmWorld* w, float stiffness, float damping, int32_t roll_ms);
+/* TaskNMScriptControl: the ragdoll is yours, moved only by the messages you send (no behaviours of its own started), for `ms` (0: until nm_agent_task_stop); nm_agent_task_running says when it's over. */
+NM_API int32_t nm_agent_task_script(NmAgent* a, int32_t ms);
+/* Who he's up against (the tasks' attacker): `bones` its pelvis, spine, chest and head (12 floats), or null for no one. Each step he looks at its head as the game's shot and balance tasks do; `armed` 1: he points his gun at it after the brace set's gun-threat time, and nm_agent_gun_ready says when to fire. */
+NM_API int32_t nm_agent_set_attacker(NmAgent* a, const float* bones, int32_t armed);
+/* 1 when the gun threat (nm_agent_set_attacker armed) says to fire now (you fire the shot), the next drawn from the brace set's times between shots; else 0. */
+NM_API int32_t nm_agent_gun_ready(NmAgent* a);
+/* The player's ragdoll under the stick (the game's drunk control): `on` 1 pushes him along the stick (`x`, `y` -1..1, up the stick forward) relative to the camera's heading `camera` (radians about up), and he looks that way; at rest he wanders. 0 lets go. */
+NM_API int32_t nm_agent_set_stick(NmAgent* a, int32_t on, float x, float y, float camera);
 /* TaskNMRelax: goes limp (a kill, or knocked out). `stiffness` 0-100 (negative: the game's default), `damping` (negative: unset). */
 NM_API int32_t nm_agent_task_relax(NmAgent* a, float stiffness, float damping);
 /* TaskNMBrace's start: a car is about to hit it; it braces against the car (hands out, maybe a jump). */

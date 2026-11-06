@@ -4,7 +4,7 @@ use crate::shottask::Msg;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn TYPE() -> u32 { delirium_data::kv!(561 int) }
+pub fn TYPE() -> u32 { delirium_data::kv!(563 int) }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Entity {

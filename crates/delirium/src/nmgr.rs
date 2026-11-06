@@ -253,7 +253,7 @@ impl Grab {
                 _ => w[1].0,
             };
             let t = self.held[0].max(self.held[1]);
-            if t > delirium_data::kv!(488) {
+            if t > delirium_data::kv!(491) {
                 self.look_off(c, head);
             } else if t < delirium_data::kv!(68) || head.active {
                 if !head.active {
@@ -322,7 +322,7 @@ impl Grab {
             }
         };
         let (g, at) = (self.to_world(g), s3.d);
-        let k = if p.justbrace { delirium_data::kv!(507) } else { delirium_data::kv!(10) };
+        let k = if p.justbrace { delirium_data::kv!(510) } else { delirium_data::kv!(10) };
         let d = g - at;
         let len = d.length();
         let closing = (c.vel.vd(d.normalize_or_zero()) * k).max(0.0).min(len);
@@ -388,7 +388,7 @@ impl Grab {
         let a = speed.clamp(0.0, 1.0);
         let reach = crate::nmdbm::slen(t - at, b"xzy").fma(1.0 - (1.0 - a), p.max_reach.clamp(delirium_data::kv!(78), delirium_data::kv!(5)) * (1.0 - a));
         let t = crate::rigid::nrm(t - at).mul_add(Vec3::splat(reach), at);
-        let yaw = reach.clamp(0.0, delirium_data::kv!(508));
+        let yaw = reach.clamp(0.0, delirium_data::kv!(511));
         let ik_side = if i == 0 { 1.0 } else { -1.0 };
         if self.grip[i].is_none() {
             c.ch.set_stiffness(p.arm_stiffness, 1.0, mask, Some(1.0));
@@ -409,7 +409,7 @@ impl Grab {
         self.held[i] += dt;
         let mut arm_k = p.hold_stiffness;
         if touching {
-            arm_k *= delirium_data::kv!(256);
+            arm_k *= delirium_data::kv!(260);
         }
         let top = p.pull_up_strength[i] * delirium_data::kv!(137);
         let s = (top / (p.pull_up_time + delirium_data::kv!(51)) * self.held[i] + delirium_data::kv!(64)).max(delirium_data::kv!(64)).min(top);
@@ -419,7 +419,7 @@ impl Grab {
         }
         c.ch.set_stiffness(s, 0.5, mask, Some(delirium_data::kv!(32)));
         let wr = &mut c.ch.eff[l.e[delirium_data::kv!(0 int)]];
-        (wr.muscle_stiffness, wr.strength, wr.damping) = (delirium_data::kv!(25), delirium_data::kv!(509), delirium_data::kv!(136));
+        (wr.muscle_stiffness, wr.strength, wr.damping) = (delirium_data::kv!(25), delirium_data::kv!(512), delirium_data::kv!(136));
         self.pull(c, i, l, w, side, arm_k, !p.justbrace, dt);
         for j in [l.e[delirium_data::kv!(0 int)], l.e[1]] {
             c.ch.eff[j].desired = c.ch.actual(j, c.b.frames);

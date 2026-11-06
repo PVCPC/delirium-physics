@@ -99,7 +99,9 @@ tab does: `shot.bodyStiffness=7, bodyBalance.useHeadLook=0`. The mesh keeps its 
 
 The `[Force]` settings scale every hit: `Shot`, `Melee` and `Explosion` (1 = as given). `Weapons` is a table for
 `nm.ShootWeapon(enemy.transform, camera.position, camera.forward, "shotgun", hp)`, which shoots and returns the health
-left. Each entry is `name=set:push:damage`. Starting points (our own, tune to taste):
+left; `nm.Shotgun(enemy.transform, camera.position, camera.forward, "shotgun", hp)` fans its pellets as the game does.
+Each entry is `name=set:push:damage[:pellets:between:clip:accuracy:range]`, or give the game's `weaponinfo.xml`. Empty
+(the default) is this table (our own starting points, tune to taste):
 
 | Hit | Call | Strength | Health taken |
 |---|---|---|---|
@@ -123,7 +125,13 @@ left. Each entry is `name=set:push:damage`. Starting points (our own, tune to ta
 `nm.State(owner)` says what a ragdoll is doing now: Ragdolled, Balancing, Fallen, CatchingFall, RolledUp, Relaxing, Dead,
 InWater, Burning, Tackling (2 diving, 1 holding), LyingFor (s), Centre, Velocity, Mass. Events: `nm.Fell(owner)` once per
 fall, `nm.Feedback(owner, name, slot, value)` for NM's own behaviour messages (the Playroom's Feedback list), plus
-`LyingStill` and `CarHit`.
+`LyingStill` and `CarHit`. It also has Settled, Awake, Jumping, TaskRunning, LearnedGetUp, Resting, Stance and Contacts.
+
+The rest of the Playroom's tools are calls on `nm` too: `SetReactions`, `NearMiss`, `SetDive`, `ThrownAt`, `Jump`,
+`Balance`, `Stop`, `Sit`, `Pose`, `RollUpRelax`, `Script`, `MuscleRise`, `LearnedGetUp` (`[Data] GetUpNet`),
+`LearnedWalk` (`[Data] WalkNet`) with `SetStick`, `SetAttacker` / `GunReady`, `GetParam`, `Raycast`, `CheckSetup`,
+`Messages()` (the Unity package's README has each). `[Feel] StepLimit` and `FireReaction` match the Playroom's switches.
+A collider's physics material reaches NM (ice slides). A panic in the SDK writes `delirium_physics-crash.txt` next to the config.
 
 
 ## Tuning reactions

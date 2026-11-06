@@ -250,7 +250,9 @@ Console.WriteLine($"pelvis {p[0]:F2} {p[1]:F2} {p[2]:F2}");
 **The easy way:** the package's `DeliriumRagdolls` component, the same
 ragdolls as the BepInEx mod for your own game: add it to one object, set the
 player's game exe, and call `Ragdoll`, `ShootAlong`, `MeleeHit`, `Explode`,
-`OnFire`, `Sever`, `Kill`, `GetUp` with the character's root. Any humanoid
+`OnFire`, `Sever`, `Kill`, `GetUp` with the character's root, and the Playroom's
+other tools (weapons and shotguns, extra reactions, jump, sit, pose, muscle and
+learned get-ups, learned walk, the drunk stick, state reads, the message list). Any humanoid
 skeleton, no snaps in or out, nearby ragdolls share a world. Set up and
 examples: `crates/delirium-sdk/bindings/unity/README.md`.
 
@@ -317,13 +319,18 @@ For Mono Unity games there's a ready-made BepInEx plugin doing all of this
 C#). Add a `DeliriumRagdoll` node under the character's `Skeleton3D`, point
 the `[delirium]` project settings at the player's own files, and call
 `shoot_along`, `push`, `melee_hit`, `explode`, `on_fire`, `sever`, `kill`,
-`get_up`. No snaps in or out; it reads the level's box and mesh colliders.
+`get_up`, and the Playroom's other tools (weapons and shotguns, extra
+reactions, jump, sit, pose, muscle and learned get-ups, learned walk, the drunk
+stick, state reads, the message list). No snaps in or out; it reads the level's
+box and mesh colliders and their physics materials.
 Set up and examples: its `README.md`.
 
 ### Unreal Engine 5
 
 A ready plugin: `bindings/unreal/DeliriumRagdoll` (its README has the steps). Add the **Delirium Ragdoll** component
-to a character, then call `Shoot`, `Push`, `Explode`, `MeleeHit`, `Sever`, `Kill` and `GetUp` from Blueprint or C++.
+to a character, then call `Shoot`, `Push`, `Explode`, `MeleeHit`, `Sever`, `Kill` and `GetUp` from Blueprint or C++,
+and the Playroom's other tools (`ShootWeapon`, `Shotgun`, `SetReactions`, `Jump`, `Sit`, `TakePose`, `MuscleRise`,
+`LearnedGetUp`, `LearnedWalk`, `SetStick`, `SetAttacker`, `GetState`, `Messages`).
 Tested on UE 5.8 with the Third Person template's mannequin.
 
 ### Any engine, step by step (Unreal, Source, your own)
@@ -492,7 +499,11 @@ unless you need the engine to move the parts.
 | Health and get-up | `nm_agent_aim_hit`, `nm_agent_is_dead`, `set_dead`, `nm_set_headshot_kills`, `nm_agent_get_lying`, `should_get_up` |
 | Animation pose | `nm_agent_set_incoming_transforms(a, transforms, parts)` (7 floats per part; `parts = 0` clears), used by `activePose` and `incomingTransforms` |
 | Events | `nm_agent_feedback_count`, `nm_agent_feedback_get` |
-| World | `nm_world_add_floor`, `nm_world_add_mesh`, `nm_world_set_boxes`, `nm_world_raycast`, `nm_set_surface(material, friction, elasticity)` |
+| World | `nm_world_add_floor`, `nm_world_add_mesh`, `nm_world_set_boxes`, `nm_world_set_box_spins`, `nm_world_raycast`, `nm_set_surface(material, friction, elasticity)` |
+| Playroom tools | `nm_agent_set_reactions` (NM_XR_*), `near_miss`, `set_dive`, `thrown_at`, `jump`, `task_sit`, `task_pose`, `task_roll_up_relax`, `task_script`, `task_stop`, `task_running`, `muscle_rise`, `learned_getup`, `learned_walk`, `set_stick`, `set_attacker`, `gun_ready` |
+| Weapons | `nm_weapons_parse`, `nm_weapons_load_info` (weaponinfo.xml), `nm_weapon_count`, `find`, `get`, `nm_agent_shoot_weapon`, `nm_shotgun_fan` + `nm_agent_task_shotgun` |
+| Parameters | `nm_agent_get_param`, `get_param_string`, `nm_message_count`, `nm_message_name`, `nm_message_param_*` (name, kind, default, doc, used) |
+| Switches | `nm_set_step_limit`, `nm_set_fire_reaction`, `nm_crash_report(dir)` (a panic in the SDK writes a crash note there) |
 
 `nm_world_set_boxes` takes 13 floats per box (centre, quaternion, half extents,
 velocity) for cars and platforms; set them again before every step. The

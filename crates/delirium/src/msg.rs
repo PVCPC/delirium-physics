@@ -590,6 +590,23 @@ fn intern(s: &str) -> &'static str {
     k
 }
 
+pub fn parse_value(kind: Kind, v: &str) -> Option<Value> {
+    Some(match kind {
+        Kind::Float => Value::Float(v.parse().ok()?),
+        Kind::Int => Value::Int(v.parse().ok()?),
+        Kind::Bool => Value::Bool(match v {
+            "true" | "1" => true,
+            "false" | "0" => false,
+            _ => return None,
+        }),
+        Kind::Vec3 => {
+            let f: Vec<f32> = v.split(',').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+            Value::Vec3(crate::prelude::Vec3::new(*f.first()?, *f.get(1)?, *f.get(2)?))
+        }
+        Kind::Str => Value::Str(v.to_string()),
+    })
+}
+
 pub fn find(name: &str) -> Option<&'static Message> {
     MESSAGES.iter().chain(crate::extras::messages()).find(|m| m.name == name)
 }
@@ -1092,7 +1109,7 @@ pub fn get(st: &State, msg: &str, name: &str) -> Option<Value> {
         ("defineAttachedObject", "partIndex") => { let p = &st.define_attached_object; Value::Int(p.part_index) }
         ("defineAttachedObject", "worldPos") => { let p = &st.define_attached_object; Value::Vec3(p.world_pos) }
         ("defineAttachedObject", "objectMass") => { let p = &st.define_attached_object; Value::Float(p.object_mass) }
-        ("fallOverWall", "bodyTwist") => { let p = &st.fall_over_wall; Value::Float(p.twist_max / delirium_data::kv!(189)) }
+        ("fallOverWall", "bodyTwist") => { let p = &st.fall_over_wall; Value::Float(p.twist_max / delirium_data::kv!(195)) }
         ("fallOverWall", "useSpecifiedPoint") => { let p = &st.fall_over_wall; Value::Bool(p.use_specified_point) }
         ("fallOverWall", "maxDistanceFromPelToHitPoint") => { let p = &st.fall_over_wall; Value::Float(p.max_distance_from_pel_to_hit_point) }
         ("fallOverWall", "fallOverEdge") => { let p = &st.fall_over_wall; Value::Vec3(p.fall_over_edge) }

@@ -52,7 +52,7 @@ def cs(t, n):
     if t == '*const u32': return 'uint[]'
     if t == '*const i32': return 'int[]'
     if t == '*const u8': return 'byte[]'
-    if t == '*mut i32': return 'int[]' if n == 'map' else 'out int'  # map: one per bone, in and out
+    if t == '*mut i32': return 'int[]' if n == 'map' else 'ref int' if n == 'seed' else 'out int'  # map: one per bone, in and out; seed: in and out
     if t.endswith(('NmWorld', 'NmBuild', 'NmAgent', 'NmRig')): return 'IntPtr'
     raise ValueError(t)
 CS_KEYWORDS = {'out', 'ref', 'in', 'params', 'string', 'object', 'base', 'event', 'fixed', 'lock'}

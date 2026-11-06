@@ -181,7 +181,7 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
     let cap = if w.on_entity { crate::kv!(68) } else { s.travel * 0.5 };
     let step = (t.inv_t * t.dt).mul_add(delta, moved);
     let rate = fsel(step - cap, cap, step) * t.inv_dt;
-    let share = if !(w.damage >= crate::kv!(26)) { s.share * crate::kv!(78) } else if !(w.damage >= crate::kv!(752)) { s.share * 0.5 } else { s.share };
+    let share = if !(w.damage >= crate::kv!(26)) { s.share * crate::kv!(78) } else if !(w.damage >= crate::kv!(754)) { s.share * 0.5 } else { s.share };
     let top = if w.on_entity { share + crate::kv!(60) } else { 1.0 };
     let k = if s.front { 1.0 } else { crate::kv!(18) } * h.suspension_force;
     let f = k.mul_add(x - s.rest, share);
@@ -192,7 +192,7 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
     let mut damp = c * b.mass * G() * rate;
     if !(w.damage >= crate::kv!(26)) {
         damp *= 0.5;
-    } else if !(w.damage >= crate::kv!(752)) {
+    } else if !(w.damage >= crate::kv!(754)) {
         damp *= crate::kv!(74);
     }
     let mut damp = h.suspension_bias[if s.front { 0 } else { 1 }] * damp;
@@ -220,7 +220,7 @@ pub fn suspension(h: &Handling, b: &Mass, w: &Strut, m: &[V4; 4], vel: V4, t: &T
     let torque: V4 = std::array::from_fn(|l| fneg(pa[l].mul_add(rc[l], -(a[l] * c[l]))));
     let (b0, b1, b2) = (dot3(m[0], torque), dot3(m[1], torque), dot3(m[2], torque));
     let mut body = [b0, b1, b2, b0];
-    if w.flags & crate::kv!(816 int) != 0 {
+    if w.flags & crate::kv!(818 int) != 0 {
         body[1] = 0.0;
     }
     let body: V4 = std::array::from_fn(|l| body[l] * b.inv_inertia[l]);
@@ -297,7 +297,7 @@ pub fn axes(cache: &mut [V4; 2], axle: V4, normal: V4, flags: u32, m: &[V4; 4], 
     let side = by_columns(m, side);
     let n = if flags & crate::kv!(0 int) != 0 { normal } else { m[2] };
     let d = side[0].mul_add(n[0], side[1].mul_add(n[1], side[2] * n[2]));
-    let (fwd, side) = if d.abs() < crate::kv!(1053) {
+    let (fwd, side) = if d.abs() < crate::kv!(1055) {
         let fwd = unit(cross(side, n));
         (fwd, unit(cross(n, fwd)))
     } else {
@@ -334,7 +334,7 @@ pub fn hold(h: &Handling, b: &Mass, w: &Strut, r: &mut Tread, cache: &mut [V4; 2
     let none = r.anchor[0] == 0.0 && r.anchor[1] == 0.0 && r.anchor[2] == 0.0;
     let mut d: V4 = if none { [0.0; 4] } else { std::array::from_fn(|l| r.anchor[l] - w.start[l]) };
     let mut moved = false;
-    if brake == 0.0 || brake.abs() * b.inv_mass * crate::kv!(1063 f32) < along.abs() {
+    if brake == 0.0 || brake.abs() * b.inv_mass * crate::kv!(1065 f32) < along.abs() {
         let k = mul(fwd, d[0].mul_add(fwd[0], d[1].mul_add(fwd[1], d[2] * fwd[2])));
         d = std::array::from_fn(|l| d[l] - k[l]);
         moved = true;
@@ -436,13 +436,13 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
         let along_n = mul(n, dot3(n, off));
         let off: V4 = std::array::from_fn(|l| off[l] - along_n[l]);
         d = std::array::from_fn(|l| d[l] - off[l]);
-        let stop = brake.abs() * (b.inv_mass * crate::kv!(1063 f32));
+        let stop = brake.abs() * (b.inv_mass * crate::kv!(1065 f32));
         if brake == 0.0 || along.abs() > stop {
             let k = mul(fwd, dot3(fwd, d));
             d = std::array::from_fn(|l| d[l] - k[l]);
         }
         let len2 = d[0].mul_add(d[0], d[2].mul_add(d[2], d[1] * d[1]));
-        if !(len2 <= reach * reach * crate::kv!(1072)) {
+        if !(len2 <= reach * reach * crate::kv!(1073)) {
             d = mul(mul(d, rsqrte(dot3(d, d))), reach * crate::kv!(33));
         }
         hold_along = fwd[0].mul_add(d[0], fwd[2].mul_add(d[2], fwd[1] * d[1]));
@@ -460,7 +460,7 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
     let torque = cross(push, arm);
     let (b0, b1, b2) = (dot3(m[0], torque), dot3(m[1], torque), dot3(m[2], torque));
     let mut body = [b0, b1, b2, b0];
-    if w.flags & crate::kv!(816 int) != 0 {
+    if w.flags & crate::kv!(818 int) != 0 {
         body[1] = 0.0;
     }
     let body: V4 = std::array::from_fn(|l| body[l] * b.inv_inertia[l]);
