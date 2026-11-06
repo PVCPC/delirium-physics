@@ -153,7 +153,7 @@ pub unsafe extern "C" fn nm_part_name(i: i32, buf: *mut c_char, len: i32) -> i32
     }
 }
 
-pub struct NmWorld(Collision, Vec<Obstacle>, Units, std::sync::Mutex<Bodies>);
+pub struct NmWorld(Collision, Vec<Obstacle>, Units, std::sync::Mutex<Bodies>, Vec<i32>);
 
 #[derive(Default)]
 struct Bodies(u64, Vec<(usize, u64, Vec<delirium::ragdoll::Capsule>, bool)>);
@@ -178,8 +178,12 @@ impl Units {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn nm_world_create() -> *mut NmWorld {
-    Box::into_raw(Box::new(NmWorld(Collision::default(), vec![], Units(1.0), Default::default())))
+    let w = Box::into_raw(Box::new(NmWorld(Collision::default(), vec![], Units(1.0), Default::default(), vec![])));
+    WORLDS.lock().unwrap_or_else(|e| e.into_inner()).push(w as usize);
+    w
 }
+
+static WORLDS: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_set_scale(w: *mut NmWorld, scale: f32) -> i32 {
@@ -194,6 +198,7 @@ pub unsafe extern "C" fn nm_world_set_scale(w: *mut NmWorld, scale: f32) -> i32 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_destroy(w: *mut NmWorld) {
     if !w.is_null() {
+        WORLDS.lock().unwrap_or_else(|e| e.into_inner()).retain(|&x| x != w as usize);
         drop(unsafe { Box::from_raw(w) });
     }
 }
@@ -285,6 +290,25 @@ pub unsafe extern "C" fn nm_world_set_boxes(w: *mut NmWorld, boxes: *const f32, 
     }).collect();
     0
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_world_set_box_kinds(w: *mut NmWorld, kinds: *const i32, count: i32) -> i32 {
+    let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
+    if count < 0 || count as usize != w.1.len() || (count > 0 && kinds.is_null()) {
+        return fail(NM_E_ARG, "nm_world_set_box_kinds: count is not the boxes' number");
+    }
+    let k = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(kinds, count as usize) } };
+    if k.iter().any(|&k| !(0..=3).contains(&(k & !NM_HIT_PLAYER)) || k & !NM_HIT_PLAYER == 2) {
+        return fail(NM_E_ARG, "nm_world_set_box_kinds: a kind isn't NM_HIT_CAR, _OBJECT or _TRAIN (+ NM_HIT_PLAYER)");
+    }
+    w.4 = k.to_vec();
+    0
+}
+
+pub const NM_HIT_CAR: i32 = 0;
+pub const NM_HIT_OBJECT: i32 = 1;
+pub const NM_HIT_TRAIN: i32 = 3;
+pub const NM_HIT_PLAYER: i32 = 16;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_set_box_spins(w: *mut NmWorld, spins: *const f32, count: i32) -> i32 {
@@ -620,7 +644,7 @@ fn tuned(a: &mut NmAgent, tune: &[(&'static str, f32)]) {
     if tune.is_empty() {
         return;
     }
-    let w = NmWorld(Collision::default(), vec![], a.u, Default::default());
+    let w = NmWorld(Collision::default(), vec![], a.u, Default::default(), vec![]);
     for (m, ps) in tune_msgs(tune) {
         send(a, &w, m, &ps);
     }
@@ -758,11 +782,13 @@ pub struct NmAgent {
     dead: bool,
     fire: Option<(nm::OnFire, bool, f32)>,
     singe: f32,
+    shock: f32,
     fall: Option<nm::FallDown>,
     grab: Option<delirium::grabhelper::GrabHelper>,
     car: (Option<(i32, Vec3, Vec3, f32)>, f32),
     door: Option<(i32, f32, f32)>,
     bank: f32,
+    world: usize,
     stairs: (Option<f32>, u8, bool),
     cuts: Vec<(Build, Ragdoll, Vec<delirium::ragdoll::Rigid>, Vec<usize>)>,
     tackle: Option<Tackle>,
@@ -794,7 +820,7 @@ pub unsafe extern "C" fn nm_agent_create(b: *const NmBuild, pos: *const f32, yaw
     let frames = placed(b, pos, yaw);
     let agent = Agent::new(&b.build, Ragdoll::new(&b.build, &frames, Vec3::ZERO), Quat::from_rotation_z(yaw), seed);
     let n = frames.len();
-    let mut a = Box::new(NmAgent { agent, build: b.build.clone(), mode: NM_MODE_LEAD, set: vec![false; n], pending: None, shot: None, blast: None, dead: false, fire: None, fall: None, grab: None, car: (None, f32::MAX), door: None, bank: 0.0, stairs: (None, 0, false), cuts: vec![], tackle: None, water: (None, false), singe: 0.0, clock: 0.0,
+    let mut a = Box::new(NmAgent { agent, build: b.build.clone(), mode: NM_MODE_LEAD, set: vec![false; n], pending: None, shot: None, blast: None, dead: false, fire: None, fall: None, grab: None, car: (None, f32::MAX), door: None, bank: 0.0, world: 0, stairs: (None, 0, false), cuts: vec![], tackle: None, water: (None, false), singe: 0.0, shock: 0.0, clock: 0.0,
                                      frame: 0.0, still: 0.0, u: Units(b.scale) });
     tuned(&mut a, &b.tune);
     Box::into_raw(a)
@@ -803,6 +829,12 @@ pub unsafe extern "C" fn nm_agent_create(b: *const NmBuild, pos: *const f32, yaw
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_destroy(a: *mut NmAgent) {
     if !a.is_null() {
+        let worlds = WORLDS.lock().unwrap_or_else(|e| e.into_inner());
+        let w = unsafe { (*a).world };
+        if worlds.contains(&w) {
+            unsafe { &*(w as *const NmWorld) }.3.lock().unwrap_or_else(|e| e.into_inner()).1.retain(|e| e.0 != a as usize);
+        }
+        drop(worlds);
         drop(unsafe { Box::from_raw(a) });
     }
 }
@@ -831,6 +863,52 @@ macro_rules! agent_ref {
 pub unsafe extern "C" fn nm_agent_step(a: *mut NmAgent, w: *const NmWorld, dt: f32) -> i32 {
     let Some(a) = (unsafe { a.as_mut() }) else { return fail(NM_E_ARG, "null agent") };
     let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    agent_step(a, w, dt, None)
+}
+
+type Stepped = Vec<(usize, u64, Vec<delirium::ragdoll::Capsule>, bool)>;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_world_step_agents(w: *const NmWorld, agents: *const *mut NmAgent, count: i32, dt: f32, threads: i32) -> i32 {
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if count <= 0 {
+        return 0;
+    }
+    if agents.is_null() {
+        return fail(NM_E_ARG, "null agents");
+    }
+    let ptrs = unsafe { std::slice::from_raw_parts(agents, count as usize) };
+    let mut seen: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    seen.sort_unstable();
+    if seen.contains(&0) || seen.windows(2).any(|p| p[0] == p[1]) {
+        return fail(NM_E_ARG, "null or repeated agent");
+    }
+    let mut list: Vec<&mut NmAgent> = ptrs.iter().map(|&p| unsafe { &mut *p }).collect();
+    for a in list.iter_mut().filter(|a| a.mode != NM_MODE_FOLLOW) {
+        let dt = a.bank + dt / a.u.time();
+        if dt >= 1.0 / 60.0 - 1e-5 {
+            tackle(a, dt);
+        }
+    }
+    let before: Stepped = w.3.lock().unwrap_or_else(|e| e.into_inner()).1.clone();
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let n = (if threads > 0 { threads as usize } else { cores }).clamp(1, list.len());
+    let per = list.len().div_ceil(n);
+    let step = |chunk: &mut [&mut NmAgent]| chunk.iter_mut().map(|a| agent_step(a, w, dt, Some(&before))).find(|&r| r < 0)
+        .map(|r| (r, ERR.with(|e| e.borrow().clone())));
+    let errs: Vec<(i32, String)> = if n == 1 {
+        step(&mut list).into_iter().collect()
+    } else {
+        use rayon::prelude::*;
+        list.par_chunks_mut(per).with_max_len(1).filter_map(step).collect()
+    };
+    match errs.into_iter().next() {
+        Some((r, why)) => fail(r, why),
+        None => 0,
+    }
+}
+
+fn agent_step(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -> i32 {
     let dt = dt / a.u.time();
     if a.mode == NM_MODE_FOLLOW {
         return step_in(a, w, dt, &[]);
@@ -842,15 +920,19 @@ pub unsafe extern "C" fn nm_agent_step(a: *mut NmAgent, w: *const NmWorld, dt: f
     }
     let dt = std::mem::take(&mut a.bank);
     let me = a as *const NmAgent as usize;
+    a.world = w as *const NmWorld as usize;
     let others: Vec<delirium::ragdoll::Capsule> = {
         let mut b = w.3.lock().unwrap_or_else(|e| e.into_inner());
         b.0 += 1;
         let (now, keep) = (b.0, 2 * b.1.len() as u64 + 2);
         b.1.retain(|e| e.0 == me || now - e.1 <= keep);
-        b.1.iter().filter(|e| e.0 != me).flat_map(|e| e.2.iter().copied()).collect()
+        let at = a.agent.doll.com().0;
+        before.unwrap_or(&b.1).iter().filter(|e| e.0 != me).flat_map(|e| e.2.iter().copied()).filter(|c| ((c.0 + c.1) / 2.0).distance(at) < 3.0).collect()
     };
     catch_fire(a, w, dt);
-    tackle(a, dt);
+    if before.is_none() {
+        tackle(a, dt);
+    }
     let r = step_in(a, w, dt, &others);
     car_door(a, w, dt);
     stairs(a, w);
@@ -917,6 +999,14 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
             }
         }
     }
+    if a.shock > 0.0 {
+        a.shock -= dt;
+        if a.shock <= 0.0 {
+            let mut st = std::mem::take(&mut a.agent.msgs);
+            let _ = msg::send(&mut a.agent, &a.build, &w.0, &mut st, "electrocute", &[("start", Value::Bool(false))]);
+            a.agent.msgs = st;
+        }
+    }
     if let Some(mut g) = a.grab.take() {
         for f in &a.agent.feedback {
             if f.slot == 12 || f.slot == 8 {
@@ -949,6 +1039,14 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
     a.clock += dt as f64 * 1000.0;
     if a.mode == NM_MODE_FOLLOW {
         a.agent.step_follow(&a.build, &w.0, dt, &w.1, others);
+        let d = &mut a.agent.doll;
+        for k in (0..d.out.len()).filter(|k| d.gone >> k & 1 != 0) {
+            d.out[k] = (Vec3::ZERO, Vec3::ZERO);
+        }
+        for (k, j, l) in d.kicks.as_mut().map(std::mem::take).unwrap_or_default() {
+            d.out[k].0 += j / dt;
+            d.out[k].1 += l / dt;
+        }
     } else {
         a.agent.step(&a.build, &w.0, dt, &w.1, others);
     }
@@ -964,6 +1062,7 @@ pub unsafe extern "C" fn nm_agent_set_mode(a: *mut NmAgent, mode: i32) -> i32 {
         return fail(NM_E_ARG, "mode is NM_MODE_LEAD or NM_MODE_FOLLOW");
     }
     a.mode = mode;
+    a.agent.doll.kicks = (mode == NM_MODE_FOLLOW).then(Vec::new);
     0
 }
 
@@ -1197,10 +1296,45 @@ pub unsafe extern "C" fn nm_agent_get_joint(a: *const NmAgent, i: i32, parent: *
         put4(frame, pf.rotation * j.in_parent);
         put3(limits, Vec3::from_array(j.limits));
         if !armature.is_null() {
-            *armature = a.agent.doll.armature.get(k).copied().unwrap_or(0.0) * a.u.mass() * a.u.len() * a.u.len();
+            *armature = a.agent.doll.armature.get(k).copied().unwrap_or(0.0) * a.u.mass() * a.u.len() * a.u.len() * a.agent.short;
         }
     }
     if j.hinge { 2 } else { 1 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_get_part_body(a: *const NmAgent, i: i32, mass: *mut f32, inertia: *mut f32, r#box: *mut f32) -> i32 {
+    let a = agent_ref!(a);
+    let Some(k) = part(a, i) else { return fail(NM_E_ARG, "no such part") };
+    let (m, j) = a.agent.doll.mass_inertia(k);
+    let b = a.build.parts[k].boxed;
+    unsafe {
+        if !mass.is_null() { *mass = m * a.u.mass() }
+        put3(inertia, j * a.u.mass() * a.u.len() * a.u.len());
+        put3(r#box, b.unwrap_or(Vec3::ZERO) * a.u.len());
+    }
+    if b.is_some() { 2 } else { 1 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_get_zero_pose(a: *const NmAgent, pos: *mut f32, rot: *mut f32, parts: i32) -> i32 {
+    let a = agent_ref!(a);
+    let joints = a.agent.joints(&a.build);
+    if parts != joints.len() as i32 { return fail(NM_E_ARG, "parts isn't the part count") }
+    let mut at: Vec<Transform> = a.agent.doll.frames().take(1).collect();
+    for j in joints.iter().skip(1) {
+        let Some(j) = j else { return fail(NM_E_STATE, "a part without a joint") };
+        let Some(&p) = at.get(j.parent) else { return fail(NM_E_STATE, "a part before its parent") };
+        let r = (p.rotation * j.in_parent * j.in_child.inverse()).normalize();
+        at.push(Transform::from_translation(p.translation + p.rotation * j.anchor_parent - r * j.anchor_child).with_rotation(r));
+    }
+    for (k, t) in at.iter().enumerate() {
+        unsafe {
+            if !pos.is_null() { put3(pos.add(k * 3), t.translation * a.u.len()) }
+            if !rot.is_null() { put4(rot.add(k * 4), t.rotation) }
+        }
+    }
+    0
 }
 
 fn message(m: i32) -> Option<&'static msg::Message> {
@@ -1372,6 +1506,45 @@ pub unsafe extern "C" fn nm_agent_set_override(a: *mut NmAgent, behaviour: *cons
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_recentre_joint(a: *mut NmAgent, i: i32) -> i32 {
+    let a = agent!(a);
+    let parts: Vec<usize> = if i == -1 {
+        (1..a.build.parts.len()).collect()
+    } else {
+        match part(a, i) { Some(k) => vec![k], None => return fail(NM_E_ARG, "no such part") }
+    };
+    parts.into_iter().filter(|&k| a.agent.recentre_joint(k)).count() as i32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_hold(a: *mut NmAgent, mask: *const c_char, stiffness: f32, damping: f32, oppose_gravity: f32) -> i32 {
+    let a = agent!(a);
+    let Some(mask) = (unsafe { text(mask) }).map(|m| m.to_string()) else { return fail(NM_E_ARG, "nm_agent_hold: no mask") };
+    if delirium::nmrs::Character::mask(&mask).is_empty() {
+        return fail(NM_E_ARG, format!("nm_agent_hold: no such mask {mask:?}"));
+    }
+    a.agent.hold.retain(|h| h.0 != mask);
+    if stiffness > 0.0 {
+        a.agent.hold.push((mask, stiffness, damping, oppose_gravity));
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_follow(a: *mut NmAgent, mask: *const c_char, weight: f32) -> i32 {
+    let a = agent!(a);
+    let Some(mask) = (unsafe { text(mask) }).map(|m| m.to_string()) else { return fail(NM_E_ARG, "nm_agent_follow: no mask") };
+    if delirium::nmrs::Character::mask(&mask).is_empty() || !weight.is_finite() {
+        return fail(NM_E_ARG, format!("nm_agent_follow: no such mask {mask:?} or weight {weight}"));
+    }
+    a.agent.follow.retain(|f| f.0 != mask);
+    if weight > 0.0 {
+        a.agent.follow.push((mask, weight.min(1.0)));
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_clear_overrides(a: *mut NmAgent) -> i32 {
     agent!(a).agent.overrides.clear();
     0
@@ -1392,6 +1565,43 @@ pub unsafe extern "C" fn nm_msg_send(a: *mut NmAgent, w: *const NmWorld) -> i32 
         Err(msg::Error::Param) => fail(NM_E_PARAM, format!("{m}: a param it doesn't take")),
         Err(msg::Error::Type) => fail(NM_E_TYPE, format!("{m}: a param of the wrong type")),
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_msg_send_text(a: *mut NmAgent, w: *const NmWorld, line: *const c_char) -> i32 {
+    let Some(line) = (unsafe { text(line) }) else { return fail(NM_E_ARG, "no text") };
+    let mut words = line.split_whitespace();
+    let Some(name) = words.next().and_then(|n| std::ffi::CString::new(n).ok()) else { return fail(NM_E_ARG, "no message name") };
+    let r = unsafe { nm_msg_begin(a, name.as_ptr()) };
+    if r < 0 {
+        return r;
+    }
+    let m = msg::find(name.to_str().unwrap_or("")).expect("found by nm_msg_begin");
+    for kv in words {
+        let Some((k, v)) = kv.split_once('=') else { unsafe { nm_msg_cancel(a) }; return fail(NM_E_ARG, format!("{kv}: want name=value")) };
+        let kind = if k == "start" { Some(msg::Kind::Bool) } else { m.params.iter().find(|p| p.name == k).map(|p| p.kind) };
+        let value = kind.and_then(|kind| Some(match kind {
+            msg::Kind::Float => Value::Float(v.parse().ok()?),
+            msg::Kind::Int => Value::Int(v.parse().ok()?),
+            msg::Kind::Bool => Value::Bool(match v { "true" | "1" => true, "false" | "0" => false, _ => return None }),
+            msg::Kind::Vec3 => {
+                let f: Vec<f32> = v.split(',').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+                Value::Vec3(Vec3::new(*f.first()?, *f.get(1)?, *f.get(2)?))
+            }
+            msg::Kind::Str => Value::Str(v.to_string()),
+        }));
+        let Some(value) = value else {
+            unsafe { nm_msg_cancel(a) };
+            return fail(if kind.is_none() { NM_E_PARAM } else { NM_E_TYPE }, format!("{}: {kv}", m.name));
+        };
+        let k = std::ffi::CString::new(k).unwrap_or_default();
+        let r = unsafe { add(a, k.as_ptr(), value) };
+        if r < 0 {
+            unsafe { nm_msg_cancel(a) };
+            return r;
+        }
+    }
+    unsafe { nm_msg_send(a, w) }
 }
 
 #[unsafe(no_mangle)]
@@ -1501,10 +1711,18 @@ pub unsafe extern "C" fn nm_agent_sever(a: *mut NmAgent, w: *const NmWorld, part
     let a = agent!(a);
     let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
     let Some(k) = part(a, part_index) else { return fail(NM_E_ARG, "no such part") };
-    if a.mode == NM_MODE_FOLLOW {
-        return fail(NM_E_STATE, "nm_agent_sever: LEAD only (a FOLLOW body is the host's)");
-    }
     let Some((b, mut d, parts)) = a.agent.doll.sever(&a.build, k) else { return fail(NM_E_STATE, "nm_agent_sever: the root, or cut off already") };
+    if a.mode == NM_MODE_FOLLOW {
+        if !impulse.is_null() {
+            let c = a.agent.doll.centre(k);
+            let (x, j) = (if at.is_null() { c } else { unsafe { v3(at) / a.u.len() } }, unsafe { v3(impulse) } / a.u.impulse());
+            if let Some(kicks) = a.agent.doll.kicks.as_mut() { kicks.push((k, j, (x - c).cross(j))); }
+        }
+        if legless(a) {
+            send(a, w, "catchFall", &[("start", Value::Bool(true))]);
+        }
+        return 0;
+    }
     if !impulse.is_null() {
         let x = if at.is_null() { d.centre(0) } else { unsafe { v3(at) / a.u.len() } };
         d.impulse(0, x, unsafe { v3(impulse) } / a.u.impulse());
@@ -1724,6 +1942,31 @@ pub unsafe extern "C" fn nm_agent_task_on_fire(a: *mut NmAgent, w: *const NmWorl
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_tase(a: *mut NmAgent, w: *const NmWorld, seconds: f32) -> i32 {
+    let a = agent!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    if !seconds.is_finite() || seconds < 0.0 {
+        return fail(NM_E_ARG, "nm_agent_tase: seconds 0 or more");
+    }
+    let on = seconds > 0.0;
+    if on == (a.shock > 0.0) {
+        a.shock = seconds;
+        return 0;
+    }
+    a.shock = seconds;
+    let ps: &[(&str, Value)] = if on { &[("start", Value::Bool(true)), ("stunMag", Value::Float(0.4)), ("largeMult", Value::Float(2.0))] } else { &[("start", Value::Bool(false))] };
+    let mut st = std::mem::take(&mut a.agent.msgs);
+    let r = msg::send(&mut a.agent, &a.build, &w.0, &mut st, "electrocute", ps);
+    a.agent.msgs = st;
+    if r.is_err() { fail(NM_E_MESSAGE, "electrocute") } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_is_tased(a: *const NmAgent) -> i32 {
+    (agent_ref!(a).shock > 0.0) as i32
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_set_on_fire(a: *mut NmAgent, burning: i32, health: f32) -> i32 {
     let a = agent!(a);
     let Some(f) = a.fire.as_mut() else { return fail(NM_E_STATE, "no on-fire task") };
@@ -1851,7 +2094,14 @@ pub unsafe extern "C" fn nm_agent_car_hit(a: *mut NmAgent, w: *const NmWorld, he
     let Some((k, sum, at, _)) = a.car.0.filter(|h| h.3 >= 8.0 / 60.0 - 1e-4) else { return 0 };
     a.car = (None, 0.0);
     let d = &a.agent.doll;
-    let other = Thing { id: k, kind: Kind::Vehicle { player_driver: player_driver != 0, train: None } };
+    let kind = if w.4.len() == w.1.len() { w.4.get(k as usize).copied() } else { None };
+    let player_driver = kind.map_or(player_driver != 0, |k| k & NM_HIT_PLAYER != 0);
+    let train = |o: &Obstacle| bump::Train { axes: [o.rot * Vec3::X, o.rot * Vec3::Y, o.rot * Vec3::Z], place: o.centre, vel: o.vel, size: Some(o.half * 2.0) };
+    let other = Thing { id: k, kind: match kind.map(|k| k & !NM_HIT_PLAYER) {
+        Some(NM_HIT_OBJECT) => Kind::Object,
+        Some(NM_HIT_TRAIN) => Kind::Vehicle { player_driver, train: w.1.get(k as usize).map(train) },
+        _ => Kind::Vehicle { player_driver, train: None },
+    } };
     let imp = bump::Impact { impulse: sum.length(), dt: 1.0 / 60.0, component: d.nearest(&a.build, at) as i32, other: Some(other) };
     let ped = bump::Ped { id: -1, health, inv_mass: 1.0 / d.mass().max(1.0), woke: false, drop: None, vz: d.vel(0).0.z, tough: false,
                           player_cut: false, player: false, mission: false, quick_relax: false, agility: agility.clamp(0, 255) as u8,
@@ -1859,7 +2109,7 @@ pub unsafe extern "C" fn nm_agent_car_hit(a: *mut NmAgent, w: *const NmWorld, he
     let mut rand = RAND.lock().unwrap_or_else(|e| e.into_inner());
     let Some((amount, _)) = bump::damage(&ped, &imp, &mut rand).filter(|d| d.0 >= 1.0) else { return 0 };
     let place = w.1.get(k as usize).map_or(at, |o| o.centre);
-    let around = bump::Around { touching: vec![other], player: (player_driver != 0).then_some(bump::Player { thing: other, place, in_car: true }),
+    let around = bump::Around { touching: vec![other], player: player_driver.then_some(bump::Player { thing: other, place, in_car: true }),
                                 blend: None, sit: None, die: None, accepts: true };
     let task = bump::react(&ped, &imp, &around, amount, false, (health - amount).max(1.0), &mut rand, || None).map(|m| m.task);
     (a.shot, a.blast, a.fall, a.grab, a.door, a.tackle) = (None, None, None, None, None, None);
@@ -1954,6 +2204,8 @@ const TK_HOLD: f32 = 2.0;
 const TK_HANDS: [usize; 2] = [16, 20];
 const TK_CHEST: usize = 9;
 const TK_THIGHS: [usize; 2] = [1, 4];
+
+unsafe impl Send for NmAgent {}
 
 pub struct Tackle {
     target: *mut NmAgent,

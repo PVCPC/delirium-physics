@@ -472,6 +472,12 @@ the rig, agent, build and world.
 Switch with `nm_agent_set_mode(agent, NM_MODE_FOLLOW)` before the first step.
 Do not add gravity compensation: gravity is not included in the drive.
 
+The plugins' engine physics settings don't use FOLLOW: the engines' joints lack the game's joint armature, and short or
+heavy bodies (Brute, Brawler, Bruiser) couldn't stand on them. NM's own physics moves the body there; its parts are
+kinematic engine bodies at `nm_agent_get_part_transform`'s places (they push the engine's objects), and loose engine
+objects near it go to NM as movers (`nm_world_set_boxes`, `nm_world_set_box_kinds`). Do the same in your own engine
+unless you need the engine to move the parts.
+
 ### Reading and hitting a character (any language)
 
 | Need | Calls |

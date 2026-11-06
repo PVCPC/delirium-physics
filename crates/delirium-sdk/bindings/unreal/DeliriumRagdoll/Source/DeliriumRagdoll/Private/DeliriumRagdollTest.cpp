@@ -2,12 +2,14 @@
 #include "DeliriumClickToFight.h"
 #include "Animation/SkeletalMeshActor.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "DeliriumSettings.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -30,6 +32,12 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	AStaticMeshActor* Floor = W->SpawnActor<AStaticMeshActor>(FVector(0, 0, -50), FRotator::ZeroRotator);
 	Floor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
 	Floor->SetActorScale3D(FVector(20, 20, 1));
+	// EnginePhysics (DELIRIUM_TEST_ENGINE=1): Chaos's bodies, the world's physics ticked after each step (its components
+	// don't tick: no BeginPlay).
+	const bool bEngine = FPlatformMisc::GetEnvironmentVariable(TEXT("DELIRIUM_TEST_ENGINE")) == TEXT("1");
+	GetMutableDefault<UDeliriumSettings>()->bEnginePhysics = bEngine;
+	// CreateWorld's worlds don't simulate.
+	W->bShouldSimulatePhysics = bEngine;
 	auto Run = [&](const TCHAR* What, TFunctionRef<void(UDeliriumRagdollComponent*)> Hit, float Seconds,
 		TFunctionRef<void(UDeliriumRagdollComponent*)> Setup = [](UDeliriumRagdollComponent*) {}) -> FVector
 	{
@@ -41,12 +49,13 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 		FVector Head = FVector::ZeroVector;
 		if (D->Ragdoll())
 		{
-			for (int32 F = 0; F < 60; F++) D->Step(1.f / 60.f);
+			auto Tick = [&]() { D->Step(1.f / 60.f); if (bEngine) { W->Tick(LEVELTICK_All, 1.f / 60.f); GFrameCounter++; } };
+			for (int32 F = 0; F < 60; F++) Tick();
 			Hit(D);
-			for (int32 F = 0; F < Seconds * 60; F++) D->Step(1.f / 60.f);
+			for (int32 F = 0; F < Seconds * 60; F++) Tick();
 			Head = D->GetHips();
 			D->GetUp();
-			for (int32 F = 0; F < 30; F++) D->Step(1.f / 60.f);
+			for (int32 F = 0; F < 30; F++) Tick();
 			TestFalse(TEXT("handed back"), D->IsRagdolled());
 		}
 		AddInfo(FString::Printf(TEXT("%s: hips at %.0f cm"), What, Head.Z));
@@ -67,7 +76,27 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	TestTrue(TEXT("down without a leg"), Cut.Z < 40.f);
 	// The Body setting and overrides (the Playroom's bodies and Parameters tab).
 	auto Nothing = [](UDeliriumRagdollComponent*) {};
-	TestTrue(TEXT("Brawler stands"), Run(TEXT("Brawler"), Nothing, 5.f, [](UDeliriumRagdollComponent* D) { D->Body = TEXT("Brawler"); }).Z > 50.f);
+	Run(TEXT("tased 2.5 s"), [this](UDeliriumRagdollComponent* D) { TestTrue(TEXT("tased"), D->Tase(2.5f) && D->GetState().bTased); }, 5.f);
+	for (const TCHAR* B : { TEXT("Brute"), TEXT("Brawler"), TEXT("Bruiser") })
+		TestTrue(FString::Printf(TEXT("%s stands"), B), Run(B, Nothing, 5.f, [B](UDeliriumRagdollComponent* D) { D->Body = B; }).Z > 50.f);
+	// EnginePhysics: a 5 kg ball thrown at his back knocks him on (a mover to NM).
+	if (bEngine)
+	{
+		const FVector Hit = Run(TEXT("ball"), [&](UDeliriumRagdollComponent* D)
+			{
+				AStaticMeshActor* B = W->SpawnActor<AStaticMeshActor>(D->GetHips() + FVector(0, -200, 30), FRotator::ZeroRotator);
+				B->SetMobility(EComponentMobility::Movable);
+				UStaticMeshComponent* M = B->GetStaticMeshComponent();
+				M->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")));
+				B->SetActorScale3D(FVector(0.3f));
+				M->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
+				M->SetSimulatePhysics(true);
+				M->SetMassOverrideInKg(NAME_None, 5.f);
+				M->SetPhysicsLinearVelocity(FVector(0, 1200, 0));
+			}, 2.f);
+		AddInfo(FString::Printf(TEXT("ball: hips moved %.0f cm"), FVector::Dist2D(Hit, Still)));
+		TestTrue(TEXT("the ball knocks him"), FVector::Dist2D(Hit, Still) > 10.f);
+	}
 	TestTrue(TEXT("Random stands"), Run(TEXT("Random seed 5"), Nothing, 5.f, [](UDeliriumRagdollComponent* D) { D->Body = TEXT("Random"); D->BodySeed = 5; }).Z > 50.f);
 	TestTrue(TEXT("Custom stands"), Run(TEXT("Custom"), Nothing, 5.f,
 		[](UDeliriumRagdollComponent* D) { D->Body = TEXT("Custom"); D->CustomBody = TEXT("1, 1, 1, 1.2, 1, 1, 95, 0"); }).Z > 50.f);
@@ -76,6 +105,35 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 			TestTrue(TEXT("good override"), D->SetOverride(TEXT("bodyBalance"), TEXT("useHeadLook"), 0.f));
 			TestFalse(TEXT("bad override refused"), D->SetOverride(TEXT("bodyBalance"), TEXT("noSuchThing"), 1.f));
 		}, 5.f, [](UDeliriumRagdollComponent* D) { D->Overrides = TEXT("shot.bodyStiffness=7"); }).Z > 50.f);
+	// A crowd (DELIRIUM_TEST_CROWD men, 10 by default) 1.5 m apart on the floor: each standing and balancing (not held up or lying)
+	// after 3 s, and the real time a frame (its cost: NM's steps, Chaos's in EnginePhysics).
+	{
+		const FString C = FPlatformMisc::GetEnvironmentVariable(TEXT("DELIRIUM_TEST_CROWD"));
+		const int32 N = C.IsEmpty() ? 10 : FCString::Atoi(*C);
+		TArray<ASkeletalMeshActor*> Men;
+		TArray<UDeliriumRagdollComponent*> Dolls;
+		for (int32 I = 0; I < N; I++)
+		{
+			ASkeletalMeshActor* A = W->SpawnActor<ASkeletalMeshActor>(FVector(I % 10 * 150.f - 675.f, I / 10 * 150.f - 675.f, 0), FRotator::ZeroRotator);
+			A->GetSkeletalMeshComponent()->SetSkeletalMeshAsset(Asset);
+			auto* D = NewObject<UDeliriumRagdollComponent>(A);
+			D->RegisterComponent();
+			TestTrue(TEXT("crowd ragdolled"), D->Ragdoll());
+			Men.Add(A);
+			Dolls.Add(D);
+		}
+		auto Tick = [&]() { for (auto* D : Dolls) D->Step(1.f / 60.f); if (bEngine) W->Tick(LEVELTICK_All, 1.f / 60.f); GFrameCounter++; };
+		for (int32 F = 0; F < 60; F++) Tick();
+		const double T0 = FPlatformTime::Seconds();
+		for (int32 F = 0; F < 120; F++) Tick();
+		const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0 / 120.0;
+		int32 Up = 0, Balancing = 0;
+		for (auto* D : Dolls) { Up += D->GetHips().Z > 70.f; Balancing += D->GetState().bBalancing; }
+		AddInfo(FString::Printf(TEXT("crowd of %d: %d up, %d balancing, %.1f ms a frame"), N, Up, Balancing, Ms));
+		TestTrue(TEXT("crowd stands, balancing"), Up >= N * 9 / 10 && Balancing >= N * 9 / 10);
+		for (auto* A : Men) A->Destroy();
+	}
+	GetMutableDefault<UDeliriumSettings>()->bEnginePhysics = false;
 	GEngine->DestroyWorldContext(W);
 	W->DestroyWorld(false);
 	return true;

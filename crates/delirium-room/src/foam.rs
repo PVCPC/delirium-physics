@@ -68,9 +68,9 @@ impl Foam {
         };
         let (mut d, mut v) = (vec![0.0; w * h], vec![Vec2::ZERO; w * h]);
         let rows = h.div_ceil(THREADS);
-        std::thread::scope(|s| {
+        bevy::tasks::ComputeTaskPool::get().scope(|s| {
             for (ch_, (dd, vv)) in d.chunks_mut(rows * w).zip(v.chunks_mut(rows * w)).enumerate() {
-                s.spawn(move || {
+                s.spawn(async move {
                     for (j, (dd, vv)) in dd.iter_mut().zip(vv.iter_mut()).enumerate() {
                         let i = ch_ * rows * w + j;
                         let p = Vec2::new((i % w) as f32 + 0.5, (i / w) as f32 + 0.5);
@@ -117,9 +117,9 @@ impl Foam {
         };
         if let Some(mut img) = images.get_mut(&self.img) {
             let px = img.data.as_mut().unwrap();
-            std::thread::scope(|s| {
+            bevy::tasks::ComputeTaskPool::get().scope(|s| {
                 for (ch_, out) in px.chunks_mut(rows * w * 4).enumerate() {
-                    s.spawn(move || {
+                    s.spawn(async move {
                         for (j, o) in out.chunks_exact_mut(4).enumerate() {
                             let i = ch_ * rows * w + j;
                             let a = fd[i];

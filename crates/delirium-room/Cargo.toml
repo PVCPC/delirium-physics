@@ -49,3 +49,5 @@ default = ["portal"]
 portal = ["delirium/portal"]
 # NVIDIA DLSS / DLAA (Video → Upscaler): needs DLSS_SDK, VULKAN_SDK and LIBCLANG_PATH to build, nvngx_dlss.dll beside the exe.
 dlss = ["bevy/dlss"]
+# Per-system timings to trace-*.json (open in ui.perfetto.dev): what a frame spends where.
+trace = ["bevy/trace_chrome"]

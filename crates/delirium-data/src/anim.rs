@@ -59,7 +59,7 @@ pub fn read_dictionary_kinds(r: &Resource, kinds: &[u8]) -> Result<Vec<Animation
 }
 
 pub fn read_sound_tracks(r: &Resource) -> Result<Vec<(String, Vec<u32>)>, String> {
-    read_int_tracks(r, crate::kv!(282 int))
+    read_int_tracks(r, crate::kv!(284 int))
 }
 
 pub fn read_int_tracks(r: &Resource, kind: u8) -> Result<Vec<(String, Vec<u32>)>, String> {
@@ -111,7 +111,7 @@ fn read_animation(d: &[u8], a: usize, hash: u32, kinds: Option<&[u8]>) -> Result
         let t = sys(be32(d, tracks + k * crate::kv!(1 int))?)?;
         let blocks = sys(be32(d, t + crate::kv!(23 int))?)?;
         let block_count = be16(d, t + crate::kv!(55 int))? as usize;
-        if d[t] == crate::kv!(251 int) && be16(d, t + 2)? == 0 {
+        if d[t] == crate::kv!(252 int) && be16(d, t + 2)? == 0 {
             let per = be16(d, t + crate::kv!(1 int))?.max(1) as usize;
             let chans = (0..block_count).map(|j| sys(be32(d, sys(be32(d, blocks + j * crate::kv!(1 int))?)? + crate::kv!(1 int))?)).collect::<Result<Vec<_>, _>>()?;
             events = (0..frames).map(|f| { let j = (f / per).min(chans.len() - 1); int_at(d, chans[j], f - j * per) }).collect::<Result<_, _>>()?;

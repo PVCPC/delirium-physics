@@ -3,7 +3,7 @@ use crate::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KIND() -> u32 { crate::kv!(923 int) }
+pub fn KIND() -> u32 { crate::kv!(925 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -15,10 +15,10 @@ pub enum Step {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_BEYOND() -> f32 { crate::kv!(499) }
+pub fn SEEK_BEYOND() -> f32 { crate::kv!(501) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_NEAR() -> f32 { crate::kv!(924) }
+pub fn SEEK_NEAR() -> f32 { crate::kv!(926) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn ROUTE_WITHIN() -> f32 { crate::kv!(12) }
@@ -122,7 +122,7 @@ fn TOP() -> f32 { crate::kv!(18) }
 fn PLAYING() -> f32 { crate::kv!(194) }
 #[allow(non_snake_case)]
 #[inline]
-fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(925 int)) }
+fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(927 int)) }
 
 pub fn chance(dist: f32, playing: bool) -> f32 {
     if playing {
@@ -142,7 +142,7 @@ pub fn wait(rng: &mut Rand) -> f32 {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn TURN_SPEED() -> f32 { crate::kv!(926) }
+pub fn TURN_SPEED() -> f32 { crate::kv!(928) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keep {
@@ -162,7 +162,7 @@ pub fn KEEP_WAITING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = s
 pub fn KEEP_FIGHTING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || Keep { keep: 1.0, dead: crate::kv!(60), far: crate::kv!(12), ..(*KEEP_WAITING()) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP_OFF() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || Keep { keep: crate::kv!(486), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KEEP_OFF() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || Keep { keep: crate::kv!(488), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn CIRCLE() -> f32 { crate::kv!(17) }

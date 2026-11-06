@@ -26,7 +26,7 @@ pub(crate) fn cast(world: &Collision, obstacles: &[Obstacle], from: Vec3, dir: V
 fn ray_box(o: Vec3, d: Vec3, half: Vec3) -> Option<(f32, Vec3)> {
     let (mut near, mut far, mut n) = (0.0f32, f32::MAX, Vec3::ZERO);
     for k in 0..delirium_data::kv!(0 int) {
-        if d[k].abs() < delirium_data::kv!(244) {
+        if d[k].abs() < delirium_data::kv!(245) {
             if o[k].abs() > half[k] {
                 return None;
             }
@@ -61,7 +61,7 @@ fn HEAD() -> usize { delirium_data::kv!(55 int) }
 pub(crate) fn REACH() -> f32 { delirium_data::kv!(119) }
 #[allow(non_snake_case)]
 #[inline]
-pub(crate) fn PROBE() -> f32 { delirium_data::kv!(245 f32) }
+pub(crate) fn PROBE() -> f32 { delirium_data::kv!(246 f32) }
 pub(crate) const FALL_G: f32 = 1.0;
 pub(crate) const SOFTEN: f32 = 0.5;
 
@@ -190,7 +190,7 @@ impl CatchFall {
         let s3 = c.b.part(SPINE3());
         let (d, up) = (s3.v - under, c.up);
         let du = sdot(up, d, b"yzx");
-        self.dir = nrm(up * ((-FALL_G).fma(delirium_data::kv!(246), du) - du) + d);
+        self.dir = nrm(up * ((-FALL_G).fma(delirium_data::kv!(247), du) - du) + d);
         let m = c.m;
         self.forward = -sdot(m.c, self.dir, b"yzx");
         let back = -sdot(m.c, c.vel - under, b"yzx");
@@ -262,9 +262,9 @@ fn spin_torque(up: Vec3, w: Vec3, mass: f32, k: f32) -> Vec3 {
 impl Arm {
     fn init(ch: &mut Character, left: bool) -> Arm {
         let mut r = || (ch.random_bits() & delirium_data::kv!(190 int)) as f32;
-        let clav_lean1 = r().fma(delirium_data::kv!(247 f32), -delirium_data::kv!(116));
-        let clav_lean2 = r() * delirium_data::kv!(248 f32);
-        let elbow = r().fma(delirium_data::kv!(249 f32), delirium_data::kv!(74));
+        let clav_lean1 = r().fma(delirium_data::kv!(248 f32), -delirium_data::kv!(116));
+        let clav_lean2 = r() * delirium_data::kv!(249 f32);
+        let elbow = r().fma(delirium_data::kv!(250 f32), delirium_data::kv!(74));
         Arm { vel: Vec3::ZERO, k: 1.0, clav_lean1, clav_lean2, elbow, left }
     }
 
@@ -272,7 +272,7 @@ impl Arm {
         let l: Limb = limb(i);
         let m = c.m;
         let mut s = m.b.vx(c.up);
-        if sdot(s, s, b"zxy") > delirium_data::kv!(250) {
+        if sdot(s, s, b"zxy") > delirium_data::kv!(251) {
             s = nrm(s);
         }
         let out = if cf.forward > 0.0 {

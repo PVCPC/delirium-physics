@@ -352,3 +352,11 @@ pub unsafe extern "C" fn nm_rig_take(r: *const NmRig, a: *mut NmAgent, now: *con
     0
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_rig_incoming(r: *const NmRig, a: *mut NmAgent, now: *const f32) -> i32 {
+    let Some(r) = (unsafe { r.as_ref() }) else { return fail(NM_E_ARG, "null rig") };
+    let Some(a) = (unsafe { a.as_mut() }) else { return fail(NM_E_ARG, "null agent") };
+    a.agent.incoming = if now.is_null() { vec![] } else { take(r, &read_frames(now, r.parents.len(), a.u.len()), &frames(a)) };
+    0
+}
+

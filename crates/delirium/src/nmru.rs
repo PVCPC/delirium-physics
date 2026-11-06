@@ -77,8 +77,8 @@ impl RollUp {
         ch.set_stiffness(self.stiffness + 2.0, 1.0, "uc", None);
         self.reach = [0.0; 2];
         self.roll_asym(ch);
-        self.rate = delirium_data::kv!(528) + delirium_data::kv!(529) * ch.random();
-        self.phase = delirium_data::kv!(528) * ch.random();
+        self.rate = delirium_data::kv!(530) + delirium_data::kv!(531) * ch.random();
+        self.phase = delirium_data::kv!(530) * ch.random();
         self.shoulder = if ch.mode == 1 { ch.random() - 1.0 } else { 0.0 };
     }
 
@@ -114,7 +114,7 @@ impl RollUp {
             arm_r = (-spin.abs()).fma(slow, 1.0);
         }
         let sp = speed * 0.5;
-        let k = self.roll.fma(2.0, sp.clamp(0.0, 1.0)) * delirium_data::kv!(530);
+        let k = self.roll.fma(2.0, sp.clamp(0.0, 1.0)) * delirium_data::kv!(532);
         self.roll = k;
         if sp < delirium_data::kv!(60) {
             self.still += dt;
@@ -122,22 +122,22 @@ impl RollUp {
                 c.out.send(delirium_data::kv!(55 int), "Roll Up", 0.0);
             }
         }
-        let slack = if brace { (slen(v, b"yxz").clamp(delirium_data::kv!(60), delirium_data::kv!(531)) - delirium_data::kv!(60)) * 0.5 } else { 1.0 };
+        let slack = if brace { (slen(v, b"yxz").clamp(delirium_data::kv!(60), delirium_data::kv!(533)) - delirium_data::kv!(60)) * 0.5 } else { 1.0 };
         let s = (fneg(fneg(slack).fma(k, 1.0))).fma(delirium_data::kv!(64), self.stiffness).clamp(1.0, delirium_data::kv!(139));
         c.ch.set_stiffness(s, self.damping, "fb", None);
-        if u > 0.0 && (u as f64) < delirium_data::kv!(78) && (slen(w, b"yxz") as f64) > delirium_data::kv!(532) {
+        if u > 0.0 && (u as f64) < delirium_data::kv!(78) && (slen(w, b"yxz") as f64) > delirium_data::kv!(534) {
             self.roll_asym(c.ch);
         }
-        let hip = if self.hips_from_vel { (delirium_data::kv!(24) - back).clamp(0.0, 1.0) } else { delirium_data::kv!(486) };
+        let hip = if self.hips_from_vel { (delirium_data::kv!(24) - back).clamp(0.0, 1.0) } else { delirium_data::kv!(488) };
         let a = self.asym;
         let ch = &mut *c.ch;
         let (l, r) = (limb(2), limb(delirium_data::kv!(0 int)));
         ch.eff[l.e[1]].desired[0] = ((hip - push) - delirium_data::kv!(187)).fma(k, a) + delirium_data::kv!(187);
         ch.eff[r.e[1]].desired[0] = ((hip - push) - delirium_data::kv!(187)).fma(k, -a) + delirium_data::kv!(187);
-        let knee = (-push).fma(delirium_data::kv!(5), delirium_data::kv!(231));
+        let knee = (-push).fma(delirium_data::kv!(5), delirium_data::kv!(232));
         let sin = |x: f32| (x as f64).sin() as f32;
         let rt = self.rate * self.t;
-        let (sl, sr) = (sin(self.rate.fma(self.t, self.phase)), sin(rt.fma(delirium_data::kv!(533), self.phase) + delirium_data::kv!(5)));
+        let (sl, sr) = (sin(self.rate.fma(self.t, self.phase)), sin(rt.fma(delirium_data::kv!(535), self.phase) + delirium_data::kv!(5)));
         ch.eff[l.e[2]].desired[0] = (fneg(sl).fma(delirium_data::kv!(18), fneg(knee)) + 0.5).fma(k, fneg(a)) - 0.5;
         ch.eff[r.e[2]].desired[0] = (fneg(sr).fma(delirium_data::kv!(18), fneg(knee)) + 0.5).fma(k, a) - 0.5;
         let spread = if ch.mode == 2 { delirium_data::kv!(78) } else { delirium_data::kv!(140) };
@@ -153,7 +153,7 @@ impl RollUp {
         for (i, arm) in [(0, arm_l), (1, arm_r)] {
             let e = &mut ch.eff[limb(i).e[1]];
             e.desired = [arm.fma(delirium_data::kv!(66), self.shoulder), -0.5, -1.0];
-            ch.eff[limb(i).e[2]].desired[0] = k.fma(delirium_data::kv!(534), delirium_data::kv!(12));
+            ch.eff[limb(i).e[2]].desired[0] = k.fma(delirium_data::kv!(536), delirium_data::kv!(12));
         }
         ch.eff[l.e[delirium_data::kv!(0 int)]].desired[0] = -a - delirium_data::kv!(12);
         ch.eff[r.e[delirium_data::kv!(0 int)]].desired[0] = a - delirium_data::kv!(12);
@@ -182,14 +182,14 @@ impl RollUp {
         if rise > 0.0 {
             out = fneg(rise).fma(0.5, 1.0).clamp(0.0, 1.0);
         }
-        let dir = nrm(up.mul_add(Vec3::splat(-delirium_data::kv!(535)), s3.v) + (m.b - m.c));
-        let p = s3.w.vx(up).mul_add(Vec3::splat(delirium_data::kv!(536)), dir.mul_add(Vec3::splat(0.5), at));
+        let dir = nrm(up.mul_add(Vec3::splat(-delirium_data::kv!(537)), s3.v) + (m.b - m.c));
+        let p = s3.w.vx(up).mul_add(Vec3::splat(delirium_data::kv!(538)), dir.mul_add(Vec3::splat(0.5), at));
         let dir = nrm(p - at);
         let target = dir.mul_add(Vec3::splat(self.arm_reach_length), at);
         let n = nrm(s3.m.c * -2.0 + s3.m.b * side);
         let d = sdot(n, dir, b"zyx");
-        let hi = ((d - ((delirium_data::kv!(80) - self.arm_reach_amount) - delirium_data::kv!(24))) * delirium_data::kv!(537)).min(1.0);
-        let lo = ((d - (delirium_data::kv!(74) - self.arm_reach_amount)) * delirium_data::kv!(537)).max(0.0);
+        let hi = ((d - ((delirium_data::kv!(80) - self.arm_reach_amount) - delirium_data::kv!(24))) * delirium_data::kv!(539)).min(1.0);
+        let lo = ((d - (delirium_data::kv!(74) - self.arm_reach_amount)) * delirium_data::kv!(539)).max(0.0);
         let reach = reach.max(hi).min(lo);
         out *= reach;
         if out > 0.0 {

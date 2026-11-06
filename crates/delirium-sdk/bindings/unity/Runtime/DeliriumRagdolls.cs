@@ -33,8 +33,9 @@ namespace Delirium.Ragdoll
         string gameExe, xrt, buildFile, taskParams, boneMap, getUpFront, getUpBack, sizeMode;
         KeyCode ragdollKey, releaseKey;
         float push, getUpAfter, getUpBlend;
-        bool balance, bodySymmetric;
-        string body, customBody, overrides;
+        bool balance, bodySymmetric, armsOutEarly;
+        string body, customBody, overrides, hold, follow;
+        bool recentreJoints, enginePhysics;
         int bodySeed;
         float bodyVariance;
 #else
@@ -64,6 +65,8 @@ namespace Delirium.Ragdoll
         [Header("Feel")]
         [Tooltip("Ragdolls try to keep their feet (off: they go limp).")]
         public bool balance = true;
+        [Tooltip("Bracing for a car (or anything coming at it), both arms thrown out straight well before it hits, as the original demo (the Playroom's 'Arms out early when bracing'). Off: the game's, a late bend.")]
+        public bool armsOutEarly = false;
         [Tooltip("A shot whose nearest body part is the head kills.")]
         public bool headshotKills = true;
         [Tooltip("Auto, Real (the character's own size) or Homer (a person-sized body, the world scaled to it).")]
@@ -77,7 +80,7 @@ namespace Delirium.Ragdoll
         public bool adaptive = true;
         [Tooltip("Every body's muscles times this.")]
         public float strength = 1f;
-        [Tooltip("The body (the Playroom's): Fitted (the skeleton's own); Small, Average, Large, Lanky, Fat, Stocky, Waddler, Guard, Brute or Brawler (that shape, of each character); Random; Custom (customBody). The mesh keeps its look: pick one near it. SetBody sets one character's.")]
+        [Tooltip("The body (the Playroom's): Fitted (the skeleton's own); Small, Average, Large, Lanky, Fat, Stocky, Waddler, Guard, Brute, Brawler or Bruiser (that shape, of each character); Random; Custom (customBody). The mesh keeps its look: pick one near it. SetBody sets one character's.")]
         public string body = "Fitted";
         [Tooltip("Random's seed: the same seed, the same body (0: each character its own).")]
         public int bodySeed = 0;
@@ -89,6 +92,14 @@ namespace Delirium.Ragdoll
         public string customBody = "1, 1, 1, 1, 1, 1, 77, 0";
         [Tooltip("Behaviour parameters changed for every character (the Playroom's Parameters tab): shot.bodyStiffness=7, bodyBalance.useHeadLook=0. SetOverride does one character's.")]
         public string overrides = "";
+        [Tooltip("Re-centre each joint's range on the pose it is handed over in (for rigs whose animation bends joints past NM's ranges: they would snap on the first step). Not the game's.")]
+        public bool recentreJoints = false;
+        [Tooltip("His parts as Unity bodies: NM's own physics still moves him (the game's exactly), his parts follow it as kinematic rigidbodies pushing your rigidbodies and meeting triggers, and loose rigidbodies within 5 m hit him (as Object movers). Off: NM's own physics alone, with the level read in. Run physics at 60 Hz (Fixed Timestep 0.01667) for the game's feel.")]
+        public bool enginePhysics = false;
+        [Tooltip("Joints held at least this stiff, damped and gravity-opposing (0-1), whatever the reactions set: mask=stiffness:damping:gravity, comma separated (masks as setStiffness's: fb whole body, ua upper arms, ub upper body, lb lower body). fb=6:1:0.5 keeps a limp body from folding; empty: off.")]
+        public string hold = "";
+        [Tooltip("Joints that keep playing the animation while the rest ragdolls (a boxer's guard, a held gun): mask=weight, comma separated (1 all the way, 0.5 halfway between NM's and the animation's; masks as Hold's, ua upper arms). The Animator keeps running under the ragdoll. Give those joints strength with Hold (ua=10:1:1). Empty: off.")]
+        public string follow = "";
 
         static class Logger
         {
@@ -104,6 +115,9 @@ namespace Delirium.Ragdoll
         /// and every body's strength.
         internal static bool Adaptive = true;
         internal static float Strength = 1f;
+        /// The Body settings' RecentreJoints, Hold (mask, stiffness, damping, gravity) and Follow (mask, weight).
+        internal static bool Recentre, ArmsOutEarly, EnginePhysics;
+        internal static List<(string mask, float[] v)> Holds = new List<(string, float[])>(), Follows = new List<(string, float[])>();
         /// The Body settings' body (Body.Make), and SetBody's for one character.
         internal static Body Shape = new Body("Fitted", 0, 1.5f, true, "");
         internal static readonly Dictionary<Transform, Body> Shapes = new Dictionary<Transform, Body>();
@@ -120,6 +134,45 @@ namespace Delirium.Ragdoll
         /// feet's side when on its back, its head's when on its front; flat). Start your own get-up animation and call
         /// GetUp(owner), or leave it lying.
         public event Action<Transform, bool, Vector3> LyingStill;
+
+        /// NM's own messages from a ragdoll's behaviours as they happen: (owner, name, behaviour slot, value), e.g. the
+        /// balancer giving up or a catch fall landing. The Playroom's Feedback list shows what each behaviour sends.
+        public event Action<Transform, string, int, float> Feedback;
+
+        /// A ragdoll has lost its feet (the balancer gave up): (owner). Once per fall.
+        public event Action<Transform> Fell;
+
+        /// A ragdoll's state now (State(owner)).
+        public struct DollState
+        {
+            /// Under NM at all (the rest is false/zero when not).
+            public bool Ragdolled;
+            public bool Balancing, Fallen, CatchingFall, RolledUp, Relaxing, Dead, InWater, Burning, Tased;
+            /// 2 diving at its tackle target, 1 holding on, 0 neither.
+            public int Tackling;
+            /// Seconds lain still (0 while moving).
+            public float LyingFor;
+            /// Centre of mass and its speed (world); its whole mass (kg).
+            public Vector3 Centre, Velocity;
+            public float Mass;
+        }
+
+        /// What the ragdoll under `owner` is doing now.
+        public DollState State(Transform owner)
+        {
+            var d = dolls.FirstOrDefault(x => x.Owner == owner);
+            if (d == null) return default;
+            float[] pos = new float[3], vel = new float[3];
+            nm_agent_get_com(d.agent, pos, vel);
+            return new DollState
+            {
+                Ragdolled = true, Balancing = nm_agent_is_balancing(d.agent) == 1, Fallen = nm_agent_has_fallen(d.agent) == 1,
+                CatchingFall = nm_agent_is_catching_fall(d.agent) == 1, RolledUp = nm_agent_is_rolled_up(d.agent) == 1,
+                Relaxing = nm_agent_is_relaxing(d.agent) == 1, Dead = nm_agent_is_dead(d.agent) == 1, InWater = nm_agent_in_water(d.agent) == 1,
+                Burning = nm_agent_is_burning(d.agent) == 1, Tased = nm_agent_is_tased(d.agent) == 1, Tackling = nm_agent_tackle_state(d.agent), LyingFor = d.Lying(out _, out _),
+                Centre = new Vector3(pos[0], pos[2], pos[1]), Velocity = new Vector3(vel[0], vel[2], vel[1]), Mass = nm_agent_get_mass(d.agent),
+            };
+        }
         float clock;
         /// The loaded one, for other code: Instance.Ragdoll(enemy.transform, push).
         public static Plugin Instance { get; private set; }
@@ -148,6 +201,7 @@ namespace Delirium.Ragdoll
             getUpFront = Config.Bind("Get up", "FrontTrigger", "GetUpFront", "Animator trigger set when it gets up from lying face down (skipped if the Animator has none).").Value;
             getUpBack = Config.Bind("Get up", "BackTrigger", "GetUpBack", "Animator trigger set when it gets up from lying on its back.").Value;
             push = Config.Bind("Feel", "Push", 60f, "The push from the camera, N s.").Value;
+            armsOutEarly = Config.Bind("Feel", "ArmsOutEarly", false, "Bracing for a car (or anything coming at it), both arms thrown out straight well before it hits, as the original demo (the Playroom's 'Arms out early when bracing'). Off: the game's, a late bend.").Value;
             balance = Config.Bind("Feel", "Balance", true, "Ragdolls try to keep their feet (off: they go limp).").Value;
             ShotForce = Config.Bind("Force", "Shot", 1f, "Every bullet's push times this (1: as the mod or Weapons table gives it).").Value;
             MeleeForce = Config.Bind("Force", "Melee", 1f, "Every punch's, kick's and melee weapon's push times this.").Value;
@@ -165,6 +219,10 @@ namespace Delirium.Ragdoll
             bodyVariance = Config.Bind("Body", "Variance", 1.5f, new ConfigDescription("Random's spread (1.5 the Playroom's default).", new AcceptableValueRange<float>(1f, 4f))).Value;
             bodySymmetric = Config.Bind("Body", "Symmetric", true, "Random: the right side the left's.").Value;
             customBody = Config.Bind("Body", "CustomBody", "1, 1, 1, 1, 1, 1, 77, 0", "Custom's sizes against the fitted body: legs, arms, trunk, width, head, neck, weight (kg), height (m; 0 keeps it).").Value;
+            enginePhysics = Config.Bind("Feel", "EnginePhysics", false, "His parts as Unity bodies: NM's own physics still moves him (the game's exactly), his parts follow it as kinematic rigidbodies pushing your rigidbodies and meeting triggers, and loose rigidbodies within 5 m hit him (as Object movers). Off: NM's own physics alone, with the level read in. Run physics at 60 Hz (Fixed Timestep 0.01667) for the game's feel.").Value;
+            recentreJoints = Config.Bind("Body", "RecentreJoints", false, "Re-centre each joint's range on the pose it is handed over in (for rigs whose animation bends joints past NM's ranges: they would snap on the first step). Not the game's.").Value;
+            follow = Config.Bind("Body", "Follow", "", "Joints that keep playing the animation while the rest ragdolls (a boxer's guard, a held gun): mask=weight, comma separated (1 all the way, 0.5 halfway between NM's and the animation's; masks as Hold's, ua upper arms). The Animator keeps running under the ragdoll. Give those joints strength with Hold (ua=10:1:1). Empty: off.").Value;
+            hold = Config.Bind("Body", "Hold", "", "Joints held at least this stiff, damped and gravity-opposing (0-1), whatever the reactions set: mask=stiffness:damping:gravity, comma separated (masks as setStiffness's: fb whole body, ua upper arms, ub upper body, lb lower body). fb=6:1:0.5 keeps a limp body from folding; empty: off.").Value;
             overrides = Config.Bind("Body", "Overrides", "", "Behaviour parameters changed for every character (the Playroom's Parameters tab): shot.bodyStiffness=7, bodyBalance.useHeadLook=0.").Value;
             HeadshotKills = Config.Bind("Feel", "HeadshotKills", true, "A shot whose nearest body part is the head kills: health 0, the body goes limp and never gets up by itself.").Value;
             sizeMode = Config.Bind("Feel", "Size", "Auto", new ConfigDescription(
@@ -181,6 +239,11 @@ namespace Delirium.Ragdoll
 #endif
             Shape = new Body(body, bodySeed, bodyVariance, bodySymmetric, customBody);
             AllOverrides = Body.ParseOverrides(overrides);
+            Recentre = recentreJoints;
+            EnginePhysics = enginePhysics;
+            ArmsOutEarly = armsOutEarly;
+            Holds = MaskList(hold, 3, "Hold", "mask=stiffness:damping:gravity");
+            Follows = MaskList(follow, 1, "Follow", "mask=weight");
             foreach (var w in weaponTable.Split(','))
             {
                 var kv = w.Split('=');
@@ -210,8 +273,74 @@ namespace Delirium.Ragdoll
             }
         }
 
+        /// "mask=a:b:c, ..." as (mask, its `count` numbers); unreadable items warned of and skipped.
+        List<(string, float[])> MaskList(string text, int count, string name, string form)
+        {
+            var list = new List<(string, float[])>();
+            foreach (var h in text.Split(','))
+            {
+                var kv = h.Split('=');
+                var v = kv.Length == 2 ? kv[1].Split(':').Select(x => float.TryParse(x, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : float.NaN).ToArray() : new float[0];
+                if (v.Length == count && !v.Any(float.IsNaN)) list.Add((kv[0].Trim(), v));
+                else if (h.Trim() != "") Logger.LogWarning($"{name}: can't read \"{h.Trim()}\" ({form})");
+            }
+            return list;
+        }
+
+        /// Feedback gathered over the steps, raised once the frame's are done.
+        readonly List<(Transform, string, int, float)> said = new List<(Transform, string, int, float)>();
+        readonly byte[] said_buf = new byte[64];
+        readonly float[] said_value = new float[1];
+
+        void Heard(Doll d)
+        {
+            if (Feedback == null) return;
+            for (int i = 0, n = nm_agent_feedback_count(d.agent); i < n; i++)
+                if (nm_agent_feedback_get(d.agent, i, said_buf, said_buf.Length, out int slot, said_value) >= 0)
+                    said.Add((d.Owner, System.Text.Encoding.ASCII.GetString(said_buf, 0, Math.Max(0, Array.IndexOf(said_buf, (byte)0))), slot, said_value[0]));
+        }
+
+        /// EnginePhysics: the parts' bodies to where NM has them before Unity's physics step (they push what's in the
+        /// way); every quarter second, loose rigidbodies near them to NM as movers.
+        void FixedUpdate()
+        {
+            Prune();
+            look -= Time.fixedDeltaTime;
+            bool near = look <= 0;
+            if (near) look = 0.25f;
+            foreach (var d in dolls.Where(d => d.Engine))
+            {
+                d.Follow();
+                if (near) MoversNear(d);
+            }
+        }
+        float look;
+
+        /// EnginePhysics: loose rigidbodies within 5 m of `d` not yet registered, to NM as Object movers (sized as
+        /// RegisterMover does), so they hit him and he them.
+        void MoversNear(Doll d)
+        {
+            foreach (var c in Physics.OverlapSphere(d.Hips.position, 5 * d.scale, ~0, QueryTriggerInteraction.Ignore))
+            {
+                var rb = c.attachedRigidbody;
+                if (rb == null || rb.isKinematic || cars.Any(x => x.T == rb.transform)) continue;
+                RegisterMover(rb.transform, MoverKind.Object);
+            }
+        }
+
+        /// Characters (or EnginePhysics bodies) the game destroyed while ragdolled: their NM bodies go too.
+        void Prune()
+        {
+            foreach (var d in dolls.Where(d => d.Gone).ToList())
+            {
+                d.Dispose();
+                dolls.Remove(d);
+            }
+        }
+
         void Update()
         {
+            Prune();
             if (Pressed(releaseKey))
             {
                 foreach (var d in dolls) d.Dispose();
@@ -220,8 +349,35 @@ namespace Delirium.Ragdoll
             if (Pressed(ragdollKey)) Grab();
             // NM steps at 60 Hz whatever the game's own rate; at most 4 a frame so a hitch can't snowball.
             clock = Mathf.Min(clock + Time.deltaTime, 4 / 60f);
+            Cars();
             for (; clock >= 1 / 60f; clock -= 1 / 60f)
-                foreach (var d in dolls) d.Step(1 / 60f);
+                // Each world's ragdolls at once, spread over the machine's cores.
+                foreach (var g in dolls.GroupBy(d => d.world))
+                {
+                    var agents = g.Select(d => d.agent).ToArray();
+                    Check(nm_world_step_agents(g.Key, agents, agents.Length, 1 / 60f, 0));
+                    foreach (var d in g) Heard(d);
+                }
+            var now = said.ToList();
+            said.Clear();
+            foreach (var (who, name, slot, v) in now) Feedback?.Invoke(who, name, slot, v);
+            foreach (var d in dolls.ToList())
+            {
+                bool down = nm_agent_has_fallen(d.agent) == 1;
+                if (down && !d.Down) Fell?.Invoke(d.Owner);
+                d.Down = down;
+            }
+            // Car hits gathered over the steps: each reacts as the game picks (brace, roll up, stagger, limp).
+            foreach (var d in dolls.ToList())
+            {
+                var pos = d.Owner.position;
+                bool player = cars.Count > 0 && cars.OrderBy(c => (c.T.position - pos).sqrMagnitude).First().Player;
+                var dmg = new float[1];
+                var (health, agility) = Toughness.TryGetValue(d.Owner, out var t) ? t : (200f, 5);
+                if (nm_agent_car_hit(d.agent, d.world, health, agility, player ? 1 : 0, dmg, out int box) != 1) continue;
+                d.Bracing = -1;
+                CarHit?.Invoke(d.Owner, dmg[0], box >= 0 && box < cars.Count ? cars[box].T : null);
+            }
             foreach (var d in dolls.ToList())
             {
                 float still = d.Lying(out bool up, out Vector3 facing);
@@ -302,7 +458,7 @@ namespace Delirium.Ragdoll
         void LateUpdate()
         {
             // After the game's animation, so the ragdoll's pose is the one drawn.
-            foreach (var d in dolls) d.Pose();
+            foreach (var d in dolls) { d.Feed(); d.Pose(); }
             blends.RemoveAll(b => !b.Apply());
         }
 
@@ -398,6 +554,15 @@ namespace Delirium.Ragdoll
             return d != null;
         }
 
+        /// A taser's hit: a current through it for `seconds` (it jolts and locks, the Playroom's), ending by itself; 0
+        /// ends it now. No damage.
+        public bool Tase(Transform owner, float seconds = 2.5f)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            d?.Run(x => nm_agent_tase(x.agent, x.world, seconds));
+            return d != null;
+        }
+
         /// Cuts off the body part nearest `point` (with what's below it: a hand, an arm, a leg, the head), `impulse` on the
         /// piece. The piece goes limp on its own; a leg gone, it stays down. Show the cut yourself (hide the limb's mesh,
         /// spawn your gib); a head cut doesn't kill: call Kill. False when the point is nearest the hips or cut already.
@@ -421,6 +586,195 @@ namespace Delirium.Ragdoll
             d.Run(x => nm_agent_set_dead(x.agent, 1));
             d.Run(x => nm_agent_task_relax(x.agent, -1f, -1f));
             return true;
+        }
+
+        /// Any reaction, written as the Playroom console's line: its NM message name, then name=value params ("rollUp start=true", "bodyWrithe start=true armStiffness=12", "stopAllBehaviours"): ragdolls it first
+        /// if it isn't one. Vectors are x,y,z in NM's space (Z up, metres from the world's origin). False when NM refuses the line.
+        public bool React(Transform owner, string line)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            if (d == null) return false;
+            if (nm_msg_send_text(d.agent, d.world, line) >= 0) return true;
+            Debug.LogWarning($"[NM] React \"{line}\": {LastError()}");
+            return false;
+        }
+
+        /// A registered car (RegisterCar): its object, its box (centre in its own frame, half size), its place last frame.
+        class Car { public Transform T; public Vector3 Centre, Half, Last, Vel; public bool Player, Brace, KnockDown; public MoverKind Kind; }
+        readonly List<Car> cars = new List<Car>();
+
+        /// What a registered mover is, for the game's damage and reaction when it hits: a car (a truck, a platform), an
+        /// object (a crate, a door, debris: half a car's damage, a hard hit unless the character stands on it), a train
+        /// (its own hurt, ahead of its front).
+        public enum MoverKind { Car = NM_HIT_CAR, Object = NM_HIT_OBJECT, Train = NM_HIT_TRAIN }
+
+        /// Each character's health and agility for hits (SetToughness); 200 and 5 without.
+        readonly Dictionary<Transform, (float, int)> Toughness = new Dictionary<Transform, (float, int)>();
+
+        /// `owner`'s health now and agility (0-255, the game's; under 3 is weak: it goes down sooner) for the game's
+        /// reaction to a mover's hit. Set it as its health changes.
+        public void SetToughness(Transform owner, float health, int agility = 5) => Toughness[owner] = (health, agility);
+
+        /// A car hit a ragdoll: (who, the health it takes, the car). Take it off your character's health yourself.
+        public event Action<Transform, float, Transform> CarHit;
+
+        /// Anything you call a car (a car, a truck, a platform, a wrecking ball): ragdolls can't go into its box and meet it
+        /// at its speed, a standing character it's about to hit is ragdolled, and a hit reacts as the game's (brace, roll
+        /// up, stagger, limp) with CarHit. `size`: its box (zero: its first BoxCollider, else its renderers' bounds as it
+        /// stands now); `playerDriven`: the player drives it (the game's reactions differ). Unregister it when it's gone.
+        public void RegisterCar(Transform car, Vector3 size = default, bool playerDriven = false) =>
+            RegisterMover(car, MoverKind.Car, size, playerDriven);
+
+        /// Anything that moves and hits characters, as `kind`: as RegisterCar, and `brace`: a standing character in its way
+        /// braces against it as it's ragdolled (cars' default; off for objects); `knockDown`: a standing character in its
+        /// way is ragdolled at all (off: only ragdolls meet it). `centre`: the box's centre in its frame, with `size`.
+        public void RegisterMover(Transform car, MoverKind kind, Vector3 size = default, bool playerDriven = false, bool? brace = null,
+            bool knockDown = true, Vector3 centre = default)
+        {
+            if (car == null) return;
+            UnregisterCar(car);
+            var half = size / 2;
+            if (size == Vector3.zero)
+            {
+                var b = car.GetComponentInChildren<BoxCollider>();
+                // ponytail: a box collider turned off the car's axes, or bounds taken while it's turned, give a loose box.
+                if (b != null) (centre, half) = (car.InverseTransformPoint(b.transform.TransformPoint(b.center)), Vector3.Scale(b.size, b.transform.lossyScale) / 2);
+                else
+                {
+                    var rs = car.GetComponentsInChildren<Renderer>();
+                    if (rs.Length == 0) { Logger.LogWarning($"RegisterCar {car.name}: no BoxCollider or renderer to size it by: give a size"); return; }
+                    var bounds = rs[0].bounds;
+                    foreach (var r in rs) bounds.Encapsulate(r.bounds);
+                    (centre, half) = (car.InverseTransformPoint(bounds.center), bounds.extents);
+                }
+            }
+            cars.Add(new Car { T = car, Centre = centre, Half = half, Last = car.position, Player = playerDriven, Kind = kind,
+                Brace = brace ?? kind != MoverKind.Object, KnockDown = knockDown });
+        }
+
+        public void UnregisterCar(Transform car) => cars.RemoveAll(c => c.T == car);
+
+        /// A registered car is about to hit `owner` (your AI saw it coming): it's ragdolled and braces against it, hands
+        /// out (ArmsOutEarly: well before), maybe a jump, until the hit or 3 s.
+        public bool CarComing(Transform owner, Transform car)
+        {
+            int k = cars.FindIndex(c => c.T == car);
+            if (k < 0) { Logger.LogWarning($"CarComing: {car?.name} isn't registered (RegisterCar)"); return false; }
+            var d = Doll(owner, Vector3.zero, true);
+            if (d == null) return false;
+            Check(nm_agent_task_brace(d.agent, d.world, null));
+            (d.Bracing, d.BraceLeft) = (k, 3f);
+            return true;
+        }
+
+        /// Dragged from a registered car: both hands on its side, kicking and writhing once it moves, letting go at
+        /// 12 m/s or after 6 s.
+        public bool CarDoor(Transform owner, Transform car)
+        {
+            int k = cars.FindIndex(c => c.T == car);
+            if (k < 0) { Logger.LogWarning($"CarDoor: {car?.name} isn't registered (RegisterCar)"); return false; }
+            var d = Doll(owner, Vector3.zero, true);
+            if (d == null) return false;
+            Cars();
+            d.Run(x => nm_agent_task_car_door(x.agent, x.world, k, null));
+            return true;
+        }
+
+        /// The cars into every ragdoll's world (before its steps); standing characters one is about to hit ragdolled; the
+        /// braces aimed at theirs.
+        void Cars()
+        {
+            cars.RemoveAll(c => c.T == null);
+            if (cars.Count == 0) return;
+            var boxes = new float[cars.Count * 13];
+            for (int k = 0; k < cars.Count; k++)
+            {
+                var c = cars[k];
+                if (Time.deltaTime > 0) c.Vel = (c.T.position - c.Last) / Time.deltaTime;
+                c.Last = c.T.position;
+                var q = c.T.rotation;
+                var at = c.T.TransformPoint(c.Centre);
+                global::Delirium.Ragdoll.Doll.P(at).CopyTo(boxes, k * 13);
+                new[] { -q.x, -q.z, -q.y, q.w, c.Half.x, c.Half.z, c.Half.y }.CopyTo(boxes, k * 13 + 3);
+                global::Delirium.Ragdoll.Doll.Nm(c.Vel).CopyTo(boxes, k * 13 + 10);
+                // A quarter second ahead, a hand's width round it: whoever's in there and still on their feet goes to NM.
+                if (c.Vel.magnitude < 2f || !c.KnockDown) continue;
+                foreach (var hit in Physics.OverlapBox(at + c.Vel * 0.25f, c.Half + Vector3.one * 0.3f, q))
+                {
+                    var who = hit.GetComponentInParent<Animator>()?.transform;
+                    if (who == null || who.IsChildOf(c.T) || dolls.Any(d => d.Owner == who) || who.GetComponentInChildren<SkinnedMeshRenderer>() == null) continue;
+                    var hitBy = Doll(who, Vector3.zero, true);
+                    if (hitBy == null || !c.Brace) continue;
+                    Check(nm_agent_task_brace(hitBy.agent, hitBy.world, null));
+                    (hitBy.Bracing, hitBy.BraceLeft) = (k, 3f);
+                }
+            }
+            var kinds = cars.Select(c => (int)c.Kind | (c.Player ? NM_HIT_PLAYER : 0)).ToArray();
+            foreach (var w in dolls.Select(d => d.world).Distinct())
+            {
+                Check(nm_world_set_boxes(w, boxes, cars.Count));
+                Check(nm_world_set_box_kinds(w, kinds, cars.Count));
+            }
+            foreach (var d in dolls.Where(d => d.Bracing >= 0))
+            {
+                if ((d.BraceLeft -= Time.deltaTime) <= 0 || d.Bracing >= cars.Count) { d.Bracing = -1; continue; }
+                var t = cars[d.Bracing].T;
+                var m = global::Delirium.Ragdoll.Doll.Nm(t.right).Concat(global::Delirium.Ragdoll.Doll.Nm(t.forward)).Concat(global::Delirium.Ragdoll.Doll.Nm(t.up)).Concat(global::Delirium.Ragdoll.Doll.P(t.TransformPoint(cars[d.Bracing].Centre))).ToArray();
+                Check(nm_agent_task_brace_control(d.agent, d.world, m, null, null));
+            }
+        }
+
+        /// One of the game's tasks on the character (ragdolled first if it isn't one); false when it couldn't be.
+        bool Task(Transform owner, Func<Doll, int> f)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            d?.Run(f);
+            return d != null;
+        }
+
+        /// Catching itself as it falls: hands out, then down (the game's catchFall).
+        public bool CatchFall(Transform owner) => Task(owner, d => nm_agent_task_catch_fall(d.agent, null));
+
+        /// Pushed off a ledge (a drop, a low wall, stairs): it looks 2 m out along `heading` (0-1 of a turn round from
+        /// behind; negative: a random one) and goes over when there's one. False when there's none (it stays as it is).
+        public bool FallDown(Transform owner, float heading = -1f)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            if (d == null) return false;
+            int r = nm_agent_task_fall_down(d.agent, d.world, heading);
+            Plugin.Check(r);
+            return r == 1;
+        }
+
+        /// Grabs hold (a ledge, a car's side): each hand reaches for its point (the surface's normal out of it; a zero
+        /// normal leaves that hand free), has 1 s to get hold, then holds `hold` s (0: until another reaction).
+        public bool Grab(Transform owner, Vector3 left, Vector3 leftNormal, Vector3 right, Vector3 rightNormal, float hold = 0f)
+        {
+            float[] Hand(Vector3 p, Vector3 n) => n == Vector3.zero ? null : global::Delirium.Ragdoll.Doll.P(p).Concat(global::Delirium.Ragdoll.Doll.Nm(n.normalized)).ToArray();
+            return Task(owner, d => nm_agent_task_grab(d.agent, d.world, Hand(left, leftNormal), Hand(right, rightNormal), hold));
+        }
+
+        /// Jumping out of a moving car: tucks and rolls (give it the car's speed first: Push or its own movement).
+        public bool JumpRoll(Transform owner) => Task(owner, d => nm_agent_task_jump_roll(d.agent, d.world));
+
+        /// Flinching from a threat at `from` (a swing, a near miss).
+        public bool Flinch(Transform owner, Vector3 from) => Task(owner, d => nm_agent_task_flinch(d.agent, d.world, null, global::Delirium.Ragdoll.Doll.P(from)));
+
+        /// `owner` dives at `target` (both ragdolled first, within 4 m): its hands latch onto the target's chest (or
+        /// thighs, `low`), it drives on and both go down. `keep`: it never lets go by itself.
+        public bool Tackle(Transform owner, Transform target, bool low = false, bool keep = false)
+        {
+            var t = Doll(target, Vector3.zero, false);
+            return t != null && Task(owner, d => nm_agent_task_tackle(d.agent, d.world, t.agent, low ? 1 : 0, keep ? 1 : 0));
+        }
+
+        /// Water under a ragdoll: its surface's height (world y; NaN: none). Down in it, it floats face up; it stops once
+        /// well out. Set it as it moves over water. False when `owner` isn't a ragdoll.
+        public bool SetWater(Transform owner, float level)
+        {
+            var d = dolls.FirstOrDefault(x => x.Owner == owner);
+            d?.Run(x => nm_agent_set_water(x.agent, x.world, level));
+            return d != null;
         }
 
         /// Falling from a height: arms out, legs ready (the game starts it when a character drops faster than 6 m/s).
@@ -545,7 +899,7 @@ namespace Delirium.Ragdoll
         readonly Transform[] bones;
         internal readonly IntPtr world, agent;
         readonly IntPtr build, rig;
-        readonly float[] pose;
+        readonly float[] pose, anim;
         readonly List<Behaviour> paused = new List<Behaviour>();
         readonly List<Rigidbody> frozen = new List<Rigidbody>();
         readonly List<UnityEngine.AI.NavMeshAgent> walkers = new List<UnityEngine.AI.NavMeshAgent>();
@@ -566,6 +920,16 @@ namespace Delirium.Ragdoll
         public Transform[] Bones => bones;
         /// LyingStill was raised for this rest.
         public bool Told;
+        /// Fell was raised for this fall.
+        public bool Down;
+        /// CarComing's car it braces against (its index in the cars), else -1; and seconds left on it.
+        public int Bracing = -1;
+        public float BraceLeft;
+        /// EnginePhysics: NM's parts as kinematic Unity rigidbodies (capsules, box feet) where NM has them; null without.
+        Rigidbody[] bodies;
+        public bool Engine => bodies != null;
+        /// Its character or any of its EnginePhysics bodies destroyed by the game.
+        public bool Gone => Owner == null || Hips == null || (bodies != null && bodies.Any(b => b == null));
         /// Killed (nm_agent_is_dead): it never gets up by itself.
         public bool Dead => nm_agent_is_dead(agent) == 1;
 
@@ -687,6 +1051,9 @@ namespace Delirium.Ragdoll
                         Debug.Log($"[NM] {kind}: balance tuned, stands through {got} of 3 pushes");
                     });
                 }
+            // Colliders moved this frame (a character or level just spawned) are where Unity put them only after the next
+            // physics step: the ground and level read now would be where they were made.
+            Physics.SyncTransforms();
             float ground = Ground(hips, owner);
             var spot = new Vector3(hips.position.x, ground, hips.position.z);
             int near = shared.FindIndex(s => s.scale == scale && Mathf.Abs(s.at.y - ground) < 0.5f * scale &&
@@ -716,20 +1083,25 @@ namespace Delirium.Ragdoll
             agent = nm_agent_create(build, P(new Vector3(hips.position.x, ground, hips.position.z)), 0f, UnityEngine.Random.value);
             if (agent == IntPtr.Zero) throw new Exception(LastError());
             if (Plugin.Strength != 1f) Plugin.Check(nm_agent_set_strength(agent, Plugin.Strength));
+            // Arms out early: from 1.3 m (the game's 0.65), predicted 0.45 s ahead (its car set's), every brace it makes.
+            if (Plugin.ArmsOutEarly)
+            {
+                Plugin.Check(nm_agent_set_override(agent, "braceForImpact", "braceDistance", 1.3f));
+                Plugin.Check(nm_agent_set_override(agent, "braceForImpact", "targetPredictionTime", 0.45f));
+            }
             var mine = Plugin.Overridden.TryGetValue(owner, out var o) ? o : Plugin.AllOverrides.ToList();
             foreach (var (m, p, v) in mine ?? new List<(string, string, float)>())
                 if (nm_agent_set_override(agent, m, p, v) < 0) Debug.LogWarning($"[NM] Overrides: {LastError()}");
             rig = nm_rig_create(agent, n, parents, rest, parts);
             if (rig == IntPtr.Zero) throw new Exception(LastError());
             // It starts in the pose its animation has it in now, moving as the character moved: no snap.
-            var now = new float[n * 7];
-            for (int b = 0; b < n; b++)
-            {
-                Nm(bones[b].position).CopyTo(now, b * 7);
-                var q = bones[b].rotation;
-                new[] { -q.x, -q.z, -q.y, q.w }.CopyTo(now, b * 7 + 3);
-            }
-            Plugin.Check(nm_rig_take(rig, agent, now, null, 0f));
+            anim = new float[n * 7];
+            Plugin.Check(nm_rig_take(rig, agent, Frames(), null, 0f));
+            if (Plugin.Recentre) nm_agent_recentre_joint(agent, -1);
+            foreach (var (m, v) in Plugin.Holds)
+                if (nm_agent_hold(agent, m, v[0], v[1], v[2]) < 0) Debug.LogWarning($"[NM] Hold: {LastError()}");
+            foreach (var (m, v) in Plugin.Follows)
+                if (nm_agent_follow(agent, m, v[0]) < 0) Debug.LogWarning($"[NM] Follow: {LastError()}");
             var walk = owner.GetComponentInChildren<UnityEngine.AI.NavMeshAgent>();
             var body = owner.GetComponentInChildren<Rigidbody>();
             var cc = owner.GetComponentInChildren<CharacterController>();
@@ -738,14 +1110,19 @@ namespace Delirium.Ragdoll
             pose = new float[n * 4 + 3];
             // The game stops moving this character while NM has it.
             var root = owner;
-            foreach (var a in root.GetComponentsInChildren<Animator>()) if (a.enabled) { a.enabled = false; paused.Add(a); }
-            foreach (var a in root.GetComponentsInChildren<Animation>()) if (a.enabled) { a.enabled = false; paused.Add(a); }
+            // Follow: its animation keeps playing under the ragdoll (Feed), which draws over it (Pose).
+            if (Plugin.Follows.Count == 0)
+            {
+                foreach (var a in root.GetComponentsInChildren<Animator>()) if (a.enabled) { a.enabled = false; paused.Add(a); }
+                foreach (var a in root.GetComponentsInChildren<Animation>()) if (a.enabled) { a.enabled = false; paused.Add(a); }
+            }
             foreach (var rb in root.GetComponentsInChildren<Rigidbody>()) if (!rb.isKinematic) { rb.isKinematic = true; frozen.Add(rb); }
             // Its AI keeps thinking but can't walk it off: path agents stop moving it and its root stays put (Pose) until
             // it's handed back, where they jump to wherever it got up.
             foreach (var a in root.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>())
                 if (a.updatePosition) { a.updatePosition = a.updateRotation = false; walkers.Add(a); }
             pinned = (owner.position, owner.rotation);
+            if (Plugin.EnginePhysics) Build(owner);
 
         }
 
@@ -883,7 +1260,54 @@ namespace Delirium.Ragdoll
             Plugin.Check(nm_agent_apply_push(agent, P(Hips.position + Vector3.up * 0.35f * scale), Impulse(impulse)));
         }
 
-        public void Step(float dt) => Plugin.Check(nm_agent_step(agent, world, dt));
+        /// EnginePhysics: the bodies to where NM has the parts (moved, so they push what's in the way).
+        public void Follow()
+        {
+            float[] p = new float[3], q = new float[4];
+            for (int k = 0; k < bodies.Length; k++)
+            {
+                Plugin.Check(nm_agent_get_part_transform(agent, k, p, q));
+                bodies[k].MovePosition(Unity(p, 0));
+                bodies[k].MoveRotation(Turn(q, 0));
+            }
+        }
+
+        /// EnginePhysics: NM's parts as kinematic rigidbodies (NM's mass, capsules and box feet) where NM has them: NM's
+        /// own physics moves him (Unity's joints and drives couldn't hold its short or heavy bodies up: PhysX's joints
+        /// lack the original engine's armature), the bodies follow (Follow) and push Unity's rigidbodies; loose ones near him go to NM as
+        /// movers (MoversNear). They don't meet the character's own colliders.
+        void Build(Transform owner)
+        {
+            int n = nm_agent_part_count(agent);
+            var root = new GameObject($"{owner.name} ragdoll (Delirium)").transform;
+            bodies = new Rigidbody[n];
+            float[] f3 = new float[3], q4 = new float[4], g3 = new float[3], box = new float[3], inertia = new float[3], mass = new float[1];
+            for (int k = 0; k < n; k++)
+            {
+                Plugin.Check(nm_agent_get_part_transform(agent, k, f3, q4));
+                var go = new GameObject("part " + k);
+                go.transform.SetPositionAndRotation(Unity(f3, 0), Turn(q4, 0));
+                go.transform.SetParent(root, true);
+                Plugin.Check(nm_build_part_info(build, k, null, g3, q4, out int _));
+                int kind = nm_agent_get_part_body(agent, k, mass, inertia, box);
+                if (kind == 2) go.AddComponent<BoxCollider>().size = new Vector3(box[0], box[2], box[1]) * 2;
+                else
+                {
+                    var c = go.AddComponent<CapsuleCollider>();
+                    // NM's capsules run along their part's Y, which is the converted frame's Z.
+                    (c.direction, c.radius, c.height) = (2, g3[0] * scale, 2 * (q4[0] + g3[0]) * scale);
+                }
+                var rb = go.AddComponent<Rigidbody>();
+                rb.mass = mass[0];
+                rb.isKinematic = true;
+                rb.interpolation = RigidbodyInterpolation.Interpolate;
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+                bodies[k] = rb;
+            }
+            Physics.SyncTransforms();
+            var own = owner.GetComponentsInChildren<Collider>();
+            foreach (var b in bodies) foreach (var o in own) Physics.IgnoreCollision(b.GetComponent<Collider>(), o);
+        }
 
         /// Seconds lying still (nm_agent_get_lying); `facing` the way to face once up, flat.
         public float Lying(out bool faceUp, out Vector3 facing)
@@ -915,6 +1339,24 @@ namespace Delirium.Ragdoll
             return Unity(p, 0);
         }
 
+        /// Each bone's world frame now, NM's way (nm_rig_take's `now`).
+        float[] Frames()
+        {
+            for (int b = 0; b < bones.Length; b++)
+            {
+                Nm(bones[b].position).CopyTo(anim, b * 7);
+                var q = bones[b].rotation;
+                new[] { -q.x, -q.z, -q.y, q.w }.CopyTo(anim, b * 7 + 3);
+            }
+            return anim;
+        }
+
+        /// Follow: the animation's pose this frame (the Animator ran just before LateUpdate) for its joints to aim at.
+        public void Feed()
+        {
+            if (Plugin.Follows.Count > 0) Plugin.Check(nm_rig_incoming(rig, agent, Frames()));
+        }
+
         public void Pose()
         {
             Owner.SetPositionAndRotation(pinned.at, pinned.turn);
@@ -933,7 +1375,8 @@ namespace Delirium.Ragdoll
             foreach (var b in paused) if (b != null) b.enabled = true;
             foreach (var rb in frozen) if (rb != null) rb.isKinematic = false;
             foreach (var a in walkers)
-                if (a != null) { if (a.isActiveAndEnabled) a.Warp(Owner.position); a.updatePosition = a.updateRotation = true; }
+                if (a != null) { if (a.isActiveAndEnabled && Owner != null) a.Warp(Owner.position); a.updatePosition = a.updateRotation = true; }
+            if (bodies != null && bodies[0] != null) UnityEngine.Object.Destroy(bodies[0].transform.parent.gameObject);
             nm_rig_destroy(rig);
             nm_agent_destroy(agent);
             nm_build_destroy(build);
@@ -944,7 +1387,8 @@ namespace Delirium.Ragdoll
                 if (i >= 0) shared.RemoveAt(i);
                 nm_world_destroy(world);
             }
-            return paused.OfType<Animator>().Where(a => a != null).ToList();
+            // Its running ones (Follow's never stopped): the get-up trigger goes to them. None when the game destroyed it.
+            return Owner == null ? new List<Animator>() : Owner.GetComponentsInChildren<Animator>().Where(a => a.enabled).ToList();
         }
     }
 }
@@ -954,7 +1398,7 @@ namespace Delirium.Ragdoll
     /// The Body setting (the Playroom's bodies), for a character and its background tune alike.
     readonly struct Body
     {
-        public static readonly string[] Names = { "Fitted", "Small", "Average", "Large", "Lanky", "Fat", "Stocky", "Waddler", "Guard", "Brute", "Brawler", "Random", "Custom" };
+        public static readonly string[] Names = { "Fitted", "Small", "Average", "Large", "Lanky", "Fat", "Stocky", "Waddler", "Guard", "Brute", "Brawler", "Bruiser", "Random", "Custom" };
         public readonly string Name, Custom;
         public readonly int Seed;
         public readonly float Variance;

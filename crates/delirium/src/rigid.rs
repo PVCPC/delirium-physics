@@ -263,7 +263,7 @@ pub(crate) fn inv3([a, b, c]: [Vec3; 3]) -> [Vec3; 3] {
 }
 
 fn singular([a, b, c]: [Vec3; 3], det: f32) -> bool {
-    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(597)
+    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(599)
 }
 
 pub(crate) fn inv34([a, b, c, d]: [Vec3; 4]) -> Option<[Vec3; 4]> {
@@ -315,24 +315,24 @@ pub fn part_set_other(kind: u32, m: [Vec3; 4], centroid: Option<Vec3>, commit: b
                 let t = Vec3::new(col(&r, 0).vd(c), col(&r, 1).vd(c), col(&r, 2).vd(c));
                 i[delirium_data::kv!(0 int)] = m[delirium_data::kv!(0 int)] + (Vec3::ZERO - t);
             }
-            PartSetOther { obj: vec![(delirium_data::kv!(364 int), m), (delirium_data::kv!(7 int), m), (delirium_data::kv!(285 int), m)], inst: Some(i), part: commit.then_some(m) }
+            PartSetOther { obj: vec![(delirium_data::kv!(366 int), m), (delirium_data::kv!(7 int), m), (delirium_data::kv!(287 int), m)], inst: Some(i), part: commit.then_some(m) }
         }
         _ => PartSetOther::default(),
     }
 }
 
 pub fn part_bound(part: u32, rd: impl Fn(u32) -> u32) -> u32 {
-    let obj = rd(part + delirium_data::kv!(598 int));
+    let obj = rd(part + delirium_data::kv!(600 int));
     if obj == 0 {
         return 0;
     }
     let bound = |inst: u32| rd(rd(inst + delirium_data::kv!(1 int)) + delirium_data::kv!(55 int));
-    match rd(part + delirium_data::kv!(296 int)) {
+    match rd(part + delirium_data::kv!(298 int)) {
         1 => bound(rd(obj + delirium_data::kv!(54 int))),
         2 => bound(obj),
         3 => {
-            let comp = bound(rd(rd(rd(part + delirium_data::kv!(599 int)) + delirium_data::kv!(197 int)) + delirium_data::kv!(54 int)));
-            rd(rd(comp + delirium_data::kv!(251 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(352 int)))
+            let comp = bound(rd(rd(rd(part + delirium_data::kv!(601 int)) + delirium_data::kv!(197 int)) + delirium_data::kv!(54 int)));
+            rd(rd(comp + delirium_data::kv!(252 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(354 int)))
         }
         _ => 0,
     }
@@ -344,7 +344,7 @@ pub fn grip_local(inst: [Vec3; 4], comp: Option<[Vec3; 4]>, p: Vec3) -> Vec3 {
 }
 
 pub fn contact_pass(b165: u8, b164: u8, on: bool) -> u8 {
-    if b164 == 0 && !on { b165 & delirium_data::kv!(467 int) } else { b165 }
+    if b164 == 0 && !on { b165 & delirium_data::kv!(469 int) } else { b165 }
 }
 
 pub type GripSide = (u16, [Vec3; 4], Option<[Vec3; 4]>, Vec3);

@@ -142,14 +142,14 @@ impl BodyBalance {
             if !catching {
                 ch.stabilise = None;
                 let k = p.body_stiffness;
-                out.catch_fall = Some([k * delirium_data::kv!(218), k * delirium_data::kv!(219), k * delirium_data::kv!(220)]);
+                out.catch_fall = Some([k * delirium_data::kv!(219), k * delirium_data::kv!(220), k * delirium_data::kv!(221)]);
             }
             return out;
         }
         if stepping != 0 && self.stepping != stepping {
             self.stepping = stepping;
             self.cut = ch.random() * delirium_data::kv!(20);
-            if p.arms_out_on_push_timeout > delirium_data::kv!(221) && p.arms_out_on_push_timeout < delirium_data::kv!(222) {
+            if p.arms_out_on_push_timeout > delirium_data::kv!(222) && p.arms_out_on_push_timeout < delirium_data::kv!(223) {
                 out.step_clamp = Some(ch.random() * delirium_data::kv!(136) + delirium_data::kv!(24));
             }
         }
@@ -323,7 +323,7 @@ impl BodyBalance {
         for i in Character::mask("ub") {
             ch.eff[i].blend_to_zero(k);
         }
-        ch.stabilise = Some((2.0, delirium_data::kv!(223)));
+        ch.stabilise = Some((2.0, delirium_data::kv!(224)));
         out
     }
 }

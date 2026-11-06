@@ -46,7 +46,7 @@ impl IdeModel {
         self.set(crate::kv!(85 int), f.radius.to_bits());
     }
     fn kind(&mut self, kind: f32) {
-        self.set(crate::kv!(253 int), (fctiwz(kind) << crate::kv!(107 int)) as u32 | self.word(crate::kv!(253 int)));
+        self.set(crate::kv!(254 int), (fctiwz(kind) << crate::kv!(107 int)) as u32 | self.word(crate::kv!(254 int)));
     }
     pub fn txd(&self) -> Option<&[u8]> {
         self.handed.iter().find_map(|h| if let Handed::Txd(t) = h { Some(&t[..]) } else { None })
@@ -159,7 +159,7 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                         f.scan(memory, b"%s %s %f %d", &head);
                     }
                 }
-                let store = if f.flags & crate::kv!(23 int) == 0 && fctiwz(f.kind) != crate::kv!(456 int) {
+                let store = if f.flags & crate::kv!(23 int) == 0 && fctiwz(f.kind) != crate::kv!(458 int) {
                     ModelStore::Normal
                 } else {
                     f.flags |= crate::kv!(23 int);
@@ -167,7 +167,7 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                 };
                 let mut m = IdeModel::new(store, &f.name);
                 m.handed.push(Handed::Txd(f.txd.clone()));
-                m.set(crate::kv!(409 int), f.draw.to_bits());
+                m.set(crate::kv!(411 int), f.draw.to_bits());
                 m.handed.push(Handed::Flags(f.flags));
                 m.kind(f.kind);
                 m.shape(&f);
@@ -178,7 +178,7 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                 let head = [Name, Txd, Draw, Flags];
                 let shape: Vec<Slot> = head.iter().copied().chain([Kind]).chain(SHAPE).collect();
                 let mut by_mask = false;
-                if f.scan(memory, b"%s %s %f %d %f %f %f %f %f %f %f %f %f %f %f %s %d %d", &[&shape[..], &[On, Off]].concat()) != crate::kv!(211 int) {
+                if f.scan(memory, b"%s %s %f %d %f %f %f %f %f %f %f %f %f %f %f %s %d %d", &[&shape[..], &[On, Off]].concat()) != crate::kv!(212 int) {
                     if f.scan(memory, b"%s %s %f %d %f %f %f %f %f %f %f %f %f %f %f %s %d", &[&shape[..], &[Hours]].concat()) == crate::kv!(110 int) {
                         by_mask = true;
                     } else {
@@ -195,9 +195,9 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                 if by_mask {
                     hours = f.hours;
                 } else {
-                    let (mut h, off) = (f.on & crate::kv!(389 int), f.off & crate::kv!(389 int));
+                    let (mut h, off) = (f.on & crate::kv!(391 int), f.off & crate::kv!(391 int));
                     while h != off && h < crate::kv!(96 int) {
-                        hours |= 1u32.checked_shl(h & crate::kv!(252 int)).unwrap_or(0);
+                        hours |= 1u32.checked_shl(h & crate::kv!(253 int)).unwrap_or(0);
                         h += 1;
                         if h == crate::kv!(107 int) {
                             h = 0;
@@ -205,7 +205,7 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                     }
                 }
                 m.hours = Some(hours);
-                m.set(crate::kv!(409 int), f.draw.to_bits());
+                m.set(crate::kv!(411 int), f.draw.to_bits());
                 m.handed.push(Handed::Flags(f.flags));
                 m.kind(f.kind);
                 m.shape(&f);
@@ -219,7 +219,7 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                 }
                 let slots: Vec<Slot> = [Name, Txd, Anim, Draw, Flags, Kind].into_iter().chain(SHAPE).chain(tanm.then_some(Hours)).collect();
                 let (format, want): (&[u8], i32) = if tanm {
-                    (b"%s %s %s %f %d %f %f %f %f %f %f %f %f %f %f %f %s %d", crate::kv!(211 int))
+                    (b"%s %s %s %f %d %f %f %f %f %f %f %f %f %f %f %f %s %d", crate::kv!(212 int))
                 } else {
                     (b"%s %s %s %f %d %f %f %f %f %f %f %f %f %f %f %f %s", crate::kv!(110 int))
                 };
@@ -228,7 +228,7 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                 }
                 let mut m = IdeModel::new(if tanm { ModelStore::Time } else { ModelStore::Normal }, &f.name);
                 m.handed.push(Handed::Txd(f.txd.clone()));
-                m.set(crate::kv!(409 int), f.draw.to_bits());
+                m.set(crate::kv!(411 int), f.draw.to_bits());
                 if tanm {
                     m.hours = Some(f.hours);
                 }
@@ -252,8 +252,8 @@ pub fn ide_models(file: &[u8]) -> Vec<IdeModel> {
                 let mut m = IdeModel::new(ModelStore::Weapon, &f.name);
                 m.handed.push(Handed::Txd(f.txd.clone()));
                 m.handed.push(Handed::Anim(f.anim.clone()));
-                m.set(crate::kv!(409 int), f.draw.to_bits());
-                m.set(crate::kv!(253 int), m.word(crate::kv!(253 int)) | crate::kv!(1 int));
+                m.set(crate::kv!(411 int), f.draw.to_bits());
+                m.set(crate::kv!(254 int), m.word(crate::kv!(254 int)) | crate::kv!(1 int));
                 m
             }
             _ => return,
@@ -273,14 +273,14 @@ pub fn read_ide_objects(text: &str) -> Vec<ObjectDef> {
         .map(|m| ObjectDef {
             name: lossy(&m.name),
             txd: lossy(m.txd().unwrap_or_default()),
-            draw_distance: m.float(crate::kv!(409 int)),
+            draw_distance: m.float(crate::kv!(411 int)),
             lod_dictionary: m.lod().filter(|l| *l != b"null").map(lossy),
             hours: m.hours.unwrap_or(u32::MAX),
-            bounds: Some(([m.float(crate::kv!(7 int)), m.float(crate::kv!(94 int)), m.float(crate::kv!(95 int))], [m.float(crate::kv!(93 int)), m.float(crate::kv!(379 int)), m.float(crate::kv!(317 int))])),
+            bounds: Some(([m.float(crate::kv!(7 int)), m.float(crate::kv!(94 int)), m.float(crate::kv!(95 int))], [m.float(crate::kv!(93 int)), m.float(crate::kv!(381 int)), m.float(crate::kv!(319 int))])),
             sphere: Some(([m.float(crate::kv!(54 int)), m.float(crate::kv!(127 int)), m.float(crate::kv!(107 int))], m.float(crate::kv!(85 int)))),
             ide_flags: m.flags().unwrap_or(0),
             anim: matches!(m.section, IdeLine::Anim | IdeLine::Tanm).then(|| lossy(m.anim().unwrap_or_default())),
-            kind: (m.word(crate::kv!(253 int)) >> crate::kv!(107 int)) as u8,
+            kind: (m.word(crate::kv!(254 int)) >> crate::kv!(107 int)) as u8,
         })
         .collect()
 }
@@ -423,10 +423,10 @@ pub fn car_dirt(f: f32) -> u32 {
 pub fn ide_cars(file: &[u8]) -> Vec<CarModel> {
     #[allow(non_snake_case)]
     #[inline]
-    fn LONG() -> &'static [u32; 15] { static V: std::sync::OnceLock<[u32; 15]> = std::sync::OnceLock::new(); let f = || [crate::kv!(802 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(364 int), crate::kv!(428 int), crate::kv!(803 int), crate::kv!(617 int), crate::kv!(91 int), crate::kv!(461 int), crate::kv!(97 int), crate::kv!(371 int), crate::kv!(323 int), crate::kv!(374 int), crate::kv!(88 int), crate::kv!(804 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn LONG() -> &'static [u32; 15] { static V: std::sync::OnceLock<[u32; 15]> = std::sync::OnceLock::new(); let f = || [crate::kv!(804 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(366 int), crate::kv!(430 int), crate::kv!(805 int), crate::kv!(619 int), crate::kv!(91 int), crate::kv!(463 int), crate::kv!(97 int), crate::kv!(373 int), crate::kv!(325 int), crate::kv!(376 int), crate::kv!(88 int), crate::kv!(806 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     #[allow(non_snake_case)]
     #[inline]
-    fn SHORT() -> &'static [u32; 14] { static V: std::sync::OnceLock<[u32; 14]> = std::sync::OnceLock::new(); let f = || [crate::kv!(802 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(364 int), crate::kv!(428 int), crate::kv!(803 int), crate::kv!(617 int), crate::kv!(91 int), crate::kv!(461 int), crate::kv!(97 int), crate::kv!(371 int), crate::kv!(323 int), crate::kv!(374 int), crate::kv!(804 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn SHORT() -> &'static [u32; 14] { static V: std::sync::OnceLock<[u32; 14]> = std::sync::OnceLock::new(); let f = || [crate::kv!(804 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(366 int), crate::kv!(430 int), crate::kv!(805 int), crate::kv!(619 int), crate::kv!(91 int), crate::kv!(463 int), crate::kv!(97 int), crate::kv!(373 int), crate::kv!(325 int), crate::kv!(376 int), crate::kv!(806 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     let mut out = vec![];
     each_ide_line(file, |kind, memory, _| {
         if kind != IdeLine::Cars {
@@ -462,8 +462,8 @@ pub fn ide_cars(file: &[u8]) -> Vec<CarModel> {
             let b = &frame[(at - crate::kv!(88 int)) as usize..];
             b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())].to_vec()
         };
-        let (name, txd, anims, field_7) = (text(&frame, crate::kv!(802 int)), text(&frame, crate::kv!(96 int)), text(&frame, crate::kv!(803 int)), text(&frame, crate::kv!(617 int)));
-        let start = (crate::kv!(428 int) - crate::kv!(88 int)) as usize;
+        let (name, txd, anims, field_7) = (text(&frame, crate::kv!(804 int)), text(&frame, crate::kv!(96 int)), text(&frame, crate::kv!(805 int)), text(&frame, crate::kv!(619 int)));
+        let start = (crate::kv!(430 int) - crate::kv!(88 int)) as usize;
         if frame[start] != 0 {
             let mut k = start + 1;
             while frame[k] != 0 {
@@ -474,7 +474,7 @@ pub fn ide_cars(file: &[u8]) -> Vec<CarModel> {
             }
         }
         let mut game_name = [0u8; 8];
-        for (k, c) in text(&frame, crate::kv!(428 int)).iter().take(crate::kv!(23 int)).enumerate() {
+        for (k, c) in text(&frame, crate::kv!(430 int)).iter().take(crate::kv!(23 int)).enumerate() {
             game_name[k] = *c;
         }
         let word = |at: u32| {
@@ -486,15 +486,15 @@ pub fn ide_cars(file: &[u8]) -> Vec<CarModel> {
             name,
             txd,
             kind: text(&frame, crate::kv!(89 int)),
-            handling: text(&frame, crate::kv!(364 int)),
+            handling: text(&frame, crate::kv!(366 int)),
             game_name,
             anims,
             field_7,
-            ints: [word(crate::kv!(91 int)), word(crate::kv!(461 int)), word(crate::kv!(374 int))],
-            floats: [float(crate::kv!(97 int)), float(crate::kv!(371 int))],
-            dirt: car_dirt(float(crate::kv!(323 int))),
+            ints: [word(crate::kv!(91 int)), word(crate::kv!(463 int)), word(crate::kv!(376 int))],
+            floats: [float(crate::kv!(97 int)), float(crate::kv!(373 int))],
+            dirt: car_dirt(float(crate::kv!(325 int))),
             field_14: float(crate::kv!(88 int)),
-            last: text(&frame, crate::kv!(804 int)),
+            last: text(&frame, crate::kv!(806 int)),
         });
     });
     out
@@ -594,7 +594,7 @@ impl IdeState {
             let opens: [(&[u8], u32); 17] = [
                 (b"objs", 1), (b"tobj", crate::kv!(22 int)), (b"weap", crate::kv!(23 int)), (b"hier", crate::kv!(104 int)), (b"anim", crate::kv!(81 int)), (b"tanm", crate::kv!(199 int)), (b"cars", crate::kv!(113 int)),
                 (b"peds", crate::kv!(55 int)), (b"tree", crate::kv!(114 int)), (b"2dfx", crate::kv!(56 int)), (b"txdp", crate::kv!(198 int)), (b"vnod", crate::kv!(54 int)), (b"link", crate::kv!(110 int)), (b"mlo", 2),
-                (b"amat", crate::kv!(211 int)), (b"lodm", crate::kv!(127 int)), (b"agrps", crate::kv!(111 int)),
+                (b"amat", crate::kv!(212 int)), (b"lodm", crate::kv!(127 int)), (b"agrps", crate::kv!(111 int)),
             ];
             self.state = opens.iter().find(|(k, _)| has(k)).map_or(0, |&(_, s)| s);
             return None;
@@ -625,7 +625,7 @@ impl IdeState {
             15 => (IdeLine::Txdp, crate::kv!(198 int)),
             16 => (IdeLine::Vnod, crate::kv!(54 int)),
             17 => (IdeLine::Link, crate::kv!(110 int)),
-            18 => (IdeLine::Amat, crate::kv!(211 int)),
+            18 => (IdeLine::Amat, crate::kv!(212 int)),
             19 => (IdeLine::Tanm, crate::kv!(199 int)),
             21 => (IdeLine::Agrps, crate::kv!(111 int)),
             _ => return None,
@@ -675,7 +675,7 @@ pub fn read_ide_weapons(text: &str) -> Vec<WeaponDef> {
             name: lossy(&m.name),
             txd: lossy(m.txd().unwrap_or_default()),
             anim: lossy(m.anim().unwrap_or_default()),
-            draw_distance: m.float(crate::kv!(409 int)),
+            draw_distance: m.float(crate::kv!(411 int)),
         })
         .collect()
 }
@@ -802,7 +802,7 @@ fn effect_format(kind: i32) -> Option<String> {
         15 => "%d".to_string(),
         17 => "%d %d %d %d".to_string(),
         18 => f(crate::kv!(198 int)),
-        19 => format!("%f %d %d {}", f(crate::kv!(285 int))),
+        19 => format!("%f %d %d {}", f(crate::kv!(287 int))),
         21 => "%d %f %f %f %f".to_string(),
         22 | 23 => String::new(),
         _ => return None,
@@ -845,7 +845,7 @@ pub fn read_ide_effects(text: &str) -> Vec<Effect2d> {
                 let short = |k: usize| fctiwz(f(k) * crate::kv!(26)) as i16;
                 let xs: [i16; 32] = std::array::from_fn(|i| short(crate::kv!(55 int) + crate::kv!(0 int) * i));
                 let ys: [i16; 32] = std::array::from_fn(|i| short(crate::kv!(114 int) + crate::kv!(0 int) * i));
-                let count = if (int(crate::kv!(113 int)) as i32) > crate::kv!(456 int) { crate::kv!(7 int) } else { int(crate::kv!(113 int)) as i32 } as i8;
+                let count = if (int(crate::kv!(113 int)) as i32) > crate::kv!(458 int) { crate::kv!(7 int) } else { int(crate::kv!(113 int)) as i32 } as i8;
                 let (centre, radius) = scroll_bar_sphere([f(1), f(2), f(crate::kv!(0 int))], count, &xs, &ys);
                 let mut o = vec![centre[0].to_bits(), centre[1].to_bits(), centre[2].to_bits(), radius.to_bits(), bits(crate::kv!(104 int))];
                 for k in 0..crate::kv!(54 int) {
@@ -870,10 +870,10 @@ pub fn read_ide_effects(text: &str) -> Vec<Effect2d> {
                 Some(vec![heading.to_bits(), word([scenario_of_hash(int(crate::kv!(104 int))) as u8, 0, spawn_group_of_hash(group) as u8, int(crate::kv!(113 int)) as u8]),
                           word([int(crate::kv!(55 int)) as u8, 0, 0, 0]), 0])
             }
-            10 => Some((crate::kv!(104 int)..=crate::kv!(110 int)).map(bits).chain([flag(crate::kv!(211 int))]).collect()),
-            12 => Some(vec![bits(crate::kv!(104 int)), bits(crate::kv!(81 int)), int(crate::kv!(113 int)), bits(crate::kv!(55 int)), bits(crate::kv!(114 int)), bits(crate::kv!(56 int)), bits(crate::kv!(198 int)), bits(crate::kv!(54 int)), bits(crate::kv!(110 int)), bits(crate::kv!(211 int)), flag(crate::kv!(199 int))]),
-            14 => Some(vec![bits(crate::kv!(104 int)), bits(crate::kv!(81 int)), bits(crate::kv!(113 int)), bits(crate::kv!(104 int)), bits(crate::kv!(81 int)), bits(crate::kv!(56 int)), bits(crate::kv!(198 int)), bits(crate::kv!(54 int)), bits(crate::kv!(110 int)), flag(crate::kv!(211 int))]),
-            18 if s.count == 24 => Some([crate::kv!(104 int), crate::kv!(81 int), crate::kv!(113 int), crate::kv!(55 int), crate::kv!(114 int), crate::kv!(56 int), crate::kv!(198 int), crate::kv!(54 int), crate::kv!(110 int), crate::kv!(211 int), crate::kv!(199 int), crate::kv!(127 int), crate::kv!(106 int), crate::kv!(111 int), crate::kv!(105 int)].into_iter().map(bits).collect()),
+            10 => Some((crate::kv!(104 int)..=crate::kv!(110 int)).map(bits).chain([flag(crate::kv!(212 int))]).collect()),
+            12 => Some(vec![bits(crate::kv!(104 int)), bits(crate::kv!(81 int)), int(crate::kv!(113 int)), bits(crate::kv!(55 int)), bits(crate::kv!(114 int)), bits(crate::kv!(56 int)), bits(crate::kv!(198 int)), bits(crate::kv!(54 int)), bits(crate::kv!(110 int)), bits(crate::kv!(212 int)), flag(crate::kv!(199 int))]),
+            14 => Some(vec![bits(crate::kv!(104 int)), bits(crate::kv!(81 int)), bits(crate::kv!(113 int)), bits(crate::kv!(104 int)), bits(crate::kv!(81 int)), bits(crate::kv!(56 int)), bits(crate::kv!(198 int)), bits(crate::kv!(54 int)), bits(crate::kv!(110 int)), flag(crate::kv!(212 int))]),
+            18 if s.count == 24 => Some([crate::kv!(104 int), crate::kv!(81 int), crate::kv!(113 int), crate::kv!(55 int), crate::kv!(114 int), crate::kv!(56 int), crate::kv!(198 int), crate::kv!(54 int), crate::kv!(110 int), crate::kv!(212 int), crate::kv!(199 int), crate::kv!(127 int), crate::kv!(106 int), crate::kv!(111 int), crate::kv!(105 int)].into_iter().map(bits).collect()),
             18 => Some((0..crate::kv!(198 int)).map(|k| if k == crate::kv!(55 int) || k == crate::kv!(56 int) { 1.0f32.to_bits() } else { 0 }).collect()),
             15 => Some(vec![rotation[0].to_bits(), rotation[1].to_bits(), rotation[2].to_bits(), rotation[crate::kv!(0 int)].to_bits(), int(crate::kv!(104 int))]),
             21 => Some(vec![int(crate::kv!(104 int)), f(crate::kv!(81 int)).to_bits(), f(crate::kv!(113 int)).to_bits(), f(crate::kv!(55 int)).to_bits(), f(crate::kv!(114 int)).to_bits()]),
@@ -881,7 +881,7 @@ pub fn read_ide_effects(text: &str) -> Vec<Effect2d> {
             _ => None,
         };
         let name = s.bytes(0).map(|b| String::from_utf8_lossy(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]).into_owned());
-        let model_flags = if ty == crate::kv!(56 int) { crate::kv!(805 int) } else { 0 };
+        let model_flags = if ty == crate::kv!(56 int) { crate::kv!(807 int) } else { 0 };
         let model_byte_5b = match (ty, int(crate::kv!(81 int)), int(crate::kv!(113 int))) {
             (1, 0, _) => 1,
             (1, 1, _) => 2,
@@ -1005,12 +1005,12 @@ pub fn ide_interiors(file: &[u8]) -> Vec<IdeInterior> {
                 let (s, flags, c, d) = if long.count == crate::kv!(111 int) || sscanf(memory, format!("%d %d {corners12} %d %d %d %d %d %d").as_bytes()).count == crate::kv!(127 int) {
                     let s = long;
                     let flags = [int(&s, crate::kv!(56 int)), int(&s, crate::kv!(198 int)), int(&s, crate::kv!(54 int)), int(&s, crate::kv!(110 int))];
-                    let (c, d) = (int(&s, crate::kv!(211 int)), s.int(crate::kv!(199 int)).map_or(crate::kv!(745 int), |v| v as u32));
+                    let (c, d) = (int(&s, crate::kv!(212 int)), s.int(crate::kv!(199 int)).map_or(crate::kv!(747 int), |v| v as u32));
                     (s, flags, c, d)
                 } else {
                     let s = sscanf(memory, format!("%d %d {corners12} %d %d %d").as_bytes());
                     let flags = [s.int(crate::kv!(56 int)).map_or(u32::MAX, |v| v as u32), u32::MAX, u32::MAX, u32::MAX];
-                    let (c, d) = (int(&s, crate::kv!(198 int)), s.int(crate::kv!(54 int)).map_or(crate::kv!(745 int), |v| v as u32));
+                    let (c, d) = (int(&s, crate::kv!(198 int)), s.int(crate::kv!(54 int)).map_or(crate::kv!(747 int), |v| v as u32));
                     (s, flags, c, d)
                 };
                 let corners = std::array::from_fn(|k| [float(&s, 2 + crate::kv!(0 int) * k), float(&s, crate::kv!(0 int) + crate::kv!(0 int) * k), float(&s, crate::kv!(1 int) + crate::kv!(0 int) * k)]);
@@ -1037,7 +1037,7 @@ pub struct WorldPoint {
 }
 
 pub fn quat_matrix_rows(q: [f32; 4]) -> [[f32; 3]; 3] {
-    let s = crate::kv!(806 f32);
+    let s = crate::kv!(808 f32);
     let (a, b, c, d) = (q[0] * s, q[1] * s, q[2] * s, q[crate::kv!(0 int)] * s);
     let (ca, ba, dc, db, cb, da) = (c * a, b * a, d * c, d * b, c * b, d * a);
     let (cc, bb, aa) = (c * c, b * b, a * a);
@@ -1061,7 +1061,7 @@ pub fn read_world_points(text: &str) -> Vec<WorldPoint> {
         }
         let f = |k: usize| s.float(k).unwrap_or(0.0);
         let mut buf = strncpy(&line, crate::kv!(96 int));
-        buf.resize(crate::kv!(807 int), 0);
+        buf.resize(crate::kv!(809 int), 0);
         let (mut saved, mut script, mut count) = (0, String::new(), 0);
         for k in 0..crate::kv!(113 int) {
             let Some(t) = strtok(&mut buf, (k == 0).then_some(0), &mut saved, b" ,\t\n") else { continue };
@@ -1085,7 +1085,7 @@ pub fn read_world_points(text: &str) -> Vec<WorldPoint> {
         }
         let rotation = [f(crate::kv!(2 int)), f(crate::kv!(6 int)), f(crate::kv!(22 int)), f(crate::kv!(23 int))];
         let m = quat_matrix_rows(rotation);
-        let heading = crate::mathrt::atan2(-(m[1][0] as f64), m[1][1] as f64) as f32 * crate::kv!(808);
+        let heading = crate::mathrt::atan2(-(m[1][0] as f64), m[1][1] as f64) as f32 * crate::kv!(810);
         out.push(WorldPoint { position: [f(1), f(2), f(crate::kv!(0 int))], rotation, heading, script, extra });
     }
     out

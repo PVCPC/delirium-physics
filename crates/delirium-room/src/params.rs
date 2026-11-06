@@ -194,7 +194,7 @@ Set by the room each time (where, which way, which parts); send it from the cons
 {}", m.name, about(m.name))]);
 }
 
-pub fn tab(ui: &mut egui::Ui, edits: &mut Edits, search: &mut String, changed_only: &mut bool) {
+pub fn tab(ui: &mut egui::Ui, edits: &mut Edits, search: &mut String, changed_only: &mut bool, pressed: &mut Option<String>) {
     ui.add_space(6.0);
     ui.label(section_title("Parameters"));
     info(ui, "Change any behaviour's settings. A changed value is used every time that behaviour starts, from a button, \
@@ -228,11 +228,22 @@ pub fn tab(ui: &mut egui::Ui, edits: &mut Edits, search: &mut String, changed_on
         }
         let changed: usize = shown.iter().map(|(m, _)| edits.keys().filter(|k| k.0 == m.name).count()).sum();
         let title = if changed > 0 { egui::RichText::new(format!("{group}  ({changed} changed)")).strong().color(HI) } else { egui::RichText::new(group).strong() };
-        egui::CollapsingHeader::new(title).id_salt(group).open(open).show(ui, |ui| {
+        egui::CollapsingHeader::new(title).id_salt(group).default_open(true).open(open).show(ui, |ui| {
             for (m, ps) in shown {
                 let n = edits.keys().filter(|k| k.0 == m.name).count();
                 let head = if n > 0 { egui::RichText::new(format!("{}  ({n} changed)", m.name)).color(HI) } else { egui::RichText::new(m.name) };
-                let header = egui::CollapsingHeader::new(head).id_salt(("params", m.name)).open(open).show(ui, |ui| {
+                let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), ui.make_persistent_id(("params", m.name)), false);
+                if let Some(o) = open {
+                    state.set_open(o);
+                }
+                state.show_header(ui, |ui| {
+                    ui.label(head).on_hover_ui(|ui| behaviour_hover(ui, m.name));
+                    if let Some((b, label)) = crate::reaction_for(m.name) {
+                        if ui.small_button(format!("▶ {label}")).on_hover_text("Start this reaction (as its Reactions button).").clicked() {
+                            *pressed = Some(b.to_string());
+                        }
+                    }
+                }).body(|ui| {
                     egui::Grid::new(("param grid", m.name)).num_columns(3).spacing([10.0, 4.0]).striped(true).show(ui, |ui| {
                         for p in ps {
                             row(ui, edits, m, p);
@@ -240,7 +251,6 @@ pub fn tab(ui: &mut egui::Ui, edits: &mut Edits, search: &mut String, changed_on
                         }
                     });
                 });
-                header.header_response.on_hover_ui(|ui| behaviour_hover(ui, m.name));
             }
         });
     }

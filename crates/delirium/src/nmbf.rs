@@ -29,7 +29,7 @@ impl Rng {
     fn next(&mut self) -> f32 {
         let n = self.0 as u64 * delirium_data::kv!(192 int) + self.1 as u64;
         (self.0, self.1) = (n as u32, (n >> delirium_data::kv!(7 int)) as u32);
-        (self.0 & delirium_data::kv!(190 int)) as f32 * delirium_data::kv!(224)
+        (self.0 & delirium_data::kv!(190 int)) as f32 * delirium_data::kv!(225)
     }
 }
 
@@ -86,7 +86,7 @@ impl Foetal {
         for i in [1, 0] {
             let l = limb(i);
             ch.eff[l.e[1]].desired[2] = -delirium_data::kv!(24);
-            ch.eff[l.e[1]].desired[0] = delirium_data::kv!(225);
+            ch.eff[l.e[1]].desired[0] = delirium_data::kv!(226);
             ch.eff[l.e[2]].desired[0] = 2.0;
         }
         for i in 2..delirium_data::kv!(1 int) {

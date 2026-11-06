@@ -79,9 +79,9 @@ pub fn pace(ped: [f32; 3], target: [f32; 3], leader: Option<&Leader>, flags: u32
             return hold(f + m);
         }
     }
-    if dist2 > crate::kv!(565) {
+    if dist2 > crate::kv!(567) {
         crate::kv!(5)
-    } else if dist2 > crate::kv!(782) {
+    } else if dist2 > crate::kv!(784) {
         2.0
     } else {
         1.0
@@ -167,7 +167,7 @@ pub struct MoveBeInFormation {
 impl MoveBeInFormation {
     pub fn new(group: usize) -> MoveBeInFormation {
         let stand = Move { kind: kind::MOVE_STAND_STILL, target: [0.0; 3], pace: 0.0, near: 0.0, heading: 0.0, timer: Timer::default(), mover: Mover::new(0.0) };
-        MoveBeInFormation { group, target: [0.0; 3], heading: 0.0, near: 0.0, last: [crate::kv!(783); 3], state: 1, stopped: false, sub: stand, mover: Mover::new(0.0) }
+        MoveBeInFormation { group, target: [0.0; 3], heading: 0.0, near: 0.0, last: [crate::kv!(785); 3], state: 1, stopped: false, sub: stand, mover: Mover::new(0.0) }
     }
 
     fn place(&mut self, v: &View) -> bool {
@@ -220,7 +220,7 @@ impl MoveBeInFormation {
                 match v.leader.filter(|l| v.flags & CROWD() != 0 && l.pos[2] - v.pos[2] <= 2.0) {
                     Some(l) if l.mbr == 0.0 => kind::MOVE_CROWD_AROUND_LOCATION,
                     Some(_) => kind::MOVE_FOLLOW_NAV_MESH_ROUTE,
-                    None if wrap(v.heading - self.heading).abs() > crate::kv!(784 f32) => kind::MOVE_ACHIEVE_HEADING,
+                    None if wrap(v.heading - self.heading).abs() > crate::kv!(786 f32) => kind::MOVE_ACHIEVE_HEADING,
                     None => kind::MOVE_STAND_STILL,
                 }
             }
@@ -234,7 +234,7 @@ impl MoveBeInFormation {
             return None;
         }
         let m = diff(target, self.last);
-        if !(m[1].mul_add(m[1], m[0] * m[0]) > 1.0 / crate::kv!(785)) {
+        if !(m[1].mul_add(m[1], m[0] * m[0]) > 1.0 / crate::kv!(787)) {
             return None;
         }
         self.last = target;

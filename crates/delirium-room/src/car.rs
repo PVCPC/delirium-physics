@@ -182,7 +182,7 @@ impl Car {
             axle,
             hull,
             prev: None,
-            random: tyre::Random::new(delirium_data::kv!(1071 int) ^ ground.x.to_bits() ^ ground.y.to_bits().rotate_left(delirium_data::kv!(54 int))),
+            random: tyre::Random::new(delirium_data::kv!(1073 int) ^ ground.x.to_bits() ^ ground.y.to_bits().rotate_left(delirium_data::kv!(54 int))),
             crt: delirium_data::rng::Rand::default(),
             frames: 0,
             tune,

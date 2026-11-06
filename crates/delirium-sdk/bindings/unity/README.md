@@ -39,7 +39,7 @@ humanoid, Mixamo, Biped, Unreal style); add others to `Bone Map`.
 - `Ragdoll Key` / `Release Key` are test keys: aim and press to ragdoll whoever you look at (None: off).
 
 **Bodies and parameters (the Playroom's):** `Body` picks every character's body: `Fitted` (its own skeleton's, the
-default), `Small`, `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute` or `Brawler` (that shape of
+default), `Small`, `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute`, `Brawler` or `Bruiser` (that shape of
 each character), `Random` (`Body Seed`, 0: each its own; `Body Variance`; `Body Symmetric`) or `Custom` (`Custom Body`:
 legs, arms, trunk, width, head, neck against the fitted body, weight in kg, height in m, 0 keeps it). `SetBody(owner,
 "Brawler")` sets one character's. `Overrides` changes behaviour parameters for every character, as the Playroom's

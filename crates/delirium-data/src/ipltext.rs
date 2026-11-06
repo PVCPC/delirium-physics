@@ -76,7 +76,7 @@ pub struct OccluderLists {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn OCCLUDER_NEAR() -> f32 { crate::kv!(809) }
+pub fn OCCLUDER_NEAR() -> f32 { crate::kv!(811) }
 
 impl OccluderLists {
     pub fn new(count: usize) -> OccluderLists {
@@ -137,7 +137,7 @@ impl OccluderLists {
             }
             cur = next;
         }
-        if frame & crate::kv!(22 int) == 2 && near.len() > crate::kv!(253 int) {
+        if frame & crate::kv!(22 int) == 2 && near.len() > crate::kv!(254 int) {
             let mid = near.len().min(crate::kv!(197 int));
             partial_sort(&mut near, mid);
             self.near = near[0].1;
@@ -229,7 +229,7 @@ pub struct CullZone {
 
 impl CullZone {
     pub fn new(centre: [f32; 2], a: [f32; 2], z_low: f32, b: [f32; 2], z_high: f32, flags: u32) -> Option<CullZone> {
-        let flags = flags as u16 & crate::kv!(810 int);
+        let flags = flags as u16 & crate::kv!(812 int);
         (flags != 0).then(|| CullZone {
             corner: [short(centre[0] - a[0] - b[0]), short(centre[1] - a[1] - b[1])],
             axis_a: [short(a[0] * 2.0), short(a[1] * 2.0)],
@@ -346,7 +346,7 @@ pub struct TextIpls {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX_OCCLUDERS() -> usize { crate::kv!(794 int) }
+pub fn MAX_OCCLUDERS() -> usize { crate::kv!(796 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IplLine {
@@ -554,15 +554,15 @@ impl TextIpls {
             return;
         }
         let at_least_one = |v: f32| short(v * crate::kv!(84)).max(1);
-        let angle = rot_degrees * crate::kv!(561);
+        let angle = rot_degrees * crate::kv!(563);
         self.occluders.push(Occluder {
             pos: [short(pos[0] * crate::kv!(84)), short(pos[1] * crate::kv!(84)), short(pos[2] * crate::kv!(84))],
             radius: at_least_one((w * w + l * l + h * h).sqrt()),
             length: at_least_one(l),
             width: at_least_one(w),
             height: at_least_one(h),
-            cos: short((angle as f64).cos() as f32 * crate::kv!(811)),
-            sin: short((angle as f64).sin() as f32 * crate::kv!(811)),
+            cos: short((angle as f64).cos() as f32 * crate::kv!(813)),
+            sin: short((angle as f64).sin() as f32 * crate::kv!(813)),
             flag,
         });
     }

@@ -21,7 +21,9 @@ Works from GDScript and C#.
    ```
 
    Paths are absolute or under the project folder. Optional: `size` (Auto, Real, Homer), `balance`, `adaptive`,
-   `strength`, `headshot_kills`, `shot_force`, `melee_force`, `explosion_force`.
+   `strength`, `engine_physics` (his parts as Godot bodies: NM's own physics still moves him, the parts follow it and push your RigidBody3Ds, and loose RigidBody3Ds within 5 m hit him as movers (MOVER_OBJECT, boxed by their first shape's bounds)), `headshot_kills`, `shot_force`, `melee_force`, `explosion_force`, `recentre_joints` (re-centre the joints
+   on the hand-over pose), `hold` (`mask=stiffness:damping:gravity`, e.g. `fb=6:1:0.5`: joints at least this stiff), `follow` (`mask=weight`,
+   e.g. `ua=1`: those joints keep playing the animation while the rest ragdolls; pair with `hold`, `ua=10:1:1`).
 
 ## Try it: click to fight
 
@@ -45,11 +47,15 @@ nm.sever(point, Vector3.UP)                    # hide the limb's mesh yourself
 nm.lying_still.connect(func(face_up, facing): nm.get_up())
 ```
 
-Also `ragdoll()`, `shoot(point, dir, force, set, health)`, `on_fire(burning, health)`, `high_fall()`, `kill()`,
-`get_up()`, `is_ragdolled()`, `get_hips()`; `get_up_after` gets it up by itself after that many seconds lying still.
+Also `ragdoll()`, `shoot(point, dir, force, set, health)`, `on_fire(burning, health)`, `tase(seconds)`, `high_fall()`, `kill()`,
+`get_up()`, `is_ragdolled()`, `get_hips()`, `react(line)` (any reaction as the Playroom console's line: `"rollUp start=true"`,
+`"bodyWrithe start=true"`, `"stopAllBehaviours"`), `catch_fall()`, `fall_down(heading)`, `grab(left, left_normal, right,
+right_normal, hold)`, `jump_roll()`, `flinch(from)`, `tackle(target, low, keep)`, `set_water(level)`;
+cars: `DeliriumRagdoll.register_car(node, size, player_driven)` (anything you call a car; zero size: its BoxShape3D's),
+`unregister_car(node)`, `car_coming(car)` (brace), `car_door(car)`, signal `car_hit(damage, car)`; setting `arms_out_early`; `get_up_after` gets it up by itself after that many seconds lying still.
 
 - **Bodies and parameters (the Playroom's):** `body` is `Fitted` (its own skeleton's, the default), `Small`,
-  `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute` or `Brawler` (that shape of this
+  `Average`, `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute`, `Brawler` or `Bruiser` (that shape of this
   character), `Random` (`body_seed`, 0: its own; `body_variance`; `body_symmetric`) or `Custom` (`custom_body`: legs,
   arms, trunk, width, head, neck against the fitted body, weight in kg, height in m, 0 keeps it). `overrides` changes
   behaviour parameters as the Playroom's Parameters tab does (`shot.bodyStiffness=7, bodyBalance.useHeadLook=0`);
@@ -65,3 +71,31 @@ Also `ragdoll()`, `shoot(point, dir, force, set, health)`, `on_fire(burning, hea
 
 `test.gd` is a headless check (`godot --headless --fixed-fps 60 --path <project> --script test.gd`): a skeleton
 stands, takes a shove, goes down to a hard push, a shot and a leg cut, and gets up.
+
+## State and events
+
+`get_state()` returns a Dictionary: ragdolled, balancing, fallen, catching_fall, rolled_up, relaxing, dead, in_water,
+burning, tackling (2 diving, 1 holding), lying_for (s), centre, velocity, mass. Signals: `fell()` once per fall,
+`feedback(name, slot, value)` for NM's own behaviour messages (the Playroom's Feedback list), plus `lying_still` and
+`car_hit`.
+
+
+## Tuning reactions
+
+Walls, floors and falls need nothing: ragdolls get the level's collision and catch, stagger and brace on it by
+themselves. Moving things that hit characters are registered once (`DeliriumRagdoll.register_mover(node, MOVER_*, size, player_driven, brace, knock_down, centre)`, kinds Car, Object, Train) and each picks
+its own: box size and centre, whether characters in its way brace (`brace`) or are knocked down at all (`knockDown`).
+Each character's health and agility (`hit_health, hit_agility`) decide which reaction the game picks when hit (agility under 3 is weak).
+
+Every reaction's feel is an override (`behaviour.param=value`, comma-separated; see Overrides):
+
+| Reaction | Useful parameters |
+|---|---|
+| Bracing for a car or object | `braceForImpact.braceDistance` (how early the arms go out, m), `.targetPredictionTime` (s ahead), `.bodyStiffness` |
+| Catching a fall | `catchFall.armsStiffness`, `.legsStiffness`, `.torsoStiffness` |
+| Staggering | `staggerFall.lowerBodyStiffness` |
+| Rolling up | `bodyRollUp.stiffness` |
+| Keeping balance | `bodyBalance.armsOutOnPushTimeout` (how long the arms stay out after a push, s) |
+| Shot / high fall | `shot.bodyStiffness`, `highFall.bodyStiffness` |
+
+The Playroom's Parameters tab lists every parameter with its default and lets you try values live.

@@ -10,7 +10,7 @@ pub fn MAX_POINTS() -> usize { crate::kv!(23 int) }
 pub const LEG_END: u32 = 1302;
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX_BUMPS() -> i32 { crate::kv!(276 int) }
+pub fn MAX_BUMPS() -> i32 { crate::kv!(278 int) }
 pub const ARRIVE: f32 = 0.5;
 #[allow(non_snake_case)]
 #[inline]

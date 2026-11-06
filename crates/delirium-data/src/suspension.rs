@@ -136,12 +136,12 @@ pub struct WheelPart {
 pub fn steer_flags(corner: usize, rear_steer: bool, bike: bool) -> u32 {
     let (left, rear) = (corner % 2 == 0, corner >= 2);
     if bike {
-        return if rear { crate::kv!(974 int) } else { crate::kv!(975 int) };
+        return if rear { crate::kv!(976 int) } else { crate::kv!(977 int) };
     }
-    let side = if left { crate::kv!(718 int) } else { 0 } | if rear { crate::kv!(181 int) } else { 0 };
+    let side = if left { crate::kv!(720 int) } else { 0 } | if rear { crate::kv!(181 int) } else { 0 };
     side | match (rear, rear_steer) {
         (false, false) => crate::kv!(52 int),
-        (true, true) => crate::kv!(672 int),
+        (true, true) => crate::kv!(674 int),
         _ => 0,
     }
 }
@@ -149,7 +149,7 @@ pub fn steer_flags(corner: usize, rear_steer: bool, bike: bool) -> u32 {
 pub fn wheel_steer(flags: u32, angle: f32) -> f32 {
     let a = if flags & crate::kv!(52 int) != 0 {
         angle
-    } else if flags & crate::kv!(672 int) != 0 {
+    } else if flags & crate::kv!(674 int) != 0 {
         -angle
     } else {
         return 0.0;
@@ -157,7 +157,7 @@ pub fn wheel_steer(flags: u32, angle: f32) -> f32 {
     if flags & crate::kv!(183 int) != 0 {
         return a;
     }
-    let cut = if (flags & crate::kv!(718 int) != 0) == (flags & crate::kv!(181 int) != 0) { a > 0.0 } else { a < 0.0 };
+    let cut = if (flags & crate::kv!(720 int) != 0) == (flags & crate::kv!(181 int) != 0) { a > 0.0 } else { a < 0.0 };
     if cut { a * crate::kv!(18 f32) } else { a }
 }
 
@@ -167,9 +167,9 @@ pub fn setup(ide_radius: f32, share: f32, flags: u32, part: Option<WheelPart>, f
         Some(p) if p.bone > -1 => {
             let width = p.half_width * 2.0;
             if p.slot99 {
-                flags |= crate::kv!(818 int);
+                flags |= crate::kv!(820 int);
                 if flags & crate::kv!(181 int) != 0 && p.compare && first.is_some_and(|(r, w)| width != w || p.radius != r) {
-                    flags |= crate::kv!(819 int);
+                    flags |= crate::kv!(821 int);
                 }
             }
             (p.bone, p.radius, ide_radius, width)

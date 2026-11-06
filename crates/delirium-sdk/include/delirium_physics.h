@@ -27,6 +27,10 @@ typedef struct NmRig NmRig;
 #define NM_E_FOLLOW (-8)
 #define NM_MODE_LEAD (0)
 #define NM_MODE_FOLLOW (1)
+#define NM_HIT_CAR (0)
+#define NM_HIT_OBJECT (1)
+#define NM_HIT_TRAIN (3)
+#define NM_HIT_PLAYER (16)
 #define NM_KIND_FLOAT (0)
 #define NM_KIND_INT (1)
 #define NM_KIND_BOOL (2)
@@ -60,6 +64,8 @@ NM_API int32_t nm_world_add_mesh(NmWorld* w, const float* positions, int32_t ver
 NM_API int32_t nm_world_add_floor(NmWorld* w, float x, float y, float z, float half);
 /* The world's moving boxes (cars, platforms), in place of the last set: `count` boxes of 13 floats each, centre (3), rotation (quaternion x y z w), half size (3), velocity (3). The parts can't go into them and meet them at the box's velocity, with a car body's friction (0.2). The host moves them: set them again before each step. A box's instanceIndex (braceForImpact's, grab's) is its place in the array, its frame the box's centre and rotation. A box turns only once nm_world_set_box_spins says so (set the boxes first: they come with no spin). */
 NM_API int32_t nm_world_set_boxes(NmWorld* w, const float* boxes, int32_t count);
+/* The boxes' kinds, `count` ints (their number, else NM_E_ARG) for the boxes of the last nm_world_set_boxes: what hit a body in nm_agent_car_hit, for the game's damage and reaction: NM_HIT_CAR (the default), NM_HIT_OBJECT (a crate, a door, debris: a hard hit unless he stands on it), NM_HIT_TRAIN (the train's own hurt, ahead of its front), each plus NM_HIT_PLAYER when the player drives or throws it. Kept while the boxes' number stays the same. */
+NM_API int32_t nm_world_set_box_kinds(NmWorld* w, const int32_t* kinds, int32_t count);
 /* The boxes' spins (rad/s about their centres, world axes), `count` x 3 floats, for the boxes of the last nm_world_set_boxes (`count` is their number, else NM_E_ARG): a turning box's surface moves at the box's velocity plus the spin crossed with the point's offset from its centre. Set them again with the boxes before each step. */
 NM_API int32_t nm_world_set_box_spins(NmWorld* w, const float* spins, int32_t count);
 /* Surface row `material` (the byte per triangle of nm_world_add_mesh; with the game's materials.dat loaded, its row) takes `friction` (times the part's own) and `elasticity` (0-1), for every agent; ice is about 0.05. Rows past the table's end are added, the ones between at friction 1, elasticity 0.1. */
@@ -81,7 +87,7 @@ NM_API NmBuild* nm_build_fit_neck(const NmBuild* build, const float* joints, flo
 NM_API int32_t nm_build_set_head(NmBuild* b, float raise, float grow);
 /* The Playroom's Custom body: the game man (`build` as nm_build_load gives it) with his legs, arms, trunk height, width (shoulders, hips and thickness), head and neck (nm_build_fit_neck) each that many times his, weighing `kg`; `height` (m) over 0: all of it grown or shrunk to that. His sizes: 1, 1, 1, 1, 1, 1, 77, 0 (close to him, not bit for bit; use `build` itself for him). The Brawler (nm_build_named): 0.45, 0.7, 1, 1.4, 1.5, 1, 80, 0. A new build; free it. */
 NM_API NmBuild* nm_build_sized(const NmBuild* build, float legs, float arms, float trunk, float width, float head, float neck, float kg, float height);
-/* The Playroom's body `name` of the game man (`build` as nm_build_load gives it): Small, Average (him), Large, Lanky, Fat, Stocky, Waddler, Guard, Brute or Brawler (any case). Odd ones may need nm_build_tune to stand. A new build; free it. Null for another name. */
+/* The Playroom's body `name` of the game man (`build` as nm_build_load gives it): Small, Average (him), Large, Lanky, Fat, Stocky, Waddler, Guard, Brute, Brawler or Bruiser (any case). Odd ones may need nm_build_tune to stand. A new build; free it. Null for another name. */
 NM_API NmBuild* nm_build_named(const NmBuild* build, const char* name);
 /* The Playroom's Random body: each of the game man's (`build`) bones and parts' thickness drawn at random, `variance` 1 to 4 (the room's slider, 1.5 its default; 4: bones 0.2 to 4 times his), the right side the left's if `symmetric` isn't 0. The same `seed`, the same body. Odd ones may need nm_build_tune to stand. A new build; free it. */
 NM_API NmBuild* nm_build_random(const NmBuild* build, int32_t seed, float variance, int32_t symmetric);
@@ -103,13 +109,15 @@ NM_API int32_t nm_tune_file(const char* path);
 NM_API int32_t nm_build_copy_tune(NmBuild* dst, const NmBuild* src);
 /* Host metres per NM metre of the build's agents (nm_build_fit_sized), 1 for any other build; 0 on error. */
 NM_API float nm_build_get_scale(const NmBuild* b);
-/* Part `i`'s frame in the build's pose (world, as dumped). */
+/* Part `i`'s frame in the build's pose (world, as dumped). An agent made from the build starts in this same pose, moved and turned as a whole to where nm_agent_create puts it: every part by the same shift and yaw, so the part offsets a host takes from these match nm_agent_get_part_transform's. */
 NM_API int32_t nm_build_part_frame(const NmBuild* b, int32_t i, float* pos, float* rot);
 /* An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. The build's lowest point (its lowest capsule or foot box, not a joint) is put on `pos`'s height: a host's rig placed by its bind pose's joints stands off it by the feet's thickness (a few cm). */
 NM_API NmAgent* nm_agent_create(const NmBuild* b, const float* pos, float yaw, float seed);
 NM_API void nm_agent_destroy(NmAgent* a);
 /* One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted). A host stepping with wall-clock dt near 1/60 gets 0 steps some frames and 2 the next (a stutter): pass 1/60 each frame instead. */
 NM_API int32_t nm_agent_step(NmAgent* a, const NmWorld* w, float dt);
+/* nm_agent_step on `count` agents of world `w` at once, spread over `threads` threads (0: one per core the machine has; 1: in turn on this one). Each meets the others' parts as they were before this call (so the outcome doesn't hang on the threads' timing). The agents must all be different. Returns the first agent's error, if any. */
+NM_API int32_t nm_world_step_agents(const NmWorld* w, NmAgent* const* agents, int32_t count, float dt, int32_t threads);
 /* NM_MODE_LEAD: NM's own physics moves the body; the host reads the parts' transforms onto a puppet. NM_MODE_FOLLOW: the host's ragdoll is the body; each step it sets the parts' states, steps, and applies the parts' drives (nm_agent_get_part_drive[s]) to its own bodies. */
 NM_API int32_t nm_agent_set_mode(NmAgent* a, int32_t mode);
 NM_API int32_t nm_agent_get_mode(const NmAgent* a);
@@ -145,8 +153,12 @@ NM_API int32_t nm_agent_nearest_part(const NmAgent* a, const float* at);
 NM_API int32_t nm_agent_raycast(const NmAgent* a, const float* from, const float* to, float* point, float* normal);
 /* Every part's velocity changed by `dv` (a vehicle's hit, a jump). */
 NM_API int32_t nm_agent_add_velocity(NmAgent* a, const float* dv);
-/* Part `i`'s joint to its parent, as NM's physics has it (for a host building a matching ragdoll): returns 0 for the root (no joint), 1 a ball (leans about its frame's X and Y, twists about Z), 2 a hinge (about the frame's Z). `parent` its parent part; `pivot` (world, now); `frame` the joint's frame (world, now, as the parent holds it); `limits` a ball's lean X, lean Y and twist half ranges about the frame's centre, or a hinge's low and high (rad); `armature` its armature in the last step (kg m^2 per axis: the original engine's effector stiffness, changing with the pose and the stiffness NM sets; FLT_MAX locked). A FOLLOW host's joint needs the same armature for the drives to fit it. */
+/* Part `i`'s joint to its parent, as NM's physics has it (for a host building a matching ragdoll): returns 0 for the root (no joint), 1 a ball (leans about its frame's X and Y, twists about Z), 2 a hinge (about the frame's Z). `parent` its parent part; `pivot` (world, now); `frame` the joint's frame (world, now, as the parent holds it); `limits` NM's: a ball's swing half ranges about the frame's X and Y (an elliptical cone) and its twist's about Z, or a hinge's low and high (rad); `armature` its armature in the last step (kg m^2 per axis: the original engine's effector stiffness, changing with the pose and the stiffness NM sets; FLT_MAX locked). A FOLLOW host's joint needs the same armature for the drives to fit it. */
 NM_API int32_t nm_agent_get_joint(const NmAgent* a, int32_t i, int32_t* parent, float* pivot, float* frame, float* limits, float* armature);
+/* Part `i`'s body as NM's physics has it, for a FOLLOW host's to match: `mass` (kg), `inertia` about its frame's axes (kg m^2), `box` a box's half extents on them (the feet) or zeros. Returns 1 a capsule (nm_build_part_info's radius and half length, along its frame's Y), 2 a box. */
+NM_API int32_t nm_agent_get_part_body(const NmAgent* a, int32_t i, float* mass, float* inertia, float* box);
+/* Every part's place with each joint at its zero (its frame as the parent holds it = as the child does), the root where it is now: `pos` 3 and `rot` 4 floats a part (world), `parts` of them. An engine's joints take their zero from the pose they're made in: a FOLLOW host makes them with its bodies here, then moves the bodies to where NM has them. */
+NM_API int32_t nm_agent_get_zero_pose(const NmAgent* a, float* pos, float* rot, int32_t parts);
 NM_API int32_t nm_message_count(void);
 NM_API int32_t nm_message_name(int32_t m, char* buf, int32_t len);
 /* A message's index by name, or NM_E_MESSAGE. */
@@ -171,10 +183,18 @@ NM_API int32_t nm_msg_set_vec3(NmAgent* a, const char* name, const float* v);
 NM_API int32_t nm_msg_set_string(NmAgent* a, const char* name, const char* v);
 /* The Playroom's Parameters tab for one agent: every `behaviour` message it gets from now on (yours, and those the nm_agent_task_* send) carries `param` as `value` in place of its own (bools 0 or 1, whole numbers rounded). Only the number, whole-number and on/off params the port acts on (nm_message_param_doc); not the hit's part (bodyPart, partIndex, hitPart), which each hit sets. Again for the same param: the new value. */
 NM_API int32_t nm_agent_set_override(NmAgent* a, const char* behaviour, const char* param, float value);
+/* Part `i`'s joint re-centred on the pose the agent holds now: its range's middle where it is. -1: every joint. For a rig whose start pose lies outside the joints' ranges: they snap on the first step (Homer's own rest pose: the spine, neck, head and arms, up to 48 degrees; the shoulder up at the ear, the head folded onto it). Call it after nm_agent_create, before the first step. It changes the joints for good (not the game's). Returns how many it changed. */
+NM_API int32_t nm_agent_recentre_joint(NmAgent* a, int32_t i);
+/* Holds the joints in `mask` (setStiffness's: "fb" the whole body, "ua" upper arms, ...) at least this stiff, damped and gravity-opposing (0..1) every step, whatever the behaviours set: a host's floor under the tone (a shot, catchFall, writhe and relax set every joint each tick, so a setStiffness doesn't last). Again for the same mask: the new floor; stiffness 0 drops it. Not the game's. */
+NM_API int32_t nm_agent_hold(NmAgent* a, const char* mask, float stiffness, float damping, float oppose_gravity);
+/* Aims the joints in `mask` (setStiffness's masks) at the incoming pose (nm_agent_set_incoming_transforms) every step, after the behaviours: `weight` 1 all the way, 0.5 halfway between theirs and yours. Your animation on some joints (a boxer's guard, a held weapon) while NM moves the rest. Pair it with nm_agent_hold to give those joints the strength to get there. Nothing without an incoming pose. Again for the same mask: the new weight; 0 drops it. Not the game's. */
+NM_API int32_t nm_agent_follow(NmAgent* a, const char* mask, float weight);
 /* Drops all of the agent's nm_agent_set_override values: its messages go out as sent again. */
 NM_API int32_t nm_agent_clear_overrides(NmAgent* a);
 /* Sends the message built since nm_msg_begin, as the game's NM takes it: a behaviour starts with the bool "start" set to 1, stops with 0 and only takes the params without it; the one-shots (applyImpulse, setStiffness, the leans, ...) act either way. Returns how many of its params the port accepted without acting on them. */
 NM_API int32_t nm_msg_send(NmAgent* a, const NmWorld* w);
+/* A whole message as one line of text, the Playroom console's: the name, then name=value params (true/false or 1/0, numbers, vectors as x,y,z in NM's space: Z up, the agent's metres), e.g. "rollUp start=true stiffness=8". Sends it as nm_msg_begin + nm_msg_set_* + nm_msg_send would; returns what nm_msg_send does. */
+NM_API int32_t nm_msg_send_text(NmAgent* a, const NmWorld* w, const char* line);
 /* Drops the message being built. */
 NM_API int32_t nm_msg_cancel(NmAgent* a);
 /* A param's current value on the agent (as last sent, else its default) as floats into `out`; returns how many. */
@@ -195,7 +215,7 @@ NM_API int32_t nm_agent_is_dead(const NmAgent* a);
 NM_API int32_t nm_agent_set_dead(NmAgent* a, int32_t dead);
 /* 1 when it's time to hand it back to its own get-up animation: alive and lying still `after` seconds (nm_agent_get_lying says which way it faces). */
 NM_API int32_t nm_agent_should_get_up(const NmAgent* a, float after);
-/* Cuts part `part` off (with those below it: a hand, an arm from the shoulder, a leg, the head at the neck), `impulse` (or null) on it at `at` (or null: its middle). It goes on as a limp piece of its own, stepped with the body: its parts' frames and velocities are read as before. A leg gone, he falls (catchFall) and never gets up (nm_agent_should_get_up 0). The head cut, he stays up: kill him yourself (nm_agent_set_dead). LEAD only. NM_E_STATE: the root, or cut already. */
+/* Cuts part `part` off (with those below it: a hand, an arm from the shoulder, a leg, the head at the neck), `impulse` (or null) on it at `at` (or null: its middle). It goes on as a limp piece of its own, stepped with the body: its parts' frames and velocities are read as before. A leg gone, he falls (catchFall) and never gets up (nm_agent_should_get_up 0). The head cut, he stays up: kill him yourself (nm_agent_set_dead). FOLLOW: the piece stays on the host's body, NM stops driving it and `impulse` comes in the drives; the host breaks its own joint. NM_E_STATE: the root, or cut already. */
 NM_API int32_t nm_agent_sever(NmAgent* a, const NmWorld* w, int32_t part_index, const float* at, const float* impulse);
 /* 1 when part `part_index` has been cut off (nm_agent_sever), else 0. */
 NM_API int32_t nm_agent_is_severed(const NmAgent* a, int32_t part_index);
@@ -232,6 +252,10 @@ NM_API int32_t nm_agent_task_catch_fall(NmAgent* a, const char* set);
 NM_API int32_t nm_agent_task_explosion(NmAgent* a, const NmWorld* w, const float* at, float radius, float speed);
 /* TaskNMOnFire: it burns, flails, staggers, drops and writhes (the game's reaction, 1-30 s). Runs by itself each step; tell it when the flames are out or its health changes with nm_agent_set_on_fire. Starting again while it runs only updates those. */
 NM_API int32_t nm_agent_task_on_fire(NmAgent* a, const NmWorld* w, float health);
+/* A taser's hit (the Playroom's): a current through it for `seconds` (electrocute: it jolts and locks, stunMag 0.4, the big jolts twice that), ending by itself; again while it runs: that many seconds from now. 0 ends it now. No damage: the host keeps the health. */
+NM_API int32_t nm_agent_tase(NmAgent* a, const NmWorld* w, float seconds);
+/* Whether a taser's current runs through it (nm_agent_tase). */
+NM_API int32_t nm_agent_is_tased(const NmAgent* a);
 /* The burning character's state for its on-fire task: `burning` 0 once the flames are out (it calms and ends), `health` the host's (0: dies burning). Fails when no on-fire task runs. */
 NM_API int32_t nm_agent_set_on_fire(NmAgent* a, int32_t burning, float health);
 /* A punch, kick or melee weapon blow that doesn't kill: the blow's `impulse` (kg m/s) at `at`, then as the game picks for a melee hit: 7 in 10 a flinch from the attacker's head `head` (MELEE, or MELEE_PASIVE with `passive` 1 for timid characters), else a stagger keeping its balance, looking at the attacker. Health is the host's; for a kill send the blow and nm_agent_task_relax. */
@@ -250,7 +274,7 @@ NM_API int32_t nm_agent_task_relax(NmAgent* a, float stiffness, float damping);
 NM_API int32_t nm_agent_task_brace(NmAgent* a, const NmWorld* w, const char* set);
 /* TaskNMBrace's control, each frame while the car comes: `car` its matrix as 12 floats (x axis, y axis, z axis, place), `hit` where it will strike (or null), `look` the driver's head (or null: the car's place). */
 NM_API int32_t nm_agent_task_brace_control(NmAgent* a, const NmWorld* w, const float* car, const float* hit, const float* look);
-/* The game's car hit (a moving box's, nm_world_set_boxes, gathered over 8/60 s): call after each step. 1 when one is ready: `damage` the health it takes (RUNOVERBYCAR, from the ped's `health` and the push; the host takes it off), `hit_box` the box's index, and its reaction started (bracing, rolling up, staggering or limp, by the game's rules: `agility` its ped's, under 3 weak; `player_driver` 1 when the player drives it). 0: none (or too light to hurt). */
+/* The game's hit by a moving box (nm_world_set_boxes, gathered over 8/60 s): call after each step. 1 when one is ready: `damage` the health it takes (RUNOVERBYCAR, from the ped's `health` and the push; the host takes it off), `hit_box` the box's index, and its reaction started (bracing, rolling up, staggering or limp, by the game's rules: `agility` its ped's, under 3 weak; the box's kind, nm_world_set_box_kinds, a car without; `player_driver` 1 when the player drives it, for boxes without a kind). 0: none (or too light to hurt). */
 NM_API int32_t nm_agent_car_hit(NmAgent* a, const NmWorld* w, float health, int32_t agility, int32_t player_driver, float* damage, int32_t* hit_box);
 /* Delirium's dragged-from-the-car (the room's cab; the game's is an animation): both hands on box `hit_box`'s side at `at` (null: the nearest side, under his waist), balancing while it stands; once it moves he's dragged, legs kicking and writhing, till it's going 12 m/s or 6 s on, then lets go and falls (smartFall). Set the boxes first. */
 NM_API int32_t nm_agent_task_car_door(NmAgent* a, const NmWorld* w, int32_t hit_box, const float* at);
@@ -291,6 +315,8 @@ NM_API void nm_rig_destroy(NmRig* r);
 NM_API int32_t nm_rig_pose(const NmRig* r, const NmAgent* a, float* out);
 /* Takes over from your animation without a snap: puts every part where your skeleton's bones are now (`now`, each bone's world frame, 7 floats as in nm_rig_create), moving as they were (`before`: the frames `dt` seconds earlier, say last frame's; null: still). Call right after creating the agent and rig (or any time to put it back on the animation), before the first step. */
 NM_API int32_t nm_rig_take(const NmRig* r, NmAgent* a, const float* now, const float* before, float dt);
+/* Your animation's pose as the incoming pose (nm_agent_set_incoming_transforms, which nm_agent_follow aims at): `now` each bone's world frame, 7 floats as in nm_rig_create. Call it each frame while the animation plays under the ragdoll; null clears it. */
+NM_API int32_t nm_rig_incoming(const NmRig* r, NmAgent* a, const float* now);
 
 #ifdef __cplusplus
 }

@@ -57,7 +57,7 @@ impl ShotTask {
         };
         let (msgs, fire) = self.control(hit, now);
         let v = hit.vel;
-        let max = if v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)) < delirium_data::kv!(84) || hit.pos.z < 0.0 { delirium_data::kv!(61 int) } else { delirium_data::kv!(600 int) };
+        let max = if v.x.fma(v.x, v.y.fma(v.y, v.z * v.z)) < delirium_data::kv!(84) || hit.pos.z < 0.0 { delirium_data::kv!(61 int) } else { delirium_data::kv!(602 int) };
         let done = now > t0.wrapping_add(max);
         Step { msgs, fire, done }
     }
@@ -97,7 +97,7 @@ impl ShotTask {
         }
         p.extend([("crouching", B(false)), ("reachForWound", B(!melee)), ("fling", B(false)), ("chickenArms", B(false)),
                   ("maxSteps", I(if hit.few_steps { delirium_data::kv!(1 int) } else { st("shotMaxSteps", delirium_data::kv!(35)) as i32 })), ("loosenessAmount", F(st("shotLooseness", 1.0))),
-                  ("bodyStiffness", F(st("shotBodyStiffness", delirium_data::kv!(202)))), ("stableHandsAndNeck", B(st("shotStablizeHandsAndNeck", 0.0) != 0.0))]);
+                  ("bodyStiffness", F(st("shotBodyStiffness", delirium_data::kv!(203)))), ("stableHandsAndNeck", B(st("shotStablizeHandsAndNeck", 0.0) != 0.0))]);
         let mut lh = |n: &str, l: f32, h: f32| rand.float_in_range(st(&format!("{n}L"), l), st(&format!("{n}H"), h));
         p.push(("timeBeforeReachForWound", F(lh("shotTimeBeforeReachForWound", delirium_data::kv!(78), delirium_data::kv!(60)))));
         p.push(("timeBeforeCollapseWoundLeg", F(st("shotTimeBeforeCollapseWoundLeg", 1.0))));
@@ -128,7 +128,7 @@ impl ShotTask {
         let mut amount = st("shotLeanAmount", delirium_data::kv!(24));
         if amount > 0.0 {
             let d = flat(Vec3::ZERO - self.normal, hit.fwd);
-            let ms = rand.int_in_range(st("shotMaxTimeToStopLeanL", delirium_data::kv!(176)) as i32, st("shotMaxTimeToStopLeanH", delirium_data::kv!(601)) as i32);
+            let ms = rand.int_in_range(st("shotMaxTimeToStopLeanL", delirium_data::kv!(176)) as i32, st("shotMaxTimeToStopLeanH", delirium_data::kv!(603)) as i32);
             self.lean_until = (ms as u32).wrapping_add(now);
             if hit.running {
                 self.lean_until = self.lean_until.wrapping_add(st("additionalLeanTimeWhenRunning", delirium_data::kv!(82)) as i32 as u32);

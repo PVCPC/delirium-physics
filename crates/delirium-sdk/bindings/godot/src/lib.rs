@@ -1,7 +1,7 @@
 use godot::classes::{
-    BoxShape3D, CharacterBody3D, CollisionShape3D, ConcavePolygonShape3D, ISkeletonModifier3D, Node, Node3D,
-    PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, RigidBody3D, SkeletonModifier3D,
-    SphereShape3D,
+    AnimatableBody3D, BoxShape3D, CapsuleShape3D, CharacterBody3D, CollisionObject3D, CollisionShape3D, ConcavePolygonShape3D,
+    Engine, ISkeletonModifier3D, Node, Node3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings,
+    RigidBody3D, SkeletonModifier3D, SphereShape3D,
 };
 use godot::prelude::*;
 use delirium_physics::rig::*;
@@ -52,7 +52,56 @@ struct Shared { world: *mut NmWorld, scale: f32, at: Vector3, refs: i32 }
 thread_local! {
     static BASE: RefCell<Option<*mut NmBuild>> = const { RefCell::new(None) };
     static SHARED: RefCell<Vec<Shared>> = const { RefCell::new(Vec::new()) };
+    static CARS: RefCell<Vec<Car>> = const { RefCell::new(Vec::new()) };
+    static LEAD: RefCell<Lead> = RefCell::new(Lead::default());
 }
+
+#[derive(Default)]
+struct Lead { agents: Vec<(*mut NmWorld, *mut NmAgent)>, frame: u64, clock: f32, heard: HashMap<usize, Vec<(String, i32, f32)>> }
+
+impl Lead {
+    fn step(world: *mut NmWorld, agent: *mut NmAgent, seconds: f32) -> Vec<(String, i32, f32)> {
+        LEAD.with_borrow_mut(|l| {
+            if !l.agents.iter().any(|a| a.1 == agent) { l.agents.push((world, agent)); }
+            let frame = godot::classes::Engine::singleton().get_process_frames();
+            if l.frame != frame {
+                l.frame = frame;
+                l.clock = (l.clock + seconds).min(4.0 / 60.0);
+                while l.clock >= 1.0 / 60.0 {
+                    l.clock -= 1.0 / 60.0;
+                    let mut worlds: Vec<*mut NmWorld> = l.agents.iter().map(|a| a.0).collect();
+                    worlds.sort();
+                    worlds.dedup();
+                    for w in worlds {
+                        let these: Vec<*mut NmAgent> = l.agents.iter().filter(|a| a.0 == w).map(|a| a.1).collect();
+                        check(unsafe { nm_world_step_agents(w, these.as_ptr(), these.len() as i32, 1.0 / 60.0, 0) }, "step");
+                        for a in these { l.heard.entry(a as usize).or_default().extend(heard(a)); }
+                    }
+                }
+            }
+            l.heard.remove(&(agent as usize)).unwrap_or_default()
+        })
+    }
+
+    fn leave(agent: *mut NmAgent) {
+        LEAD.with_borrow_mut(|l| {
+            l.agents.retain(|a| a.1 != agent);
+            l.heard.remove(&(agent as usize));
+        });
+    }
+}
+
+fn heard(a: *mut NmAgent) -> Vec<(String, i32, f32)> {
+    (0..unsafe { nm_agent_feedback_count(a) }).filter_map(|i| {
+        let (mut buf, mut slot, mut value) = ([0u8; 64], 0, 0f32);
+        (unsafe { nm_agent_feedback_get(a, i, buf.as_mut_ptr() as *mut c_char, 64, &mut slot, &mut value) } >= 0).then(|| {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(64);
+            (String::from_utf8_lossy(&buf[..end]).into_owned(), slot, value)
+        })
+    }).collect()
+}
+
+struct Car { node: Gd<Node3D>, centre: Vector3, half: Vector3, last: Vector3, vel: Vector3, frame: u64, player: bool, kind: i32, brace: bool, knock_down: bool }
 static TUNED: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
 
 fn base() -> Option<*mut NmBuild> {
@@ -139,6 +188,10 @@ pub struct DeliriumRagdoll {
     custom_body: GString,
     #[export]
     overrides: GString,
+    #[export]
+    hit_health: f32,
+    #[export]
+    hit_agility: i32,
     set: Vec<(String, String, f32)>,
     build: *mut NmBuild,
     world: *mut NmWorld,
@@ -147,12 +200,17 @@ pub struct DeliriumRagdoll {
     bones: Vec<i32>,
     out: Vec<f32>,
     scale: f32,
-    clock: f32,
     told: bool,
     blend: f32,
     last: Vec<Quaternion>,
     last_hips: Vector3,
     hips_world: Transform3D,
+    follow: bool,
+    down: bool,
+    bracing: Option<InstanceId>,
+    brace_left: f32,
+    bodies: Vec<Gd<AnimatableBody3D>>,
+    look: f32,
 }
 
 #[godot_api]
@@ -160,14 +218,24 @@ impl ISkeletonModifier3D for DeliriumRagdoll {
     fn init(base: Base<SkeletonModifier3D>) -> Self {
         Self {
             base, character: None, get_up_blend: 0.4, get_up_after: 0.0, body: "Fitted".into(), body_seed: 0, body_variance: 1.5,
-            body_symmetric: true, custom_body: "1, 1, 1, 1, 1, 1, 77, 0".into(), overrides: GString::new(), set: Vec::new(), build: std::ptr::null_mut(), world: std::ptr::null_mut(),
-            agent: std::ptr::null_mut(), rig: std::ptr::null_mut(), bones: Vec::new(), out: Vec::new(), scale: 1.0, clock: 0.0,
-            told: false, blend: 0.0, last: Vec::new(), last_hips: Vector3::ZERO, hips_world: Transform3D::IDENTITY,
+            body_symmetric: true, custom_body: "1, 1, 1, 1, 1, 1, 77, 0".into(), overrides: GString::new(), hit_health: 200.0, hit_agility: 5, set: Vec::new(), build: std::ptr::null_mut(), world: std::ptr::null_mut(),
+            agent: std::ptr::null_mut(), rig: std::ptr::null_mut(), bones: Vec::new(), out: Vec::new(), scale: 1.0,
+            told: false, blend: 0.0, last: Vec::new(), last_hips: Vector3::ZERO, hips_world: Transform3D::IDENTITY, follow: false,
+            bracing: None, brace_left: 0.0, down: false, bodies: Vec::new(), look: 0.0,
         }
     }
 
     fn process_modification_with_delta(&mut self, delta: f64) {
         self.step(delta as f32);
+    }
+
+    fn physics_process(&mut self, _delta: f64) {
+        if self.bodies.is_empty() || self.agent.is_null() { return }
+        for (k, b) in self.bodies.iter_mut().enumerate() {
+            let (mut p, mut q) = ([0f32; 3], [0f32; 4]);
+            unsafe { nm_agent_get_part_transform(self.agent, k as i32, p.as_mut_ptr(), q.as_mut_ptr()) };
+            b.set_global_transform(Transform3D::new(Basis::from_quaternion(gd_turn(&q)), gd(&p)));
+        }
     }
 
     fn exit_tree(&mut self) {
@@ -179,6 +247,100 @@ impl ISkeletonModifier3D for DeliriumRagdoll {
 impl DeliriumRagdoll {
     #[signal]
     fn lying_still(face_up: bool, facing: Vector3);
+
+    #[signal]
+    fn car_hit(damage: f32, car: Gd<Node3D>);
+
+    #[signal]
+    fn feedback(name: GString, slot: i32, value: f32);
+
+    #[signal]
+    fn fell();
+
+    #[func]
+    fn get_state(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let a = self.agent;
+        d.set("ragdolled", !a.is_null());
+        if a.is_null() { return d }
+        let (mut p, mut v, mut head, mut up) = ([0f32; 3], [0f32; 3], [0f32; 3], 0);
+        unsafe {
+            nm_agent_get_com(a, p.as_mut_ptr(), v.as_mut_ptr());
+            for (k, f) in [("balancing", nm_agent_is_balancing as unsafe extern "C" fn(*const NmAgent) -> i32), ("fallen", nm_agent_has_fallen),
+                           ("catching_fall", nm_agent_is_catching_fall), ("rolled_up", nm_agent_is_rolled_up), ("relaxing", nm_agent_is_relaxing),
+                           ("dead", nm_agent_is_dead), ("in_water", nm_agent_in_water), ("burning", nm_agent_is_burning), ("tased", nm_agent_is_tased)] {
+                d.set(k, f(a) == 1);
+            }
+            d.set("tackling", nm_agent_tackle_state(a));
+            d.set("lying_for", nm_agent_get_lying(a, head.as_mut_ptr(), &mut up));
+            d.set("mass", nm_agent_get_mass(a));
+        }
+        d.set("centre", gd(&p));
+        d.set("velocity", gd(&v));
+        d
+    }
+
+    #[func]
+    fn register_car(car: Gd<Node3D>, size: Vector3, player_driven: bool) {
+        Self::register_mover(car, Self::MOVER_CAR, size, player_driven, true, true, Vector3::ZERO);
+    }
+
+    #[constant]
+    const MOVER_CAR: i32 = 0;
+    #[constant]
+    const MOVER_OBJECT: i32 = 1;
+    #[constant]
+    const MOVER_TRAIN: i32 = 3;
+
+    #[func]
+    fn register_mover(car: Gd<Node3D>, kind: i32, size: Vector3, player_driven: bool, brace: bool, knock_down: bool, centre: Vector3) {
+        if ![Self::MOVER_CAR, Self::MOVER_OBJECT, Self::MOVER_TRAIN].contains(&kind) {
+            godot_warn!("Delirium: register_mover {}: kind {kind} isn't a MOVER_*", car.get_name());
+            return;
+        }
+        Self::unregister_car(car.clone());
+        let (mut centre, mut half) = (centre, size / 2.0);
+        if size == Vector3::ZERO {
+            let shape = car.find_children_ex("*").type_("CollisionShape3D").owned(false).done().iter_shared()
+                .filter_map(|n| n.try_cast::<CollisionShape3D>().ok())
+                .find_map(|cs| cs.get_shape().and_then(|sh| sh.try_cast::<BoxShape3D>().ok()).map(|b| (cs.get_global_position(), b.get_size())));
+            let Some((at, sz)) = shape else {
+                godot_warn!("Delirium: register_car {}: no BoxShape3D to size it by: give a size", car.get_name());
+                return;
+            };
+            (centre, half) = (car.get_global_transform().affine_inverse() * at, sz / 2.0);
+        }
+        let last = car.get_global_position();
+        CARS.with_borrow_mut(|cs| cs.push(Car { node: car, centre, half, last, vel: Vector3::ZERO, frame: Engine::singleton().get_process_frames(),
+                                                player: player_driven, kind, brace, knock_down }));
+    }
+
+    #[func]
+    fn unregister_car(car: Gd<Node3D>) {
+        CARS.with_borrow_mut(|cs| cs.retain(|c| c.node != car));
+    }
+
+    #[func]
+    fn car_coming(&mut self, car: Gd<Node3D>) -> bool {
+        if !self.take() { return false }
+        if self.cars(0.0, Some(&car)) < 0 {
+            godot_warn!("Delirium: car_coming: {} isn't registered (register_car)", car.get_name());
+            return false;
+        }
+        (self.bracing, self.brace_left) = (Some(car.instance_id()), 3.0);
+        check(unsafe { nm_agent_task_brace(self.agent, self.world, std::ptr::null()) }, "car_coming")
+    }
+
+    #[func]
+    fn car_door(&mut self, car: Gd<Node3D>) -> bool {
+        if !self.take() { return false }
+        let k = self.cars(0.0, Some(&car));
+        if k < 0 {
+            godot_warn!("Delirium: car_door: {} isn't registered (register_car)", car.get_name());
+            return false;
+        }
+        check(unsafe { nm_agent_task_car_door(self.agent, self.world, k, std::ptr::null()) }, "car_door")
+    }
 
     #[func]
     fn ragdoll(&mut self) -> bool { self.take() }
@@ -228,8 +390,61 @@ impl DeliriumRagdoll {
     }
 
     #[func]
+    fn tase(&mut self, seconds: f32) -> bool {
+        self.take() && check(unsafe { nm_agent_tase(self.agent, self.world, seconds) }, "tase")
+    }
+
+    #[func]
+    fn react(&mut self, line: GString) -> bool {
+        self.take() && check(unsafe { nm_msg_send_text(self.agent, self.world, c(&line.to_string()).as_ptr()) }, "react")
+    }
+
+    #[func]
     fn high_fall(&mut self) -> bool {
         self.take() && check(unsafe { nm_agent_task_high_fall(self.agent, self.world, std::ptr::null(), 0) }, "high_fall")
+    }
+
+    #[func]
+    fn catch_fall(&mut self) -> bool {
+        self.take() && check(unsafe { nm_agent_task_catch_fall(self.agent, std::ptr::null()) }, "catch_fall")
+    }
+
+    #[func]
+    fn fall_down(&mut self, heading: f32) -> bool {
+        if !self.take() { return false }
+        let r = unsafe { nm_agent_task_fall_down(self.agent, self.world, heading) };
+        check(r, "fall_down") && r == 1
+    }
+
+    #[func]
+    fn grab(&mut self, left: Vector3, left_normal: Vector3, right: Vector3, right_normal: Vector3, hold: f32) -> bool {
+        if !self.take() { return false }
+        let hand = |p: Vector3, n: Vector3| (n != Vector3::ZERO).then(|| [nm(p), nm(n.normalized())].concat());
+        let (l, r) = (hand(left, left_normal), hand(right, right_normal));
+        let ptr = |h: &Option<Vec<f32>>| h.as_ref().map_or(std::ptr::null(), |h| h.as_ptr());
+        check(unsafe { nm_agent_task_grab(self.agent, self.world, ptr(&l), ptr(&r), hold) }, "grab")
+    }
+
+    #[func]
+    fn jump_roll(&mut self) -> bool {
+        self.take() && check(unsafe { nm_agent_task_jump_roll(self.agent, self.world) }, "jump_roll")
+    }
+
+    #[func]
+    fn flinch(&mut self, from: Vector3) -> bool {
+        self.take() && check(unsafe { nm_agent_task_flinch(self.agent, self.world, std::ptr::null(), nm(from).as_ptr()) }, "flinch")
+    }
+
+    #[func]
+    fn tackle(&mut self, mut target: Gd<DeliriumRagdoll>, low: bool, keep: bool) -> bool {
+        if target.instance_id() == self.base().instance_id() { return false }
+        let them = { let mut t = target.bind_mut(); if t.take() { t.agent } else { std::ptr::null_mut() } };
+        !them.is_null() && self.take() && check(unsafe { nm_agent_task_tackle(self.agent, self.world, them, low as i32, keep as i32) }, "tackle")
+    }
+
+    #[func]
+    fn set_water(&mut self, level: f32) -> bool {
+        !self.agent.is_null() && check(unsafe { nm_agent_set_water(self.agent, self.world, level) }, "set_water")
     }
 
     #[func]
@@ -243,7 +458,8 @@ impl DeliriumRagdoll {
         let at = nm(point);
         let part = unsafe { nm_agent_nearest_part(self.agent, at.as_ptr()) };
         if part <= 0 || unsafe { nm_agent_is_severed(self.agent, part) } == 1 { return false }
-        check(unsafe { nm_agent_sever(self.agent, self.world, part, at.as_ptr(), nm(impulse).as_ptr()) }, "sever")
+        let cut = check(unsafe { nm_agent_sever(self.agent, self.world, part, at.as_ptr(), nm(impulse).as_ptr()) }, "sever");
+        cut
     }
 
     #[func]
@@ -315,6 +531,56 @@ impl DeliriumRagdoll {
         }
         let hit = space.intersect_ray(&q);
         hit.get("position").and_then(|v| v.try_to::<Vector3>().ok()).map_or(at.y, |p| p.y)
+    }
+
+    fn cars(&mut self, seconds: f32, car: Option<&Gd<Node3D>>) -> i32 {
+        let frame = Engine::singleton().get_process_frames();
+        let here = self.base().get_skeleton().map_or(Vector3::ZERO, |s| s.get_global_position());
+        let mut coming = None;
+        let boxes: Vec<f32> = CARS.with_borrow_mut(|cs| {
+            cs.retain(|c| c.node.is_instance_valid());
+            cs.iter_mut().flat_map(|c| {
+                let t = c.node.get_global_transform();
+                if c.frame != frame {
+                    if seconds > 0.0 { c.vel = (t.origin - c.last) / seconds }
+                    (c.last, c.frame) = (t.origin, frame);
+                }
+                if c.knock_down && c.vel.length() > 2.0 {
+                    let l = t.affine_inverse() * (here - c.vel * 0.25) - c.centre;
+                    if l.x.abs() < c.half.x + 0.3 && l.y.abs() < c.half.y + 0.3 && l.z.abs() < c.half.z + 0.3 {
+                        coming = Some((c.node.instance_id(), c.brace));
+                    }
+                }
+                [nm(t * c.centre).as_slice(), &nm_turn(t.basis.get_quaternion()), &[c.half.x, c.half.z, c.half.y], &nm(c.vel)].concat()
+            }).collect()
+        });
+        let n = (boxes.len() / 13) as i32;
+        if let Some((id, brace)) = coming.filter(|_| self.agent.is_null()) {
+            if self.take() && brace {
+                (self.bracing, self.brace_left) = (Some(id), 3.0);
+                check(unsafe { nm_agent_task_brace(self.agent, self.world, std::ptr::null()) }, "brace");
+            }
+        }
+        if !self.agent.is_null() && n > 0 {
+            check(unsafe { nm_world_set_boxes(self.world, boxes.as_ptr(), n) }, "set_boxes");
+            let kinds: Vec<i32> = CARS.with_borrow(|cs| cs.iter().map(|c| c.kind | if c.player { NM_HIT_PLAYER } else { 0 }).collect());
+            check(unsafe { nm_world_set_box_kinds(self.world, kinds.as_ptr(), n) }, "set_box_kinds");
+            if let Some(id) = self.bracing {
+                self.brace_left -= seconds;
+                let at = CARS.with_borrow(|cs| cs.iter().find(|c| c.node.instance_id() == id).map(|c| (c.node.get_global_transform(), c.centre)));
+                match at {
+                    Some((t, centre)) if self.brace_left > 0.0 => {
+                        let m = [nm(t.basis.col_a()), nm(-t.basis.col_c()), nm(t.basis.col_b()), nm(t * centre)].concat();
+                        check(unsafe { nm_agent_task_brace_control(self.agent, self.world, m.as_ptr(), std::ptr::null(), std::ptr::null()) }, "brace");
+                    }
+                    _ => self.bracing = None,
+                }
+            }
+        }
+        match car {
+            Some(car) => CARS.with_borrow(|cs| cs.iter().position(|c| c.node == *car).map_or(-1, |k| k as i32)),
+            None => n,
+        }
     }
 
     fn take(&mut self) -> bool {
@@ -442,6 +708,11 @@ impl DeliriumRagdoll {
         }
         let strength = setting_f("strength", 1.0);
         if strength != 1.0 { check(unsafe { nm_agent_set_strength(self.agent, strength) }, "strength"); }
+        if setting_b("arms_out_early", false) {
+            let m = c("braceForImpact");
+            check(unsafe { nm_agent_set_override(self.agent, m.as_ptr(), c("braceDistance").as_ptr(), 1.3) }, "arms_out_early");
+            check(unsafe { nm_agent_set_override(self.agent, m.as_ptr(), c("targetPredictionTime").as_ptr(), 0.45) }, "arms_out_early");
+        }
         for (m, p, v) in parse_overrides(&self.overrides.to_string()).into_iter().chain(self.set.iter().cloned()) {
             check(unsafe { nm_agent_set_override(self.agent, c(&m).as_ptr(), c(&p).as_ptr(), v) }, "overrides");
         }
@@ -452,11 +723,27 @@ impl DeliriumRagdoll {
             return false;
         }
         check(unsafe { nm_rig_take(self.rig, self.agent, now.as_ptr(), std::ptr::null(), 0.0) }, "rig_take");
+        if setting_b("recentre_joints", false) { unsafe { nm_agent_recentre_joint(self.agent, -1) }; }
+        for h in setting_s("hold", "").split(',').filter(|h| !h.trim().is_empty()) {
+            let v: Vec<f32> = h.split_once('=').map(|(_, v)| v.split(':').filter_map(|x| x.trim().parse().ok()).collect()).unwrap_or_default();
+            match (h.split_once('='), &v[..]) {
+                (Some((m, _)), &[k, d, g]) => { check(unsafe { nm_agent_hold(self.agent, c(m.trim()).as_ptr(), k, d, g) }, "hold"); }
+                _ => godot_warn!("Delirium: hold: \"{}\" isn't mask=stiffness:damping:gravity", h.trim()),
+            }
+        }
+        self.follow = false;
+        for f in setting_s("follow", "").split(',').filter(|f| !f.trim().is_empty()) {
+            match f.split_once('=').map(|(m, w)| (m.trim(), w.trim().parse::<f32>())) {
+                Some((m, Ok(w))) => self.follow |= check(unsafe { nm_agent_follow(self.agent, c(m).as_ptr(), w) }, "follow"),
+                _ => godot_warn!("Delirium: follow: \"{}\" isn't mask=weight", f.trim()),
+            }
+        }
         let owner = self.owner();
         let vel = owner.clone().and_then(|o| o.try_cast::<CharacterBody3D>().ok()).map(|c| c.get_velocity())
             .or_else(|| owner.and_then(|o| o.try_cast::<RigidBody3D>().ok()).map(|r| r.get_linear_velocity()))
             .unwrap_or(Vector3::ZERO);
         if vel != Vector3::ZERO { check(unsafe { nm_agent_add_velocity(self.agent, nm(vel).as_ptr()) }, "add_velocity"); }
+        if setting_b("engine_physics", false) { self.build_bodies(); }
         self.out = vec![0.0; n * 4 + 3];
         if setting_b("balance", true) {
             let (name, start) = (c("bodyBalance"), c("start"));
@@ -467,7 +754,6 @@ impl DeliriumRagdoll {
             check(unsafe { nm_msg_send(self.agent, self.world) }, "bodyBalance");
         }
         self.told = false;
-        self.clock = 0.0;
         self.blend = 0.0;
         self.base_mut().set_influence(1.0);
         godot_print!("Delirium: ragdolled ({n} bones, scale {:.2})", self.scale);
@@ -484,11 +770,36 @@ impl DeliriumRagdoll {
             s.set_bone_pose_position(self.bones[0], self.last_hips);
             return;
         }
+        let ncars = self.cars(seconds, None);
         if self.agent.is_null() { return }
-        self.clock = (self.clock + seconds).min(4.0 / 60.0);
-        while self.clock >= 1.0 / 60.0 {
-            self.clock -= 1.0 / 60.0;
-            check(unsafe { nm_agent_step(self.agent, self.world, 1.0 / 60.0) }, "step");
+        if self.follow {
+            let g = s.get_global_transform();
+            let now: Vec<f32> = self.bones.iter().flat_map(|&b| { let p = g * s.get_bone_global_pose(b); nm(p.origin).into_iter().chain(nm_turn(turn(&p))) }).collect();
+            check(unsafe { nm_rig_incoming(self.rig, self.agent, now.as_ptr()) }, "rig_incoming");
+        }
+        if !self.bodies.is_empty() {
+            self.look -= seconds;
+            if self.look <= 0.0 {
+                self.look = 0.25;
+                self.movers_near();
+            }
+        }
+        let said = Lead::step(self.world, self.agent, seconds);
+        self.say(said);
+        if self.agent.is_null() { return }
+        let down = unsafe { nm_agent_has_fallen(self.agent) } == 1;
+        if down && !self.down { self.signals().fell().emit(); }
+        self.down = down;
+        if ncars > 0 {
+            let here = s.get_global_position();
+            let player = CARS.with_borrow(|cs| cs.iter().min_by(|a, b| a.last.distance_squared_to(here).total_cmp(&b.last.distance_squared_to(here))).is_some_and(|c| c.player));
+            let (mut damage, mut k) = (0f32, -1);
+            if unsafe { nm_agent_car_hit(self.agent, self.world, self.hit_health, self.hit_agility, player as i32, &mut damage, &mut k) } == 1 {
+                self.bracing = None;
+                if let Some(car) = CARS.with_borrow(|cs| cs.get(k as usize).map(|c| c.node.clone())) {
+                    self.signals().car_hit().emit(damage, &car);
+                }
+            }
         }
         let n = self.bones.len();
         let placed = unsafe { nm_rig_pose(self.rig, self.agent, self.out.as_mut_ptr()) } == 0;
@@ -522,7 +833,77 @@ impl DeliriumRagdoll {
         }
     }
 
+    fn say(&mut self, said: Vec<(String, i32, f32)>) {
+        for (name, slot, value) in said {
+            self.signals().feedback().emit(&GString::from(name.as_str()), slot, value);
+        }
+    }
+
+    fn build_bodies(&mut self) {
+        let n = unsafe { nm_agent_part_count(self.agent) } as usize;
+        let Some(owner) = self.owner() else { return };
+        let Some(mut parent) = owner.get_parent() else { return };
+        let mut root = Node3D::new_alloc();
+        root.set_name(&format!("{} ragdoll (Delirium)", owner.get_name()));
+        parent.add_child(&root);
+        for k in 0..n {
+            let (mut radius, mut half, mut mass, mut inertia, mut half_box) = (0f32, 0f32, 0f32, [0f32; 3], [0f32; 3]);
+            unsafe { nm_build_part_info(self.build, k as i32, std::ptr::null_mut(), &mut radius, &mut half, std::ptr::null_mut()) };
+            let kind = unsafe { nm_agent_get_part_body(self.agent, k as i32, &mut mass, inertia.as_mut_ptr(), half_box.as_mut_ptr()) };
+            let mut b = AnimatableBody3D::new_alloc();
+            b.set_name(&format!("part {k}"));
+            b.set_sync_to_physics(false);
+            let mut cs = CollisionShape3D::new_alloc();
+            if kind == 2 {
+                let mut shape = BoxShape3D::new_gd();
+                shape.set_size(Vector3::new(half_box[0], half_box[2], half_box[1]) * 2.0);
+                cs.set_shape(&shape);
+            } else {
+                let mut shape = CapsuleShape3D::new_gd();
+                shape.set_radius(radius * self.scale);
+                shape.set_height(2.0 * (half + radius) * self.scale);
+                cs.set_shape(&shape);
+                cs.set_basis(Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2));
+            }
+            b.add_child(&cs);
+            root.add_child(&b);
+            let (mut p, mut q) = ([0f32; 3], [0f32; 4]);
+            unsafe { nm_agent_get_part_transform(self.agent, k as i32, p.as_mut_ptr(), q.as_mut_ptr()) };
+            b.set_global_transform(Transform3D::new(Basis::from_quaternion(gd_turn(&q)), gd(&p)));
+            self.bodies.push(b);
+        }
+        let own: Vec<Gd<CollisionObject3D>> = owner.clone().upcast::<Node>().find_children_ex("*").type_("CollisionObject3D").owned(false).done()
+            .iter_shared().filter_map(|c| c.try_cast::<CollisionObject3D>().ok()).chain(owner.try_cast::<CollisionObject3D>().ok()).collect();
+        for a in 0..n {
+            for b in 0..n { if a != b { let o = self.bodies[b].clone(); self.bodies[a].add_collision_exception_with(&o); } }
+            for o in &own { self.bodies[a].add_collision_exception_with(o); }
+        }
+        self.look = 0.0;
+    }
+
+    fn movers_near(&self) {
+        let Some(s) = self.base().get_skeleton() else { return };
+        let Some(mut space) = s.get_world_3d().and_then(|w| w.get_direct_space_state()) else { return };
+        let mut sphere = SphereShape3D::new_gd();
+        sphere.set_radius(5.0 * self.scale);
+        let mut q = PhysicsShapeQueryParameters3D::new_gd();
+        q.set_shape(&sphere);
+        q.set_transform(Transform3D::new(Basis::IDENTITY, s.get_global_position()));
+        for h in space.intersect_shape_ex(&q).max_results(64).done().iter_shared() {
+            let Some(body) = h.get("collider").and_then(|v| v.try_to::<Gd<Node>>().ok()).and_then(|n| n.try_cast::<RigidBody3D>().ok()) else { continue };
+            if CARS.with_borrow(|cs| cs.iter().any(|c| c.node.instance_id() == body.instance_id())) { continue }
+            let Some((centre, size)) = body.get_children().iter_shared().filter_map(|c| c.try_cast::<CollisionShape3D>().ok()).find_map(|cs| {
+                let bounds = cs.get_shape()?.get_debug_mesh()?.get_aabb();
+                Some((cs.get_position() + bounds.center(), bounds.size))
+            }) else { continue };
+            Self::register_mover(body.upcast(), Self::MOVER_OBJECT, size, false, false, false, centre);
+        }
+    }
+
     fn release(&mut self) {
+        Lead::leave(self.agent);
+        if let Some(mut b) = self.bodies.first().and_then(|b| b.get_parent()) { b.queue_free(); }
+        self.bodies.clear();
         unsafe {
             if !self.rig.is_null() { nm_rig_destroy(self.rig) }
             if !self.agent.is_null() { nm_agent_destroy(self.agent) }

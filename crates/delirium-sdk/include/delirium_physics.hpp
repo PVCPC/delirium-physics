@@ -146,6 +146,7 @@ public:
     }
     void on_fire(const World& w, float health) { check(nm_agent_task_on_fire(get(), w.get(), health)); }
     void set_on_fire(bool burning, float health) { check(nm_agent_set_on_fire(get(), burning, health)); }
+    void tase(const World& w, float seconds) { check(nm_agent_tase(get(), w.get(), seconds)); }
     void high_fall(const World& w, bool player = false) { check(nm_agent_task_high_fall(get(), w.get(), nullptr, player)); }
     void jump_roll(const World& w) { check(nm_agent_task_jump_roll(get(), w.get())); }
     /// Pushed off a ledge along `heading` (0-1 of a turn; negative: random): false when there is none that way.
@@ -168,6 +169,7 @@ public:
     bool in_water() const { return nm_agent_in_water(get()) == 1; }
     /// Burning (set on fire, or caught from a burning body it touched).
     bool is_burning() const { return nm_agent_is_burning(get()) == 1; }
+    bool is_tased() const { return nm_agent_is_tased(get()) == 1; }
     /// Its muscles times `k` (0.1-10; 1 as made): 1.5-2 for a movie giant or a tough enemy.
     void set_strength(float k) { check(nm_agent_set_strength(get(), k)); }
     void relax(float stiffness = -1.f, float damping = -1.f) { check(nm_agent_task_relax(get(), stiffness, damping)); }
@@ -178,6 +180,13 @@ public:
     void set_dead(bool d) { check(nm_agent_set_dead(get(), d)); }
     bool should_get_up(float after) const { return nm_agent_should_get_up(get(), after) == 1; }
 };
+
+/// The agents of `w` stepped at once over `threads` threads (0: one per core; nm_world_step_agents).
+inline void step_all(const World& w, const std::vector<Agent*>& agents, float dt = 1.f / 60, int threads = 0) {
+    std::vector<NmAgent*> a;
+    for (Agent* x : agents) a.push_back(x->get());
+    check(nm_world_step_agents(w.get(), a.data(), (int32_t)a.size(), dt, threads));
+}
 
 /// Your skeleton on an agent (nm_rig_*): made once with both standing in the same pose, then `pose` each frame
 /// gives every bone its rotation under its parent (set only those) and the hips bone its world place.

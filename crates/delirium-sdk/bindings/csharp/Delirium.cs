@@ -18,6 +18,10 @@ namespace Delirium
         public const int NM_E_FOLLOW = -8;
         public const int NM_MODE_LEAD = 0;
         public const int NM_MODE_FOLLOW = 1;
+        public const int NM_HIT_CAR = 0;
+        public const int NM_HIT_OBJECT = 1;
+        public const int NM_HIT_TRAIN = 3;
+        public const int NM_HIT_PLAYER = 16;
         public const int NM_KIND_FLOAT = 0;
         public const int NM_KIND_INT = 1;
         public const int NM_KIND_BOOL = 2;
@@ -63,6 +67,9 @@ namespace Delirium
         /// <summary>The world's moving boxes (cars, platforms), in place of the last set: `count` boxes of 13 floats each, centre (3), rotation (quaternion x y z w), half size (3), velocity (3). The parts can't go into them and meet them at the box's velocity, with a car body's friction (0.2). The host moves them: set them again before each step. A box's instanceIndex (braceForImpact's, grab's) is its place in the array, its frame the box's centre and rotation. A box turns only once nm_world_set_box_spins says so (set the boxes first: they come with no spin).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_world_set_boxes(IntPtr w, float[] boxes, int count);
+        /// <summary>The boxes' kinds, `count` ints (their number, else NM_E_ARG) for the boxes of the last nm_world_set_boxes: what hit a body in nm_agent_car_hit, for the game's damage and reaction: NM_HIT_CAR (the default), NM_HIT_OBJECT (a crate, a door, debris: a hard hit unless he stands on it), NM_HIT_TRAIN (the train's own hurt, ahead of its front), each plus NM_HIT_PLAYER when the player drives or throws it. Kept while the boxes' number stays the same.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_world_set_box_kinds(IntPtr w, int[] kinds, int count);
         /// <summary>The boxes' spins (rad/s about their centres, world axes), `count` x 3 floats, for the boxes of the last nm_world_set_boxes (`count` is their number, else NM_E_ARG): a turning box's surface moves at the box's velocity plus the spin crossed with the point's offset from its centre. Set them again with the boxes before each step.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_world_set_box_spins(IntPtr w, float[] spins, int count);
@@ -97,7 +104,7 @@ namespace Delirium
         /// <summary>The Playroom's Custom body: the game man (`build` as nm_build_load gives it) with his legs, arms, trunk height, width (shoulders, hips and thickness), head and neck (nm_build_fit_neck) each that many times his, weighing `kg`; `height` (m) over 0: all of it grown or shrunk to that. His sizes: 1, 1, 1, 1, 1, 1, 77, 0 (close to him, not bit for bit; use `build` itself for him). The Brawler (nm_build_named): 0.45, 0.7, 1, 1.4, 1.5, 1, 80, 0. A new build; free it.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr nm_build_sized(IntPtr build, float legs, float arms, float trunk, float width, float head, float neck, float kg, float height);
-        /// <summary>The Playroom's body `name` of the game man (`build` as nm_build_load gives it): Small, Average (him), Large, Lanky, Fat, Stocky, Waddler, Guard, Brute or Brawler (any case). Odd ones may need nm_build_tune to stand. A new build; free it. Null for another name.</summary>
+        /// <summary>The Playroom's body `name` of the game man (`build` as nm_build_load gives it): Small, Average (him), Large, Lanky, Fat, Stocky, Waddler, Guard, Brute, Brawler or Bruiser (any case). Odd ones may need nm_build_tune to stand. A new build; free it. Null for another name.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr nm_build_named(IntPtr build, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
         /// <summary>The Playroom's Random body: each of the game man's (`build`) bones and parts' thickness drawn at random, `variance` 1 to 4 (the room's slider, 1.5 its default; 4: bones 0.2 to 4 times his), the right side the left's if `symmetric` isn't 0. The same `seed`, the same body. Odd ones may need nm_build_tune to stand. A new build; free it.</summary>
@@ -130,7 +137,7 @@ namespace Delirium
         /// <summary>Host metres per NM metre of the build's agents (nm_build_fit_sized), 1 for any other build; 0 on error.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern float nm_build_get_scale(IntPtr b);
-        /// <summary>Part `i`'s frame in the build's pose (world, as dumped).</summary>
+        /// <summary>Part `i`'s frame in the build's pose (world, as dumped). An agent made from the build starts in this same pose, moved and turned as a whole to where nm_agent_create puts it: every part by the same shift and yaw, so the part offsets a host takes from these match nm_agent_get_part_transform's.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_build_part_frame(IntPtr b, int i, float[] pos, float[] rot);
         /// <summary>An agent standing at `pos` (its feet's level), facing `yaw` radians about Z from the build's pose; `seed` 0..1 its random stream's start. The build's lowest point (its lowest capsule or foot box, not a joint) is put on `pos`'s height: a host's rig placed by its bind pose's joints stands off it by the feet's thickness (a few cm).</summary>
@@ -141,6 +148,9 @@ namespace Delirium
         /// <summary>One step of `dt` s (1/60 is NM's own; longer runs several). FOLLOW: every part's state must have been set since the last step, else NM_E_FOLLOW and nothing moves; NM reads that state and the drives are for the host's next step. LEAD: each step's physics runs on what NM set the step before (the game's order), so a new agent's first 1/60 s is NM's alone: its body (and a message's impulse) first moves in the step after. LEAD agents stepped in the same world push each other (each meets the others' parts as they were last stepped). LEAD: a frame under 1/60 s is kept for the next (the body moves at 60 steps a second at most; draw it between them if wanted). A host stepping with wall-clock dt near 1/60 gets 0 steps some frames and 2 the next (a stutter): pass 1/60 each frame instead.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_step(IntPtr a, IntPtr w, float dt);
+        /// <summary>nm_agent_step on `count` agents of world `w` at once, spread over `threads` threads (0: one per core the machine has; 1: in turn on this one). Each meets the others' parts as they were before this call (so the outcome doesn't hang on the threads' timing). The agents must all be different. Returns the first agent's error, if any.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_world_step_agents(IntPtr w, IntPtr[] agents, int count, float dt, int threads);
         /// <summary>NM_MODE_LEAD: NM's own physics moves the body; the host reads the parts' transforms onto a puppet. NM_MODE_FOLLOW: the host's ragdoll is the body; each step it sets the parts' states, steps, and applies the parts' drives (nm_agent_get_part_drive[s]) to its own bodies.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_set_mode(IntPtr a, int mode);
@@ -196,9 +206,15 @@ namespace Delirium
         /// <summary>Every part's velocity changed by `dv` (a vehicle's hit, a jump).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_add_velocity(IntPtr a, float[] dv);
-        /// <summary>Part `i`'s joint to its parent, as NM's physics has it (for a host building a matching ragdoll): returns 0 for the root (no joint), 1 a ball (leans about its frame's X and Y, twists about Z), 2 a hinge (about the frame's Z). `parent` its parent part; `pivot` (world, now); `frame` the joint's frame (world, now, as the parent holds it); `limits` a ball's lean X, lean Y and twist half ranges about the frame's centre, or a hinge's low and high (rad); `armature` its armature in the last step (kg m^2 per axis: the original engine's effector stiffness, changing with the pose and the stiffness NM sets; FLT_MAX locked). A FOLLOW host's joint needs the same armature for the drives to fit it.</summary>
+        /// <summary>Part `i`'s joint to its parent, as NM's physics has it (for a host building a matching ragdoll): returns 0 for the root (no joint), 1 a ball (leans about its frame's X and Y, twists about Z), 2 a hinge (about the frame's Z). `parent` its parent part; `pivot` (world, now); `frame` the joint's frame (world, now, as the parent holds it); `limits` NM's: a ball's swing half ranges about the frame's X and Y (an elliptical cone) and its twist's about Z, or a hinge's low and high (rad); `armature` its armature in the last step (kg m^2 per axis: the original engine's effector stiffness, changing with the pose and the stiffness NM sets; FLT_MAX locked). A FOLLOW host's joint needs the same armature for the drives to fit it.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_get_joint(IntPtr a, int i, out int parent, float[] pivot, float[] frame, float[] limits, float[] armature);
+        /// <summary>Part `i`'s body as NM's physics has it, for a FOLLOW host's to match: `mass` (kg), `inertia` about its frame's axes (kg m^2), `box` a box's half extents on them (the feet) or zeros. Returns 1 a capsule (nm_build_part_info's radius and half length, along its frame's Y), 2 a box.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_get_part_body(IntPtr a, int i, float[] mass, float[] inertia, float[] box);
+        /// <summary>Every part's place with each joint at its zero (its frame as the parent holds it = as the child does), the root where it is now: `pos` 3 and `rot` 4 floats a part (world), `parts` of them. An engine's joints take their zero from the pose they're made in: a FOLLOW host makes them with its bodies here, then moves the bodies to where NM has them.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_get_zero_pose(IntPtr a, float[] pos, float[] rot, int parts);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_message_count();
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
@@ -240,12 +256,24 @@ namespace Delirium
         /// <summary>The Playroom's Parameters tab for one agent: every `behaviour` message it gets from now on (yours, and those the nm_agent_task_* send) carries `param` as `value` in place of its own (bools 0 or 1, whole numbers rounded). Only the number, whole-number and on/off params the port acts on (nm_message_param_doc); not the hit's part (bodyPart, partIndex, hitPart), which each hit sets. Again for the same param: the new value.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_set_override(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string behaviour, [MarshalAs(UnmanagedType.LPUTF8Str)] string param, float value);
+        /// <summary>Part `i`'s joint re-centred on the pose the agent holds now: its range's middle where it is. -1: every joint. For a rig whose start pose lies outside the joints' ranges: they snap on the first step (Homer's own rest pose: the spine, neck, head and arms, up to 48 degrees; the shoulder up at the ear, the head folded onto it). Call it after nm_agent_create, before the first step. It changes the joints for good (not the game's). Returns how many it changed.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_recentre_joint(IntPtr a, int i);
+        /// <summary>Holds the joints in `mask` (setStiffness's: "fb" the whole body, "ua" upper arms, ...) at least this stiff, damped and gravity-opposing (0..1) every step, whatever the behaviours set: a host's floor under the tone (a shot, catchFall, writhe and relax set every joint each tick, so a setStiffness doesn't last). Again for the same mask: the new floor; stiffness 0 drops it. Not the game's.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_hold(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string mask, float stiffness, float damping, float oppose_gravity);
+        /// <summary>Aims the joints in `mask` (setStiffness's masks) at the incoming pose (nm_agent_set_incoming_transforms) every step, after the behaviours: `weight` 1 all the way, 0.5 halfway between theirs and yours. Your animation on some joints (a boxer's guard, a held weapon) while NM moves the rest. Pair it with nm_agent_hold to give those joints the strength to get there. Nothing without an incoming pose. Again for the same mask: the new weight; 0 drops it. Not the game's.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_follow(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string mask, float weight);
         /// <summary>Drops all of the agent's nm_agent_set_override values: its messages go out as sent again.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_clear_overrides(IntPtr a);
         /// <summary>Sends the message built since nm_msg_begin, as the game's NM takes it: a behaviour starts with the bool "start" set to 1, stops with 0 and only takes the params without it; the one-shots (applyImpulse, setStiffness, the leans, ...) act either way. Returns how many of its params the port accepted without acting on them.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_msg_send(IntPtr a, IntPtr w);
+        /// <summary>A whole message as one line of text, the Playroom console's: the name, then name=value params (true/false or 1/0, numbers, vectors as x,y,z in NM's space: Z up, the agent's metres), e.g. "rollUp start=true stiffness=8". Sends it as nm_msg_begin + nm_msg_set_* + nm_msg_send would; returns what nm_msg_send does.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_msg_send_text(IntPtr a, IntPtr w, [MarshalAs(UnmanagedType.LPUTF8Str)] string line);
         /// <summary>Drops the message being built.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_msg_cancel(IntPtr a);
@@ -277,7 +305,7 @@ namespace Delirium
         /// <summary>1 when it's time to hand it back to its own get-up animation: alive and lying still `after` seconds (nm_agent_get_lying says which way it faces).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_should_get_up(IntPtr a, float after);
-        /// <summary>Cuts part `part` off (with those below it: a hand, an arm from the shoulder, a leg, the head at the neck), `impulse` (or null) on it at `at` (or null: its middle). It goes on as a limp piece of its own, stepped with the body: its parts' frames and velocities are read as before. A leg gone, he falls (catchFall) and never gets up (nm_agent_should_get_up 0). The head cut, he stays up: kill him yourself (nm_agent_set_dead). LEAD only. NM_E_STATE: the root, or cut already.</summary>
+        /// <summary>Cuts part `part` off (with those below it: a hand, an arm from the shoulder, a leg, the head at the neck), `impulse` (or null) on it at `at` (or null: its middle). It goes on as a limp piece of its own, stepped with the body: its parts' frames and velocities are read as before. A leg gone, he falls (catchFall) and never gets up (nm_agent_should_get_up 0). The head cut, he stays up: kill him yourself (nm_agent_set_dead). FOLLOW: the piece stays on the host's body, NM stops driving it and `impulse` comes in the drives; the host breaks its own joint. NM_E_STATE: the root, or cut already.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_sever(IntPtr a, IntPtr w, int part_index, float[] at, float[] impulse);
         /// <summary>1 when part `part_index` has been cut off (nm_agent_sever), else 0.</summary>
@@ -334,6 +362,12 @@ namespace Delirium
         /// <summary>TaskNMOnFire: it burns, flails, staggers, drops and writhes (the game's reaction, 1-30 s). Runs by itself each step; tell it when the flames are out or its health changes with nm_agent_set_on_fire. Starting again while it runs only updates those.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_task_on_fire(IntPtr a, IntPtr w, float health);
+        /// <summary>A taser's hit (the Playroom's): a current through it for `seconds` (electrocute: it jolts and locks, stunMag 0.4, the big jolts twice that), ending by itself; again while it runs: that many seconds from now. 0 ends it now. No damage: the host keeps the health.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_tase(IntPtr a, IntPtr w, float seconds);
+        /// <summary>Whether a taser's current runs through it (nm_agent_tase).</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_is_tased(IntPtr a);
         /// <summary>The burning character's state for its on-fire task: `burning` 0 once the flames are out (it calms and ends), `health` the host's (0: dies burning). Fails when no on-fire task runs.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_set_on_fire(IntPtr a, int burning, float health);
@@ -361,7 +395,7 @@ namespace Delirium
         /// <summary>TaskNMBrace's control, each frame while the car comes: `car` its matrix as 12 floats (x axis, y axis, z axis, place), `hit` where it will strike (or null), `look` the driver's head (or null: the car's place).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_task_brace_control(IntPtr a, IntPtr w, float[] car, float[] hit, float[] look);
-        /// <summary>The game's car hit (a moving box's, nm_world_set_boxes, gathered over 8/60 s): call after each step. 1 when one is ready: `damage` the health it takes (RUNOVERBYCAR, from the ped's `health` and the push; the host takes it off), `hit_box` the box's index, and its reaction started (bracing, rolling up, staggering or limp, by the game's rules: `agility` its ped's, under 3 weak; `player_driver` 1 when the player drives it). 0: none (or too light to hurt).</summary>
+        /// <summary>The game's hit by a moving box (nm_world_set_boxes, gathered over 8/60 s): call after each step. 1 when one is ready: `damage` the health it takes (RUNOVERBYCAR, from the ped's `health` and the push; the host takes it off), `hit_box` the box's index, and its reaction started (bracing, rolling up, staggering or limp, by the game's rules: `agility` its ped's, under 3 weak; the box's kind, nm_world_set_box_kinds, a car without; `player_driver` 1 when the player drives it, for boxes without a kind). 0: none (or too light to hurt).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_car_hit(IntPtr a, IntPtr w, float health, int agility, int player_driver, float[] damage, out int hit_box);
         /// <summary>Delirium's dragged-from-the-car (the room's cab; the game's is an animation): both hands on box `hit_box`'s side at `at` (null: the nearest side, under his waist), balancing while it stands; once it moves he's dragged, legs kicking and writhing, till it's going 12 m/s or 6 s on, then lets go and falls (smartFall). Set the boxes first.</summary>
@@ -423,6 +457,9 @@ namespace Delirium
         /// <summary>Takes over from your animation without a snap: puts every part where your skeleton's bones are now (`now`, each bone's world frame, 7 floats as in nm_rig_create), moving as they were (`before`: the frames `dt` seconds earlier, say last frame's; null: still). Call right after creating the agent and rig (or any time to put it back on the animation), before the first step.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_rig_take(IntPtr r, IntPtr a, float[] now, float[] before, float dt);
+        /// <summary>Your animation's pose as the incoming pose (nm_agent_set_incoming_transforms, which nm_agent_follow aims at): `now` each bone's world frame, 7 floats as in nm_rig_create. Call it each frame while the animation plays under the ragdoll; null clears it.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_rig_incoming(IntPtr r, IntPtr a, float[] now);
 
         /// <summary>A string out of a buffer call (nm_*_name, nm_last_error...).</summary>
         public static string Str(Func<byte[], int, int> call)

@@ -10,6 +10,8 @@ lie still and hand the character back to get up. Built and tested on UE 5.8 with
 3. Build the project (it's a C++ plugin: a Blueprint-only project needs one C++ class added first).
 4. Project Settings > Plugins > Delirium Ragdoll: point `Game Exe` at your own copy of the game and `Character` /
    `Build` at the data files (absolute, or under the project folder).
+   `Engine Physics` (experimental): NM drives a ragdoll of Chaos bodies and constraints instead of its own physics, so
+   it meets your physics objects; it stands, takes pushes, falls to hard ones, shots and a lost leg (not the Brawler body yet).
 
 ## Use
 
@@ -24,7 +26,15 @@ Add a **Delirium Ragdoll** component to the character. From Blueprint or C++:
 | `Explode(At, Radius, Speed)` | Thrown by a blast |
 | `MeleeHit(Point, Impulse, AttackerHead, bTimid)` | A punch or club that doesn't kill |
 | `OnFire(bBurning, Health)` | Flails and drops; call with false once out |
+| `Tase(Seconds)` | A taser: jolts and locks for Seconds (2.5), then ends by itself; 0 ends it |
 | `HighFall()` | Arms out, legs ready |
+| `CatchFall()` / `FallDown(Heading)` / `JumpRoll()` | Hands out as it falls / pushed off a ledge / out of a moving car |
+| `Grab(Left, LeftNormal, Right, RightNormal, Hold)` | Hands reach for and hold points (a zero normal leaves that hand free) |
+| `Flinch(From)` / `Tackle(Target, bLow, bKeep)` | Flinch from a threat / dive at another ragdoll |
+| `SetWater(Level)` | Water under it (cm; NaN none): floats face up |
+| `RegisterCar(Actor, Size, bPlayerDriven)` / `UnregisterCar(Actor)` | Anything you call a car: ragdolls meet its box, standing characters in its way are ragdolled, hits react as the game's and raise `OnCarHit(Damage, Car)` |
+| `CarComing(Car)` / `CarDoor(Car)` | Brace against a registered car (setting `bArmsOutEarly`) / dragged from it |
+| `React(Line)` | Any reaction as the Playroom console's line: `rollUp start=true`, `bodyWrithe start=true`, `stopAllBehaviours` |
 | `Kill()` | Limp, stays down |
 | `Sever(Point, Impulse)` | Cuts off the limb nearest `Point` (hide its mesh and spawn your gib yourself) |
 | `GetUp()` | Hands it back: the actor stands where the body lies, mesh, animation and movement back on |
@@ -67,3 +77,31 @@ meshes) is read once when it's taken, plus a floor under its feet.
 `UnrealEditor-Cmd.exe YourProject.uproject /Engine/Maps/Entry -ExecCmds="Automation RunTests Delirium.Ragdoll;Quit"
 -unattended -RenderOffscreen`: Manny stands 5 s, stays up through a 60 N s push, goes down to a 200 N s one, to a
 killing shot and without a leg.
+
+## State and events
+
+`GetState()` returns FDeliriumState: bRagdolled, bBalancing, bFallen, bCatchingFall, bRolledUp, bRelaxing, bDead,
+bInWater, bBurning, Tackling (2 diving, 1 holding), LyingFor (s), Centre, Velocity, Mass. Events: `OnFell` once per
+fall, `OnFeedback(Name, Slot, Value)` for NM's own behaviour messages (the Playroom's Feedback list), plus `OnLyingStill`
+and `OnCarHit`.
+
+
+## Tuning reactions
+
+Walls, floors and falls need nothing: ragdolls get the level's collision and catch, stagger and brace on it by
+themselves. Moving things that hit characters are registered once (`RegisterMover(Actor, Kind, Size, bPlayerDriven, bBrace, bKnockDown, Centre)`, kinds Car, Object, Train) and each picks
+its own: box size and centre, whether characters in its way brace (`brace`) or are knocked down at all (`knockDown`).
+Each character's health and agility (`HitHealth, HitAgility`) decide which reaction the game picks when hit (agility under 3 is weak).
+
+Every reaction's feel is an override (`behaviour.param=value`, comma-separated; see Overrides):
+
+| Reaction | Useful parameters |
+|---|---|
+| Bracing for a car or object | `braceForImpact.braceDistance` (how early the arms go out, m), `.targetPredictionTime` (s ahead), `.bodyStiffness` |
+| Catching a fall | `catchFall.armsStiffness`, `.legsStiffness`, `.torsoStiffness` |
+| Staggering | `staggerFall.lowerBodyStiffness` |
+| Rolling up | `bodyRollUp.stiffness` |
+| Keeping balance | `bodyBalance.armsOutOnPushTimeout` (how long the arms stay out after a push, s) |
+| Shot / high fall | `shot.bodyStiffness`, `highFall.bodyStiffness` |
+
+The Playroom's Parameters tab lists every parameter with its default and lets you try values live.

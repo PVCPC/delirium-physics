@@ -1421,8 +1421,11 @@ pub fn queue_prepass_material_meshes(
 
             match material.properties.render_phase_type {
                 RenderPhaseType::Opaque => {
+                    // Delirium: a view without the deferred pass (a second camera beside the ray-traced one) skips
+                    // deferred meshes instead of panicking.
                     if deferred {
-                        opaque_deferred_phase.as_mut().unwrap().add(
+                        let Some(phase) = opaque_deferred_phase.as_mut() else { continue };
+                        phase.add(
                             OpaqueNoLightmap3dBatchSetKey {
                                 draw_function,
                                 pipeline: pipeline_id,
@@ -1469,8 +1472,11 @@ pub fn queue_prepass_material_meshes(
                     }
                 }
                 RenderPhaseType::AlphaMask => {
+                    // Delirium: a view without the deferred pass (a second camera beside the ray-traced one) skips
+                    // deferred meshes instead of panicking.
                     if deferred {
-                        alpha_mask_deferred_phase.as_mut().unwrap().add(
+                        let Some(phase) = alpha_mask_deferred_phase.as_mut() else { continue };
+                        phase.add(
                             OpaqueNoLightmap3dBatchSetKey {
                                 draw_function,
                                 pipeline: pipeline_id,

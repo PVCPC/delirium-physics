@@ -2,7 +2,7 @@ use crate::route::Point;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX() -> i32 { crate::kv!(276 int) }
+pub fn MAX() -> i32 { crate::kv!(278 int) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn FRAME() -> f32 { 1.0 / crate::kv!(27) }
@@ -28,10 +28,10 @@ pub struct Look {
 pub fn FULL() -> f32 { crate::kv!(28) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(822 int) }
+pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(824 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MOVER_BITS() -> u32 { crate::kv!(973 int) }
+pub fn MOVER_BITS() -> u32 { crate::kv!(975 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Anim {

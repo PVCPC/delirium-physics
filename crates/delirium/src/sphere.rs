@@ -50,23 +50,23 @@ fn ptr(p: u32) -> Result<usize, String> {
 impl Mesh {
     pub fn read(d: &[u8], at: usize) -> Result<Mesh, String> {
         let (scale, offset) = (vec3(d, at + delirium_data::kv!(87 int))?, vec3(d, at + delirium_data::kv!(88 int))?);
-        let (nv, np) = (be32(d, at + delirium_data::kv!(89 int))? as usize, be32(d, at + delirium_data::kv!(463 int))? as usize);
+        let (nv, np) = (be32(d, at + delirium_data::kv!(89 int))? as usize, be32(d, at + delirium_data::kv!(465 int))? as usize);
         let raw: Vec<u16> = match nv {
             0 => vec![],
             _ => { let vp = ptr(be32(d, at + delirium_data::kv!(91 int))?)?; (0..delirium_data::kv!(0 int) * nv).map(|k| be16(d, vp + 2 * k)).collect::<Result<_, _>>()? }
         };
         let mut polys = vec![];
         if np > 0 {
-            let pp = ptr(be32(d, at + delirium_data::kv!(290 int))?)?;
+            let pp = ptr(be32(d, at + delirium_data::kv!(292 int))?)?;
             for i in 0..np {
                 let p = pp + delirium_data::kv!(7 int) * i;
                 let h = |o: usize| be16(d, p + o);
-                polys.push(Poly { n: vec3(d, p)?, mat: be(d, p + delirium_data::kv!(198 int), 1)?[0], v: [h(delirium_data::kv!(54 int))?, h(delirium_data::kv!(211 int))?, h(delirium_data::kv!(127 int))?, h(delirium_data::kv!(105 int))?], nb: [h(delirium_data::kv!(107 int))?, h(delirium_data::kv!(109 int))?, h(delirium_data::kv!(85 int))?, h(delirium_data::kv!(276 int))?] });
+                polys.push(Poly { n: vec3(d, p)?, mat: be(d, p + delirium_data::kv!(198 int), 1)?[0], v: [h(delirium_data::kv!(54 int))?, h(delirium_data::kv!(212 int))?, h(delirium_data::kv!(127 int))?, h(delirium_data::kv!(105 int))?], nb: [h(delirium_data::kv!(107 int))?, h(delirium_data::kv!(109 int))?, h(delirium_data::kv!(85 int))?, h(delirium_data::kv!(278 int))?] });
             }
         }
-        let mats = match be32(d, at + delirium_data::kv!(364 int))? {
+        let mats = match be32(d, at + delirium_data::kv!(366 int))? {
             0 => vec![],
-            p => (0..be(d, at + delirium_data::kv!(357 int), 1)?[0] as usize).map(|k| be32(d, ptr(p)? + delirium_data::kv!(1 int) * k)).collect::<Result<_, _>>()?,
+            p => (0..be(d, at + delirium_data::kv!(359 int), 1)?[0] as usize).map(|k| be32(d, ptr(p)? + delirium_data::kv!(1 int) * k)).collect::<Result<_, _>>()?,
         };
         Ok(Mesh::new(&raw, scale, offset, polys, mats, f32::from_bits(be32(d, at + delirium_data::kv!(23 int))?), vec3(d, at + delirium_data::kv!(93 int))?))
     }

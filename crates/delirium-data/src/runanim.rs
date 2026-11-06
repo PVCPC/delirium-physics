@@ -5,10 +5,10 @@ use crate::tasks::{ABORT_IMMEDIATE, ABORT_LEAVE};
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIT_WALL_KIND() -> u32 { crate::kv!(966 int) }
+pub fn HIT_WALL_KIND() -> u32 { crate::kv!(968 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn COWER_KIND() -> u32 { crate::kv!(967 int) }
+pub fn COWER_KIND() -> u32 { crate::kv!(969 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Row {
@@ -22,25 +22,25 @@ pub struct Row {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIT_WALL() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: 1, dict: "ped", clip: "hit_wall", flags: crate::kv!(968 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn HIT_WALL() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: 1, dict: "ped", clip: "hit_wall", flags: crate::kv!(970 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn DUCK_COWER() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: crate::kv!(0 int), dict: "ped", clip: "duck_cower", flags: crate::kv!(969 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn DUCK_COWER() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: crate::kv!(0 int), dict: "ped", clip: "duck_cower", flags: crate::kv!(971 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn AVOIDS() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(284 int), "avoids", crate::kv!(970 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn AVOIDS() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(286 int), "avoids", crate::kv!(972 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn EV_DIVES() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(285 int), "ev_dives", crate::kv!(971 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn EV_DIVES() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(287 int), "ev_dives", crate::kv!(973 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn avoid(group: i32, dict: &'static str, flags: u32) -> [Row; 8] {
     const CLIPS: [&str; 8] = ["avoid_fl", "avoid_fr", "avoid_bl", "avoid_br", "avoid_lf", "avoid_lb", "avoid_rf", "avoid_rb"];
     let mut rows = [Row { group, id: 0, dict, clip: "", flags, layer: crate::kv!(0 int) }; 8];
     let mut k = 0;
     while k < crate::kv!(23 int) {
-        (rows[k].id, rows[k].clip) = (crate::kv!(325 int) + k as i32, CLIPS[k]);
+        (rows[k].id, rows[k].clip) = (crate::kv!(327 int) + k as i32, CLIPS[k]);
         k += 1;
     }
     rows
@@ -48,7 +48,7 @@ fn avoid(group: i32, dict: &'static str, flags: u32) -> [Row; 8] {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn RUN_ANIM_KIND() -> u32 { crate::kv!(972 int) }
+pub fn RUN_ANIM_KIND() -> u32 { crate::kv!(974 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Clip {
@@ -198,10 +198,10 @@ fn set_flags(p: &mut Player, flags: u32) {
     p.active = true;
     p.loops = flags & crate::kv!(7 int) != 0;
     p.synced = flags & crate::kv!(96 int) != 0;
-    p.blend_out_at_end = flags & crate::kv!(708 int) != 0;
-    p.remove_blended_out = flags & crate::kv!(672 int) != 0;
-    p.own_channel = flags & crate::kv!(644 int) != 0;
-    p.skip_weight = flags & crate::kv!(818 int) != 0;
+    p.blend_out_at_end = flags & crate::kv!(710 int) != 0;
+    p.remove_blended_out = flags & crate::kv!(674 int) != 0;
+    p.own_channel = flags & crate::kv!(646 int) != 0;
+    p.skip_weight = flags & crate::kv!(820 int) != 0;
 }
 
 pub fn mover_delta(clip: &Animation, flags: u32, from: f32, to: f32) -> [f32; 3] {
@@ -213,7 +213,7 @@ pub fn mover_delta(clip: &Animation, flags: u32, from: f32, to: f32) -> [f32; 3]
         [0, 1, 2].map(|k| a[k] + (b[k] - a[k]) * f)
     };
     let (a, b) = (at(from), at(to));
-    let bit = [crate::kv!(182 int), crate::kv!(183 int), crate::kv!(718 int)];
+    let bit = [crate::kv!(182 int), crate::kv!(183 int), crate::kv!(720 int)];
     [0, 1, 2].map(|k| if flags & bit[k] != 0 { b[k] - a[k] } else { 0.0 })
 }
 

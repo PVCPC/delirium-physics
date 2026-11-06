@@ -23,7 +23,7 @@ impl LocomotionDrive {
         self.weight.is_finite()&&(0.0..=1.0).contains(&self.weight)
             &&self.gain_weight.is_finite()&&(0.0..=self.weight).contains(&self.gain_weight)
             &&self.targets.iter().flatten().all(|x|x.is_finite())
-            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(35)..=delirium_data::kv!(214)).contains(x))
+            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(35)..=delirium_data::kv!(215)).contains(x))
             &&self.response.iter().all(|x|x.is_finite()&&(0.5..=2.0).contains(x))
     }
 }

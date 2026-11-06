@@ -67,7 +67,7 @@ impl Pedal {
     }
 
     fn centres(&mut self, c: &Ctx) {
-        let r = self.radius + (noise01(self.t + delirium_data::kv!(31), self.t2, c.ch.agent as f32) - 0.5) * self.radius_variance - delirium_data::kv!(518);
+        let r = self.radius + (noise01(self.t + delirium_data::kv!(31), self.t2, c.ch.agent as f32) - 0.5) * self.radius_variance - delirium_data::kv!(520);
         let p = c.b.part(0).m;
         for (i, k) in [(0, -self.pedal_offset - self.centre_up), (1, self.pedal_offset - self.centre_up)] {
             let m = c.b.eff3(limb(i + 2).e[1]).m;
@@ -81,8 +81,8 @@ impl Pedal {
             return;
         }
         self.active = true;
-        self.t = delirium_data::kv!(215) * c.ch.random();
-        self.t2 = delirium_data::kv!(215) * c.ch.random();
+        self.t = delirium_data::kv!(216) * c.ch.random();
+        self.t2 = delirium_data::kv!(216) * c.ch.random();
         self.radius = self.radius.clamp(0.0, delirium_data::kv!(10));
         self.centres(c);
         self.axis = [Vec3::NEG_Y; 2];

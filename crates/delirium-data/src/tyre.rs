@@ -7,20 +7,20 @@ pub fn GRAVITY() -> f32 { crate::kv!(34) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn F80_MASK() -> u32 { crate::kv!(1054 int) }
+pub fn F80_MASK() -> u32 { crate::kv!(1056 int) }
 
 pub fn f80_flags(f80: u32, ai_driven: bool) -> u32 {
-    let mut f = if f80 & crate::kv!(965 int) != 0 {
+    let mut f = if f80 & crate::kv!(967 int) != 0 {
         flags::CAP_SLIDE()
-    } else if f80 & crate::kv!(644 int) != 0 {
+    } else if f80 & crate::kv!(646 int) != 0 {
         flags::NO_LOCK()
     } else if ai_driven {
         flags::CAP_SLIDE()
     } else {
         0
     };
-    for (bits, flag) in [(crate::kv!(1055 int), flags::CAP_SPIN()), (crate::kv!(1056 int), flags::CLAMP_SLIP()), (crate::kv!(1057 int), flags::GRIP_115()),
-                         (crate::kv!(1058 int), flags::GRIP_130())] {
+    for (bits, flag) in [(crate::kv!(1057 int), flags::CAP_SPIN()), (crate::kv!(1058 int), flags::CLAMP_SLIP()), (crate::kv!(1059 int), flags::GRIP_115()),
+                         (crate::kv!(1060 int), flags::GRIP_130())] {
         if f80 & bits != 0 {
             f |= flag;
         }
@@ -32,8 +32,8 @@ pub fn abs_bits(model_flags: u32, draw: &mut impl FnMut() -> f32) -> u32 {
     if model_flags & crate::kv!(54 int) != 0 || model_flags & crate::kv!(7 int) != 0 && draw() > 0.5 {
         return crate::kv!(184 int);
     }
-    if model_flags & crate::kv!(253 int) != 0 || model_flags & crate::kv!(251 int) != 0 && draw() > 0.5 {
-        return crate::kv!(644 int);
+    if model_flags & crate::kv!(254 int) != 0 || model_flags & crate::kv!(252 int) != 0 && draw() > 0.5 {
+        return crate::kv!(646 int);
     }
     0
 }
@@ -45,10 +45,10 @@ pub mod flags {
     pub fn DRIVEN() -> u32 { crate::kv!(1 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn POWERED() -> u32 { crate::kv!(708 int) }
+    pub fn POWERED() -> u32 { crate::kv!(710 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn CLAMP_SLIP() -> u32 { crate::kv!(251 int) }
+    pub fn CLAMP_SLIP() -> u32 { crate::kv!(252 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn GRIP_115() -> u32 { crate::kv!(96 int) }
@@ -57,28 +57,28 @@ pub mod flags {
     pub fn GRIP_130() -> u32 { crate::kv!(182 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn CAP_SPIN() -> u32 { crate::kv!(253 int) }
+    pub fn CAP_SPIN() -> u32 { crate::kv!(254 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn CAP_SLIDE() -> u32 { crate::kv!(821 int) }
+    pub fn CAP_SLIDE() -> u32 { crate::kv!(823 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn BURNOUT() -> u32 { crate::kv!(812 int) }
+    pub fn BURNOUT() -> u32 { crate::kv!(814 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn HEATS() -> u32 { crate::kv!(817 int) }
+    pub fn HEATS() -> u32 { crate::kv!(819 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn LOCKED() -> u32 { crate::kv!(820 int) }
+    pub fn LOCKED() -> u32 { crate::kv!(822 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn NO_LOCK() -> u32 { crate::kv!(822 int) }
+    pub fn NO_LOCK() -> u32 { crate::kv!(824 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SAND() -> u32 { crate::kv!(815 int) }
+    pub fn SAND() -> u32 { crate::kv!(817 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SOFT() -> u32 { crate::kv!(813 int) }
+    pub fn SOFT() -> u32 { crate::kv!(815 int) }
 }
 
 #[derive(Clone, Debug)]
@@ -148,13 +148,13 @@ fn demands(t: &Tyre, c: &Contact, mass: f32) -> (f32, f32) {
 pub fn rest(t: &mut Tyre, traction_max: f32, brake: f32, mass: f32, dt: f32) -> bool {
     #[allow(non_snake_case)]
     #[inline]
-    fn G() -> f32 { crate::kv!(1059 f32) }
+    fn G() -> f32 { crate::kv!(1061 f32) }
     let braking = brake * G() * mass;
     let (k, total, anchor) = if t.flags & 2 != 0 {
         let f = traction_max * t.load_share * G();
         (crate::kv!(26 f32), f.mul_add(mass, braking), false)
     } else {
-        let least = if t.flags & flags::POWERED() != 0 { 2.0 } else { crate::kv!(1060 f32) };
+        let least = if t.flags & flags::POWERED() != 0 { 2.0 } else { crate::kv!(1062 f32) };
         let roll = t.resistance * G() * mass;
         (crate::kv!(31), if least - roll >= 0.0 { least } else { roll } + braking, true)
     };
@@ -166,7 +166,7 @@ pub fn rest(t: &mut Tyre, traction_max: f32, brake: f32, mass: f32, dt: f32) -> 
     let cool: f32 = if t.temp - crate::kv!(27) >= 0.0 { crate::kv!(79) } else { crate::kv!(21) };
     let temp = (-cool).mul_add(dt, t.temp);
     t.temp = if -temp >= 0.0 { 0.0 } else { temp };
-    let (pi, two_pi) = (crate::kv!(770 f32), crate::kv!(614 f32));
+    let (pi, two_pi) = (crate::kv!(772 f32), crate::kv!(616 f32));
     t.angle = if angle > pi { angle - two_pi } else if angle < -pi { angle + two_pi } else { angle };
     anchor
 }
@@ -205,7 +205,7 @@ pub fn spin(t: &mut Tyre, c: &Contact, grounded: bool, mass: f32, radius: f32, l
     } else {
         let (drive, brake) = demands(t, c, mass);
         if drive != 0.0 {
-            let r = fneg((drive * dt).mul_add(crate::kv!(243), -old));
+            let r = fneg((drive * dt).mul_add(crate::kv!(244), -old));
             t.rate = if (limit > 0.0 && r > limit) || (limit < 0.0 && r < limit) { limit } else { r };
         } else if brake > 0.0 {
             let d = brake * dt * crate::kv!(31);
@@ -271,7 +271,7 @@ fn clamp(v: f32, cap: f32) -> f32 {
 }
 
 pub fn tyre_force(h: &Handling, t: &mut Tyre, mass: f32, inv_mass: f32, i: &TyreIn) -> [f32; 3] {
-    let mut l = inv_mass * (1.0 / t.load_share) * crate::kv!(1061 f32) * i.load;
+    let mut l = inv_mass * (1.0 / t.load_share) * crate::kv!(1063 f32) * i.load;
     if i.load > 1.0 {
         let e = l - 1.0;
         l *= fneg(fsel(crate::kv!(64) - e, e, crate::kv!(64)).mul_add(crate::kv!(78), -1.0));
@@ -297,7 +297,7 @@ pub fn tyre_force(h: &Handling, t: &mut Tyre, mass: f32, inv_mass: f32, i: &Tyre
     if t.flags & flags::GRIP_130() != 0 {
         b *= crate::kv!(80);
     } else if t.flags & flags::GRIP_115() != 0 {
-        b *= crate::kv!(547);
+        b *= crate::kv!(549);
     }
     let (inv_p, inv_b) = (1.0 / p, 1.0 / b);
     let inv_max = 1.0 / h.traction_max;
@@ -371,7 +371,7 @@ pub fn tyre_force(h: &Handling, t: &mut Tyre, mass: f32, inv_mass: f32, i: &Tyre
     if t.flags & flags::CLAMP_SLIP() != 0 {
         lat = clamp(lat, inv_p * crate::kv!(116));
         let lat2 = lat * lat;
-        let c = crate::kv!(1062 f32);
+        let c = crate::kv!(1064 f32);
         if long.mul_add(long, lat2) > c {
             let r = c - lat2;
             let m = fsel(crate::kv!(72) - r, crate::kv!(72), r).sqrt();

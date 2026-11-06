@@ -4,7 +4,7 @@ use delirium_data::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn TYPE() -> u32 { delirium_data::kv!(519 int) }
+pub fn TYPE() -> u32 { delirium_data::kv!(521 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pose {

@@ -175,9 +175,9 @@ impl Ripples {
         let keep = (-2.0 * DT / FADE).exp();
         let (w, h, now) = (self.w, self.h, &self.now);
         let rows = h.div_ceil(THREADS);
-        std::thread::scope(|s| {
+        bevy::tasks::ComputeTaskPool::get().scope(|s| {
             for (ch, out) in self.was.chunks_mut(rows * w).enumerate() {
-                s.spawn(move || {
+                s.spawn(async move {
                     for (j, o) in out.iter_mut().enumerate() {
                         let (x, y) = (j % w, ch * rows + j / w);
                         let i = y * w + x;
@@ -211,9 +211,9 @@ impl Ripples {
         }).collect();
         let (now, waves, bulk) = (&self.now, &waves, &self.bulk);
         let rows = h.div_ceil(THREADS);
-        std::thread::scope(|s| {
+        bevy::tasks::ComputeTaskPool::get().scope(|s| {
             for (ch, (px, sl)) in out.chunks_mut(rows * w * 4).zip(self.slope.chunks_mut(rows * w)).enumerate() {
-                s.spawn(move || {
+                s.spawn(async move {
                     for (j, sl) in sl.iter_mut().enumerate() {
                         let (x, y) = (j % w, ch * rows + j / w);
                         let at = |xx: usize, yy: usize| SURFACE_MAX * (now[yy * w + xx] / SURFACE_MAX).tanh() + bulk.get(yy * w + xx).copied().unwrap_or(0.0);
@@ -417,9 +417,9 @@ fn caustics(r: &Ripples, faces: &mut [Face], vol: Option<&Vol>, sun: Vec3, tex: 
     let (w, h, c) = (r.w, r.h, r.cell);
     let mut lean = vec![Vec2::ZERO; w * h];
     let rows = h.div_ceil(THREADS);
-    std::thread::scope(|s| {
+    bevy::tasks::ComputeTaskPool::get().scope(|s| {
         for (ch, out) in lean.chunks_mut(rows * w).enumerate() {
-            s.spawn(move || {
+            s.spawn(async move {
                 for (j, o) in out.iter_mut().enumerate() {
                     let g = r.slope[ch * rows * w + j];
                     let d = refract(i, Vec3::new(-g.x, -g.y, 1.0).normalize(), eta).unwrap_or(flat);
