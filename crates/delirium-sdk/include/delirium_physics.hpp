@@ -310,6 +310,11 @@ public:
     void impulse(int i, const Vec3& at, const Vec3& j) { check(nm_agent_apply_impulse(get(), i, at.data(), j.data())); }
     void add_velocity(const Vec3& dv) { check(nm_agent_add_velocity(get(), dv.data())); }
     int nearest_part(const Vec3& at) const { return nm_agent_nearest_part(get(), at.data()); }
+    /// A leash: point `at` on part `i` kept within `length` of `anchor` (slack inside, no stretch). Again on the same
+    /// part: null `at` / `anchor` keep theirs (a new length; shorter reels him in at 2 m/s).
+    void leash(int i, const float* at, const float* anchor, float length) { check(nm_agent_leash(get(), i, at, anchor, length)); }
+    /// Part `i`'s leash let go (-1: all).
+    void unleash(int i = -1) { check(nm_agent_unleash(get(), i)); }
     /// The part a segment hits first (-1: none), where and its normal.
     int raycast(const Vec3& from, const Vec3& to, Vec3& point, Vec3& normal) const { return check(nm_agent_raycast(get(), from.data(), to.data(), point.data(), normal.data())); }
     /// Part `i`'s joint to its parent: `kind` 0 the root, 1 a ball (limits: swing X, swing Y, twist), 2 a hinge (low, high).

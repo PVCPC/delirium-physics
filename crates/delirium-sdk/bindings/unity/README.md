@@ -26,6 +26,8 @@ nm.ShootAlong(enemy.transform, cam.position, cam.forward, health: hp);   // hits
 nm.MeleeHit(enemy.transform, hitPoint, fist * 30f, player.head.position);
 nm.Explode(enemy.transform, blast, radius: 5f);
 nm.Sever(enemy.transform, hitPoint, impulse);   // hide the limb's mesh yourself
+int p = nm.Leash(enemy.transform, hand, hook, 2f); // a leash: hangs and swings, never further than 2 m
+nm.LeashLength(enemy.transform, p, 1f);          // shorter: reels him in; nm.Unleash(enemy.transform) lets go
 nm.LyingStill += (who, faceUp, facing) => nm.GetUp(who);
 ```
 

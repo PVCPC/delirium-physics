@@ -275,6 +275,13 @@ const SETTINGS: &str = "settings.txt";
 const STARTING: &str = "starting";
 const STARTED: u32 = 60;
 const FALLBACK: &str = "graphics-fallback";
+static RENDERER: std::sync::OnceLock<(usize, bool)> = std::sync::OnceLock::new();
+
+fn pick_renderer(step: usize) {
+    let f = getup::config_dir().join(FALLBACK);
+    let _ = if step == 0 { std::fs::remove_file(f) } else { std::fs::write(f, format!("{}
+manual", ["", "plain", "dx12"][step])) };
+}
 
 const SAFE: &str = "water_quality 0
 shadows 0
@@ -443,12 +450,13 @@ spray_physics {}
 skate3_bails {}
 step_limit {}
 bone_skin {}
+fullscreen {}
 ",
             sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), sim.skel_style, b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.homer_wild), b(sim.gun_ai), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.dodge_gap, b(sim.extra), sim.extra_pick, sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails), b(sim.step_limit), b(sim.bone_skin)) + &params::save(&sim.param_edits)
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails), b(sim.step_limit), b(sim.bone_skin), b(sim.fullscreen)) + &params::save(&sim.param_edits)
 }
 
 const XR: [(&str, &str); 9] = [
@@ -578,6 +586,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "skate3_bails" => sim.skate3_bails = on,
             "step_limit" => sim.step_limit = on,
             "bone_skin" => sim.bone_skin = on,
+            "fullscreen" => sim.fullscreen = on,
             "passive" => sim.passive = on,
             "walk" => sim.walk = on,
             "hero_physics" => sim.hero_physics = on,
@@ -1140,6 +1149,13 @@ struct Sim {
     ice: Option<(usize, [f32; 2])>,
     click_shoots: bool,
     grab: Option<Grab>,
+    ties: Vec<Tie>,
+    line_k: f32,
+    line_leash: bool,
+    line_wrap: bool,
+    drag_hold: Option<usize>,
+    drag_len: f32,
+    tie_hover: Option<usize>,
     glow: Vec<Vec<(f32, (LinearRgba, f32))>>,
     rings: Vec<(usize, usize, Vec3, Vec3, f32)>,
     ripples: Vec<(Vec3, f32, f32)>,
@@ -1293,6 +1309,7 @@ struct Sim {
     upscaler: u8,
     dlss_ok: bool,
     fps_limit: f32,
+    fullscreen: bool,
     eyes: bool,
     bone_skin: bool,
     skel: bool,
@@ -1352,6 +1369,82 @@ struct Grab {
     target: Vec3,
     press: (Vec2, Vec3, Vec3),
     pulling: bool,
+}
+
+struct Tie {
+    homer: usize,
+    part: usize,
+    local: Vec3,
+    anchor: Vec3,
+    k: f32,
+    len: f32,
+    leash: bool,
+    on: bool,
+    bends: Vec<Vec3>,
+    last: Option<Vec3>,
+}
+
+impl Tie {
+    fn pivot(&self) -> (Vec3, f32) {
+        let mut used = 0.0;
+        let mut p = self.anchor;
+        for &b in &self.bends {
+            used += p.distance(b);
+            p = b;
+        }
+        (p, used)
+    }
+
+    fn wrap(&mut self, world: &Collision, at: Vec3) {
+        let clear = |from: Vec3, to: Vec3| {
+            let d = to.distance(from);
+            d < 0.06 || world.cast(from, (to - from) / d, d - 0.05).is_none()
+        };
+        while let Some(&b) = self.bends.last() {
+            let before = self.bends.len().checked_sub(2).map_or(self.anchor, |i| self.bends[i]);
+            if !clear(at, before) || b.distance(before) < 1e-3 {
+                break;
+            }
+            self.bends.pop();
+        }
+        let p = self.pivot().0;
+        let d = at.distance(p);
+        if d > 0.06 && self.bends.len() < 16 && !clear(at, p) {
+            let prev = self.last.filter(|&l| clear(l, p)).unwrap_or(at);
+            let (mut lo, mut hi) = (0.0f32, 1.0f32);
+            for _ in 0..8 {
+                let mid = (lo + hi) / 2.0;
+                if clear(prev.lerp(at, mid), p) { lo = mid } else { hi = mid }
+            }
+            let (to, free) = (prev.lerp(at, hi), prev.lerp(at, lo));
+            let dir = (to - p).normalize_or_zero();
+            let hit = world.cast(p + dir * 0.05, dir, p.distance(to) - 0.05).map(|(t, n)| {
+                let h = p + dir * (t + 0.05);
+                let s = (h - p).dot(free - p) / (free - p).length_squared().max(1e-6);
+                h + n * 0.03 + (p.lerp(free, s.clamp(0.0, 1.0)) - h).normalize_or_zero() * 0.03
+            });
+            let corner = hit.or_else(|| world.cast(at, (p - at) / d, d - 0.05).map(|(t, n)| at + (p - at) / d * t + n * 0.03));
+            self.bends.extend(corner.filter(|c| c.distance(p) > 0.05));
+        }
+        self.last = Some(at);
+    }
+}
+
+fn line_imp(a: &Agent, part: usize, local: Vec3, to: Vec3, k: f32, len: f32) -> Option<(Vec3, Vec3)> {
+    let f = a.doll.frames().nth(part)?;
+    let at = f.translation + f.rotation * local;
+    let (v, w) = a.doll.vel(part);
+    let heavy = (a.doll.mass() / (*BODIES())[1].3).max(1.0);
+    let kk = PULL_K * heavy * k;
+    let damp = (2.0 * (kk * a.doll.mass()).sqrt()).min(30.0 * a.doll.part_mass(part));
+    let (d, vel) = (to - at, v + w.cross(at - f.translation));
+    let force = if len > 0.0 {
+        let n = d.normalize_or_zero();
+        n * (kk * (d.length() - len) - damp * vel.dot(n)).max(0.0) * (d.length() > len) as u8 as f32
+    } else {
+        kk * d - damp * vel
+    };
+    Some((at, force.clamp_length_max(PULL_MAX * heavy * k.max(1.0)) / 60.0))
 }
 
 const MUSC_STIFF: (f32, f32) = (11.0, 12.0);
@@ -3674,16 +3767,142 @@ impl Sim {
     }
 
     fn pull(&mut self) {
-        let Some((part, local, target)) = self.grab.as_ref().filter(|g| g.pulling).map(|g| (g.part, g.local, g.target)) else { return };
-        let Some(f) = self.agent.doll.frames().nth(part) else { return };
-        let at = f.translation + f.rotation * local;
-        let (v, w) = self.agent.doll.vel(part);
-        let heavy = (self.agent.doll.mass() / (*BODIES())[1].3).max(1.0);
-        let damp = (2.0 * (PULL_K * heavy * self.agent.doll.mass()).sqrt()).min(30.0 * self.agent.doll.part_mass(part));
-        let imp = (PULL_K * heavy * (target - at) - damp * (v + w.cross(at - f.translation))).clamp_length_max(PULL_MAX * heavy) / 60.0;
+        let drag = self.grab.as_ref().filter(|g| g.pulling).map(|g| (g.part, g.local, g.target));
+        if let Some(k) = self.drag_hold.filter(|&k| drag.is_none_or(|d| d.0 != k) || !self.line_leash) {
+            self.drag_hold = None;
+            self.agent.doll.tether(k, None);
+        }
+        let Some((part, local, target)) = drag else {
+            self.drag_len = 0.0;
+            return;
+        };
+        if self.line_leash {
+            let Some(f) = self.agent.doll.frames().nth(part) else { return };
+            let at = f.translation + f.rotation * local;
+            self.agent.doll.tether(part, Some((target - f.rotation * local, self.drag_len.max(at.distance(target) - 0.2).max(0.05))));
+            self.drag_hold = Some(part);
+            return;
+        }
+        let Some((at, imp)) = line_imp(&self.agent, part, local, target, self.line_k, self.drag_len) else { return };
         self.held = false;
         let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
         let _ = msg::send(&mut self.agent, &self.build, &self.world, &mut self.msgs, "applyImpulse", &ps);
+    }
+
+    fn pull_ties(&mut self) {
+        let ids: Vec<usize> = std::iter::once(self.homer_id).chain(self.bench.iter().map(|b| b.homer_id)).collect();
+        self.ties.retain(|t| ids.contains(&t.homer));
+        for t in &mut self.ties {
+            let (agent, msgs, build) = if t.homer == self.homer_id {
+                (&mut self.agent, &mut self.msgs, &self.build)
+            } else {
+                let Some(i) = self.bench.iter().position(|b| b.homer_id == t.homer) else { continue };
+                let c = &mut self.crowd[i];
+                (&mut c.0, &mut c.1, &self.bench[i].build)
+            };
+            let Some(f) = agent.doll.frames().nth(t.part) else { continue };
+            if self.line_wrap {
+                t.wrap(&self.world, f.translation + f.rotation * t.local);
+            } else {
+                t.bends.clear();
+            }
+            let (pivot, used) = t.pivot();
+            let left = (t.len - used).max(0.05);
+            if t.leash {
+                agent.doll.tether(t.part, Some((pivot - f.rotation * t.local, left)));
+                t.on = true;
+                continue;
+            }
+            if std::mem::take(&mut t.on) {
+                agent.doll.tether(t.part, None);
+            }
+            let Some((at, imp)) = line_imp(agent, t.part, t.local, pivot, t.k, left) else { continue };
+            if imp == Vec3::ZERO {
+                continue;
+            }
+            let ps = [("start", Value::Bool(true)), ("partIndex", Value::Int(t.part as i32)), ("hitPoint", Value::Vec3(at)), ("impulse", Value::Vec3(imp))];
+            let _ = msg::send(agent, build, &self.world, msgs, "applyImpulse", &ps);
+        }
+    }
+
+    fn tie(&mut self, pin: Option<Vec3>, all: bool) {
+        if let Some(g) = self.grab.take_if(|g| g.pulling) {
+            let Some(f) = self.agent.doll.frames().nth(g.part) else { return };
+            let at = f.translation + f.rotation * g.local;
+            let anchor = pin.filter(|p| p.distance(g.target) < 3.0).unwrap_or(g.target);
+            let len = at.distance(anchor).max(0.05);
+            self.ties.push(Tie { homer: self.homer_id, part: g.part, local: g.local, anchor, k: self.line_k, len, leash: self.line_leash, on: false, bends: vec![], last: None });
+            let what = if self.line_leash { "leash".into() } else { format!("rope, strength {:.2}x", self.line_k) };
+            return self.say(format!("room  tied part {} to {} with a {len:.2} m {what}", g.part, v3(anchor)));
+        }
+        match self.picked_tie().filter(|_| !all) {
+            Some(i) => self.cut_tie(i),
+            None => while !self.ties.is_empty() {
+                self.cut_tie(self.ties.len() - 1);
+            },
+        }
+        self.say(format!("room  cut, {} line(s) left", self.ties.len()));
+    }
+
+    fn cut_tie(&mut self, i: usize) {
+        let t = self.ties.remove(i);
+        let agent = if t.homer == self.homer_id { Some(&mut self.agent) } else {
+            self.bench.iter().position(|b| b.homer_id == t.homer).and_then(|i| self.crowd.get_mut(i)).map(|c| &mut c.0)
+        };
+        if let Some(a) = agent.filter(|_| t.on) {
+            a.doll.tether(t.part, None);
+        }
+    }
+
+    fn tie_ends(&self, i: usize) -> Option<(Vec3, Vec3)> {
+        let t = self.ties.get(i)?;
+        let a = if t.homer == self.homer_id { &self.agent } else { &self.crowd.get(self.bench.iter().position(|b| b.homer_id == t.homer)?)?.0 };
+        let f = a.doll.frames().nth(t.part)?;
+        Some((f.translation + f.rotation * t.local, t.pivot().0))
+    }
+
+    fn picked_tie(&self) -> Option<usize> {
+        self.tie_hover.filter(|&i| i < self.ties.len()).or(self.ties.len().checked_sub(1))
+    }
+
+    fn line_wheel(&mut self, notches: f32, length: bool) {
+        let dragging = self.grab.as_ref().is_some_and(|g| g.pulling);
+        let picked = self.picked_tie().filter(|_| !dragging);
+        if length && dragging {
+            self.drag_len = (self.drag_len - notches * 0.1).clamp(0.0, 10.0);
+            let l = self.drag_len;
+            return self.say(format!("room  drag line length {l:.2} m"));
+        }
+        if length {
+            let Some(t) = picked.map(|i| &mut self.ties[i]) else { return };
+            t.len = (t.len * (1.0 - notches * 0.1)).clamp(0.05, 100.0);
+            let l = t.len;
+            return self.say(format!("room  line length {l:.2} m"));
+        }
+        let k = match picked {
+            Some(i) => &mut self.ties[i].k,
+            None => &mut self.line_k,
+        };
+        *k = (*k * 1.25f32.powf(notches)).clamp(0.05, 5.0);
+        let k = *k;
+        self.say(format!("room  line strength {k:.2}x"));
+    }
+
+    fn line_leash_key(&mut self) {
+        let picked = self.picked_tie().filter(|_| !self.grab.as_ref().is_some_and(|g| g.pulling));
+        let Some(i) = picked else {
+            self.line_leash = !self.line_leash;
+            let what = if self.line_leash { "leash (locks at its length)" } else { "stretchy rope" };
+            return self.say(format!("room  line: {what}"));
+        };
+        let now = self.tie_ends(i).map(|(a, b)| a.distance(b) + self.ties[i].pivot().1);
+        let t = &mut self.ties[i];
+        t.leash = !t.leash;
+        if t.leash {
+            t.len = now.unwrap_or(t.len).max(0.05);
+        }
+        let what = if t.leash { format!("leash, locked at {:.2} m", t.len) } else { "stretchy rope".into() };
+        self.say(format!("room  line {}: {what}", i + 1));
     }
 
     fn cue(&mut self) {
@@ -4941,9 +5160,9 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(), sg_seed: 1, sg_aim: None,
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, param_edits: Default::default(), param_search: String::new(), param_changed_only: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, extra: false, extra_pick: 0x1ff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, step_limit: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
+                        weapons, weapon: 0, weak: false, param_edits: Default::default(), param_search: String::new(), param_changed_only: false, sel: 0, over_ui: false, held: true,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, fullscreen: false, extra: false, extra_pick: 0x1ff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, step_limit: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
-                        grab: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
+                        grab: None, ties: vec![], line_k: 1.0, line_leash: false, line_wrap: true, drag_hold: None, drag_len: 0.0, tie_hover: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35], blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, bone_skin: false, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
@@ -5144,6 +5363,7 @@ fn main() {
         app.world().resource::<bevy::asset::io::embedded::EmbeddedAssetRegistry>().insert_asset(std::path::PathBuf::new(), std::path::Path::new(path), bytes);
     }
     app.run();
+    let _ = std::fs::remove_file(getup::config_dir().join(STARTING));
 }
 
 const GAME_PATH: &str = "game_path.txt";
@@ -5253,15 +5473,17 @@ fn renderer(app: &mut App, gpu: Option<String>, safe: bool) -> (bevy::app::Plugi
     let dir = getup::config_dir();
     let was = std::fs::read_to_string(dir.join(FALLBACK)).unwrap_or_default();
     let mut step = match was.lines().next().unwrap_or("").trim() { "plain" => 1, "dx12" => 2, _ => 0 };
+    let manual = was.lines().nth(1) == Some("manual");
     let mut crashes = std::fs::read_to_string(dir.join(STARTING)).map_or(0, |s| s.trim().parse::<u32>().unwrap_or(0) + 1);
-    if crashes >= 2 && step < 2 {
+    if crashes >= 1 && step < 2 {
         (step, crashes) = (step + 1, 0);
         let _ = std::fs::write(dir.join(FALLBACK), ["", "plain", "dx12"][step]);
     }
     let step = if cfg!(windows) { step.max(safe as usize) } else { 0 };
+    let _ = RENDERER.set((step, manual && !safe));
     let dx12 = step == 2;
     let why = (step > 0).then(|| format!("renderer: {} ({})", ["", "plain Vulkan", "DirectX 12"][step], if safe && step == 1 { "Safe Mode" } else {
-        "the driver crashed starting twice; full graphics again with another graphics card or driver"
+        if manual { "picked in Video" } else { "the graphics driver crashed starting; full graphics are tried again with another graphics card, driver or room build, or from Video" }
     }));
     let _ = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(STARTING), crashes.to_string()));
     #[cfg(windows)]
@@ -6742,15 +6964,17 @@ fn video(mut commands: Commands, mut sim: NonSendMut<Sim>, mut last: Local<Optio
          sun: Query<(Entity, Has<Fill>), With<DirectionalLight>>) {
     if let Some(i) = info.filter(|_| sim.gpu_now.is_empty()) {
         sim.gpu_now = i.name.clone();
+        let build = std::env::current_exe().and_then(|e| e.metadata()?.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
         let (f, id) = (getup::config_dir().join(FALLBACK), format!("{} {} {}", i.name, i.driver, i.driver_info));
+        let for_id = format!("{id} build {build}");
         crash::note_gpu(format!("{id} ({:?})", i.backend));
         if let Ok(t) = std::fs::read_to_string(&f) {
             match t.lines().nth(1) {
                 None => drop(std::fs::write(&f, format!("{}
-{id}", t.trim()))),
-                Some(was) if was != id => {
+{for_id}", t.trim()))),
+                Some(was) if was != for_id && was != "manual" => {
                     let _ = std::fs::remove_file(&f);
-                    sim.say(format!("room  new graphics card or driver ({id}): full graphics from the next start"));
+                    sim.say(format!("room  new graphics card, driver or room build ({id}): full graphics from the next start"));
                 }
                 _ => {}
             }
@@ -7146,9 +7370,13 @@ fn fps_limit(sim: NonSend<Sim>, mut win: Query<&mut Window, With<bevy::window::P
     use bevy::window::PresentMode;
     let limit = if in_front(&win) || std::env::var_os("FRAME_LOG").is_some() { sim.fps_limit } else { sim.fps_limit.min(FPS_BACKGROUND) };
     let mode = if limit <= FPS_VSYNC { PresentMode::AutoVsync } else { PresentMode::AutoNoVsync };
+    let shown = if sim.fullscreen { bevy::window::WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Current) } else { bevy::window::WindowMode::Windowed };
     for mut w in &mut win {
         if w.present_mode != mode {
             w.present_mode = mode;
+        }
+        if w.mode != shown {
+            w.mode = shown;
         }
     }
     if limit <= FPS_VSYNC || limit >= FPS_FREE {
@@ -8324,7 +8552,12 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
         bevy::input::mouse::MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
     }.clamp(-3.0, 3.0);
     let hero_wheel = sim.hero.is_some() && !sim.driving;
-    let wheel = lines * sim.sens * !(filming || hero_wheel) as u8 as f32;
+    let line_keys = (keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]), keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]));
+    let line_wheel = (line_keys.0 || line_keys.1) && sim.hero.is_none() && !filming;
+    if line_wheel && lines != 0.0 && !sim.over_ui {
+        sim.line_wheel(lines, line_keys.1);
+    }
+    let wheel = lines * sim.sens * !(filming || hero_wheel || line_wheel) as u8 as f32;
     if let Some([yaw, pitch, dist]) = sim.cam.take() {
         (o.yaw, o.pitch, o.dist) = (yaw, pitch, dist);
     }
@@ -8629,7 +8862,8 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
     let fatal = shift && buttons.just_pressed(MouseButton::Right);
     if let Some(c) = cur {
         let ray = camera.viewport_to_world(gt, c).ok();
-        if let (Some(g), Some(ray)) = (sim.grab.as_mut(), ray) {
+        if let (Some(g), Some(ray), true) = (sim.grab.as_mut(), ray, buttons.pressed(MouseButton::Left)) {
+            g.plane = (g.target, -*gt.forward());
             let (p, n) = g.plane;
             let along = ray.direction.dot(n);
             if along.abs() > 1e-4 {
@@ -8638,10 +8872,31 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
             g.pulling |= c.distance(g.press.0) > 5.0;
         }
     }
-    if !buttons.pressed(MouseButton::Left) {
+    if buttons.just_released(MouseButton::Left) {
         if let Some(g) = sim.grab.take().filter(|g| !g.pulling) {
             sim.poke(g.part, g.press.2, g.press.1);
         }
+    }
+    sim.tie_hover = cur.filter(|_| !sim.over_ui).and_then(|c| (0..sim.ties.len()).filter_map(|i| {
+        let (a, b) = sim.tie_ends(i)?;
+        let (a, b) = (camera.world_to_viewport(gt, a).ok()?, camera.world_to_viewport(gt, b).ok()?);
+        let s = ((c - a).dot(b - a) / (b - a).length_squared().max(1e-6)).clamp(0.0, 1.0);
+        Some((i, c.distance(a + (b - a) * s)))
+    }).filter(|x| x.1 < 14.0).min_by(|x, y| x.1.total_cmp(&y.1)).map(|x| x.0));
+    if keys.just_pressed(KeyCode::KeyT) && !editing && sim.hero.is_none() {
+        let pin = cur.and_then(|c| camera.viewport_to_world(gt, c).ok()).and_then(|r| sim.world.contact(r.origin, *r.direction, 200.0).map(|c| r.origin + *r.direction * c.0));
+        sim.tie(pin, shift_held(&keys));
+    }
+    if keys.just_pressed(KeyCode::KeyL) && !editing && !sim.photo && sim.hero.is_none() {
+        sim.line_leash_key();
+    }
+    if keys.just_pressed(KeyCode::F11) {
+        sim.fullscreen = !sim.fullscreen;
+    }
+    if keys.just_pressed(KeyCode::KeyK) && !editing && !sim.photo && sim.hero.is_none() {
+        sim.line_wrap = !sim.line_wrap;
+        let on = if sim.line_wrap { "on" } else { "off" };
+        sim.say(format!("room  lines wrap round the map: {on}"));
     }
     if sim.hero.is_some() && sim.hero_gun && !sim.driving && kind(sim.weapon) > 0 {
         if let Some(n) = sim.hero.as_ref() {
@@ -8846,6 +9101,24 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let com = sim.agent.doll.com().0;
                 sim.say(format!("ours  grab {part} to {} (com {})", v3(target), v3(com)));
             }
+            ("!tie", a) => {
+                let pin = a.map(|a| a.split(',').filter_map(|x| x.trim().parse().ok()).collect::<Vec<f32>>()).filter(|v| v.len() == 3).map(|v| Vec3::new(v[0], v[1], v[2]));
+                if sim.grab.as_ref().is_some_and(|g| g.pulling) {
+                    sim.tie(pin, false);
+                }
+            }
+            ("!untie", a) => {
+                if sim.grab.as_ref().is_none_or(|g| !g.pulling) {
+                    sim.tie(None, a == Some("all"));
+                }
+            }
+            ("!reel", Some(a)) => if sim.grab.as_ref().is_some_and(|g| g.pulling) {
+                sim.drag_len = a.parse().unwrap_or(0.0f32).clamp(0.0, 10.0);
+            } else if let Some(t) = sim.ties.last_mut() {
+                t.len = a.parse().unwrap_or(t.len).max(0.05);
+            },
+            ("!linek", Some(a)) => sim.line_k = a.parse().unwrap_or(1.0f32).clamp(0.05, 5.0),
+            ("!leash", _) => sim.line_leash_key(),
             ("!release", _) => {
                 sim.grab = None;
                 let com = sim.agent.doll.com().0;
@@ -9033,6 +9306,9 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 }
                 if let Some(code) = match key { "n" => Some(KeyCode::KeyN), "r" => Some(KeyCode::KeyR), "x" => Some(KeyCode::KeyX), _ => None } {
                     keys.push((code, Key::Character(key.into())));
+                }
+                if key == "f11" {
+                    keys.push((KeyCode::F11, Key::F11));
                 }
                 if state == ButtonState::Released {
                     keys.reverse();
@@ -9319,6 +9595,7 @@ impl Sim {
                 delirium::ragdoll::Obstacle { id: PLAT_ID, at, rot, centre: at, half: (*world::PLAT_HALF()), vel: (next - at) * 60.0, spin: axis * angle * 60.0, com: at, ..Default::default() }
             })).collect();
         self.pull();
+        self.pull_ties();
         self.soak();
         self.soak_hero(1.0 / 60.0, true);
         self.fire_frame(1.0 / 60.0);
@@ -9676,6 +9953,46 @@ fn grid_line(g: &mut Gizmos, pool: bool, a: Vec3, b: Vec3, c: Color) {
     }
 }
 
+fn rope_line(ours: &mut Gizmos<OursGizmos>, world: &Collision, a: Vec3, b: Vec3, k: f32, slack: f32, leash: bool, lit: bool) {
+    let t = if leash { 1.0 } else { ((k / 0.05).ln() / 100f32.ln()).clamp(0.0, 1.0) };
+    let loose = (2.0 * slack.max(0.0) / (a.distance(b) + slack.max(0.0)).max(0.01)).min(1.0);
+    let rope = Color::srgb(1.0, 0.95 - 0.8 * t, 0.35 - 0.3 * t).with_alpha(if slack > 0.01 { 0.6 } else { 1.0 });
+    let colour = |s: f32| if leash { let l = loose * (4.0 * s * (1.0 - s)).sqrt(); Color::srgb(1.0 - 0.9 * l, 0.45 - 0.25 * l, 0.75 - 0.15 * l) } else { rope };
+    let sag = (3.0 * a.distance(b) * slack.max(0.0) / 8.0).sqrt();
+    let pts: Vec<Vec3> = (0..=24).map(|i| {
+        let s = i as f32 / 24.0;
+        let (q, drop) = (a.lerp(b, s), 4.0 * sag * s * (1.0 - s));
+        q - Vec3::Z * world.cast(q, -Vec3::Z, drop + 0.01).map_or(drop, |(t, _)| (t - 0.01).clamp(0.0, drop))
+    }).collect();
+    let gap = 0.04 * (1.0 - t / 0.8).max(0.0);
+    let (u, v) = (b - a).normalize_or(Vec3::Z).any_orthonormal_pair();
+    let strands = 1 + (t * 8.0).round() as usize + 2 * lit as usize;
+    for i in 0..strands {
+        let off = if i == 0 { Vec3::ZERO } else { let r = i as f32 / (strands - 1) as f32 * std::f32::consts::TAU; (u * r.cos() + v * r.sin()) * 0.008 };
+        let (mut on, mut left) = (true, 0.04f32);
+        for (j, w) in pts.windows(2).enumerate() {
+            let c = colour((j as f32 + 0.5) / 24.0);
+            let (mut p, q) = (w[0] + off, w[1] + off);
+            let mut seg = p.distance(q);
+            while seg > 1e-5 {
+                let step = if gap > 0.0 { left.min(seg) } else { seg };
+                let n = p + (q - p).normalize_or_zero() * step;
+                if on {
+                    ours.line(p, n, c);
+                }
+                (p, seg) = (n, seg - step);
+                if gap > 0.0 {
+                    left -= step;
+                    if left <= 1e-6 {
+                        on = !on;
+                        left = if on { 0.04 } else { gap };
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
     let dark = sim.skin.sky.iter().sum::<f32>() < 1.0;
     for (j, o) in sim.room.objs.iter().enumerate() {
@@ -9743,8 +10060,24 @@ fn draw(sim: NonSend<Sim>, mut g: Gizmos, mut ours: Gizmos<OursGizmos>, ) {
     }
     if let Some((g, f)) = sim.grab.as_ref().filter(|g| g.pulling).and_then(|g| Some((g, fr.get(g.part)?))) {
         let at = f.translation + f.rotation * g.local;
-        ours.line(at, g.target, Color::srgb(0.3, 0.9, 1.0));
+        rope_line(&mut ours, &sim.world, at, g.target, sim.line_k, sim.drag_len - at.distance(g.target), sim.line_leash, false);
         ours.sphere(Isometry3d::from_translation(g.target), 0.03, Color::srgb(0.3, 0.9, 1.0));
+    }
+    for (i, t) in sim.ties.iter().enumerate() {
+        let f = if t.homer == sim.homer_id { fr.get(t.part).copied() } else {
+            sim.bench.iter().position(|b| b.homer_id == t.homer).and_then(|i| sim.crowd.get(i)?.0.doll.frames().nth(t.part))
+        };
+        let Some(f) = f else { continue };
+        let at = f.translation + f.rotation * t.local;
+        let lit = sim.tie_hover == Some(i);
+        let (pivot, used) = t.pivot();
+        let mut p = t.anchor;
+        for &b in &t.bends {
+            rope_line(&mut ours, &sim.world, p, b, t.k, 0.0, t.leash, lit);
+            p = b;
+        }
+        rope_line(&mut ours, &sim.world, at, pivot, t.k, t.len - used - at.distance(pivot), t.leash, lit);
+        ours.sphere(Isometry3d::from_translation(t.anchor), if lit { 0.07 } else { 0.04 }, Color::srgb(0.85, 0.85, 0.9));
     }
     if sim.arrows && !sim.clean {
         for (k, f) in fr.iter().enumerate() {
@@ -10003,6 +10336,25 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
     }
     let mono = |s: String| egui::RichText::new(s).monospace();
     let mut pressed: Option<String> = None;
+    let dragging = sim.grab.as_ref().is_some_and(|g| g.pulling);
+    if (dragging || !sim.ties.is_empty()) && sim.hero.is_none() {
+        let picked = sim.picked_tie().filter(|_| !dragging);
+        let (k, leash) = match picked.map(|i| &sim.ties[i]) { Some(t) => (t.k, t.leash), None => (sim.line_k, sim.line_leash) };
+        let kind = if leash { "L  leash (locked) / rope".into() } else { format!("L  leash / rope      Ctrl + Scroll Wheel  tight / stretchy ({} {k:.2}x)", if k < 0.3 { "stretchy" } else if k < 2.0 { "medium" } else { "tight" }) };
+        let t = match picked {
+            None => format!("T  tie it here      {kind}      Alt + Scroll Wheel  length ({:.2} m)", sim.drag_len),
+            Some(i) => {
+                let which = if sim.ties.len() > 1 { format!("Line {} of {} (point at a line to pick it)      ", i + 1, sim.ties.len()) } else { String::new() };
+                let wrap = if sim.line_wrap { "on" } else { "off" };
+                format!("{which}{kind}      Alt + Scroll Wheel  length ({:.2} m)      K  wrap round walls ({wrap})      T  cut it      Shift+T  cut all", sim.ties[i].len)
+            }
+        };
+        egui::Area::new("line keys".into()).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(view.center_bottom() - egui::vec2(0.0, 14.0)).interactable(false).show(ctx, |ui| {
+            egui::Frame::new().fill(egui::Color32::from_black_alpha(150)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(10, 5)).show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(t).small().color(egui::Color32::from_gray(235))).extend());
+            });
+        });
+    }
 
     sim.tab = active_tab(sim.tab);
     let mut root = egui::Ui::new(ctx.clone(), "root".into(), egui::UiBuilder::new().layer_id(egui::LayerId::background()).max_rect(ctx.content_rect()));
@@ -10354,6 +10706,17 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             if !shoots {
                 slide(ui, "Poke strength", &mut sim.poke, 1.0, 100.0, " N·s")
                     .on_hover_text("How hard a left click (poke) pushes the body part (N s).");
+                sub(ui, "Drag line");
+                slide(ui, "Line stretch → tight", &mut sim.line_k, 0.05, 5.0, "x")
+                    .on_hover_text("Ctrl + Scroll Wheel: up tighter, down stretchier (the drag's line; with lines tied and no drag, the one you point at, else the newest tied one).");
+                ui.checkbox(&mut sim.line_wrap, "Lines wrap round the map (K)").on_hover_text("Tied lines, rope or leash, catch on walls and corners and hold him from there. Off: straight through.");
+                ui.checkbox(&mut sim.line_leash, "Leash (L): the line locks at its length").on_hover_text("No stretch at all: he can swing on it but never go further. L switches the drag's line, or with no drag the newest tied one (locked where it is now).");
+                info(ui, "L: leash or stretchy rope. Ctrl + Scroll Wheel: up tight, down stretchy. Alt + Scroll Wheel: longer or shorter. The line shows it: thin, dashed and yellow is a bungee; thick, solid and red a tight rope; a leash pink when taut, dark blue when slack.");
+                info(ui, "A tied line is as long as when you tied it: slack (hanging) when he's nearer, holding past that. Point at a line to pick it: L, the scroll wheels and T act on that one, else the newest.");
+                info(ui, "While dragging, T ties the line to the map where the pointer is (or right there in the air). Drag him again as much as you like. T cuts the newest line, Shift+T all.");
+                if !sim.ties.is_empty() && ui.button(format!("Cut all lines ({})", sim.ties.len())).clicked() {
+                    sim.tie(None, true);
+                }
             }
             info(ui, if sim.aim_gun { "Floating: the weapon floats by the pointer; click to fire or swing." } else { "Camera: you shoot from the camera at what you click." });
             ui.add_space(4.0);
@@ -10823,6 +11186,24 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             });
             let wants = !sim.gpu.is_empty() && !sim.gpu_now.to_lowercase().contains(&sim.gpu.to_lowercase());
             info(ui, &format!("In use: {}.{}", sim.gpu_now, if wants { " Restart the room to switch." } else { "" }));
+            if cfg!(windows) {
+                let (now, manual) = RENDERER.get().copied().unwrap_or((0, false));
+                let next = match std::fs::read_to_string(getup::config_dir().join(FALLBACK)).unwrap_or_default().lines().next().unwrap_or("").trim() { "plain" => 1, "dx12" => 2, _ => 0 };
+                sub(ui, "Graphics mode");
+                ui.horizontal_wrapped(|ui| {
+                    for (k, (label, tip)) in [("Full (Vulkan)", "Every feature: DLSS, FSR 3, XeSS, ray tracing."), ("Plain Vulkan", "No upscalers' hooks: for a driver that crashes starting full."),
+                        ("DirectX 12", "For a card whose Vulkan driver crashes either way. No FSR 3, XeSS or DLSS.")].into_iter().enumerate() {
+                        if ui.selectable_label(next == k, label).on_hover_text(tip).clicked() && next != k {
+                            pick_renderer(k);
+                        }
+                    }
+                });
+                if now > 0 && !manual && next == now && ui.button("Try full graphics again").on_hover_text("The room fell back to a safer renderer after the graphics driver crashed starting it. This tries every feature again from the next start (if it crashes again, it falls back by itself).").clicked() {
+                    pick_renderer(0);
+                }
+                let why = if now == 0 { String::new() } else if manual { " (your pick)".into() } else { " (a safer one, after the graphics driver crashed starting the room)".into() };
+                info(ui, &format!("In use: {}{why}.{}", ["Full (Vulkan)", "Plain Vulkan", "DirectX 12"][now], if next != now { " Restart the room to switch." } else { "" }));
+            }
             sub(ui, "Display");
             let up = sim.fixed_size();
             ui.add_enabled(!up, egui::Slider::new(&mut sim.render_scale, RENDER_SCALE_MIN..=RENDER_SCALE_MAX).text(gpu("Resolution", 3)).custom_formatter(|x, _| format!("{:.0}%", x * 100.0)))
@@ -10844,6 +11225,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             let s = if (sim.render_scale - 1.0).abs() > 0.001 && !up { sim.render_scale } else { 1.0 };
             let (drawn, shown) = ((v / r).round(), (v / s).round());
             info(ui, &format!("Drawn at {}×{} pixels, shown at {}×{}.", drawn.x, drawn.y, shown.x, shown.y));
+            ui.checkbox(&mut sim.fullscreen, "Fullscreen (F11)").on_hover_text("The whole screen, no window border, on the monitor the window is on. F11 switches it any time.");
             ui.add(egui::Slider::new(&mut sim.fps_limit, FPS_VSYNC..=FPS_FREE).step_by(1.0).text("Frame rate limit")
                 .custom_formatter(|x, _| if x <= FPS_VSYNC as f64 { "monitor (V-Sync)".into() } else if x >= FPS_FREE as f64 { "unlimited".into() } else { format!("{x:.0} FPS") }))
                 .on_hover_text("The most frames a second it draws. Monitor matches your screen and never tears; a number caps it there (lower keeps the graphics card cooler and quieter); unlimited is as fast as it can go. With the window in the background it never goes over 60.");
@@ -10939,7 +11321,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             }
             sub(ui, "Mouse & keyboard");
             egui::Grid::new("keys").max_col_width(170.0).spacing([12.0, 8.0]).striped(true).show(ui, |ui| {
-                for (k, what) in [("click", if sim.aim_gun { "fire or swing the floating weapon" } else if sim.click_shoots { "shoot a body part" } else { "poke a body part" }), ("drag", "pull a body part (camera aim)"), ("Shift + click", "shoot a body part (camera aim)"), ("Shift + right click", "fatal shot"),
+                for (k, what) in [("click", if sim.aim_gun { "fire or swing the floating weapon" } else if sim.click_shoots { "shoot a body part" } else { "poke a body part" }), ("drag", "pull a body part (camera aim)"), ("T (dragging)", "tie the line to the map there; T cuts the newest, Shift+T all"),
+                                  ("F11", "fullscreen on / off"), ("L", "the line: leash (locked length) or stretchy rope"), ("K", "tied lines wrap round walls and corners on / off"), ("Ctrl + Scroll Wheel", "the line: up tight, down stretchy"), ("Alt + Scroll Wheel", "the newest tied line longer / shorter"), ("Shift + click", "shoot a body part (camera aim)"), ("Shift + right click", "fatal shot"),
                                   ("right drag", "orbit the camera"), ("wheel", "zoom"), ("WASD", "walk Homer when Walk Homer is on; otherwise move only in free camera"), ("middle drag", "pan (enters the detached camera)"), ("C  or  Tab", "follow Homer / detached camera: hold right mouse to look and fly (WASD, Q/E, Shift boost) while the Hero stays put"),
                                   ("Space", "pause"), (".", "one step"), ("[  ]", "slower / faster (1/16 to 4x)"), ("1  2  3", "throw a ball / a box / drop a crate at the pointer"), ("R", "reset pose"), ("X", "stop all"),
                                   ("Ctrl + point", "aim throws there (and the floating gun)"), ("F", "get in / out of a taxi"), ("Enter", "type a command"), ("H", "hide panels"),

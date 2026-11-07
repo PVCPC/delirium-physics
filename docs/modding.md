@@ -250,7 +250,7 @@ Console.WriteLine($"pelvis {p[0]:F2} {p[1]:F2} {p[2]:F2}");
 **The easy way:** the package's `DeliriumRagdolls` component, the same
 ragdolls as the BepInEx mod for your own game: add it to one object, set the
 player's game exe, and call `Ragdoll`, `ShootAlong`, `MeleeHit`, `Explode`,
-`OnFire`, `Sever`, `Kill`, `GetUp` with the character's root, and the Playroom's
+`OnFire`, `Sever`, `Leash`, `Kill`, `GetUp` with the character's root, and the Playroom's
 other tools (weapons and shotguns, extra reactions, jump, sit, pose, muscle and
 learned get-ups, learned walk, the drunk stick, state reads, the message list). Any humanoid
 skeleton, no snaps in or out, nearby ragdolls share a world. Set up and
@@ -352,7 +352,7 @@ order. Every step works the same in the SDK and every plugin.
 `crates/delirium-sdk/bindings/godot/`: a GDExtension (Godot 4.5+, GDScript or
 C#). Add a `DeliriumRagdoll` node under the character's `Skeleton3D`, point
 the `[delirium]` project settings at the player's own files, and call
-`shoot_along`, `push`, `melee_hit`, `explode`, `on_fire`, `sever`, `kill`,
+`shoot_along`, `push`, `melee_hit`, `explode`, `on_fire`, `sever`, `leash`, `kill`,
 `get_up`, and the Playroom's other tools (weapons and shotguns, extra
 reactions, jump, sit, pose, muscle and learned get-ups, learned walk, the drunk
 stick, state reads, the message list). No snaps in or out; it reads the level's
@@ -362,7 +362,7 @@ Set up and examples: its `README.md`.
 ### Unreal Engine 5
 
 A ready plugin: `bindings/unreal/DeliriumRagdoll` (its README has the steps). Add the **Delirium Ragdoll** component
-to a character, then call `Shoot`, `Push`, `Explode`, `MeleeHit`, `Sever`, `Kill` and `GetUp` from Blueprint or C++,
+to a character, then call `Shoot`, `Push`, `Explode`, `MeleeHit`, `Sever`, `Leash`, `Kill` and `GetUp` from Blueprint or C++,
 and the Playroom's other tools (`ShootWeapon`, `Shotgun`, `SetReactions`, `Jump`, `Sit`, `TakePose`, `MuscleRise`,
 `LearnedGetUp`, `LearnedWalk`, `SetStick`, `SetAttacker`, `GetState`, `Messages`).
 Tested on UE 5.8 with the Third Person template's mannequin.
@@ -471,6 +471,7 @@ hips bone's world place.
 | Falls over (no hit) | `nm_agent_task_fall_down(a, w, heading)` |
 | Tackled | from the tackler: `nm_agent_task_tackle(tackler, w, target, low, keep)` (within 4 m; both must be in the same world) |
 | Limb cut off | `nm_agent_sever(a, w, part, at, impulse)`: the piece flies off on its own and its parts read as before; a leg gone, it stays down |
+| Tied up / on a leash | `nm_agent_leash(a, part, at, anchor, length)`: slack inside the length, he hangs and swings past it (no stretch); again with null `at`/`anchor` for a new length (shorter reels him in at 2 m/s); `nm_agent_unleash(a, part)` lets go. For a stretchy rope, `nm_agent_apply_impulse` each step |
 | Killed by your own damage | `nm_agent_set_dead(a, 1)` and `nm_agent_task_relax(a, -1, -1)` |
 
 Shots, explosions and fire run on their own each step until they end

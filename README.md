@@ -62,6 +62,13 @@ Building it yourself: download this repo and run its `delirium-room.bat`. That o
 |---|---|
 | **Click** | poke a body part |
 | **Drag** | pull a body part around |
+| **T** while dragging | tie the line to the map there (T cuts the newest, Shift + T all); drag him again while he's tied |
+| **Point at a tied line** | picks it for L, the scroll wheels and T (else the newest) |
+| **F11** | fullscreen on / off (also in Audio / Video) |
+| **K** | tied lines wrap round walls and corners, on / off |
+| **L** | the line: a leash that locks at its length (pink taut, dark blue with slack), or a stretchy rope |
+| **Ctrl + Scroll Wheel** | a rope: up tight (thick, solid, red), down stretchy (thin, dashed, yellow) |
+| **Alt + Scroll Wheel** | a tied line longer or shorter; while dragging, the drag line (he hangs off the pointer) |
 | **Shift + click** | shoot him |
 | **1 / 2 / 3** (or Ctrl + point) | throw a ball, a box or a crate |
 | **Right drag, wheel** | turn and zoom the camera |

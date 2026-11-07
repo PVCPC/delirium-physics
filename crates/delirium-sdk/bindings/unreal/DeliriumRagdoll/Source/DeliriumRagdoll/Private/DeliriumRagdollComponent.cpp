@@ -1240,6 +1240,34 @@ bool UDeliriumRagdollComponent::Kill()
 	return Take() && Check(nm_agent_set_dead(Agent, 1), TEXT("Kill")) && Check(nm_agent_task_relax(Agent, -1.f, -1.f), TEXT("Kill"));
 }
 
+int32 UDeliriumRagdollComponent::Leash(FVector Point, FVector Anchor, float Length)
+{
+	if (!Take() || Length <= 0.f) return -1;
+	float At[3], To[3];
+	ToNm(Point, At);
+	ToNm(Anchor, To);
+	const int32 Part = nm_agent_nearest_part(Agent, At);
+	if (Part < 0 || !Check(nm_agent_leash(Agent, Part, At, To, Length / 100.f), TEXT("Leash"))) return -1;
+	return Part;
+}
+
+bool UDeliriumRagdollComponent::LeashLength(int32 Part, float Length)
+{
+	return Take() && Check(nm_agent_leash(Agent, Part, nullptr, nullptr, Length / 100.f), TEXT("LeashLength"));
+}
+
+bool UDeliriumRagdollComponent::LeashAnchor(int32 Part, FVector Anchor, float Length)
+{
+	float To[3];
+	ToNm(Anchor, To);
+	return Take() && Check(nm_agent_leash(Agent, Part, nullptr, To, Length / 100.f), TEXT("LeashAnchor"));
+}
+
+bool UDeliriumRagdollComponent::Unleash(int32 Part)
+{
+	return Agent && Check(nm_agent_unleash(Agent, Part), TEXT("Unleash"));
+}
+
 bool UDeliriumRagdollComponent::Sever(FVector Point, FVector Impulse)
 {
 	if (!Take()) return false;

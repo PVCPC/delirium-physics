@@ -27,7 +27,7 @@ namespace Delirium.Ragdoll
     using Plugin = DeliriumRagdolls;
 #endif
 #if BEPINEX
-    [BepInPlugin("delirium_physics.ragdoll", "NM Ragdoll", "0.6.0")]
+    [BepInPlugin("delirium_physics.ragdoll", "NM Ragdoll", "0.7.0")]
     public class Plugin : BaseUnityPlugin
     {
         string gameExe, xrt, buildFile, taskParams, boneMap, getUpFront, getUpBack, sizeMode;
@@ -643,6 +643,46 @@ namespace Delirium.Ragdoll
             if (part <= 0 || nm_agent_is_severed(d.agent, part) == 1) return false;
             d.Run(x => nm_agent_sever(x.agent, x.world, part, at, global::Delirium.Ragdoll.Doll.Nm(impulse)));
             return true;
+        }
+
+        /// A leash: the body part nearest `point` tied to `anchor` (world), at most `length` metres away. No stretch:
+        /// slack inside it, he hangs and swings on it past that. Returns the part (for LeashLength / LeashAnchor /
+        /// Unleash), -1 if none. To wrap it round a corner, move the anchor there and take what's used up off the length.
+        public int Leash(Transform owner, Vector3 point, Vector3 anchor, float length)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            if (d == null || length <= 0) return -1;
+            var at = global::Delirium.Ragdoll.Doll.Nm(point);
+            int part = nm_agent_nearest_part(d.agent, at);
+            if (part < 0) return -1;
+            d.Run(x => nm_agent_leash(x.agent, part, at, global::Delirium.Ragdoll.Doll.Nm(anchor), length));
+            return part;
+        }
+
+        /// Leash `part`'s new length (shorter reels him in at 2 m/s).
+        public bool LeashLength(Transform owner, int part, float length)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            if (d == null || length <= 0) return false;
+            d.Run(x => nm_agent_leash(x.agent, part, null, null, length));
+            return true;
+        }
+
+        /// Leash `part`'s anchor moved (a moving holder, or the corner it wraps round).
+        public bool LeashAnchor(Transform owner, int part, Vector3 anchor, float length)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            if (d == null || length <= 0) return false;
+            d.Run(x => nm_agent_leash(x.agent, part, null, global::Delirium.Ragdoll.Doll.Nm(anchor), length));
+            return true;
+        }
+
+        /// Lets leash `part` go (-1: every one).
+        public bool Unleash(Transform owner, int part = -1)
+        {
+            var d = Doll(owner, Vector3.zero, false);
+            d?.Run(x => nm_agent_unleash(x.agent, part));
+            return d != null;
         }
 
         /// Goes limp and stays down (a kill or a knock-out): it never gets up by itself.

@@ -506,6 +506,30 @@ impl DeliriumRagdoll {
     }
 
     #[func]
+    fn leash(&mut self, point: Vector3, anchor: Vector3, length: f32) -> i32 {
+        if !self.take() || length <= 0.0 { return -1 }
+        let at = nm(point);
+        let part = unsafe { nm_agent_nearest_part(self.agent, at.as_ptr()) };
+        if part < 0 || !check(unsafe { nm_agent_leash(self.agent, part, at.as_ptr(), nm(anchor).as_ptr(), length) }, "leash") { return -1 }
+        part
+    }
+
+    #[func]
+    fn leash_length(&mut self, part: i32, length: f32) -> bool {
+        self.take() && check(unsafe { nm_agent_leash(self.agent, part, std::ptr::null(), std::ptr::null(), length) }, "leash_length")
+    }
+
+    #[func]
+    fn leash_anchor(&mut self, part: i32, anchor: Vector3, length: f32) -> bool {
+        self.take() && check(unsafe { nm_agent_leash(self.agent, part, std::ptr::null(), nm(anchor).as_ptr(), length) }, "leash_anchor")
+    }
+
+    #[func]
+    fn unleash(&mut self, part: i32) -> bool {
+        !self.agent.is_null() && check(unsafe { nm_agent_unleash(self.agent, part) }, "unleash")
+    }
+
+    #[func]
     fn sever(&mut self, point: Vector3, impulse: Vector3) -> bool {
         if !self.take() { return false }
         let at = nm(point);

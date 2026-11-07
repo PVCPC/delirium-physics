@@ -852,6 +852,7 @@ struct More {
     xr: i32,
     xs: Xs,
     dive_gap: f32,
+    leash: Vec<(usize, Vec3, Vec3, f32, f32)>,
 }
 
 #[derive(Default)]
@@ -1373,6 +1374,12 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
     }
     more_step(a, w, dt);
     a.clock += dt as f64 * 1000.0;
+    for (k, local, anchor, len, now) in a.more.leash.iter_mut() {
+        let Some(f) = a.agent.doll.frames().nth(*k) else { continue };
+        let pin = *anchor - f.rotation * *local;
+        *now = (*now - REEL * dt).max(*len).min(f.translation.distance(pin).max(*len));
+        a.agent.doll.tether(*k, Some((pin, *now)));
+    }
     if a.mode == NM_MODE_FOLLOW {
         a.agent.step_follow(&a.build, &w.0, dt, &w.1, others);
         let d = &mut a.agent.doll;
@@ -1587,6 +1594,48 @@ pub unsafe extern "C" fn nm_agent_apply_push(a: *mut NmAgent, at: *const f32, im
     let (at, imp) = (unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
     a.agent.doll.push(&a.build, at, imp);
     a.more.look = Some(at - imp.normalize_or_zero() * 2.0);
+    0
+}
+
+const REEL: f32 = 2.0;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_leash(a: *mut NmAgent, i: i32, at: *const f32, anchor: *const f32, length: f32) -> i32 {
+    let a = agent!(a);
+    let Some(k) = part(a, i) else { return fail(NM_E_ARG, "no such part") };
+    if !(length > 0.0) {
+        return fail(NM_E_ARG, "length must be over 0");
+    }
+    let u = a.u;
+    let was = a.more.leash.iter().position(|l| l.0 == k);
+    let Some(f) = a.agent.doll.frames().nth(k) else { return fail(NM_E_ARG, "no such part") };
+    let local = if at.is_null() { was.map(|w| a.more.leash[w].1) } else { Some(f.rotation.inverse() * (unsafe { v3(at) } / u.len() - f.translation)) };
+    let anchor = if anchor.is_null() { was.map(|w| a.more.leash[w].2) } else { Some(unsafe { v3(anchor) } / u.len()) };
+    let (Some(local), Some(anchor)) = (local, anchor) else { return fail(NM_E_ARG, "null vector (and no leash on the part to keep it from)") };
+    let pin = anchor - f.rotation * local;
+    let len = length / u.len();
+    let now = f.translation.distance(pin).max(len);
+    match was {
+        Some(w) => a.more.leash[w] = (k, local, anchor, len, now.min(a.more.leash[w].4.max(len))),
+        None => a.more.leash.push((k, local, anchor, len, now)),
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_unleash(a: *mut NmAgent, i: i32) -> i32 {
+    let a = agent!(a);
+    if i != -1 && part(a, i).is_none() {
+        return fail(NM_E_ARG, "no such part");
+    }
+    let doll = &mut a.agent.doll;
+    a.more.leash.retain(|l| {
+        let keep = i != -1 && l.0 != i as usize;
+        if !keep {
+            doll.tether(l.0, None);
+        }
+        keep
+    });
     0
 }
 

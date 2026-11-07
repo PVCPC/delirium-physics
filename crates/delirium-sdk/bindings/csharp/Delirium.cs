@@ -209,6 +209,12 @@ namespace Delirium
         /// <summary>An impulse at `at` on the part nearest it (a bullet's push).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_apply_push(IntPtr a, float[] at, float[] impulse);
+        /// <summary>A leash: the point `at` (world, on part `i`) kept within `length` of `anchor` (world). No stretch: slack inside it, free to swing round and come nearer, held at its length past that. Again on the same part moves the anchor or changes the length (`at` or `anchor` null keeps its own; made shorter, it reels him in at 2 m/s). LEAD only (a FOLLOW body is the host's: use its joint). To wrap round a corner, move `anchor` to the corner and take what's used up off `length`.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_leash(IntPtr a, int i, float[] at, float[] anchor, float length);
+        /// <summary>Part `i`'s leash let go (-1: every one). No leash there: nothing happens.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_unleash(IntPtr a, int i);
         /// <summary>The part nearest `at` (world).</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_nearest_part(IntPtr a, float[] at);

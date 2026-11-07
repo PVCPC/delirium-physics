@@ -3,7 +3,7 @@ rem Delirium room. Drag your game's disc image (.iso) or its PC game folder (the
 setlocal
 cd /d "%~dp0"
 rem On its own (downloaded from the release page): fetch this version's ready-built room beside it, no build needed.
-set "VERSION=0.6.0"
+set "VERSION=0.7.0"
 if exist "%~dp0Cargo.toml" goto build
 rem Beside the ready-built room (unzipped together): run it.
 set "VIEWER=%~dp0delirium-room.exe"
@@ -39,8 +39,8 @@ if exist "%APPDATA%\delirium\graphics-fallback" if not exist "%DXC%\bin\x64\dxco
 rem (delirium-room-safe.bat sets SAFE to --safe: Safe Mode.)
 if /i "%~x1"==".iso" ("%VIEWER%" %SAFE% --game "%~f1") else ("%VIEWER%" %SAFE% %*)
 set "CODE=%errorlevel%"
-rem The graphics driver crashed before the room's first frames (its marker left): again, up to four times; after two
-rem crashes in a row the room starts one step safer (plain Vulkan, then DirectX 12).
+rem The graphics driver crashed before the room's first frames (its marker left): again, up to four times, each one step
+rem safer (plain Vulkan, then DirectX 12).
 set /a TRIES+=1
 if not "%CODE%"=="0" if %TRIES% LEQ 4 if exist "%APPDATA%\delirium\starting" (echo. & echo The graphics driver crashed starting the room: starting it again... & goto run)
 if not "%CODE%"=="0" if exist "%APPDATA%\delirium\crash.dmp" (echo. & echo The room crashed ^(code %CODE%^). Please send %APPDATA%\delirium\crash.dmp with your report. & pause & exit /b 0)

@@ -37,6 +37,8 @@ Add a **Delirium Ragdoll** component to the character. From Blueprint or C++:
 | `React(Line)` | Any reaction as the Playroom console's line: `rollUp start=true`, `bodyWrithe start=true`, `stopAllBehaviours` |
 | `Kill()` | Limp, stays down |
 | `Sever(Point, Impulse)` | Cuts off the limb nearest `Point` (hide its mesh and spawn your gib yourself) |
+| `Leash(Point, Anchor, Length)` | Ties the part nearest `Point` to `Anchor`, at most `Length` cm away: slack inside, he hangs and swings past it; returns the part |
+| `LeashLength(Part, Length)` / `LeashAnchor(Part, Anchor, Length)` / `Unleash(Part)` | A new length (shorter reels him in), a moved anchor (a moving holder, a corner it wraps round), let go (-1: all) |
 | `GetUp()` | Hands it back: the actor stands where the body lies, mesh, animation and movement back on |
 | `ShootWeapon(Weapon, From, Aim, Health)` / `Shotgun(From, Aim, Weapon, Health)` | A shot from the weapons table (setting `Weapons`: `name=set:push:damage[:pellets:between:clip:accuracy:range]` or the game's weaponinfo.xml; empty: pistol, smg, rifle, shotgun), returning the health left / a blast's pellets fanned as the game's, returning how many struck. `WeaponNames()`, `LoadWeapons(Text)` |
 | `SetReactions(Bits)` / `NearMiss(From, Direction)` / `SetDive(Gap)` / `ThrownAt(At, Velocity, bLook, bAvoid)` | The Playroom's extra reactions (EDeliriumReaction) / a bullet that missed / a dive when shot at again soon after / something thrown at it |

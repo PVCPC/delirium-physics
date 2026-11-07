@@ -158,6 +158,10 @@ NM_API float nm_agent_get_kinetic_energy(const NmAgent* a);
 NM_API int32_t nm_agent_apply_impulse(NmAgent* a, int32_t i, const float* at, const float* impulse);
 /* An impulse at `at` on the part nearest it (a bullet's push). */
 NM_API int32_t nm_agent_apply_push(NmAgent* a, const float* at, const float* impulse);
+/* A leash: the point `at` (world, on part `i`) kept within `length` of `anchor` (world). No stretch: slack inside it, free to swing round and come nearer, held at its length past that. Again on the same part moves the anchor or changes the length (`at` or `anchor` null keeps its own; made shorter, it reels him in at 2 m/s). LEAD only (a FOLLOW body is the host's: use its joint). To wrap round a corner, move `anchor` to the corner and take what's used up off `length`. */
+NM_API int32_t nm_agent_leash(NmAgent* a, int32_t i, const float* at, const float* anchor, float length);
+/* Part `i`'s leash let go (-1: every one). No leash there: nothing happens. */
+NM_API int32_t nm_agent_unleash(NmAgent* a, int32_t i);
 /* The part nearest `at` (world). */
 NM_API int32_t nm_agent_nearest_part(const NmAgent* a, const float* at);
 /* A segment from `from` to `to` against the body's capsules: the part hit (and the point and normal), or -1. */

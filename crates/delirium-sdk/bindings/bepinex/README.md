@@ -59,7 +59,9 @@ nm.LyingStill += (owner, faceUp, facing) => {               // lying still for h
 Also: `nm.Explode(owner, at)`, `nm.MeleeHit(...)`, `nm.OnFire(owner)`, `nm.Tase(owner, seconds)`, `nm.HighFall(owner)`, `nm.Kill(owner)`, and
 `nm.Sever(owner, point, impulse)` to cut off the limb nearest `point` (the piece goes limp, a leg gone it stays down;
 hide the limb's mesh and spawn your own gib yourself). Also `nm.CatchFall(owner)`, `nm.FallDown(owner, heading)`, `nm.Grab(owner, left, leftNormal, right,
-rightNormal, hold)`, `nm.JumpRoll(owner)`, `nm.Flinch(owner, from)`, `nm.Tackle(owner, target)`, `nm.SetWater(owner, level)`.
+rightNormal, hold)`, `nm.JumpRoll(owner)`, `nm.Flinch(owner, from)`, `nm.Tackle(owner, target)`, `nm.SetWater(owner, level)`,
+and leashes: `nm.Leash(owner, point, anchor, length)` (returns the part), `nm.LeashLength(owner, part, length)`,
+`nm.LeashAnchor(owner, part, anchor, length)`, `nm.Unleash(owner, part)`.
 Cars: `nm.RegisterCar(transform, size, playerDriven)` makes anything a car (zero size: its BoxCollider or renderers):
 ragdolls meet its box, characters in its way are ragdolled, hits react as the game's and raise `nm.CarHit(who, damage,
 car)`; `nm.UnregisterCar`, `nm.CarComing(owner, car)` (brace; config `ArmsOutEarly`), `nm.CarDoor(owner, car)`.

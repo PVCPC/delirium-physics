@@ -65,6 +65,7 @@ fn panics() {
     }
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let _ = std::fs::remove_file(crate::getup::config_dir().join(crate::STARTING));
         save(&format!("The room crashed: {info}\n\n{}\n{}", system(), std::backtrace::Backtrace::force_capture()));
         default(info);
     }));

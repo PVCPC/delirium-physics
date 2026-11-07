@@ -1664,6 +1664,7 @@ pub struct Ragdoll {
     stiff: Vec<f32>,
     pins: Vec<Option<Transform>>,
     cons: Vec<(Option<Vec3>, Option<Quat>)>,
+    tethers: Vec<Option<(Vec3, f32)>>,
     pub grips: Vec<(usize, Vec3, Vec3, f32, f32)>,
     pub joins: Vec<(usize, Vec3, i32, Vec3, f32)>,
     pub carried: Option<Obstacle>,
@@ -1781,7 +1782,7 @@ impl Ragdoll {
             at += 1;
             order.extend((0..n).filter(|&c| build.parts[c].parent == Some(k)));
         }
-        Ragdoll { nm: build.nm, links: build.links.clone(), pins: vec![None; n], cons: vec![(None, None); n], grips: vec![], gone: 0, joins: vec![], carried: None, carried_hits: vec![], carried_push: vec![], ob_push: vec![], carried_touch: vec![], locks: vec![], snapped: vec![], grip_rows: vec![], join_rows: vec![], touch: vec![0; n], contact_off: 0, hit: vec![None; n], contact: crate::bump::ContactRecord::new(), ob_hits: vec![], ob_hit_left: vec![], wall: vec![], ped_world: Default::default(), held: vec![vec![]; n], stage_vel: vec![], stage_lt: vec![], root_moment: vec![], roll_push: None, stage_lim: vec![], stiff: vec![], bodies, order, mode: 1, still: [SLEEP_STOP() - 2, SLEEP_SLEEP() - 2],
+        Ragdoll { nm: build.nm, links: build.links.clone(), pins: vec![None; n], cons: vec![(None, None); n], tethers: vec![None; n], grips: vec![], gone: 0, joins: vec![], carried: None, carried_hits: vec![], carried_push: vec![], ob_push: vec![], carried_touch: vec![], locks: vec![], snapped: vec![], grip_rows: vec![], join_rows: vec![], touch: vec![0; n], contact_off: 0, hit: vec![None; n], contact: crate::bump::ContactRecord::new(), ob_hits: vec![], ob_hit_left: vec![], wall: vec![], ped_world: Default::default(), held: vec![vec![]; n], stage_vel: vec![], stage_lt: vec![], root_moment: vec![], roll_push: None, stage_lim: vec![], stiff: vec![], bodies, order, mode: 1, still: [SLEEP_STOP() - 2, SLEEP_SLEEP() - 2],
                   sleep_tol: [SLEEP_V2(), SLEEP_W2(), SLEEP_MEAN2()], asleep: false, age: 0.0, fresh: false, wake_step: false, pending: vec![], kicks: None, pairs: vec![], pushed: vec![], seen: vec![], coll: vec![], last_a: vec![], seen_w: vec![], seen_r: vec![], held_pairs: vec![], held_keys: vec![], held_car: vec![], ghost_on: vec![], no_collision: None, no_collision_met: false, prep_twist: vec![], hinge_b: vec![], rigid: None, rage_vo: None, inertia: None, inst: None, out: vec![(Vec3::ZERO, Vec3::ZERO); n], joint_torque: vec![Vec3::ZERO; n], armature: vec![0.0; n], o, bound_c: crate::nmrs::cg(build.nm),
                   rejuv: 0, mwc: (1, 0), held_inst: None, ped_inst: None, pool: 0 }
     }
@@ -1800,6 +1801,13 @@ impl Ragdoll {
     pub fn constrain(&mut self, k: usize, at: Option<Vec3>, turn: Option<Quat>) {
         self.cons[k] = (at, turn);
         if at.is_some() || turn.is_some() {
+            self.wake();
+        }
+    }
+
+    pub fn tether(&mut self, k: usize, to: Option<(Vec3, f32)>) {
+        self.tethers[k] = to;
+        if to.is_some() {
             self.wake();
         }
     }
@@ -2508,6 +2516,7 @@ impl Ragdoll {
         let held_lv: Vec<u16> = self.held.iter().flatten().map(|r| world.level_index(r.inst)).collect();
         let held_ob: Vec<i32> = self.held_car.iter().filter(|h| !h.3.is_empty()).map(|h| h.1).collect();
         let mut hit_ob: Vec<(usize, i32, Vec3, Vec3)> = vec![];
+        let mut taken: Vec<usize> = vec![];
         let (mut ghosts, mut ghost_ob): (Vec<bool>, Vec<i32>) = (vec![], vec![]);
         for (_, held) in self.held.iter_mut().enumerate().filter(|&(i, _)| pose[i].is_some() || self.fresh) {
             held.clear();
@@ -2572,12 +2581,13 @@ impl Ragdoll {
                     let (lm, la) = cp.last.unwrap_or((cp.m, cp.at));
                     let side_c = (cp.shape, own_half, (ob.at + rot * cp.at, cq), (lat + lrot * la, lrot * lm));
                     let a_world = (self.seen_w.get(i).map_or(a_last.0 + o, |&w| w), a_last.1);
-                    let slot = self.held_car.iter().position(|h| (h.0, h.1, h.2) == (i, ob.id, c));
+                    let slot = (0..self.held_car.len()).find(|&s| (self.held_car[s].0, self.held_car[s].1, self.held_car[s].2) == (i, ob.id, c) && !taken.contains(&s));
                     if !meet {
                         if let Some(s) = slot { self.held_car[s].3.clear(); }
                         continue;
                     }
                     let s = slot.unwrap_or_else(|| { self.held_car.push((i, ob.id, c, vec![])); self.held_car.len() - 1 });
+                    taken.push(s);
                     Self::manifold(&mut self.held_car[s].3, (shape, bound_half(p), (bw, tm), a_world), side_c, ob.first);
                     if self.no_collision == Some(ob.id) {
                         self.no_collision_met |= !self.held_car[s].3.is_empty();
@@ -2677,6 +2687,20 @@ impl Ragdoll {
                     rows.push(Row::new(artic, j, to, RowKind::Equal));
                 }
             }
+        }
+        for (k, &(at, len)) in self.tethers.iter().enumerate().filter_map(|(k, t)| Some((k, t.as_ref()?))).filter(|&(k, _)| pose[k].is_none()) {
+            let b = &self.bodies[k];
+            let to_pin = at - o - b.x;
+            let dist = to_pin.length();
+            if dist < delirium_data::kv!(72) {
+                continue;
+            }
+            let j = lrow(k, d(b.x), d(to_pin / dist), DVec3::ZERO);
+            let fvj = fv(&j);
+            if dist + (-fvj as f32).max(0.0) * h * 2.0 < len - delirium_data::kv!(68) {
+                continue;
+            }
+            rows.push(Row::new(artic, j, ((dist - len).min(delirium_data::kv!(60)) / h) as f64 - fvj, RowKind::Push));
         }
         let mut self_touch: Vec<(usize, Vec3, Vec3, f32)> = vec![];
         let mut self_seq: Vec<Option<usize>> = vec![];
@@ -3217,6 +3241,7 @@ impl Ragdoll {
             for (k, (p, c)) in self.pins.iter_mut().zip(&mut self.cons).enumerate().filter(|(k, _)| g >> k & 1 != 0) {
                 let _ = k;
                 (*p, *c) = (None, (None, None));
+                self.tethers[k] = None;
             }
         }
         let moving = obstacles.iter().any(|o| o.vel.length() > 0.5 || o.spin.length() > 0.5);
@@ -3561,7 +3586,7 @@ impl Ragdoll {
         }
         self.sleep();
         self.asleep = self.mode == 2 && lift == 0.0 && self.pins.iter().all(Option::is_none) && self.grips.is_empty() && self.joins.is_empty()
-            && self.cons.iter().all(|c| c.0.is_none() && c.1.is_none());
+            && self.cons.iter().all(|c| c.0.is_none() && c.1.is_none()) && self.tethers.iter().all(Option::is_none);
     }
 }
 

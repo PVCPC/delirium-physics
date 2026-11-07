@@ -432,6 +432,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Delirium")
 	bool Kill();
 
+	/** A leash: the part nearest `Point` tied to `Anchor`, at most `Length` cm away (slack inside, no stretch). Returns the part (for LeashLength / LeashAnchor / Unleash), -1 if none. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	int32 Leash(FVector Point, FVector Anchor, float Length);
+
+	/** Leash `Part`'s new length in cm (shorter reels him in at 2 m/s). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool LeashLength(int32 Part, float Length);
+
+	/** Leash `Part`'s anchor moved (a moving holder, or the corner it wraps round: take what's used up off the length). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool LeashAnchor(int32 Part, FVector Anchor, float Length);
+
+	/** Lets leash `Part` go (-1: every one). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool Unleash(int32 Part = -1);
+
 	/** Cuts off the limb nearest `Point` (hide its mesh and spawn your gib yourself). False nearest the hips or cut already. */
 	UFUNCTION(BlueprintCallable, Category = "Delirium")
 	bool Sever(FVector Point, FVector Impulse);

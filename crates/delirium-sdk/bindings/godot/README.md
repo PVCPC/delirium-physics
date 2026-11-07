@@ -44,6 +44,8 @@ nm.push(Vector3(60, 0, 0))                     # N s; 60 is a solid shove
 nm.melee_hit(point, fist * 30.0, my_head, false)
 nm.explode(blast, 5.0, 15.0)
 nm.sever(point, Vector3.UP)                    # hide the limb's mesh yourself
+var p = nm.leash(hand, hook, 2.0)              # a leash: hangs and swings, never further than 2 m
+nm.leash_length(p, 1.0)                        # shorter: reels him in; nm.unleash(-1) lets go
 nm.lying_still.connect(func(face_up, facing): nm.get_up())
 ```
 

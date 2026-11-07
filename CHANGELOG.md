@@ -1,8 +1,32 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 ### Added
+- **Fullscreen**: F11, or "Fullscreen" in Audio / Video (kept with your settings): the whole screen, no border,
+  on the monitor the window is on.
+- **Ropes and leashes** in the Playroom, on the mouse's drag line:
+  - **Tie it off**: while dragging a part, **T** ties the line to the map under the pointer (or right there in the
+    air). You can grab and drag him again while he's tied, and tie as many lines as you like. **T** cuts a line,
+    **Shift + T** all of them.
+  - **Rope or leash** (**L**): a rope stretches, a leash doesn't. Made a leash, a tied line locks at the length it is
+    right then, so nothing jumps; he swings and falls freely inside it and is only stopped from going further.
+  - **Stretch** (**Ctrl + Scroll Wheel**): up tight, down stretchy. A rope shows it: thin, dashed and yellow is a
+    bungee, thick, solid and red a tight rope.
+  - **Length** (**Alt + Scroll Wheel**): a tied line longer or shorter. While dragging, it lets the drag line out
+    or reels it in, so he hangs off the pointer.
+  - **Leash colour**: pink where it's taut, dark blue where it's slack, along the line itself.
+  - **Real slack and corners**: a slack line hangs in a sag and lies on the floor. Lines wrap round walls and
+    corners and hold him from the corner with what's left (**K**, or "Lines wrap round the map" in Interact, turns
+    it off).
+  - **Several lines**: point at a tied line to pick it (it thickens); L, the scroll wheels and T act on that one,
+    else the newest.
+  - A small bar at the bottom of the view shows the keys and the line's setting while you drag or have lines tied.
+  - Scripts: `!tie [x,y,z]`, `!untie [all]`, `!linek k`, `!reel m`, `!leash`.
+  - **In your own game**: the leash is in the SDK (`nm_agent_leash`, `nm_agent_unleash`) and every plugin: Unity and
+    BepInEx `Leash` / `LeashLength` / `LeashAnchor` / `Unleash`, Godot `leash` / `leash_length` / `leash_anchor` /
+    `unleash`, Unreal the same as Unity's (in cm), C++ `leash` / `unleash`, Python. Made shorter, it reels him in
+    at 2 m/s instead of snapping.
 - **Every Playroom tool in the SDK and every plugin** (Unity, BepInEx, Godot, Unreal), so a mod can do what the
   Playroom does:
   - **Weapons table**: pistol, SMG, rifle and shotgun by default, or your own (`name=set:push:damage[:pellets:...]`)
@@ -69,6 +93,19 @@
   version 1.2.0.59) or the original Xbox 360 disc, from your own copy.
 
 ### Fixed
+- **Stuck on safer graphics**: the room counted any crash in its first second (a room bug, or quitting right away)
+  as the graphics driver failing, and after two it stayed on plain Vulkan for good (no DLSS, FSR 3 or XeSS). Now only
+  a real driver crash while starting counts, and every new room build tries full graphics again. One such crash is
+  enough: the launcher starts the room again at once on the safer graphics, so a player whose card needs it never has
+  to relaunch by hand. **Video → Graphics mode** (Windows) picks Full (Vulkan), Plain Vulkan or DirectX 12 for the next
+  start, and after a fallback a **Try full graphics again** button turns everything back on.
+- The room crashing when two cars (or other moving obstacles sharing an id) touched the same body part at once (#43):
+  each now keeps its own contact points.
+- Dragging him while turning the camera: the pointer now moves him across the camera's new view, not the view at the
+  press.
+- Script grabs (`!grab`) pull until `!release` (they were dropped the next frame).
+- Ray tracing off, retired ray-tracing meshes are freed (the water's, rebuilt every frame, used to pile up)
+  (by [LoAlCo](https://github.com/LoAlCo), from PR #41).
 - Every shot spun him left: the random numbers now run on across resets.
 - Sized bodies' balance probes the ground as far as their legs reach.
 - Ball joints' limits are applied in the right order.
