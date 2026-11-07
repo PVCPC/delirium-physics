@@ -44,7 +44,8 @@ each character), `Random` (`Body Seed`, 0: each its own; `Body Variance`; `Body 
 legs, arms, trunk, width, head, neck against the fitted body, weight in kg, height in m, 0 keeps it). `SetBody(owner,
 "Brawler")` sets one character's. `Overrides` changes behaviour parameters for every character, as the Playroom's
 Parameters tab does (`shot.bodyStiffness=7, bodyBalance.useHeadLook=0`); `SetOverride(owner, "shot", "bodyStiffness",
-7)` and `ClearOverrides(owner)` for one. The mesh keeps its look (its bones follow the body's turns), so pick a body near the mesh: a Brawler under a tall mesh
+7)` and `ClearOverrides(owner)` for one; `SetStrength(owner, 1.5f)` makes one character's muscles stronger (0: back to
+`Strength`). A custom body that won't stand: "Tuning a custom body" in `docs/modding.md`. The mesh keeps its look (its bones follow the body's turns), so pick a body near the mesh: a Brawler under a tall mesh
 shows its feet off the ground.
 
 **The Playroom's other tools** (each takes the character's root):

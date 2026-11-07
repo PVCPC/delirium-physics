@@ -65,6 +65,9 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	};
 	const FVector Still = Run(TEXT("standing 5 s"), [](UDeliriumRagdollComponent*) {}, 5.f);
 	TestTrue(TEXT("stands"), Still.Z > 70.f);
+	const FVector Mapped = Run(TEXT("BoneMap"), [](UDeliriumRagdollComponent*) {}, 2.f,
+		[](UDeliriumRagdollComponent* D) { D->BoneMap = TEXT("pelvis=Buttocks, NoSuchBone=Head, thigh_l=Bogus"); });
+	TestTrue(TEXT("stands with a BoneMap"), Mapped.Z > 70.f);
 	const FVector Pushed = Run(TEXT("60 N s push"), [](UDeliriumRagdollComponent* D) { D->Push(FVector(60, 0, 0)); }, 5.f);
 	TestTrue(TEXT("stays up after a push"), Pushed.Z > 70.f);
 	const FVector Hard = Run(TEXT("200 N s push"), [](UDeliriumRagdollComponent* D) { D->Push(FVector(200, 0, 0)); }, 5.f);
@@ -164,6 +167,7 @@ bool FDeliriumRagdollTest::RunTest(const FString&)
 	Run(TEXT("script"), [this](UDeliriumRagdollComponent* D) { TestTrue(TEXT("Script"), D->Script(500)); }, 1.f);
 	Run(TEXT("muscles"), [this](UDeliriumRagdollComponent* D) { TestTrue(TEXT("MuscleRise"), D->MuscleRise() && D->MuscleRise(false, 0.f)); }, 1.f);
 	Run(TEXT("stick"), [this](UDeliriumRagdollComponent* D) { TestTrue(TEXT("SetStick"), D->SetStick(true, 0.f, 1.f)); }, 1.f);
+	Run(TEXT("strength"), [this](UDeliriumRagdollComponent* D) { TestTrue(TEXT("SetStrength"), D->SetStrength(1.8f) && D->SetStrength(0.f)); }, 1.f);
 	Run(TEXT("attacker"), [&](UDeliriumRagdollComponent* D) { TestTrue(TEXT("SetAttacker"), D->SetAttacker(Floor, true)); D->GunReady(); }, 1.f);
 	const FString Nets = FPlatformMisc::GetEnvironmentVariable(TEXT("DELIRIUM_NETS"));
 	if (!Nets.IsEmpty())

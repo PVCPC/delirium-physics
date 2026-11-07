@@ -1014,7 +1014,10 @@ fn agent_step(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -
         let (now, keep) = (b.0, 2 * b.1.len() as u64 + 2);
         b.1.retain(|e| e.0 == me || now - e.1 <= keep);
         let at = a.agent.doll.com().0;
-        before.unwrap_or(&b.1).iter().filter(|e| e.0 != me).flat_map(|e| e.2.iter().copied()).filter(|c| ((c.0 + c.1) / 2.0).distance(at) < 3.0).collect()
+        let mut near: Vec<delirium::ragdoll::Capsule> = before.unwrap_or(&b.1).iter().filter(|e| e.0 != me).flat_map(|e| e.2.iter().copied())
+            .filter(|c| ((c.0 + c.1) / 2.0).distance(at) < 3.0).collect();
+        near.sort_by(|x, y| x.0.to_array().iter().chain(&x.1.to_array()).map(|v| v.to_bits()).cmp(y.0.to_array().iter().chain(&y.1.to_array()).map(|v| v.to_bits())));
+        near
     };
     catch_fire(a, w, dt);
     if before.is_none() {

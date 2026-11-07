@@ -58,9 +58,15 @@ keeps it). `Overrides` changes behaviour parameters as the Playroom's Parameters
 from Blueprint. The mesh keeps its look (its bones follow the body's turns), so pick a body near the mesh: a Brawler under a tall mesh
 shows its feet off the ground.
 
+`Strength` (0: the project settings') or `SetStrength(K)` makes one character's muscles stronger, 1.3-2 for a heavy
+custom body. A custom body that won't stand: "Tuning a custom body" in `docs/modding.md`.
+
 Settings `bStepLimit` (the game's balance runs out of steps; off: the Playroom's) and `bFireReaction`. A physical
 material's friction and restitution reach NM (ice slides); a turning mover carries what it touches round. A panic in
 the SDK writes `Saved/delirium_physics-crash.txt`.
+
+The skeleton is found by bone names (Unreal, Mixamo, Unity humanoid, Biped style); `BoneMap` fixes the rest
+(`Pelvis_jnt=Buttocks, Tail=None`).
 
 Places are Unreal's (cm); impulses are N s. Ragdolls within 5 m share one world, so they push and pile on each other.
 

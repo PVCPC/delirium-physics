@@ -55,6 +55,9 @@ cars: `DeliriumRagdoll.register_car(node, size, player_driven)` (anything you ca
 `unregister_car(node)`, `car_coming(car)` (brace), `car_door(car)`, signal `car_hit(damage, car)`; setting `arms_out_early`; `get_up_after` gets it up by itself after that many seconds lying still.
 A turning mover (a wrecking ball, a turntable) carries what it touches round with it.
 
+`strength` (0: the `delirium/strength` setting's) makes one character's muscles stronger, 1.3-2 for a heavy custom
+body; it takes effect at once. A custom body that won't stand: "Tuning a custom body" in `docs/modding.md`.
+
 **The Playroom's other tools:**
 
 - Weapons: `shoot_weapon(name, point, dir, health)` returns the health left; `shotgun(name, from, aim, health, seed)` fans
@@ -85,7 +88,7 @@ A turning mover (a wrecking ball, a turntable) carries what it touches round wit
   running. Stop your own movement code while `is_ragdolled()`.
 - **No snaps**: it starts from the animated pose and the character's speed (CharacterBody3D or RigidBody3D), and
   getting up blends into the animation over `get_up_blend` seconds (0.4).
-- The skeleton is found by bone names (Mixamo, Unity humanoid, Biped, Unreal style).
+- The skeleton is found by bone names (Mixamo, Unity humanoid, Biped, Unreal style); `bone_map` fixes the rest (`Pelvis_jnt=Buttocks, Tail=None`).
 - The level is read from static bodies' box and triangle-mesh shapes within 15 m; ragdolls near each other share a
   world and pile on each other.
 

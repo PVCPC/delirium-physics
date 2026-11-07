@@ -1,5 +1,88 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Every Playroom tool in the SDK and every plugin** (Unity, BepInEx, Godot, Unreal), so a mod can do what the
+  Playroom does:
+  - **Weapons table**: pistol, SMG, rifle and shotgun by default, or your own (`name=set:push:damage[:pellets:...]`)
+    or GTA IV's own `weaponinfo.xml`. `ShootWeapon` shoots one and returns the health left. `Shotgun` fans its
+    pellets the way GTA IV does and hits with all of them as one shot.
+  - **Reactions**: the Playroom's extra reactions (windmill, dodge, look at the hit and the rest) as one switch
+    set, near misses, a dive when shot at again soon after one, and ducking or catching something thrown at him.
+  - **Moves**: jump and dive, GTA IV's balance, stop, sit, hold a pose from the animation, roll up then go limp,
+    and script control (only your messages move him).
+  - **Getting up**: on his own muscles with the get-up animation as targets, or as the learned network does
+    (`getup.net`). **Learned walk** (`walk.net`) under a stick, the Playroom's drunk control.
+  - **Fights**: who he's up against (he looks at them) and, if they're armed, when they're ready to fire.
+  - **Reading**: any behaviour parameter as it runs, raycasts against the body, a setup check, and the full list
+    of messages and parameters with defaults and descriptions (for pickers in your tools).
+  - **Full state**: settled, awake, jumping, task running, learned get-up, resting, where the balancer stands and
+    which parts touch something.
+  - **Switches**: step limit (GTA IV's balance runs out of steps) and fire reaction.
+- **Strength per character** in every plugin (`strength`, `SetStrength`), for a heavy or oddly shaped body that
+  can't take a hit. **Bone Map** in Godot and Unreal (Unity had it) for bones the name guess misses.
+- **Tuning a custom body**, a new section in [Modding](docs/modding.md): what to try, in order, when a body won't
+  stand.
+- **Physics materials reach the ragdoll** in every plugin: a collider's friction and bounce (ice slides). Turning
+  movers (a wrecking ball, a turntable) carry what they touch round with them.
+- **Engine physics** in Unity, Godot and Unreal (`EnginePhysics`): Delirium's own physics moves him, his parts
+  push your objects and loose objects hit him. Every body stands this way, Brute, Brawler and Bruiser included.
+- **Cars and movers in the plugins**: `RegisterCar` (anything can be a car) with car hits as GTA IV's, a
+  `CarHit` event, bracing for a car coming (`ArmsOutEarly` throws the arms out sooner), dragged from a car door,
+  and `RegisterMover` for trains and objects (what kind, brace, knock down).
+- **More reactions in the plugins**: catch fall, fall down, grab, jump roll, flinch, tackle, water, the taser, and
+  `React(line)` for any reaction as a Playroom console line.
+- **Follow** in every plugin: the animation keeps running under the ragdoll and the ragdoll aims at it. **Hold**
+  and **Recentre joints** settings.
+- **State and events** in every plugin: what a ragdoll is doing (`State` / `GetState` / `get_state`), `Fell` once
+  per fall and `Feedback` for the behaviours' own messages.
+- **SDK**: crowds stepped over every core (`nm_world_step_agents`) in linear time, the same result on any number
+  of threads; `nm_crash_report` (a panic writes a crash note to a folder you pick); `nm_msg_send_text`;
+  `nm_agent_follow`, `nm_agent_hold` and `nm_agent_recentre_joint` (from 0.5.0's bug reports);
+  `nm_agent_get_zero_pose` and `nm_agent_get_part_body` for building the body in your own physics engine; and
+  `nm_world_set_box_kinds` / `nm_world_set_box_spins` for movers. The C++ header wraps every call.
+- **Bruiser** body: Brawler-like with a bigger head, an even trunk, small shoulders and short legs set wide.
+- **Skeleton skin** with hollow black eye sockets, and a new cartoon skull model.
+- **Arms out early when bracing**, a new extra reaction toggle.
+- The shotgun's pellets fan out and each push him as GTA IV's do.
+- Thrown and melee weapons work in camera aim, with GTA IV's melee damage.
+- `--custom` start flag: Custom sizes from the first frame, for recordings.
+- After a graphics error or a system crash the room leaves `crash.txt` too; crash reports carry the live settings
+  and the last 10 changes.
+
+### Changed
+- Ragdolls touching the ground follow GTA IV more closely (contact points on the ground's surface margin): a
+  lying body used to drift up to 11 cm from where GTA IV puts it.
+- Heavy bodies' muscles grow with their weight, so they stand still instead of swaying and stepping.
+- The Brute weighs 140 kg (was 160): at 160 he went down to three pokes in a row three times in four.
+- Short legs thin the belly with them on Custom and Random bodies (no gut over the crotch); Random keeps its drawn
+  leg length.
+- Body profiles' feet go by their hips' spread, and widened bodies move each limb out whole.
+- The room uses less memory: about 230 MB less RAM and 320 MB less video memory when idle. Pool ripples and foam
+  cost 0.8 ms a frame (was 2.3).
+- The Parameters tab starts each behaviour from its row.
+- Push tests throw both arms out straight; Push from front braces on the slab itself.
+
+### Docs
+- The README and the room say exactly what game you need: Grand Theft Auto IV: The Complete Edition for PC (Steam,
+  version 1.2.0.59) or the original Xbox 360 disc, from your own copy.
+
+### Fixed
+- Every shot spun him left: the random numbers now run on across resets.
+- Sized bodies' balance probes the ground as far as their legs reach.
+- Ball joints' limits are applied in the right order.
+- Plugins: ragdolls share a world only within one engine world (a dead ragdoll from another world tripped the
+  next one). Unreal frees ragdolls when their actor is destroyed. Godot movers are boxed by every shape, turned.
+- Unity engine physics stands (inertia set before torque) and tears down destroyed characters safely.
+- A destroyed SDK agent leaves its world at once.
+- Shots, pushes and the balancer's impulses reach a host's own physics bodies in FOLLOW mode (they were lost), and
+  cutting a limb works there.
+- The Unreal plugin builds on UE 5.8.
+- The renderer no longer crashes on a view without the deferred pass. The anti-aliasing menu lists only what ray
+  tracing keeps, and the ReSTIR option says why path tracing doesn't use it.
+- Wrapped rows in the room's panels stay clear of the scroll bar.
+
 ## 0.6.0
 
 ### Added

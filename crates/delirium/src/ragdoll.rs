@@ -1250,7 +1250,7 @@ impl MapPoints {
     }
 
     pub fn points(&self, rot: Mat3, centre: Vec3) -> Vec<MapPoint> {
-        self.0.held.iter().map(|r| MapPoint { on_part: crate::vm4(rot.x_axis, rot.y_axis, rot.z_axis, centre, r.local), ground: r.ground, n: r.n, gap: r.gap,
+        self.0.held.iter().map(|r| MapPoint { on_part: crate::vm4(rot.x_axis, rot.y_axis, rot.z_axis, centre, r.local), ground: r.ground - r.n * WORLD_MARGIN(), n: r.n, gap: r.gap,
                                               inst: r.inst, push: r.imp.x, off: r.off, flags: r.fl }).collect()
     }
 
@@ -1303,7 +1303,7 @@ fn world_meet(world: &Collision, o: Vec3, shape: gjk::Shape, half: Vec3, tm: Mat
             let new = |q: gjk::Closest, at: Vec3, t0: Vec3| {
                 let (back, world) = (t0 - o, q.a + t0);
                 let local = tm.transpose() * (q.a + back - at);
-                let ground = q.b + back - q.n * WORLD_MARGIN() + o;
+                let ground = q.b + back + o;
                 Held { local, ground, gap: q.dist, age: 0, m: 0, fl: 0, imp: Vec3::ZERO, pimp: Vec3::ZERO, n: q.n, inst: 0, off: false, world, wc: Vec3::ZERO }
             };
             let frame = |m: Mat3, at: Vec3| crate::bvh::Frame { rows: [m.x_axis, m.y_axis, m.z_axis], t: at + o };
@@ -1356,7 +1356,7 @@ fn world_meet(world: &Collision, o: Vec3, shape: gjk::Shape, half: Vec3, tm: Mat
                     let across = if u.dot(n) == 0.0 { n } else { (n - u * u.dot(n)).normalize() };
                     dirs[k + 1].dot(across) >= dirs[0].dot(dirs[k + 1]).min(1.0 - delirium_data::kv!(50)) - delirium_data::kv!(134)
                 });
-                if careful && (leaving(h.local, dirs[0]) || !across_ok(h.ground + h.n * WORLD_MARGIN(), h.n)) {
+                if careful && (leaving(h.local, dirs[0]) || !across_ok(h.ground, h.n)) {
                     return None;
                 }
                 Some((Held { m, fl: world.poly_flags(poly.first), inst, ..h }, poly))
@@ -1390,24 +1390,24 @@ fn world_meet(world: &Collision, o: Vec3, shape: gjk::Shape, half: Vec3, tm: Mat
                     }
                 }
             }
-            let mut hits: Vec<(Vec3, Vec3)> = kept.iter().map(|&(g, i)| (groups[g].1[i].ground + groups[g].1[i].n * WORLD_MARGIN(), groups[g].1[i].n)).collect();
+            let mut hits: Vec<(Vec3, Vec3)> = kept.iter().map(|&(g, i)| (groups[g].1[i].ground, groups[g].1[i].n)).collect();
             poly.clamp(&mut hits, WORLD_MARGIN());
             for (&(g, i), (at, n)) in kept.iter().zip(hits) {
                 let r = &mut groups[g].1[i];
-                (r.ground, r.n) = (at - n * WORLD_MARGIN(), n);
+                (r.ground, r.n) = (at, n);
             }
         }
         groups.sort_by_key(|g| world.level_index(g.0));
         for (_, held) in groups.iter_mut() {
             for r in held.iter_mut() {
                 if r.age != 0 {
-                    r.gap = (crate::vm4(tm.x_axis, tm.y_axis, tm.z_axis, bw, r.local) - (r.ground + r.n * WORLD_MARGIN())).vd(r.n);
+                    r.gap = (crate::vm4(tm.x_axis, tm.y_axis, tm.z_axis, bw, r.local) - r.ground).vd(r.n);
                 }
                 r.age += if r.age == 1 { 2 } else { 1 };
             }
             let slid = |r: &Held| {
                 let a = crate::vm4(tm.x_axis, tm.y_axis, tm.z_axis, bw, r.local);
-                let d = (r.ground + r.n * WORLD_MARGIN()) - (-r.n).mul_add(Vec3::splat(r.gap), a);
+                let d = r.ground - (-r.n).mul_add(Vec3::splat(r.gap), a);
                 d.vd(d)
             };
             let (mut k, mut worst) = (0, (None, 0.0));
@@ -4236,7 +4236,7 @@ impl Build {
 pub fn PROFILES() -> &'static [(&'static str, f32, f32, f32); 6] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32); 6]> = std::sync::OnceLock::new(); let f = || [("Small", delirium_data::kv!(491), delirium_data::kv!(583), 1.0), ("Average", delirium_data::kv!(13), delirium_data::kv!(584), 1.0), ("Large", delirium_data::kv!(192), delirium_data::kv!(46), 1.0), ("Lanky", delirium_data::kv!(192), delirium_data::kv!(569), delirium_data::kv!(506)), ("Fat", delirium_data::kv!(585), delirium_data::kv!(586), delirium_data::kv!(19)), ("Stocky", delirium_data::kv!(587), delirium_data::kv!(588), delirium_data::kv!(28))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHAPES() -> &'static [(&'static str, f32, f32, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || [("Waddler", delirium_data::kv!(119), delirium_data::kv!(80), delirium_data::kv!(136), delirium_data::kv!(207), delirium_data::kv!(589)), ("Guard", delirium_data::kv!(80), delirium_data::kv!(28), delirium_data::kv!(138), delirium_data::kv!(20), delirium_data::kv!(103)), ("Brute", delirium_data::kv!(80), delirium_data::kv!(207), 1.0, delirium_data::kv!(80), delirium_data::kv!(513))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SHAPES() -> &'static [(&'static str, f32, f32, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || [("Waddler", delirium_data::kv!(119), delirium_data::kv!(80), delirium_data::kv!(136), delirium_data::kv!(207), delirium_data::kv!(589)), ("Guard", delirium_data::kv!(80), delirium_data::kv!(28), delirium_data::kv!(138), delirium_data::kv!(20), delirium_data::kv!(103)), ("Brute", delirium_data::kv!(80), delirium_data::kv!(207), 1.0, delirium_data::kv!(80), delirium_data::kv!(47))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn BRAWLER_BODY() -> &'static Sizes { static V: std::sync::OnceLock<Sizes> = std::sync::OnceLock::new(); let f = || Sizes { legs: delirium_data::kv!(10), arms: delirium_data::kv!(74), trunk: 1.0, width: delirium_data::kv!(179), head: delirium_data::kv!(12), neck: 1.0, kg: delirium_data::kv!(63), height: 0.0 }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }

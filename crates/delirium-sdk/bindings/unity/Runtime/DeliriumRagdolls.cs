@@ -128,6 +128,7 @@ namespace Delirium.Ragdoll
         /// The Body settings' body (Body.Make), and SetBody's for one character.
         internal static Body Shape = new Body("Fitted", 0, 1.5f, true, "");
         internal static readonly Dictionary<Transform, Body> Shapes = new Dictionary<Transform, Body>();
+        internal static readonly Dictionary<Transform, float> Strong = new Dictionary<Transform, float>();
         /// The Overrides setting's (behaviour, param, value) for every character, and SetOverride's for one.
         internal static List<(string, string, float)> AllOverrides = new List<(string, string, float)>();
         internal static readonly Dictionary<Transform, List<(string, string, float)>> Overridden = new Dictionary<Transform, List<(string, string, float)>>();
@@ -872,6 +873,15 @@ namespace Delirium.Ragdoll
         public void SetBody(Transform owner, string body, int seed = 0) =>
             Shapes[owner] = new Body(body, seed, Shape.Variance, Shape.Symmetric, Shape.Custom);
 
+        /// That character's muscles times `k` (on top of nothing: 0 goes back to Strength's), now and on every ragdoll.
+        /// 1.3-2 for a heavy custom body that can't take a hit; under 1 for a weak one.
+        public bool SetStrength(Transform owner, float k)
+        {
+            if (k > 0f) Strong[owner] = k; else Strong.Remove(owner);
+            var d = dolls.FirstOrDefault(x => x.Owner == owner);
+            return d == null || nm_agent_set_strength(d.agent, k > 0f ? k : Strength) >= 0;
+        }
+
         /// Every `behaviour` message to that character from now on carries `param` as `value` (on/off: 0 or 1). False (the
         /// reason in the log) for a parameter it doesn't take.
         public bool SetOverride(Transform owner, string behaviour, string param, float value)
@@ -1313,7 +1323,8 @@ namespace Delirium.Ragdoll
             }
             agent = nm_agent_create(build, P(new Vector3(hips.position.x, ground, hips.position.z)), 0f, UnityEngine.Random.value);
             if (agent == IntPtr.Zero) throw new Exception(LastError());
-            if (Plugin.Strength != 1f) Plugin.Check(nm_agent_set_strength(agent, Plugin.Strength));
+            float strong = Plugin.Strong.TryGetValue(owner, out var ownStrength) ? ownStrength : Plugin.Strength;
+            if (strong != 1f) Plugin.Check(nm_agent_set_strength(agent, strong));
             // Arms out early: from 1.3 m (the game's 0.65), predicted 0.45 s ahead (its car set's), every brace it makes.
             if (Plugin.ArmsOutEarly)
             {

@@ -313,6 +313,40 @@ Putting it into another game comes down to three things, and the SDK does each:
 For Mono Unity games there's a ready-made BepInEx plugin doing all of this
 (aim, press F9): `crates/delirium-sdk/bindings/bepinex/` and its README.
 
+### Tuning a custom body
+
+A body that won't stand, or falls to hits a person takes, is tuned in this
+order. Every step works the same in the SDK and every plugin.
+
+1. **Check the fit.** Leave Body on `Fitted` and run `CheckSetup` (the
+   plugins) or `nm_rig_check` (the SDK): it lists missing parts, bones under
+   the wrong part, left and right swapped, and a bent rest pose. Add bones it
+   didn't find to `Bone Map`.
+2. **Adaptive on** (the default): each kind of character gets its weight from
+   its mesh and a balance search of its own (step height, leg and body
+   stiffness, damping, when it gives up), once, in the background
+   (`nm_build_tune` in the SDK).
+3. **Strength.** A heavy or oddly shaped body can still be weak against its
+   own weight. Set that character's Strength to 1.3-2 (Godot's `strength`,
+   Unity's `SetStrength(owner, k)`, Unreal's `Strength` / `SetStrength`, the
+   SDK's `nm_agent_set_strength`), or the Strength setting for everyone. Under
+   1 makes a weak one.
+4. **Overrides, for what's left.** Try values live in the Playroom's
+   Parameters tab on the same body, then put them in `Overrides`
+   (`configureBalance.legStiffness=12, bodyBalance.bodyStiffness=11`) or
+   `SetOverride` for one character:
+
+| What it does | Try |
+|---|---|
+| Sways, or steps and steps without settling | `bodyBalance.bodyStiffness` up (to 14), `configureBalance.legStiffness` up (to 16) |
+| Falls to a push it should step out of | `configureBalance.balanceAbortThreshold` up (to 1.5), `configureBalance.stepClampScale` up |
+| Trips over its own feet, scuffs | `configureBalance.stepHeight` up (0.1-0.3) |
+| Stiff and jerky | `bodyBalance.damping` up (to 2) |
+| Arms stay out too long after a push | `bodyBalance.armsOutOnPushTimeout` down |
+
+5. **Very tall or short:** the balance is made for about 1.8 m (see the
+   Tips below); `Size` (`Auto`) or `nm_size_scale` runs those scaled.
+
 ### Godot 4
 
 `crates/delirium-sdk/bindings/godot/`: a GDExtension (Godot 4.5+, GDScript or

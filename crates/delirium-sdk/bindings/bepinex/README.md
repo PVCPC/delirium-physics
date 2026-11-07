@@ -75,7 +75,8 @@ Or set `[Get up] After` to a number of seconds and give the Animator `GetUpFront
 `[Body] Adaptive` (on) fits each kind of character to its own shape: its weight from its skin (where the game left the
 mesh readable) and its balance settings, searched once per kind in the background. Off, every body takes the game man's
 weight share and balance on its own bones. `[Body] Strength` (1) scales every body's muscles: 1.5-2 for tough enemies
-or a movie giant (at 2 a person stands a push of 80 N s instead of 60). From code: `nm_agent_set_strength`.
+or a movie giant (at 2 a person stands a push of 80 N s instead of 60). One character's: `nm.SetStrength(enemy.transform, 1.5f)`. A custom body
+that won't stand: "Tuning a custom body" in `docs/modding.md`.
 
 `[Feel] EnginePhysics` (off; the component's `enginePhysics`): his parts as Unity bodies. NM's own physics still moves him (the game's
 exactly); his parts follow it as kinematic rigidbodies that push your rigidbodies and meet triggers, and loose rigidbodies within 5 m hit him

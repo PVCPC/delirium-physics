@@ -23,6 +23,18 @@ fn turn(t: &Transform3D) -> Quaternion { t.basis.orthonormalized().get_quaternio
 
 fn c(s: &str) -> CString { CString::new(s).unwrap_or_default() }
 
+fn bone_map(text: &str) -> std::collections::HashMap<String, i32> {
+    let part = |n: &str| (0..21).find(|&i| {
+        let mut b = [0u8; 64];
+        unsafe { nm_part_name(i, b.as_mut_ptr().cast(), 64) };
+        std::ffi::CStr::from_bytes_until_nul(&b).is_ok_and(|s| s.to_bytes() == n.as_bytes())
+    });
+    text.split(',').filter_map(|p| p.split_once('=')).filter_map(|(b, n)| {
+        let n = n.trim();
+        Some((b.trim().to_string(), if n.eq_ignore_ascii_case("none") { -1 } else { part(n)? }))
+    }).collect()
+}
+
 fn last_error() -> String {
     let mut buf = [0 as c_char; 512];
     unsafe { nm_last_error(buf.as_mut_ptr(), buf.len() as i32) };
@@ -215,6 +227,11 @@ pub struct DeliriumRagdoll {
     #[export]
     overrides: GString,
     #[export]
+    #[var(set = set_strength)]
+    strength: f32,
+    #[export]
+    bone_map: GString,
+    #[export]
     hit_health: f32,
     #[export]
     hit_agility: i32,
@@ -243,7 +260,7 @@ pub struct DeliriumRagdoll {
 impl ISkeletonModifier3D for DeliriumRagdoll {
     fn init(base: Base<SkeletonModifier3D>) -> Self {
         Self {
-            base, character: None, get_up_blend: 0.4, get_up_after: 0.0, body: "Fitted".into(), body_seed: 0, body_variance: 1.5,
+            base, character: None, get_up_blend: 0.4, get_up_after: 0.0, body: "Fitted".into(), body_seed: 0, body_variance: 1.5, strength: 0.0, bone_map: GString::new(),
             body_symmetric: true, custom_body: "1, 1, 1, 1, 1, 1, 77, 0".into(), overrides: GString::new(), hit_health: 200.0, hit_agility: 5, set: Vec::new(), build: std::ptr::null_mut(), world: std::ptr::null_mut(),
             agent: std::ptr::null_mut(), rig: std::ptr::null_mut(), bones: Vec::new(), out: Vec::new(), scale: 1.0,
             told: false, blend: 0.0, last: Vec::new(), last_hips: Vector3::ZERO, hips_world: Transform3D::IDENTITY, follow: false,
@@ -500,6 +517,15 @@ impl DeliriumRagdoll {
 
     #[func]
     fn is_ragdolled(&self) -> bool { !self.agent.is_null() }
+
+    #[func]
+    fn set_strength(&mut self, k: f32) {
+        self.strength = k;
+        let k = if k > 0.0 { k } else { setting_f("strength", 1.0) };
+        if !self.agent.is_null() {
+            check(unsafe { nm_agent_set_strength(self.agent, k) }, "set_strength");
+        }
+    }
 
     #[func]
     fn set_override(&mut self, behaviour: GString, param: GString, value: f32) -> bool {
@@ -866,7 +892,11 @@ impl DeliriumRagdoll {
             return false;
         };
         let all = s.get_bone_count();
-        let guess: Vec<i32> = (0..all).map(|b| unsafe { nm_rig_part_for_name(c(&s.get_bone_name(b).to_string()).as_ptr()) }).collect();
+        let map = bone_map(&self.bone_map.to_string());
+        let guess: Vec<i32> = (0..all).map(|b| {
+            let name = s.get_bone_name(b).to_string();
+            map.get(&name).copied().unwrap_or_else(|| unsafe { nm_rig_part_for_name(c(&name).as_ptr()) })
+        }).collect();
         let hips = guess.iter().position(|&g| g == 0).map(|h| h as i32).or_else(|| {
             let (l, r) = (guess.iter().position(|&g| g == 1)? as i32, guess.iter().position(|&g| g == 4)? as i32);
             (s.get_bone_parent(l) == s.get_bone_parent(r)).then(|| s.get_bone_parent(l)).filter(|&p| p >= 0)
@@ -989,7 +1019,7 @@ impl DeliriumRagdoll {
             self.release();
             return false;
         }
-        let strength = setting_f("strength", 1.0);
+        let strength = if self.strength > 0.0 { self.strength } else { setting_f("strength", 1.0) };
         if strength != 1.0 { check(unsafe { nm_agent_set_strength(self.agent, strength) }, "strength"); }
         if setting_b("arms_out_early", false) {
             let m = c("braceForImpact");

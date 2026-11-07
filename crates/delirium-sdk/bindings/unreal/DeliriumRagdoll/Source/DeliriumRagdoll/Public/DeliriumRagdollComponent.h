@@ -189,6 +189,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
 	FString Overrides;
 
+	/** This character's muscles times this (0: the project settings' Strength). 1.3-2 for a heavy custom body that can't
+	 *  take a hit; under 1 for a weak one. SetStrength changes it while ragdolled. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
+	float Strength = 0.f;
+
+	/** Bones the name guess misses or gets wrong, as BoneName=Part pairs: "Pelvis_jnt=Buttocks, Torso=Spine2, Tail=None".
+	 *  Parts: Buttocks, Thigh_Left, Shin_Left, Foot_Left, Thigh_Right, Shin_Right, Foot_Right, Spine0-3, Neck, Head, Clavicle_Left, Upper_Arm_Left, Lower_Arm_Left, Hand_Left and the same _Right. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
+	FString BoneMap;
+
+	/** Its muscles times K from now on (Strength; 0: the settings'). */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	bool SetStrength(float K);
+
 	/** Every `Behaviour` message to it from now on carries `Param` as `Value` (on/off: 0 or 1). False (the reason in the
 	 *  log) for a parameter it doesn't take. */
 	UFUNCTION(BlueprintCallable, Category = "Delirium")

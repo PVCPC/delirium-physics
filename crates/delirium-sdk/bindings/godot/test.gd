@@ -82,6 +82,8 @@ func go() -> void:
 	expect("Brawler stands", await run("Brawler", func(d): pass, func(d): d.body = "Brawler") > 0.5)
 	expect("Random stands", await run("Random seed 5", func(d): pass, func(d): d.body = "Random"; d.body_seed = 5) > 0.5)
 	expect("Custom heavy stands", await run("Custom", func(d): pass, func(d): d.body = "Custom"; d.custom_body = "1, 1, 1, 1.2, 1, 1, 95, 0") > 0.5)
+	expect("bone_map stands", await run("bone_map", func(d): pass, func(d): d.bone_map = "NoSuchBone=Head, Tail=None, Hips=Bogus") > 0.5)
+	expect("bone_map maps (no hips: no ragdoll)", await run("bone_map none", func(d): pass, func(d): d.bone_map = "Hips=None, LeftUpLeg=None, RightUpLeg=None") == 0.0)
 	expect("overrides", await run("override", func(d):
 		expect("good override", d.set_override("bodyBalance", "useHeadLook", 0))
 		expect("bad override refused", not d.set_override("bodyBalance", "noSuchThing", 1)),
@@ -161,6 +163,7 @@ func go() -> void:
 	await run("script", func(d): expect("script", d.script(500)))
 	await run("muscles", func(d): expect("muscle_rise", d.muscle_rise(true, -1) and d.muscle_rise(false, 0)))
 	await run("stick", func(d): expect("set_stick", d.set_stick(true, 0, 1, 0)))
+	await run("strength", func(d): d.set_strength(1.8); expect("set_strength", is_equal_approx(d.strength, 1.8)); d.strength = 0)
 	var nets := OS.get_environment("DELIRIUM_NETS")
 	if nets != "":
 		await run("learned get-up", func(d):

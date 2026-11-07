@@ -306,7 +306,30 @@ bool UDeliriumRagdollComponent::Take()
 	const FReferenceSkeleton& Ref = Asset->GetRefSkeleton();
 	const int32 All = Ref.GetNum();
 	TArray<int32> Guess;
-	for (int32 B = 0; B < All; B++) Guess.Add(nm_rig_part_for_name(TCHAR_TO_UTF8(*Ref.GetBoneName(B).ToString())));
+	// BoneMap's pairs first (None: no part), the name guess for the rest.
+	TMap<FString, int32> Map;
+	TArray<FString> Pairs;
+	BoneMap.ParseIntoArray(Pairs, TEXT(","));
+	for (const FString& P : Pairs)
+	{
+		FString Bone, Part;
+		if (!P.Split(TEXT("="), &Bone, &Part)) continue;
+		Part.TrimStartAndEndInline();
+		int32 K = Part.Equals(TEXT("None"), ESearchCase::IgnoreCase) ? -1 : -2;
+		for (int32 I = 0; I < 21 && K == -2; I++)
+		{
+			char Name[64] = {};
+			nm_part_name(I, Name, 64);
+			if (Part == UTF8_TO_TCHAR(Name)) K = I;
+		}
+		if (K != -2) Map.Add(Bone.TrimStartAndEnd(), K);
+	}
+	for (int32 B = 0; B < All; B++)
+	{
+		const FString Name = Ref.GetBoneName(B).ToString();
+		const int32* Mapped = Map.Find(Name);
+		Guess.Add(Mapped ? *Mapped : nm_rig_part_for_name(TCHAR_TO_UTF8(*Name)));
+	}
 	// The hips: the bone named so, else the thighs' shared parent.
 	int32 Hips = Guess.IndexOfByKey(0);
 	if (Hips < 0)
@@ -438,7 +461,8 @@ bool UDeliriumRagdollComponent::Take()
 		Release();
 		return false;
 	}
-	if (S->Strength != 1.f) Check(nm_agent_set_strength(Agent, S->Strength), TEXT("Strength"));
+	const float Strong = Strength > 0.f ? Strength : S->Strength;
+	if (Strong != 1.f) Check(nm_agent_set_strength(Agent, Strong), TEXT("Strength"));
 	// Arms out early: from 1.3 m (the game's 0.65), predicted 0.45 s ahead (its car set's), every brace it makes.
 	if (S->bArmsOutEarly)
 	{
@@ -652,6 +676,12 @@ TArray<FString> UDeliriumRagdollComponent::Bodies()
 {
 	return { TEXT("Fitted"), TEXT("Small"), TEXT("Average"), TEXT("Large"), TEXT("Lanky"), TEXT("Fat"), TEXT("Stocky"),
 		TEXT("Waddler"), TEXT("Guard"), TEXT("Brute"), TEXT("Brawler"), TEXT("Bruiser"), TEXT("Random"), TEXT("Custom") };
+}
+
+bool UDeliriumRagdollComponent::SetStrength(float K)
+{
+	Strength = K;
+	return !Agent || Check(nm_agent_set_strength(Agent, K > 0.f ? K : GetDefault<UDeliriumSettings>()->Strength), TEXT("SetStrength"));
 }
 
 bool UDeliriumRagdollComponent::SetOverride(FString Behaviour, FString Param, float Value)

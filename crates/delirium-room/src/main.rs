@@ -5004,7 +5004,7 @@ fn main() {
     let game_dir = game_dir.filter(|g| {
         !delirium_data::kv::FROM_GAME || numbers(g) || {
             eprintln!("{g}: this copy isn't a version Delirium reads its numbers from (a disc's key is fetched from the internet \
-                the first time). You need your own GTA IV for PC (Steam) or Xbox 360 (not included)");
+                the first time). You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)");
             false
         }
     });
@@ -5358,7 +5358,7 @@ fn pick_game(args: &[String]) -> ! {
                         let big = if pick.hover { "Let go to use it" } else { "Drag your game here" };
                         ui.label(egui::RichText::new(big).size(28.0).strong().color(line));
                         if delirium_data::kv::FROM_GAME {
-                            ui.label(egui::RichText::new("You need your own GTA IV for PC (Steam) or Xbox 360 (not included)").strong());
+                            ui.label(egui::RichText::new("You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)").strong());
                             ui.label("Use its disc image (.iso), or the PC game folder (the one with GTAIV.exe in it).");
                             ui.label(egui::RichText::new("The physics numbers are read from it; a disc's key is fetched from the internet the first time. \
                                 The PS3 version isn't supported for now.").small());
@@ -5401,7 +5401,7 @@ fn pick_game(args: &[String]) -> ! {
                 exit.write(AppExit::Success);
             } else {
                 pick.err = if delirium_data::kv::FROM_GAME && ["GTAIV.exe", "default.xex"].iter().any(|f| std::path::Path::new(&g).join(f).is_file()) {
-                    format!("That copy isn't a version Delirium reads its numbers from: {g}\nYou need your own GTA IV for PC (Steam) or Xbox 360 (not included)")
+                    format!("That copy isn't a version Delirium reads its numbers from: {g}\nYou need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)")
                 } else {
                     format!("That isn't it: {g}\nDrag your game .iso file (or its game folder).")
                 };
@@ -5411,7 +5411,7 @@ fn pick_game(args: &[String]) -> ! {
         match done {
             Some(Ok(f)) if !is_game(&f) => {
                 pick.copy = None;
-                pick.err = "That disc isn't a version Delirium reads its numbers from (its key is fetched from the internet the first time).\nYou need your own GTA IV for PC (Steam) or Xbox 360 (not included)".into();
+                pick.err = "That disc isn't a version Delirium reads its numbers from (its key is fetched from the internet the first time).\nYou need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)".into();
             }
             Some(Ok(f)) => {
                 save_game(&f);
