@@ -26,15 +26,19 @@ pub fn floor_rects(pool: bool, half: f32) -> Vec<(Vec2, Vec2)> {
          (Vec2::new(-h, a.y), Vec2::new(a.x, b.y)), (Vec2::new(b.x, a.y), Vec2::new(h, b.y))]
 }
 
-pub fn floor_tris(pool: bool, half: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+pub fn floor_tris(pool: bool, centre: Vec2, half: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
     let (mut p, mut t) = (vec![], vec![]);
-    for (lo, hi) in floor_rects(pool, half) {
-        for x in lo.x as i32..hi.x as i32 {
-            for y in lo.y as i32..hi.y as i32 {
-                let (a, b, k) = (x as f32, y as f32, p.len() as u32);
-                p.extend([[a, b, 0.0], [a + 1.0, b, 0.0], [a + 1.0, b + 1.0, 0.0], [a, b + 1.0, 0.0]]);
-                t.extend([[k, k + 1, k + 2], [k, k + 2, k + delirium_data::kv!(0 int)]]);
+    let (c, h) = (centre.round().as_ivec2(), half as i32);
+    let [a, b] = (*POOL());
+    for x in c.x - h..c.x + h {
+        for y in c.y - h..c.y + h {
+            let (x, y) = (x as f32, y as f32);
+            if pool && x >= a.x && x + 1.0 <= b.x && y >= a.y && y + 1.0 <= b.y {
+                continue;
             }
+            let k = p.len() as u32;
+            p.extend([[x, y, 0.0], [x + 1.0, y, 0.0], [x + 1.0, y + 1.0, 0.0], [x, y + 1.0, 0.0]]);
+            t.extend([[k, k + 1, k + 2], [k, k + 2, k + delirium_data::kv!(0 int)]]);
         }
     }
     (p, t)
@@ -638,7 +642,7 @@ impl Room {
         let mut fixed = [vec![], vec![]];
         for (i, w) in w.iter_mut().enumerate() {
             w.gravity = Vector::new(0.0, 0.0, -delirium_data::kv!(115));
-            for (lo, hi) in floor_rects(pool && i == 0, delirium_data::kv!(79)) {
+            for (lo, hi) in floor_rects(pool && i == 0, delirium_data::kv!(1094)) {
                 let (c, h) = ((lo + hi) * 0.5, (hi - lo) * 0.5);
                 fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(Vector::new(c.x, c.y, -0.5)), ColliderBuilder::cuboid(h.x, h.y, 0.5).friction(1.0)).0);
             }
@@ -667,9 +671,9 @@ impl Room {
         let mut blocks = vec![(Vec3::new(0.0, delirium_data::kv!(128), 0.5), Vec3::new(delirium_data::kv!(84), delirium_data::kv!(9), 0.5), row("BRICK_WALL"))];
         for i in 0..delirium_data::kv!(81 int) {
             let top = delirium_data::kv!(142) * (i + 1) as f32;
-            blocks.push((Vec3::new(-delirium_data::kv!(1094), -delirium_data::kv!(12) + delirium_data::kv!(24) * i as f32 + delirium_data::kv!(9), top * 0.5), Vec3::new(delirium_data::kv!(18), delirium_data::kv!(9), top * 0.5), row("CONCRETE")));
+            blocks.push((Vec3::new(-delirium_data::kv!(1095), -delirium_data::kv!(12) + delirium_data::kv!(24) * i as f32 + delirium_data::kv!(9), top * 0.5), Vec3::new(delirium_data::kv!(18), delirium_data::kv!(9), top * 0.5), row("CONCRETE")));
         }
-        blocks.push((Vec3::new(-delirium_data::kv!(1094), 2.0, delirium_data::kv!(28)), Vec3::new(delirium_data::kv!(18), 0.5, delirium_data::kv!(28)), row("CONCRETE")));
+        blocks.push((Vec3::new(-delirium_data::kv!(1095), 2.0, delirium_data::kv!(28)), Vec3::new(delirium_data::kv!(18), 0.5, delirium_data::kv!(28)), row("CONCRETE")));
         let ([a, b], d, rim) = ((*POOL()), POOL_DEEP(), delirium_data::kv!(24));
         let (m, hw, z) = ((a + b) * 0.5, (b - a) * 0.5, -(d + delirium_data::kv!(60)) * 0.5 - delirium_data::kv!(134));
         for (c, h) in [(Vec2::new(a.x - rim * 0.5, m.y), Vec2::new(rim * 0.5, hw.y + rim)), (Vec2::new(b.x + rim * 0.5, m.y), Vec2::new(rim * 0.5, hw.y + rim)),
@@ -685,7 +689,7 @@ impl Room {
         blocks.extend([(Vec3::new(delirium_data::kv!(31), 0.0, delirium_data::kv!(5)), Vec3::new(delirium_data::kv!(9), delirium_data::kv!(84), delirium_data::kv!(5)), row("CONCRETE")),
                        (Vec3::new(delirium_data::kv!(35), delirium_data::kv!(5), delirium_data::kv!(64)), Vec3::new(delirium_data::kv!(5), delirium_data::kv!(5), delirium_data::kv!(78)), row("CONCRETE"))].into_iter().skip(glass as usize));
         if glass {
-            blocks.extend((0..delirium_data::kv!(460 int)).map(|i| (Vec3::new(delirium_data::kv!(31), -delirium_data::kv!(1094) + 0.5 * (i % delirium_data::kv!(54 int)) as f32, delirium_data::kv!(17) + 0.5 * (i / delirium_data::kv!(54 int)) as f32), Vec3::splat(GLASS_HALF()), row("CONCRETE"))));
+            blocks.extend((0..delirium_data::kv!(460 int)).map(|i| (Vec3::new(delirium_data::kv!(31), -delirium_data::kv!(1095) + 0.5 * (i % delirium_data::kv!(54 int)) as f32, delirium_data::kv!(17) + 0.5 * (i / delirium_data::kv!(54 int)) as f32), Vec3::splat(GLASS_HALF()), row("CONCRETE"))));
             let (at, half, deep, g) = (crate::SKY_POOL, crate::SKY_HALF, crate::SKY_DEEP, delirium_data::kv!(24));
             blocks.extend([(Vec3::new(0.0, 0.0, -g * 0.5), half.extend(g * 0.5) + Vec3::new(g, g, 0.0)),
                            (Vec3::new(half.x + g * 0.5, 0.0, deep * delirium_data::kv!(119)), Vec3::new(g * 0.5, half.y + g, deep * delirium_data::kv!(119))),

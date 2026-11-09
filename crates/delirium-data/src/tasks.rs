@@ -77,7 +77,7 @@ pub mod kind {
     pub fn REVIVE() -> u32 { crate::kv!(995 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn WANDER() -> u32 { crate::kv!(644 int) }
+    pub fn WANDER() -> u32 { crate::kv!(645 int) }
     #[allow(non_snake_case)]
     #[inline]
     pub fn FOLLOW_LEADER_IN_FORMATION() -> u32 { crate::kv!(996 int) }

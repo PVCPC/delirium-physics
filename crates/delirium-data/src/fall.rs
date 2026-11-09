@@ -118,7 +118,7 @@ fn QUARTER_PI() -> f32 { crate::kv!(773 f32) }
 fn PI() -> f32 { crate::kv!(774 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn TWO_PI() -> f32 { crate::kv!(618 f32) }
+fn TWO_PI() -> f32 { crate::kv!(619 f32) }
 #[allow(non_snake_case)]
 #[inline]
 fn TWO_OVER_PI() -> f32 { crate::kv!(775 f32) }

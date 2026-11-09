@@ -48,14 +48,23 @@ pub struct Hole {
     pub at: Vec3,
     pub rot: Quat,
     pub half: Vec2,
+    pub rect: bool,
 }
 
 #[cfg(feature = "portal")]
 impl Hole {
     pub fn has(&self, p: Vec3) -> bool {
         let l = self.rot.inverse() * (p - self.at);
-        l.z < delirium_data::kv!(68) && l.z > -1.0 && (l.x / self.half.x).powi(2) + (l.y / self.half.y).powi(2) < 1.0
+        let q = (l.truncate() / self.half).abs();
+        l.z < delirium_data::kv!(68) && l.z > -1.0 && if self.rect { q.max_element() < 1.0 } else { q.length_squared() < 1.0 }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WorldPoly {
+    pub corners: [Vec3; 4],
+    pub count: usize,
+    pub normal: Vec3,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -410,6 +419,33 @@ impl Collision {
         self.tuples(ids)
     }
 
+    pub fn sphere_polys(&self, at: Vec3, r: f32) -> Vec<Vec<WorldPoly>> {
+        let mut chunks: Vec<&Chunk> = self.chunks.iter().flatten().collect();
+        chunks.sort_by_key(|c| c.index);
+        let mut out = vec![];
+        for c in chunks {
+            for m in &c.meshes {
+                let rows = [m.rot * Vec3::X, m.rot * Vec3::Y, m.rot * Vec3::Z];
+                let d = at - m.pos;
+                let q = crate::bvh::Obb { rows: [Vec3::X, Vec3::Y, Vec3::Z], ext: Vec3::splat(r), centre: Vec3::new(rows[0].dot(d), rows[1].dot(d), rows[2].dot(d)) };
+                let polys: Vec<WorldPoly> = crate::bvh::polygons(&m.tree.bvh, &q).into_iter().filter_map(|p| {
+                    let tris: Vec<u32> = m.tree.tris.get(p as usize)?.iter().filter_map(|&k| m.ids.get(k as usize).copied()).filter(|&id| id != u32::MAX).collect();
+                    let a = *c.triangles.get(*tris.first()? as usize)?;
+                    let corners = match tris.get(1).and_then(|&b| c.triangles.get(b as usize)) {
+                        Some(b) => [a[0], a[1], a[2], b[2]],
+                        None => [a[0], a[1], a[2], Vec3::ZERO],
+                    };
+                    let normal = c.faces[tris[0] as usize].as_ref().map_or_else(|| (a[1] - a[0]).cross(a[2] - a[0]).normalize_or_zero(), |f| f.n);
+                    Some(WorldPoly { corners, count: if tris.len() > 1 { delirium_data::kv!(1 int) } else { delirium_data::kv!(0 int) }, normal })
+                }).collect();
+                if !polys.is_empty() {
+                    out.push(polys);
+                }
+            }
+        }
+        out
+    }
+
     fn tuples(&self, ids: Vec<(u32, u32)>) -> Vec<([Vec3; 3], u8, [Vec3; 4], u8, u32, Poly)> {
         let chunk = |(s, _): (u32, u32)| self.chunks[s as usize].as_ref().unwrap();
         let tri = |e: (u32, u32)| chunk(e).triangles[e.1 as usize];
@@ -510,6 +546,13 @@ impl Collision {
 
     pub fn contact(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3, u8)> {
         self.hit(from, dir, len, false).map(|(t, n, (slot, id))| (t, n, self.chunks[slot as usize].as_ref().map_or(0, |c| c.materials[id as usize])))
+    }
+
+    pub fn contact_flags(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3, u8, u8, u64)> {
+        let (t, n, (slot, id)) = self.hit(from, dir, len, false)?;
+        let c = self.chunks[slot as usize].as_ref();
+        Some((t, n, c.map_or(0, |c| c.materials[id as usize]), c.and_then(|c| c.flags.get(id as usize).copied()).unwrap_or(0),
+              self.slot_key(slot).unwrap_or(u64::MAX)))
     }
 
     pub fn contact_chunk(&self, from: Vec3, dir: Vec3, len: f32) -> Option<(f32, Vec3, u8, u64)> {

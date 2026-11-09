@@ -263,7 +263,7 @@ pub(crate) fn inv3([a, b, c]: [Vec3; 3]) -> [Vec3; 3] {
 }
 
 fn singular([a, b, c]: [Vec3; 3], det: f32) -> bool {
-    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(601)
+    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(602)
 }
 
 pub(crate) fn inv34([a, b, c, d]: [Vec3; 4]) -> Option<[Vec3; 4]> {
@@ -322,7 +322,7 @@ pub fn part_set_other(kind: u32, m: [Vec3; 4], centroid: Option<Vec3>, commit: b
 }
 
 pub fn part_bound(part: u32, rd: impl Fn(u32) -> u32) -> u32 {
-    let obj = rd(part + delirium_data::kv!(602 int));
+    let obj = rd(part + delirium_data::kv!(603 int));
     if obj == 0 {
         return 0;
     }
@@ -331,7 +331,7 @@ pub fn part_bound(part: u32, rd: impl Fn(u32) -> u32) -> u32 {
         1 => bound(rd(obj + delirium_data::kv!(54 int))),
         2 => bound(obj),
         3 => {
-            let comp = bound(rd(rd(rd(part + delirium_data::kv!(603 int)) + delirium_data::kv!(203 int)) + delirium_data::kv!(54 int)));
+            let comp = bound(rd(rd(rd(part + delirium_data::kv!(604 int)) + delirium_data::kv!(203 int)) + delirium_data::kv!(54 int)));
             rd(rd(comp + delirium_data::kv!(257 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(358 int)))
         }
         _ => 0,

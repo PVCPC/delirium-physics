@@ -13,7 +13,7 @@ use bevy::render::render_resource::{
 };
 use bevy::shader::ShaderRef;
 
-use super::{through, Frame, HALF};
+use super::{half, through, Frame, HALF};
 use crate::{OursCam, Sim};
 
 const DEPTH: u32 = 2;
@@ -43,6 +43,7 @@ const FLAG_HAS_VIEW: u32 = 1;
 const FLAG_CAP: u32 = 2;
 const FLAG_DOUBLER: u32 = 8;
 const FLAG_BLEND: u32 = 16;
+const FLAG_RECT: u32 = 32;
 
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct SurfaceParams {
@@ -51,6 +52,7 @@ pub struct SurfaceParams {
     pub color_scale: f32,
     pub flags: u32,
     pub uv_remap: Vec4,
+    pub half: Vec2,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -172,7 +174,7 @@ fn screen_rect(clip_from_world: Mat4, frame: &Frame) -> Option<Vec4> {
     let mut lo = Vec2::splat(f32::MAX);
     let mut hi = Vec2::splat(f32::MIN);
     for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
-        let c = clip_from_world * frame.to_world(Vec3::new(sx * HALF.x, sy * HALF.y, 0.0)).extend(1.0);
+        let c = clip_from_world * frame.to_world((Vec2::new(sx, sy) * half()).extend(0.0)).extend(1.0);
         if c.w <= 1e-4 {
             return None;
         }
@@ -189,7 +191,7 @@ fn portal_visible(clip_from_world: Mat4, cam: Vec3, frame: &Frame) -> bool {
         return false;
     }
     let clip: Vec<Vec4> = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
-        .iter().map(|(sx, sy)| clip_from_world * frame.to_world(Vec3::new(sx * HALF.x, sy * HALF.y, 0.0)).extend(1.0)).collect();
+        .iter().map(|(sx, sy)| clip_from_world * frame.to_world((Vec2::new(*sx, *sy) * half()).extend(0.0)).extend(1.0)).collect();
     if clip.iter().all(|c| c.w <= 1e-4) {
         return false;
     }
@@ -329,7 +331,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: Res
     let quad = meshes.add(Rectangle::new(HALF.x * 2.0, HALF.y * 2.0).mesh().build());
     let cap = meshes.add(cap_mesh(CAP_DEPTH));
     let mk = |flags: u32, cap: bool| PortalSurface {
-        params: SurfaceParams { open_amount: 0.0, portal_active: 0.0, color_scale: COLOR_SCALE, flags, uv_remap: Vec4::new(1.0, 1.0, 0.0, 0.0) },
+        params: SurfaceParams { open_amount: 0.0, portal_active: 0.0, color_scale: COLOR_SCALE, flags, uv_remap: Vec4::new(1.0, 1.0, 0.0, 0.0), half: HALF },
         view: None,
         noise: None,
         ramp: None,
@@ -570,13 +572,13 @@ fn sync_surfaces(sim: NonSend<Sim>, infos: Res<Infos>, tree: Res<Tree>, node_ima
             };
             let has_view = view.is_some();
             let blend = info.open >= 1.0;
-            let flags = if has_view { FLAG_HAS_VIEW } else { 0 } | if doubler { FLAG_DOUBLER } else { 0 } | if blend { FLAG_BLEND } else { 0 };
-            let params = SurfaceParams { open_amount: info.open, portal_active: 1.0 - info.stat, color_scale: COLOR_SCALE, flags, uv_remap };
+            let flags = if has_view { FLAG_HAS_VIEW } else { 0 } | if doubler { FLAG_DOUBLER } else { 0 } | if blend { FLAG_BLEND } else { 0 } | if super::rect() { FLAG_RECT } else { 0 };
+            let params = SurfaceParams { open_amount: info.open, portal_active: 1.0 - info.stat, color_scale: COLOR_SCALE, flags, uv_remap, half: half() };
             set_material(&mut mats, &parts.live[kind][i], params, blend, view.clone(), tex);
             set_material(&mut mats, &parts.cap_mat[kind][i], SurfaceParams { flags: flags | FLAG_CAP, ..params }, false, view, tex);
 
             if let Ok((mut t, mut v, _)) = tfs.get_mut(qe) {
-                *t = Transform::from_translation(info.frame.at + info.frame.normal() * STANDOFF).with_rotation(info.frame.rot);
+                *t = Transform::from_translation(info.frame.at + info.frame.normal() * STANDOFF).with_rotation(info.frame.rot).with_scale((half() / HALF).extend(1.0));
                 *v = Visibility::Visible;
             }
             let cap_on = match view_node {
@@ -587,7 +589,7 @@ fn sync_surfaces(sim: NonSend<Sim>, infos: Res<Infos>, tree: Res<Tree>, node_ima
                 _ => false,
             };
             if let Ok((mut t, mut v, _)) = tfs.get_mut(ce) {
-                *t = Transform::from_translation(info.frame.at).with_rotation(info.frame.rot).with_scale(Vec3::splat(if warming { 1e-4 } else { 1.0 }));
+                *t = Transform::from_translation(info.frame.at).with_rotation(info.frame.rot).with_scale((half() / HALF).extend(1.0) * if warming { 1e-4 } else { 1.0 });
                 let want = if cap_on || warming { Visibility::Inherited } else { Visibility::Hidden };
                 if *v != want {
                     *v = want;

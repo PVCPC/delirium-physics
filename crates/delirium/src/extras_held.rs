@@ -1291,7 +1291,6 @@ impl Extra for SplitBody {
             let (a, b) = (c.b.part(hand), c.b.part(gh));
             let pull = ((to - a.m.d) * (m * w * w) - (a.v - b.v) * (2.0 * m * w)).clamp_length_max(GRIP_MOST());
             c.out.force(hand, pull);
-            c.out.force(gh, -pull);
             if self.orient {
                 let to = f[hand].rotation.slerp(f[gh].rotation * self.turn, on);
                 let i = m * delirium_data::kv!(143);

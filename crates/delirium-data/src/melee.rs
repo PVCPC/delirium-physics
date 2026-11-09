@@ -736,7 +736,7 @@ pub fn hit_reaction<'t>(t: &'t ActionTable, ask: &Ask, gate: bool, tasks: [bool;
     let action = choose(t, &ask, rand);
     let result = action.filter(|a| a.move_ != 0).and_then(|a| t.results.iter().rfind(|r| r.name == a.move_));
     let special = result.is_some_and(|r| r.special_result != crate::actiontable::none());
-    let low = ask.fighter.health < crate::kv!(586);
+    let low = ask.fighter.health < crate::kv!(587);
     let ragdoll = gate
         && (action.is_some_and(|a| a.prefer_ragdoll) || if tasks[0] && !tasks[1] { low } else { !special || low });
     Reaction { action, result, ragdoll }

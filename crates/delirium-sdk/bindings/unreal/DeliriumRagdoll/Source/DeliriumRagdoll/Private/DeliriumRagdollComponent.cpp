@@ -513,6 +513,14 @@ bool UDeliriumRagdollComponent::Take()
 		else
 			UE_LOG(LogDelirium, Warning, TEXT("Follow: \"%s\" isn't mask=weight"), *Item.TrimStartAndEnd());
 	}
+	// Keyframe: those parts play the animation exactly (fed each step as Follow's), NM's physics the rest.
+	TArray<FString> Keys;
+	S->Keyframe.ParseIntoArray(Keys, TEXT(","));
+	bKeyframed = false;
+	for (const FString& Item : Keys)
+		if (!Item.TrimStartAndEnd().IsEmpty())
+			bKeyframed |= Check(nm_agent_keyframe(Agent, TCHAR_TO_UTF8(*Item.TrimStartAndEnd()), 1), TEXT("Keyframe"));
+	bFollow |= bKeyframed;
 	const FVector Vel = GetOwner()->GetVelocity();
 	if (!Vel.IsNearlyZero())
 	{
@@ -541,7 +549,7 @@ bool UDeliriumRagdollComponent::Take()
 		Incoming.SetNum(N * 7);
 	}
 	else Mesh->bPauseAnims = true;
-	if (ACharacter* C = Cast<ACharacter>(GetOwner()))
+	if (ACharacter* C = Cast<ACharacter>(GetOwner()); C && !bKeyframed)
 	{
 		C->GetCharacterMovement()->StopMovementImmediately();
 		C->GetCharacterMovement()->DisableMovement();
@@ -559,9 +567,25 @@ bool UDeliriumRagdollComponent::Take()
 	return true;
 }
 
+void UDeliriumRagdollComponent::DropKeyframes()
+{
+	if (!Agent || !bKeyframed) return;
+	TArray<FString> Keys;
+	GetDefault<UDeliriumSettings>()->Keyframe.ParseIntoArray(Keys, TEXT(","));
+	for (const FString& Item : Keys)
+		if (!Item.TrimStartAndEnd().IsEmpty()) Check(nm_agent_keyframe(Agent, TCHAR_TO_UTF8(*Item.TrimStartAndEnd()), 0), TEXT("Keyframe"));
+	bKeyframed = false;
+	if (ACharacter* C = Cast<ACharacter>(GetOwner()))
+	{
+		C->GetCharacterMovement()->StopMovementImmediately();
+		C->GetCharacterMovement()->DisableMovement();
+	}
+	Pinned = GetOwner()->GetActorTransform();
+}
+
 void UDeliriumRagdollComponent::Pose()
 {
-	GetOwner()->SetActorTransform(Pinned);
+	if (!bKeyframed) GetOwner()->SetActorTransform(Pinned);
 	const int32 HipsOut = nm_rig_pose(Rig, Agent, PoseOut.GetData());
 	const int32 N = Bones.Num();
 	TArray<FTransform>& Local = Posed->BoneSpaceTransforms;

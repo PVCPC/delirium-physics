@@ -835,6 +835,8 @@ pub struct NmAgent {
 
 #[derive(Default)]
 struct More {
+    partial: Option<delirium::partial::Partial>,
+    partial_event: i32,
     sit: Option<delirium::nmsit::Sit>,
     pose: Option<delirium::nmpose::Pose>,
     roll: Option<nm::RollUpAndRelax>,
@@ -1024,6 +1026,7 @@ fn agent_step(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -
     if before.is_none() {
         tackle(a, dt);
     }
+    partial_step(a, w, dt);
     let r = step_in(a, w, dt, &others);
     car_door(a, w, dt);
     stairs(a, w);
@@ -1581,6 +1584,7 @@ pub unsafe extern "C" fn nm_agent_apply_impulse(a: *mut NmAgent, i: i32, at: *co
     let (at, imp) = (unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
     a.agent.doll.impulse(k, at, imp);
     a.more.look = Some(at - imp.normalize_or_zero() * 2.0);
+    partial_hit(a, imp.length());
     0
 }
 
@@ -1594,6 +1598,7 @@ pub unsafe extern "C" fn nm_agent_apply_push(a: *mut NmAgent, at: *const f32, im
     let (at, imp) = (unsafe { v3(at) } / u.len(), unsafe { v3(impulse) } / u.impulse());
     a.agent.doll.push(&a.build, at, imp);
     a.more.look = Some(at - imp.normalize_or_zero() * 2.0);
+    partial_hit(a, imp.length());
     0
 }
 
@@ -1944,6 +1949,110 @@ pub unsafe extern "C" fn nm_agent_follow(a: *mut NmAgent, mask: *const c_char, w
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_keyframe(a: *mut NmAgent, mask: *const c_char, on: i32) -> i32 {
+    let a = agent!(a);
+    let Some(mask) = (unsafe { text(mask) }) else { return fail(NM_E_ARG, "nm_agent_keyframe: no mask") };
+    let eff = delirium::nmrs::Character::mask(mask);
+    if eff.is_empty() {
+        return fail(NM_E_ARG, format!("nm_agent_keyframe: no such mask {mask:?}"));
+    }
+    let hips = (*delirium::nmrs::HIP()).iter().any(|h| eff.contains(h));
+    let n = a.build.parts.len();
+    let parts = eff.into_iter().map(|i| i + 1).chain(hips.then_some(0)).filter(|&k| k < n);
+    for k in parts {
+        a.agent.keyframe.retain(|&x| x != k);
+        if on != 0 {
+            a.agent.keyframe.push(k);
+        } else {
+            a.agent.doll.unpin_part(k);
+        }
+    }
+    0
+}
+
+pub const NM_PARTIAL_OFF: i32 = 0;
+pub const NM_PARTIAL_LEGS: i32 = 1;
+pub const NM_PARTIAL_UPPER: i32 = 2;
+pub const NM_PARTIAL_NONE: i32 = 0;
+pub const NM_PARTIAL_KNOCKED: i32 = 1;
+pub const NM_PARTIAL_STUMBLED: i32 = 2;
+pub const NM_PARTIAL_FELL: i32 = 3;
+pub const NM_PARTIAL_RECOVERED: i32 = 4;
+pub const NM_PARTIAL_RESUMED: i32 = 5;
+pub const NM_PARTIAL_DROPPED: i32 = 6;
+
+fn partial_event(a: &mut NmAgent, w: Option<&NmWorld>, e: Option<delirium::partial::Event>) {
+    use delirium::partial::Event::*;
+    let Some(e) = e else { return };
+    if let (Fell, Some(w)) = (e, w) {
+        send(a, w, "catchFall", &[("start", Value::Bool(true))]);
+    }
+    a.more.partial_event = match e {
+        Knocked => NM_PARTIAL_KNOCKED, Stumbled => NM_PARTIAL_STUMBLED, Fell => NM_PARTIAL_FELL, Recovered => NM_PARTIAL_RECOVERED,
+        Resumed => NM_PARTIAL_RESUMED, Dropped => NM_PARTIAL_DROPPED,
+    };
+}
+
+fn partial_step(a: &mut NmAgent, w: &NmWorld, dt: f32) {
+    let Some(mut p) = a.more.partial.take() else { return };
+    let e = if a.dead { p.die(&mut a.agent) } else { None };
+    let e = e.or_else(|| p.step(&mut a.agent, dt, a.dead));
+    a.more.partial = Some(p);
+    partial_event(a, Some(w), e);
+}
+
+fn partial_hit(a: &mut NmAgent, ns: f32) {
+    let Some(mut p) = a.more.partial.take() else { return };
+    let e = p.hit(&mut a.agent, ns);
+    a.more.partial = Some(p);
+    partial_event(a, None, e);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_partial(a: *mut NmAgent, mode: i32) -> i32 {
+    let a = agent!(a);
+    let mode = match mode {
+        NM_PARTIAL_OFF => None,
+        NM_PARTIAL_LEGS => Some(delirium::partial::Mode::Legs),
+        NM_PARTIAL_UPPER => Some(delirium::partial::Mode::Upper),
+        _ => return fail(NM_E_ARG, format!("nm_agent_partial: no mode {mode}")),
+    };
+    let mut p = a.more.partial.take().unwrap_or_else(|| delirium::partial::Partial::new(delirium::partial::Mode::Legs));
+    p.stop(&mut a.agent);
+    if let Some(m) = mode {
+        p.mode = m;
+        p.start(&mut a.agent);
+    }
+    a.more.partial = Some(p);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_partial_options(a: *mut NmAgent, keep_running: i32, breaks: i32) -> i32 {
+    let a = agent!(a);
+    let p = a.more.partial.get_or_insert_with(|| delirium::partial::Partial::new(delirium::partial::Mode::Legs));
+    (p.keep_running, p.breaks) = (keep_running != 0, breaks != 0);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_partial_hit(a: *mut NmAgent, ns: f32) -> i32 {
+    let a = agent!(a);
+    partial_hit(a, ns);
+    std::mem::take(&mut a.more.partial_event)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_partial_event(a: *mut NmAgent) -> i32 {
+    std::mem::take(&mut agent!(a).more.partial_event)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_partial_state(a: *const NmAgent) -> i32 {
+    agent_ref!(a).more.partial.as_ref().map_or(0, |p| if p.animating() { 1 } else if p.active() { 2 } else { 0 })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_clear_overrides(a: *mut NmAgent) -> i32 {
     agent!(a).agent.overrides.clear();
     0
@@ -1958,6 +2067,10 @@ pub unsafe extern "C" fn nm_msg_send(a: *mut NmAgent, w: *const NmWorld) -> i32 
     let mut st = std::mem::take(&mut a.agent.msgs);
     let r = msg::send(&mut a.agent, &a.build, &w.0, &mut st, &m, &ps);
     a.agent.msgs = st;
+    if let (true, Some(Value::Vec3(i))) = (r.is_ok() && m == "applyImpulse", ps.iter().find(|p| p.0 == "impulse").map(|p| &p.1)) {
+        let ns = i.length();
+        partial_hit(a, ns);
+    }
     match r {
         Ok(n) => n as i32,
         Err(msg::Error::Message) => fail(NM_E_MESSAGE, format!("no message {m}")),

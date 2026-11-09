@@ -274,7 +274,7 @@ pub struct LightAttr {
 }
 
 pub fn lights(r: &Resource, drawable: usize) -> Result<Vec<LightAttr>, String> {
-    let at = if r.kind == crate::kv!(437 int) { crate::kv!(637 int) } else { drawable + crate::kv!(257 int) };
+    let at = if r.kind == crate::kv!(437 int) { crate::kv!(638 int) } else { drawable + crate::kv!(257 int) };
     let d = &r.data;
     let count = be16(d, at + crate::kv!(1 int))? as usize;
     if count == 0 {

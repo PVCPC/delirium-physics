@@ -45,6 +45,16 @@ typedef struct NmRig NmRig;
 #define NM_KIND_BOOL (2)
 #define NM_KIND_VEC3 (3)
 #define NM_KIND_STRING (4)
+#define NM_PARTIAL_OFF (0)
+#define NM_PARTIAL_LEGS (1)
+#define NM_PARTIAL_UPPER (2)
+#define NM_PARTIAL_NONE (0)
+#define NM_PARTIAL_KNOCKED (1)
+#define NM_PARTIAL_STUMBLED (2)
+#define NM_PARTIAL_FELL (3)
+#define NM_PARTIAL_RECOVERED (4)
+#define NM_PARTIAL_RESUMED (5)
+#define NM_PARTIAL_DROPPED (6)
 #define NM_SIZE_REAL (0)
 #define NM_SIZE_BASE (1)
 #define NM_SIZE_AUTO (2)
@@ -205,6 +215,18 @@ NM_API int32_t nm_agent_recentre_joint(NmAgent* a, int32_t i);
 NM_API int32_t nm_agent_hold(NmAgent* a, const char* mask, float stiffness, float damping, float oppose_gravity);
 /* Aims the joints in `mask` (setStiffness's masks) at the incoming pose (nm_agent_set_incoming_transforms) every step, after the behaviours: `weight` 1 all the way, 0.5 halfway between theirs and yours. Your animation on some joints (a boxer's guard, a held weapon) while NM moves the rest. Pair it with nm_agent_hold to give those joints the strength to get there. Nothing without an incoming pose. Again for the same mask: the new weight; 0 drops it. Not the game's. */
 NM_API int32_t nm_agent_follow(NmAgent* a, const char* mask, float weight);
+/* Keyframes the parts of `mask` (setStiffness's masks; a mask with the hips, "lb" or "fb", takes the pelvis too) on the incoming pose (nm_agent_set_incoming_transforms, each step): they go exactly where your animation puts them, root motion and all, while NM's physics moves the rest, hanging off them (a partial ragdoll: legs running or planted, the upper body knocked about by shots and punches). Hits on keyframed parts don't move them. Re-centre the joints first (nm_agent_recentre_joint -1) if your pose lies outside them: the joints win, pulling the parts off it. `on` 0 lets that mask's parts go (a big hit: drop the legs and the whole body falls). LEAD only. Not the game's. */
+NM_API int32_t nm_agent_keyframe(NmAgent* a, const char* mask, int32_t on);
+/* A partial ragdoll with the Playroom's hit handling (Delirium's, not the game's): NM_PARTIAL_LEGS keyframes the legs and pelvis on your animation (nm_agent_set_incoming_transforms, every step) and holds the upper body to it (a runner, someone standing); NM_PARTIAL_UPPER holds the upper body to it (a boxer's guard) over Delirium's balancing legs; NM_PARTIAL_OFF lets go, the animation's speed handed to the whole body. Then each step: a hit that throws the head 0.45 m off your animation, a push of 50 N s or more (applyImpulse), or (UPPER) losing his balance knocks him out of it (all ragdoll); running (LEGS, over 1 m/s) with keep-running on, his legs stay on the run instead, and he's back on it if he keeps his feet or goes down with his arms out (catchFall). Steady again, he's back to it by himself. Dead (a kill, nm_agent_set_dead): his legs run out and he drops. nm_agent_partial_event says each of these, for your animation (stop it, or restart it from where he stands). LEAD only. Not the game's. */
+NM_API int32_t nm_agent_partial(NmAgent* a, int32_t mode);
+/* The partial ragdoll's options (nm_agent_partial): `keep_running` 1 (the default): hit hard while running, his legs stay on the run; `breaks` 1 (the default): hits knock him out of the animation (0: only death does). */
+NM_API int32_t nm_agent_partial_options(NmAgent* a, int32_t keep_running, int32_t breaks);
+/* A hit of `ns` (N s) of your own (a car, a fall, your game's melee) on a partial ragdoll: 50 or more knocks him out of the animation. applyImpulse, nm_agent_apply_impulse and nm_agent_apply_push do this by themselves. Returns the event (NM_PARTIAL_*, 0 nothing). */
+NM_API int32_t nm_agent_partial_hit(NmAgent* a, float ns);
+/* The partial ragdoll's last event since the last call (NM_PARTIAL_*, 0 none): KNOCKED, FELL (arms out), DROPPED (dead): stop your animation; RESUMED, RECOVERED: start it again from where he stands; STUMBLED: keep it going (his legs are on it). */
+NM_API int32_t nm_agent_partial_event(NmAgent* a);
+/* 1 while the partial ragdoll is on its animation (feed it), 2 knocked off and waiting to get back to it, 0 off. */
+NM_API int32_t nm_agent_partial_state(const NmAgent* a);
 /* Drops all of the agent's nm_agent_set_override values: its messages go out as sent again. */
 NM_API int32_t nm_agent_clear_overrides(NmAgent* a);
 /* Sends the message built since nm_msg_begin, as the game's NM takes it: a behaviour starts with the bool "start" set to 1, stops with 0 and only takes the params without it; the one-shots (applyImpulse, setStiffness, the leans, ...) act either way. Returns how many of its params the port accepted without acting on them. */

@@ -51,6 +51,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Body")
 	FString Follow;
 
+	/** Body parts that play the animation exactly while the rest ragdolls (a partial ragdoll: legs keep running or stay planted, the upper body takes the hits): masks, comma separated (lb legs and pelvis, ll / lr one leg, ub upper body, ul / ur one arm). The animation and character movement keep running under it; DropKeyframes lets them go (a big hit: he falls). Hold the rest up (ub=14:1:1) and Follow it (ub=1). Empty: off. */
+	UPROPERTY(Config, EditAnywhere, Category = "Body")
+	FString Keyframe;
+
 	/** A shot nearest the head kills. */
 	UPROPERTY(Config, EditAnywhere, Category = "Feel")
 	bool bHeadshotKills = true;

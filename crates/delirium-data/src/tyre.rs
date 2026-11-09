@@ -166,7 +166,7 @@ pub fn rest(t: &mut Tyre, traction_max: f32, brake: f32, mass: f32, dt: f32) -> 
     let cool: f32 = if t.temp - crate::kv!(27) >= 0.0 { crate::kv!(79) } else { crate::kv!(21) };
     let temp = (-cool).mul_add(dt, t.temp);
     t.temp = if -temp >= 0.0 { 0.0 } else { temp };
-    let (pi, two_pi) = (crate::kv!(774 f32), crate::kv!(618 f32));
+    let (pi, two_pi) = (crate::kv!(774 f32), crate::kv!(619 f32));
     t.angle = if angle > pi { angle - two_pi } else if angle < -pi { angle + two_pi } else { angle };
     anchor
 }

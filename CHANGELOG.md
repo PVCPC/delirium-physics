@@ -3,6 +3,11 @@
 ## 0.7.0
 
 ### Added
+- **Partial ragdolls** (SDK `nm_agent_keyframe`, the plugins' **Keyframe** setting): the body parts you pick (`lb`
+  legs and pelvis, one leg, an arm...) play your animation exactly, root motion and all, while Delirium's physics
+  moves the rest. A boxer keeps his feet planted while a punch knocks his head and body about; a zombie keeps
+  running while shots knock his upper body back. **DropKeyframes** lets them go on a big hit and he falls. Pair it
+  with Hold `ub=14:1:1` and Follow `ub=1` to keep the upper body up. Not the game's (GTA IV's reactions are whole-body).
 - **Fullscreen**: F11, or "Fullscreen" in Audio / Video (kept with your settings): the whole screen, no border,
   on the monitor the window is on.
 - **Ropes and leashes** in the Playroom, on the mouse's drag line:

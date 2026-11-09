@@ -17,6 +17,8 @@ struct SurfaceParams {
     flags: u32,
     // The view's uv = screen uv * xy + zw (the depth doubler's remap; identity otherwise).
     uv_remap: vec4<f32>,
+    // The oval's half size, metres (portal.rs `half`): the noise is laid out in metres so it isn't stretched.
+    half: vec2<f32>,
 };
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: SurfaceParams;
@@ -30,9 +32,8 @@ struct SurfaceParams {
 const FLAG_HAS_VIEW: u32 = 1u;
 const FLAG_CAP: u32 = 2u;
 const FLAG_BLEND: u32 = 16u;
+const FLAG_RECT: u32 = 32u;
 
-// The oval's half size, metres (portal.rs HALF): the noise is laid out in metres so it isn't stretched.
-const HALF: vec2<f32> = vec2(0.8128, 1.4224);
 // Where the view ends, as a part of the oval's radius; the band burns from here out to the oval's edge.
 const EDGE: f32 = 0.85;
 
@@ -93,8 +94,10 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     }
 
     let t = vb::globals.time;
-    let q = (in.uv - 0.5) * vec2(2.0, -2.0) * HALF;
-    let r = length(q / HALF);
+    let q = (in.uv - 0.5) * vec2(2.0, -2.0) * params.half;
+    // How far out, 1 at the edge: round for an oval, square for a rectangle.
+    let u = abs(q / params.half);
+    let r = select(length(u), max(u.x, u.y), (params.flags & FLAG_RECT) != 0u);
     // Opening: the oval grows fast, then settles; its edge flashes.
     let s = clamp(params.open_amount, 0.0, 1.0);
     let size = max(1.0 - pow(1.0 - s, 3.0), 1e-3);

@@ -708,6 +708,14 @@ impl DeliriumRagdoll {
     }
 
     #[func]
+    fn drop_keyframes(&mut self) {
+        if self.agent.is_null() { return }
+        for m in setting_s("keyframe", "").split(',').map(str::trim).filter(|m| !m.is_empty()) {
+            check(unsafe { nm_agent_keyframe(self.agent, c(m).as_ptr(), 0) }, "keyframe");
+        }
+    }
+
+    #[func]
     fn pose(&mut self, low: f32, high: f32) -> bool {
         self.take() && { self.follow = true; check(unsafe { nm_agent_task_pose(self.agent, self.world, low, high) }, "pose") }
     }
@@ -1074,6 +1082,9 @@ impl DeliriumRagdoll {
                 Some((m, Ok(w))) => self.follow |= check(unsafe { nm_agent_follow(self.agent, c(m).as_ptr(), w) }, "follow"),
                 _ => godot_warn!("Delirium: follow: \"{}\" isn't mask=weight", f.trim()),
             }
+        }
+        for m in setting_s("keyframe", "").split(',').map(str::trim).filter(|m| !m.is_empty()) {
+            self.follow |= check(unsafe { nm_agent_keyframe(self.agent, c(m).as_ptr(), 1) }, "keyframe");
         }
         let owner = self.owner();
         let vel = owner.clone().and_then(|o| o.try_cast::<CharacterBody3D>().ok()).map(|c| c.get_velocity())

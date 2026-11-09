@@ -56,15 +56,15 @@ pub fn insert_strings(text: &[u8], strings: [Option<&[u8]>; 2]) -> Vec<u8> {
 #[allow(non_snake_case)]
 #[inline]
 pub fn FIXED_TOKENS() -> &'static [(&'static str, i32); 43] { static V: std::sync::OnceLock<[(&'static str, i32); 43]> = std::sync::OnceLock::new(); let f = || [
-    ("PAD_UP", crate::kv!(96 int)), ("PAD_DOWN", crate::kv!(1021 int)), ("PAD_LEFT", crate::kv!(1022 int)), ("PAD_RIGHT", crate::kv!(1023 int)), ("PAD_DPAD_UP", crate::kv!(602 int)),
-    ("PAD_DPAD_DOWN", crate::kv!(1024 int)), ("PAD_DPAD_LEFT", crate::kv!(1025 int)), ("PAD_DPAD_RIGHT", crate::kv!(1026 int)), ("PAD_DPAD_NONE", crate::kv!(603 int)),
+    ("PAD_UP", crate::kv!(96 int)), ("PAD_DOWN", crate::kv!(1021 int)), ("PAD_LEFT", crate::kv!(1022 int)), ("PAD_RIGHT", crate::kv!(1023 int)), ("PAD_DPAD_UP", crate::kv!(603 int)),
+    ("PAD_DPAD_DOWN", crate::kv!(1024 int)), ("PAD_DPAD_LEFT", crate::kv!(1025 int)), ("PAD_DPAD_RIGHT", crate::kv!(1026 int)), ("PAD_DPAD_NONE", crate::kv!(604 int)),
     ("PAD_DPAD_ALL", crate::kv!(1027 int)), ("PAD_DPAD_UPDOWN", crate::kv!(1028 int)), ("PAD_DPAD_LEFTRIGHT", crate::kv!(1029 int)), ("PAD_LSTICK_UP", crate::kv!(1030 int)),
     ("PAD_LSTICK_DOWN", crate::kv!(965 int)), ("PAD_LSTICK_LEFT", crate::kv!(1031 int)), ("PAD_LSTICK_RIGHT", crate::kv!(1032 int)), ("PAD_LSTICK_NONE", crate::kv!(1033 int)),
     ("PAD_LSTICK_ALL", crate::kv!(985 int)), ("PAD_LSTICK_UPDOWN", crate::kv!(1034 int)), ("PAD_LSTICK_LEFTRIGHT", crate::kv!(1035 int)), ("PAD_RSTICK_UP", crate::kv!(1036 int)),
     ("PAD_RSTICK_DOWN", crate::kv!(1037 int)), ("PAD_RSTICK_LEFT", crate::kv!(981 int)), ("PAD_RSTICK_RIGHT", crate::kv!(1038 int)), ("PAD_RSTICK_NONE", crate::kv!(982 int)),
     ("PAD_RSTICK_ALL", crate::kv!(986 int)), ("PAD_RSTICK_UPDOWN", crate::kv!(1039 int)), ("PAD_RSTICK_LEFTRIGHT", crate::kv!(987 int)), ("PAD_A", crate::kv!(1040 int)),
     ("INPUT_PHONE_ACCEPT", crate::kv!(1040 int)), ("PAD_B", crate::kv!(989 int)), ("INPUT_PHONE_CANCEL", crate::kv!(989 int)), ("PAD_X", crate::kv!(1041 int)), ("PAD_Y", crate::kv!(1042 int)),
-    ("PAD_LB", crate::kv!(621 int)), ("PAD_LT", crate::kv!(1043 int)), ("PAD_RB", crate::kv!(1044 int)), ("PAD_RT", crate::kv!(983 int)), ("PAD_START", crate::kv!(988 int)),
+    ("PAD_LB", crate::kv!(622 int)), ("PAD_LT", crate::kv!(1043 int)), ("PAD_RB", crate::kv!(1044 int)), ("PAD_RT", crate::kv!(983 int)), ("PAD_START", crate::kv!(988 int)),
     ("PAD_BACK", crate::kv!(1045 int)), ("ACCEPT", crate::kv!(1046 int)), ("CANCEL", crate::kv!(1047 int)), ("PAD_RSTICK_ROTATE", crate::kv!(1048 int)),
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
@@ -90,12 +90,12 @@ impl InputNames {
 
 pub fn binding_glyph(source: u32, button: u32) -> i32 {
     match (source, button) {
-        (6, 0x1) => crate::kv!(1043 int), (6, 0x2) => crate::kv!(983 int), (6, 4) => crate::kv!(621 int), (6, 8) => crate::kv!(1044 int), (6, 16) => crate::kv!(1042 int),
+        (6, 0x1) => crate::kv!(1043 int), (6, 0x2) => crate::kv!(983 int), (6, 4) => crate::kv!(622 int), (6, 8) => crate::kv!(1044 int), (6, 16) => crate::kv!(1042 int),
         (6, 0x20) => crate::kv!(989 int), (6, 64) => crate::kv!(1040 int), (6, 0x80) => crate::kv!(1041 int), (6, 0x100) => crate::kv!(1045 int), (6, 0x200) => crate::kv!(1033 int),
-        (6, 0x400) => crate::kv!(982 int), (6, 0x800) => crate::kv!(988 int), (6, 0x1000) => crate::kv!(602 int), (6, 0x2000) => crate::kv!(1026 int), (6, 0x4000) => crate::kv!(1024 int),
+        (6, 0x400) => crate::kv!(982 int), (6, 0x800) => crate::kv!(988 int), (6, 0x1000) => crate::kv!(603 int), (6, 0x2000) => crate::kv!(1026 int), (6, 0x4000) => crate::kv!(1024 int),
         (6, 0x8000) => crate::kv!(1025 int),
-        (8, 0) => crate::kv!(1026 int), (8, 1) => crate::kv!(1025 int), (8, 2) => crate::kv!(602 int), (8, 3) => crate::kv!(1024 int), (8, 4) => crate::kv!(1042 int), (8, 5) => crate::kv!(989 int),
-        (8, 6) => crate::kv!(1040 int), (8, 7) => crate::kv!(1041 int), (8, 8) => crate::kv!(621 int), (8, 9) => crate::kv!(1044 int), (8, 10) => crate::kv!(1043 int), (8, 11) => crate::kv!(983 int),
+        (8, 0) => crate::kv!(1026 int), (8, 1) => crate::kv!(1025 int), (8, 2) => crate::kv!(603 int), (8, 3) => crate::kv!(1024 int), (8, 4) => crate::kv!(1042 int), (8, 5) => crate::kv!(989 int),
+        (8, 6) => crate::kv!(1040 int), (8, 7) => crate::kv!(1041 int), (8, 8) => crate::kv!(622 int), (8, 9) => crate::kv!(1044 int), (8, 10) => crate::kv!(1043 int), (8, 11) => crate::kv!(983 int),
         (9, 0) => crate::kv!(1035 int), (9, 1) => crate::kv!(1034 int), (9, 2) => crate::kv!(987 int), (9, 3) => crate::kv!(1039 int),
         _ => NO_TOKEN(),
     }

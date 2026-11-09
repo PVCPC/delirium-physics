@@ -36,6 +36,16 @@ namespace Delirium
         public const int NM_KIND_BOOL = 2;
         public const int NM_KIND_VEC3 = 3;
         public const int NM_KIND_STRING = 4;
+        public const int NM_PARTIAL_OFF = 0;
+        public const int NM_PARTIAL_LEGS = 1;
+        public const int NM_PARTIAL_UPPER = 2;
+        public const int NM_PARTIAL_NONE = 0;
+        public const int NM_PARTIAL_KNOCKED = 1;
+        public const int NM_PARTIAL_STUMBLED = 2;
+        public const int NM_PARTIAL_FELL = 3;
+        public const int NM_PARTIAL_RECOVERED = 4;
+        public const int NM_PARTIAL_RESUMED = 5;
+        public const int NM_PARTIAL_DROPPED = 6;
         public const int NM_SIZE_REAL = 0;
         public const int NM_SIZE_BASE = 1;
         public const int NM_SIZE_AUTO = 2;
@@ -284,6 +294,24 @@ namespace Delirium
         /// <summary>Aims the joints in `mask` (setStiffness's masks) at the incoming pose (nm_agent_set_incoming_transforms) every step, after the behaviours: `weight` 1 all the way, 0.5 halfway between theirs and yours. Your animation on some joints (a boxer's guard, a held weapon) while NM moves the rest. Pair it with nm_agent_hold to give those joints the strength to get there. Nothing without an incoming pose. Again for the same mask: the new weight; 0 drops it. Not the game's.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_follow(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string mask, float weight);
+        /// <summary>Keyframes the parts of `mask` (setStiffness's masks; a mask with the hips, "lb" or "fb", takes the pelvis too) on the incoming pose (nm_agent_set_incoming_transforms, each step): they go exactly where your animation puts them, root motion and all, while NM's physics moves the rest, hanging off them (a partial ragdoll: legs running or planted, the upper body knocked about by shots and punches). Hits on keyframed parts don't move them. Re-centre the joints first (nm_agent_recentre_joint -1) if your pose lies outside them: the joints win, pulling the parts off it. `on` 0 lets that mask's parts go (a big hit: drop the legs and the whole body falls). LEAD only. Not the game's.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_keyframe(IntPtr a, [MarshalAs(UnmanagedType.LPUTF8Str)] string mask, int on);
+        /// <summary>A partial ragdoll with the Playroom's hit handling (Delirium's, not the game's): NM_PARTIAL_LEGS keyframes the legs and pelvis on your animation (nm_agent_set_incoming_transforms, every step) and holds the upper body to it (a runner, someone standing); NM_PARTIAL_UPPER holds the upper body to it (a boxer's guard) over Delirium's balancing legs; NM_PARTIAL_OFF lets go, the animation's speed handed to the whole body. Then each step: a hit that throws the head 0.45 m off your animation, a push of 50 N s or more (applyImpulse), or (UPPER) losing his balance knocks him out of it (all ragdoll); running (LEGS, over 1 m/s) with keep-running on, his legs stay on the run instead, and he's back on it if he keeps his feet or goes down with his arms out (catchFall). Steady again, he's back to it by himself. Dead (a kill, nm_agent_set_dead): his legs run out and he drops. nm_agent_partial_event says each of these, for your animation (stop it, or restart it from where he stands). LEAD only. Not the game's.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_partial(IntPtr a, int mode);
+        /// <summary>The partial ragdoll's options (nm_agent_partial): `keep_running` 1 (the default): hit hard while running, his legs stay on the run; `breaks` 1 (the default): hits knock him out of the animation (0: only death does).</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_partial_options(IntPtr a, int keep_running, int breaks);
+        /// <summary>A hit of `ns` (N s) of your own (a car, a fall, your game's melee) on a partial ragdoll: 50 or more knocks him out of the animation. applyImpulse, nm_agent_apply_impulse and nm_agent_apply_push do this by themselves. Returns the event (NM_PARTIAL_*, 0 nothing).</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_partial_hit(IntPtr a, float ns);
+        /// <summary>The partial ragdoll's last event since the last call (NM_PARTIAL_*, 0 none): KNOCKED, FELL (arms out), DROPPED (dead): stop your animation; RESUMED, RECOVERED: start it again from where he stands; STUMBLED: keep it going (his legs are on it).</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_partial_event(IntPtr a);
+        /// <summary>1 while the partial ragdoll is on its animation (feed it), 2 knocked off and waiting to get back to it, 0 off.</summary>
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int nm_agent_partial_state(IntPtr a);
         /// <summary>Drops all of the agent's nm_agent_set_override values: its messages go out as sent again.</summary>
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         public static extern int nm_agent_clear_overrides(IntPtr a);

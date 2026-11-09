@@ -23,7 +23,9 @@ Works from GDScript and C#.
    Paths are absolute or under the project folder. Optional: `size` (Auto, Real, Homer), `balance`, `adaptive`,
    `strength`, `engine_physics` (his parts as Godot bodies: NM's own physics still moves him, the parts follow it and push your RigidBody3Ds, and loose RigidBody3Ds within 5 m hit him as movers (MOVER_OBJECT, boxed by their first shape's bounds)), `headshot_kills`, `shot_force`, `melee_force`, `explosion_force`, `recentre_joints` (re-centre the joints
    on the hand-over pose), `hold` (`mask=stiffness:damping:gravity`, e.g. `fb=6:1:0.5`: joints at least this stiff), `follow` (`mask=weight`,
-   e.g. `ua=1`: those joints keep playing the animation while the rest ragdolls; pair with `hold`, `ua=10:1:1`).
+   e.g. `ua=1`: those joints keep playing the animation while the rest ragdolls; pair with `hold`, `ua=10:1:1`), `keyframe`
+   (masks, e.g. `lb`: those parts play the animation exactly, root motion and all, while the rest ragdolls: a partial
+   ragdoll, legs running or planted; `drop_keyframes()` lets them go and he falls; pair with `hold` `ub=14:1:1`, `follow` `ub=1`).
 
 ## Try it: click to fight
 

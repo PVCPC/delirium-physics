@@ -199,6 +199,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Delirium|Body")
 	FString BoneMap;
 
+	/** Keyframe's parts let go (a big hit): the whole body is NM's and falls where it stands. */
+	UFUNCTION(BlueprintCallable, Category = "Delirium")
+	void DropKeyframes();
+
 	/** Its muscles times K from now on (Strength; 0: the settings'). */
 	UFUNCTION(BlueprintCallable, Category = "Delirium")
 	bool SetStrength(float K);
@@ -503,6 +507,8 @@ private:
 	/** Follow: the hidden mesh's animated bones each tick (nm_rig_incoming), and its tick option before. */
 	TArray<float> Incoming;
 	bool bFollow = false;
+	/** Keyframe's parts held on the animation (its movement runs on; DropKeyframes lets them go). */
+	bool bKeyframed = false;
 	/** EnginePhysics: NM's parts as kinematic bodies (each turned so its capsule runs along Z); empty in NM's own physics.
 	 *  The seconds to the next look for movers near him. */
 	UPROPERTY(Transient)

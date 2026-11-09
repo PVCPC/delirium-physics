@@ -91,6 +91,10 @@ body, `ua` upper arms, `ub` upper body, `lb` lower body); `fb=6:1:0.5` stops a l
 `nm_agent_recentre_joint`, `nm_agent_hold`. `[Body] Follow` (empty) keeps joints playing the animation while the rest
 ragdolls (a boxer's guard, a held gun): `mask=weight`, `ua=1` the upper arms all the way; the Animator keeps running
 under the ragdoll. Give them strength with Hold (`ua=10:1:1`). From code: `nm_agent_follow` + `nm_rig_incoming`.
+`[Body] Keyframe` (empty) makes a partial ragdoll: those parts play the animation exactly, root motion and path agent
+included, while the rest ragdolls (`lb`: legs keep running or stay planted, the upper body takes the hits). Keep the
+upper body up with Hold `ub=14:1:1` and Follow `ub=1`; `DropKeyframes(owner)` lets them go and he falls. From code:
+`nm_agent_keyframe`.
 
 `[Body] Body` gives every character one of the Playroom's bodies: `Fitted` (its own, the default), `Small`, `Average`,
 `Large`, `Lanky`, `Fat`, `Stocky`, `Waddler`, `Guard`, `Brute`, `Brawler`, `Bruiser`, `Random` (`Seed`, 0: each its own;

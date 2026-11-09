@@ -34,7 +34,7 @@ namespace Delirium.Ragdoll
         KeyCode ragdollKey, releaseKey;
         float push, getUpAfter, getUpBlend;
         bool balance, bodySymmetric, armsOutEarly;
-        string body, customBody, overrides, hold, follow;
+        string body, customBody, overrides, hold, follow, keyframe;
         bool recentreJoints, enginePhysics, stepLimit, fireReaction;
         string weaponTable, getUpNet, walkNet;
         int bodySeed;
@@ -107,6 +107,8 @@ namespace Delirium.Ragdoll
         public string hold = "";
         [Tooltip("Joints that keep playing the animation while the rest ragdolls (a boxer's guard, a held gun): mask=weight, comma separated (1 all the way, 0.5 halfway between NM's and the animation's; masks as Hold's, ua upper arms). The Animator keeps running under the ragdoll. Give those joints strength with Hold (ua=10:1:1). Empty: off.")]
         public string follow = "";
+        [Tooltip("Body parts that play the animation exactly while the rest ragdolls (a partial ragdoll: legs keep running or stay planted, the upper body takes the hits): masks, comma separated (lb legs and pelvis, ll / lr one leg, ub upper body, ul / ur one arm). The Animator, path agent and root motion keep running under it; DropKeyframes() lets them go (a big hit: he falls). Hold the rest up (ub=14:1:1) and Follow it (ub=1). Empty: off.")]
+        public string keyframe = "";
 
         static class Logger
         {
@@ -125,6 +127,8 @@ namespace Delirium.Ragdoll
         /// The Body settings' RecentreJoints, Hold (mask, stiffness, damping, gravity) and Follow (mask, weight).
         internal static bool Recentre, ArmsOutEarly, EnginePhysics;
         internal static List<(string mask, float[] v)> Holds = new List<(string, float[])>(), Follows = new List<(string, float[])>();
+        /// The Body settings' Keyframe masks.
+        internal static List<string> Keyframes = new List<string>();
         /// The Body settings' body (Body.Make), and SetBody's for one character.
         internal static Body Shape = new Body("Fitted", 0, 1.5f, true, "");
         internal static readonly Dictionary<Transform, Body> Shapes = new Dictionary<Transform, Body>();
@@ -248,6 +252,7 @@ namespace Delirium.Ragdoll
             enginePhysics = Config.Bind("Feel", "EnginePhysics", false, "His parts as Unity bodies: NM's own physics still moves him (the game's exactly), his parts follow it as kinematic rigidbodies pushing your rigidbodies and meeting triggers, and loose rigidbodies within 5 m hit him (as Object movers). Off: NM's own physics alone, with the level read in. Run physics at 60 Hz (Fixed Timestep 0.01667) for the game's feel.").Value;
             recentreJoints = Config.Bind("Body", "RecentreJoints", false, "Re-centre each joint's range on the pose it is handed over in (for rigs whose animation bends joints past NM's ranges: they would snap on the first step). Not the game's.").Value;
             follow = Config.Bind("Body", "Follow", "", "Joints that keep playing the animation while the rest ragdolls (a boxer's guard, a held gun): mask=weight, comma separated (1 all the way, 0.5 halfway between NM's and the animation's; masks as Hold's, ua upper arms). The Animator keeps running under the ragdoll. Give those joints strength with Hold (ua=10:1:1). Empty: off.").Value;
+            keyframe = Config.Bind("Body", "Keyframe", "", "Body parts that play the animation exactly while the rest ragdolls (a partial ragdoll: legs keep running or stay planted, the upper body takes the hits): masks, comma separated (lb legs and pelvis, ll / lr one leg, ub upper body, ul / ur one arm). The Animator, path agent and root motion keep running under it; DropKeyframes() lets them go (a big hit: he falls). Hold the rest up (ub=14:1:1) and Follow it (ub=1). Empty: off.").Value;
             hold = Config.Bind("Body", "Hold", "", "Joints held at least this stiff, damped and gravity-opposing (0-1), whatever the reactions set: mask=stiffness:damping:gravity, comma separated (masks as setStiffness's: fb whole body, ua upper arms, ub upper body, lb lower body). fb=6:1:0.5 keeps a limp body from folding; empty: off.").Value;
             overrides = Config.Bind("Body", "Overrides", "", "Behaviour parameters changed for every character (the Playroom's Parameters tab): shot.bodyStiffness=7, bodyBalance.useHeadLook=0.").Value;
             HeadshotKills = Config.Bind("Feel", "HeadshotKills", true, "A shot whose nearest body part is the head kills: health 0, the body goes limp and never gets up by itself.").Value;
@@ -270,6 +275,7 @@ namespace Delirium.Ragdoll
             ArmsOutEarly = armsOutEarly;
             Holds = MaskList(hold, 3, "Hold", "mask=stiffness:damping:gravity");
             Follows = MaskList(follow, 1, "Follow", "mask=weight");
+            Keyframes = keyframe.Split(',').Select(m => m.Trim()).Where(m => m != "").ToList();
             DataDir = dir;
             try
             {
@@ -592,6 +598,9 @@ namespace Delirium.Ragdoll
         }
 
         /// Where the ragdoll under `owner` has its head (NM's head part, in the game's world); null when it isn't one.
+        /// Its Keyframe parts let go (a big hit): the whole body is NM's, falling where it stands.
+        public void DropKeyframes(Transform owner) => dolls.FirstOrDefault(x => x.Owner == owner)?.DropKeyframes();
+
         public Vector3? Head(Transform owner) => dolls.FirstOrDefault(x => x.Owner == owner)?.Part(12);
 
         /// An explosion at `at` reaching `owner` (call it for each character in range): thrown out and up at up to `speed`
@@ -1172,7 +1181,9 @@ namespace Delirium.Ragdoll
         readonly List<Behaviour> paused = new List<Behaviour>();
         readonly List<Rigidbody> frozen = new List<Rigidbody>();
         readonly List<UnityEngine.AI.NavMeshAgent> walkers = new List<UnityEngine.AI.NavMeshAgent>();
-        readonly (Vector3 at, Quaternion turn) pinned;
+        (Vector3 at, Quaternion turn) pinned;
+        /// Keyframe's parts held on the animation (DropKeyframes lets them go).
+        bool keyframed;
         /// Metres of the game's world per metre of NM's (1 at the character's own size; Size setting). The SDK converts
         /// (nm_build_fit_sized): everything here is the game's units.
         internal readonly float scale = 1f;
@@ -1384,6 +1395,9 @@ namespace Delirium.Ragdoll
                 if (nm_agent_hold(agent, m, v[0], v[1], v[2]) < 0) Debug.LogWarning($"[NM] Hold: {LastError()}");
             foreach (var (m, v) in Plugin.Follows)
                 if (nm_agent_follow(agent, m, v[0]) < 0) Debug.LogWarning($"[NM] Follow: {LastError()}");
+            foreach (var m in Plugin.Keyframes)
+                if (nm_agent_keyframe(agent, m, 1) < 0) Debug.LogWarning($"[NM] Keyframe: {LastError()}");
+            keyframed = Plugin.Keyframes.Count > 0;
             var walk = owner.GetComponentInChildren<UnityEngine.AI.NavMeshAgent>();
             var body = owner.GetComponentInChildren<Rigidbody>();
             var cc = owner.GetComponentInChildren<CharacterController>();
@@ -1393,16 +1407,14 @@ namespace Delirium.Ragdoll
             // The game stops moving this character while NM has it.
             var root = owner;
             // Follow: its animation keeps playing under the ragdoll (Feed), which draws over it (Pose).
-            if (Plugin.Follows.Count == 0)
+            // Keyframe: the animation keeps playing and moving him (path agent, root motion) under the parts it holds.
+            if (Plugin.Follows.Count == 0 && !keyframed)
             {
                 foreach (var a in root.GetComponentsInChildren<Animator>()) if (a.enabled) { a.enabled = false; paused.Add(a); }
                 foreach (var a in root.GetComponentsInChildren<Animation>()) if (a.enabled) { a.enabled = false; paused.Add(a); }
             }
             foreach (var rb in root.GetComponentsInChildren<Rigidbody>()) if (!rb.isKinematic) { rb.isKinematic = true; frozen.Add(rb); }
-            // Its AI keeps thinking but can't walk it off: path agents stop moving it and its root stays put (Pose) until
-            // it's handed back, where they jump to wherever it got up.
-            foreach (var a in root.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>())
-                if (a.updatePosition) { a.updatePosition = a.updateRotation = false; walkers.Add(a); }
+            if (!keyframed) Stop();
             pinned = (owner.position, owner.rotation);
             if (Plugin.EnginePhysics) Build(owner);
 
@@ -1663,12 +1675,30 @@ namespace Delirium.Ragdoll
         /// Follow: the animation's pose this frame (the Animator ran just before LateUpdate) for its joints to aim at.
         public void Feed()
         {
-            if (Plugin.Follows.Count > 0 || Fed) Plugin.Check(nm_rig_incoming(rig, agent, Frames()));
+            if (Plugin.Follows.Count > 0 || keyframed || Fed) Plugin.Check(nm_rig_incoming(rig, agent, Frames()));
+        }
+
+        /// Its AI keeps thinking but can't walk it off: path agents stop moving it and its root stays put (Pose) until
+        /// it's handed back, where they jump to wherever it got up.
+        void Stop()
+        {
+            foreach (var a in Owner.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>())
+                if (a.updatePosition) { a.updatePosition = a.updateRotation = false; walkers.Add(a); }
+        }
+
+        /// Keyframe's parts let go (a big hit): NM's physics has the whole body, which stays where it is now.
+        public void DropKeyframes()
+        {
+            if (!keyframed) return;
+            foreach (var m in Plugin.Keyframes) Plugin.Check(nm_agent_keyframe(agent, m, 0));
+            keyframed = false;
+            Stop();
+            pinned = (Owner.position, Owner.rotation);
         }
 
         public void Pose()
         {
-            Owner.SetPositionAndRotation(pinned.at, pinned.turn);
+            if (!keyframed) Owner.SetPositionAndRotation(pinned.at, pinned.turn);
             int hips = nm_rig_pose(rig, agent, pose);
             // The hips are the rig's root: their turn is a world one, every other bone's is under its parent.
             bones[0].rotation = Turn(pose, 0);

@@ -106,7 +106,7 @@ fn PI() -> f32 { crate::kv!(774 f32) }
 fn QUARTER_PI() -> f32 { crate::kv!(773 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn TWO_PI() -> f32 { crate::kv!(618 f32) }
+fn TWO_PI() -> f32 { crate::kv!(619 f32) }
 #[allow(non_snake_case)]
 #[inline]
 fn HALF_PI() -> f32 { crate::kv!(796 f32) }
@@ -271,7 +271,7 @@ pub fn made(a: &After, rand: &mut Rand) -> Made {
     let mut want = id::GET_UP_NORMAL();
     if a.player {
         want = id::GET_UP_FAST;
-        if a.wanted && !a.network && a.health < crate::kv!(586) && matches!(a.prev, after::EXPLOSION | after::HIGH_FALL) {
+        if a.wanted && !a.network && a.health < crate::kv!(587) && matches!(a.prev, after::EXPLOSION | after::HIGH_FALL) {
             want = id::GET_UP_NORMAL();
         }
     } else if a.prev != 0 {

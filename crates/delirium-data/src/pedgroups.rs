@@ -393,7 +393,7 @@ impl Formation {
     }
 
     fn surround(&mut self, l: &Member, followers: &[Option<Member>; 7]) {
-        let step = crate::kv!(618 f32) / followers.iter().flatten().count() as f32;
+        let step = crate::kv!(619 f32) / followers.iter().flatten().count() as f32;
         let mut a = 0.0f32;
         for (place, _) in self.places.iter_mut().zip(followers).filter(|(_, m)| m.is_some()) {
             let at = if self.flags & TURNS() != 0 { wrap(l.facing + a) } else { a };

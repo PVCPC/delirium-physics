@@ -32,9 +32,9 @@ const POINTS: [&str; 16] = [
 #[allow(non_snake_case)]
 #[inline]
 fn BONES() -> &'static [(&'static str, u32); 14] { static V: std::sync::OnceLock<[(&'static str, u32); 14]> = std::sync::OnceLock::new(); let f = || [
-    ("PELVIS", crate::kv!(211 int)), ("HEAD", crate::kv!(209 int)), ("R_UPPERARM", crate::kv!(606 int)), ("R_FOREARM", crate::kv!(607 int)), ("R_HAND", crate::kv!(58 int)), ("L_UPPERARM", crate::kv!(608 int)),
-    ("L_FOREARM", crate::kv!(609 int)), ("L_HAND", crate::kv!(59 int)), ("L_THIGH", crate::kv!(610 int)), ("L_CALF", crate::kv!(611 int)), ("L_FOOT", crate::kv!(612 int)), ("R_THIGH", crate::kv!(613 int)),
-    ("R_CALF", crate::kv!(614 int)), ("R_FOOT", crate::kv!(615 int)),
+    ("PELVIS", crate::kv!(211 int)), ("HEAD", crate::kv!(209 int)), ("R_UPPERARM", crate::kv!(607 int)), ("R_FOREARM", crate::kv!(608 int)), ("R_HAND", crate::kv!(58 int)), ("L_UPPERARM", crate::kv!(609 int)),
+    ("L_FOREARM", crate::kv!(610 int)), ("L_HAND", crate::kv!(59 int)), ("L_THIGH", crate::kv!(611 int)), ("L_CALF", crate::kv!(612 int)), ("L_FOOT", crate::kv!(613 int)), ("R_THIGH", crate::kv!(614 int)),
+    ("R_CALF", crate::kv!(615 int)), ("R_FOOT", crate::kv!(616 int)),
 ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn h(s: &[u8]) -> u32 {
@@ -72,13 +72,13 @@ fn hash_or_0(s: &[u8]) -> u32 {
 }
 
 fn rad(d: f32) -> f32 {
-    d * crate::kv!(616 f32)
+    d * crate::kv!(617 f32)
 }
 
 fn rad_end(d: f32) -> f32 {
-    if d == crate::kv!(617) {
+    if d == crate::kv!(618) {
         std::f32::consts::PI
-    } else if d == -crate::kv!(617) {
+    } else if d == -crate::kv!(618) {
         -std::f32::consts::PI
     } else {
         rad(d)
@@ -86,7 +86,7 @@ fn rad_end(d: f32) -> f32 {
 }
 
 pub fn turn_toward(from: f32, to: f32, step: f32) -> f32 {
-    let (pi, two_pi) = (std::f32::consts::PI, crate::kv!(618 f32));
+    let (pi, two_pi) = (std::f32::consts::PI, crate::kv!(619 f32));
     let mut d = to - from;
     while d > pi {
         d -= two_pi;
@@ -98,7 +98,7 @@ pub fn turn_toward(from: f32, to: f32, step: f32) -> f32 {
 }
 
 pub fn wrap(mut x: f32) -> f32 {
-    let (pi, two_pi) = (std::f32::consts::PI, crate::kv!(618 f32));
+    let (pi, two_pi) = (std::f32::consts::PI, crate::kv!(619 f32));
     let low = if x >= -crate::kv!(38) {
         if x > crate::kv!(38) || x > pi {
             if x > crate::kv!(38) {
@@ -297,11 +297,11 @@ pub fn read(file: &[u8], group: impl Fn(&[u8]) -> i32, anim: impl Fn(i32, &[u8])
 }
 
 fn read_action(r: &mut CsvReader, k: &mut Kept, name: u32) -> Option<Action> {
-    let priority = k.int(r, crate::kv!(619 int));
-    let bias = k.float(r, crate::kv!(620 int));
+    let priority = k.int(r, crate::kv!(620 int));
+    let bias = k.float(r, crate::kv!(621 int));
     let kind = s(r);
     let filter = s(r);
-    let flags = [k.int(r, crate::kv!(96 int)), k.int(r, crate::kv!(621 int)), k.int(r, crate::kv!(622 int)), k.int(r, crate::kv!(623 int))].map(|v| v != 0);
+    let flags = [k.int(r, crate::kv!(96 int)), k.int(r, crate::kv!(622 int)), k.int(r, crate::kv!(623 int)), k.int(r, crate::kv!(624 int))].map(|v| v != 0);
     let health = range(r);
     let attack = range(r);
     let defense = range(r);
@@ -310,20 +310,20 @@ fn read_action(r: &mut CsvReader, k: &mut Kept, name: u32) -> Option<Action> {
     let op = s(r);
     let mut raw = [(0i32, vec![], vec![], [0f32; 2], 0f32), (0, vec![], vec![], [0.0; 2], 0.0)];
     for (n, imp) in raw.iter_mut().enumerate() {
-        imp.0 = k.int(r, crate::kv!(624 int) + crate::kv!(1 int) * n as u16);
+        imp.0 = k.int(r, crate::kv!(625 int) + crate::kv!(1 int) * n as u16);
         imp.1 = s(r);
         imp.2 = s(r);
         imp.3 = range(r);
-        imp.4 = k.float(r, crate::kv!(625 int) + crate::kv!(1 int) * n as u16);
+        imp.4 = k.float(r, crate::kv!(626 int) + crate::kv!(1 int) * n as u16);
     }
     let require_target = s(r);
     let require_lock_on = s(r);
     let target_type = s(r);
     let opponent_res = s(r);
-    let check_anim_time = k.int(r, crate::kv!(626 int));
+    let check_anim_time = k.int(r, crate::kv!(627 int));
     let anim_time = range(r);
     let pose = s(r);
-    let check_rel_pos = k.int(r, crate::kv!(627 int));
+    let check_rel_pos = k.int(r, crate::kv!(628 int));
     let angle = range(r);
     let distance = range(r);
     let height = range(r);
@@ -331,7 +331,7 @@ fn read_action(r: &mut CsvReader, k: &mut Kept, name: u32) -> Option<Action> {
     let special = s(r);
     let additional = s(r);
     let move_ = s(r);
-    let prefer_ragdoll = k.int(r, crate::kv!(628 int));
+    let prefer_ragdoll = k.int(r, crate::kv!(629 int));
     r.skip_line();
     let op = match place(&["and", "or", "xor"], &op) {
         Some(0) => 1,
@@ -395,39 +395,39 @@ fn read_action(r: &mut CsvReader, k: &mut Kept, name: u32) -> Option<Action> {
 fn read_result(
     r: &mut CsvReader, k: &mut Kept, name: u32, group: &impl Fn(&[u8]) -> i32, anim: &impl Fn(i32, &[u8]) -> i32,
 ) -> ResultDef {
-    let priority = k.int(r, crate::kv!(629 int));
+    let priority = k.int(r, crate::kv!(630 int));
     let group_name = s(r);
     let anim_name = s(r);
     let sync = k.int(r, crate::kv!(182 int));
-    let start_time = k.float(r, crate::kv!(630 int));
+    let start_time = k.float(r, crate::kv!(631 int));
     let playback_rate = k.float(r, crate::kv!(40 int));
-    let player_playback_mult = k.float(r, crate::kv!(631 int));
-    let is_loop = k.int(r, crate::kv!(632 int));
-    let blend_in = k.float(r, crate::kv!(633 int));
-    let blend_out = k.float(r, crate::kv!(634 int));
-    let is_an_idle = k.int(r, crate::kv!(635 int));
-    let is_a_block = k.int(r, crate::kv!(636 int));
-    let lock = k.int(r, crate::kv!(637 int));
+    let player_playback_mult = k.float(r, crate::kv!(632 int));
+    let is_loop = k.int(r, crate::kv!(633 int));
+    let blend_in = k.float(r, crate::kv!(634 int));
+    let blend_out = k.float(r, crate::kv!(635 int));
+    let is_an_idle = k.int(r, crate::kv!(636 int));
+    let is_a_block = k.int(r, crate::kv!(637 int));
+    let lock = k.int(r, crate::kv!(638 int));
     let homing = s(r);
     let angle = range(r);
     let distance = range(r);
     let height = range(r);
-    let stop_on_crit = k.int(r, crate::kv!(638 int));
-    let stop_time = k.float(r, crate::kv!(639 int));
+    let stop_on_crit = k.int(r, crate::kv!(639 int));
+    let stop_time = k.float(r, crate::kv!(640 int));
     let desired_angle = range(r);
     let desired_distance = range(r);
     let desired_height = range(r);
-    let force = k.int(r, crate::kv!(640 int));
-    let self_damage = k.float(r, crate::kv!(641 int));
-    let drop = k.int(r, crate::kv!(642 int));
-    let disarm = k.int(r, crate::kv!(643 int));
+    let force = k.int(r, crate::kv!(641 int));
+    let self_damage = k.float(r, crate::kv!(642 int));
+    let drop = k.int(r, crate::kv!(643 int));
+    let disarm = k.int(r, crate::kv!(644 int));
     let mut bones = [(vec![], 0f32), (vec![], 0.0)];
     for (n, b) in bones.iter_mut().enumerate() {
         b.0 = s(r);
-        b.1 = k.float(r, crate::kv!(644 int) + crate::kv!(1 int) * n as u16);
+        b.1 = k.float(r, crate::kv!(645 int) + crate::kv!(1 int) * n as u16);
     }
-    let on_hit = k.float(r, crate::kv!(645 int));
-    let momentum = k.float(r, crate::kv!(646 int));
+    let on_hit = k.float(r, crate::kv!(646 int));
+    let momentum = k.float(r, crate::kv!(576 int));
     let object_damage = k.float(r, crate::kv!(647 int));
     let mut branches = [(vec![], [0f32; 2]), (vec![], [0.0; 2]), (vec![], [0.0; 2])];
     for b in branches.iter_mut() {

@@ -98,6 +98,7 @@ pub mod jump;
 pub mod learned;
 pub mod jumproll;
 pub mod onfire;
+pub mod partial;
 pub mod taskctor;
 pub mod gjk;
 pub mod curved;

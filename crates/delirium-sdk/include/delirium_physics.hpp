@@ -353,6 +353,12 @@ public:
     /// The parts in `mask` held to their pose / following the incoming one.
     void hold(const char* mask, float stiffness, float damping, float oppose_gravity = 0.f) { check(nm_agent_hold(get(), mask, stiffness, damping, oppose_gravity)); }
     void follow(const char* mask, float weight) { check(nm_agent_follow(get(), mask, weight)); }
+    void keyframe(const char* mask, bool on = true) { check(nm_agent_keyframe(get(), mask, on ? 1 : 0)); }
+    void partial(int32_t mode) { check(nm_agent_partial(get(), mode)); }
+    void partial_options(bool keep_running, bool breaks) { check(nm_agent_partial_options(get(), keep_running ? 1 : 0, breaks ? 1 : 0)); }
+    int32_t partial_hit(float ns) { return check(nm_agent_partial_hit(get(), ns)); }
+    int32_t partial_event() { return check(nm_agent_partial_event(get())); }
+    int32_t partial_state() const { return check(nm_agent_partial_state(get())); }
     /// NM's feedback this step: (name, behaviour slot, value).
     std::vector<std::tuple<std::string, int, float>> feedback() const {
         std::vector<std::tuple<std::string, int, float>> o;

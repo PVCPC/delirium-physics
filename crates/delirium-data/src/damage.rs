@@ -162,7 +162,7 @@ impl Health {
     }
 
     pub fn put_out(&mut self) {
-        self.body = self.body.max(crate::kv!(589));
+        self.body = self.body.max(crate::kv!(590));
         if (self.engine < 0.0 && self.engine > -crate::kv!(244)) || self.petrol_fire() {
             (self.engine, self.petrol) = (-crate::kv!(244), 1.0);
         }

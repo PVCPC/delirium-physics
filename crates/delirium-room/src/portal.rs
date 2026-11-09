@@ -9,7 +9,40 @@ mod render;
 
 use crate::{OursCam, OursGizmos, Sim};
 
-const HALF: Vec2 = Vec2::new(32.0 * 0.0254, 56.0 * 0.0254);
+pub const HALF: Vec2 = Vec2::new(32.0 * 0.0254, 56.0 * 0.0254);
+pub const OPEN: f32 = 0.83;
+static SIZE: [std::sync::atomic::AtomicU32; 2] = [std::sync::atomic::AtomicU32::new(0x3F50_13A9), std::sync::atomic::AtomicU32::new(0x3FB6_1134)];
+
+pub fn half() -> Vec2 {
+    Vec2::new(f32::from_bits(SIZE[0].load(std::sync::atomic::Ordering::Relaxed)), f32::from_bits(SIZE[1].load(std::sync::atomic::Ordering::Relaxed)))
+}
+
+pub fn set_half(h: Vec2) {
+    let h = h.clamp(Vec2::splat(0.2), Vec2::splat(5.0));
+    SIZE[0].store(h.x.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    SIZE[1].store(h.y.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub static SHOOT_THROUGH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+static RECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn rect() -> bool {
+    RECT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_rect(on: bool) {
+    RECT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn hole() -> Vec2 {
+    half() * OPEN
+}
+
+fn in_hole(l: Vec3) -> bool {
+    let q = (l.truncate() / hole()).abs();
+    if rect() { q.max_element() < 1.0 } else { q.length_squared() < 1.0 }
+}
 const COLORS: [Color; 2] = [Color::srgb(0.15, 0.55, 1.0), Color::srgb(1.0, 0.55, 0.1)];
 const PATH: &str = "portal2_path.txt";
 
@@ -76,6 +109,19 @@ pub struct Portals {
 }
 
 impl Portals {
+    pub fn unport(&self, prev: Transform, cur: Transform) -> Transform {
+        let d = prev.translation.distance(cur.translation);
+        let [Some(a), Some(b)] = self.ends else { return prev };
+        if d < 0.5 {
+            return prev;
+        }
+        [(a, b), (b, a)].iter().map(|(f, t)| {
+            let (turn, map) = through(f, t);
+            Transform { translation: map(prev.translation), rotation: (turn * prev.rotation).normalize(), scale: prev.scale }
+        }).min_by(|x, y| x.translation.distance(cur.translation).total_cmp(&y.translation.distance(cur.translation)))
+            .filter(|m| m.translation.distance(cur.translation) < d * 0.5).unwrap_or(prev)
+    }
+
     pub fn new() -> Portals {
         let typed = std::fs::read_to_string(PATH).unwrap_or_default().trim().to_string();
         let game = Some(typed.clone()).filter(|g| is_portal2(g));
@@ -121,14 +167,14 @@ impl Sim {
         let holes = std::mem::take(&mut self.world.holes);
         let ends = self.portal.ends;
         let windows: Vec<place::Window> = match ends {
-            [Some(a), Some(b)] => vec![place::Window { frame: a, exit: b }, place::Window { frame: b, exit: a }],
+            [Some(a), Some(b)] if SHOOT_THROUGH.load(std::sync::atomic::Ordering::Relaxed) => vec![place::Window { frame: a, exit: b }, place::Window { frame: b, exit: a }],
             _ => vec![],
         };
         let others: Vec<Frame> = ends[1 - i].into_iter().collect();
         let w = SolidWorld(&self.world);
-        let trace = place::trace_shot(&w, from, dir, 200.0, HALF, &windows);
+        let trace = place::trace_shot(&w, from, dir, 200.0, half(), &windows);
         let result = match trace.hit {
-            Some(h) => place::place(&w, h, trace.dir, HALF, &others),
+            Some(h) => place::place(&w, h, trace.dir, half(), &others),
             None => Err(place::Fail::NoHit),
         };
         self.world.holes = holes;
@@ -186,7 +232,7 @@ impl Sim {
         let [Some(a), Some(b)] = self.portal.ends else { return };
         let Some(n) = self.hero.as_ref().filter(|_| self.hero_doll.is_none() && !self.driving) else { return };
         let (c, yaw, fall) = (n.feet + Vec3::Z * 0.9, n.yaw, n.fall);
-        let over = |f: &Frame| { let l = f.local(n.feet); f.normal().z > 0.7 && l.z.abs() < 0.5 && (l.x / HALF.x).powi(2) + (l.y / HALF.y).powi(2) < 1.0 };
+        let over = |f: &Frame| { let l = f.local(n.feet); f.normal().z > 0.7 && l.z.abs() < 0.5 && in_hole(l) };
         let trip = fall < 0.0 && (over(&a) || over(&b));
         let last = std::mem::replace(&mut self.portal.hero_last, [a.local(c).z, b.local(c).z]);
         let into = crossed(&a, last[0], c) || crossed(&b, last[1], c);
@@ -221,9 +267,9 @@ impl Sim {
             self.portal.homer_last = [a.local(c).z, b.local(c).z];
         }
         let Some(s) = self.skate.as_mut() else { return };
-        let [Some(a), Some(b)] = ends else { return s.holes(vec![], HALF) };
-        s.holes(vec![(a.at, a.rot), (b.at, b.rot)], HALF);
-        let inside = |l: Vec3| (l.x / HALF.x).powi(2) + (l.y / HALF.y).powi(2) < 1.0;
+        let [Some(a), Some(b)] = ends else { return s.holes(vec![], hole(), rect()) };
+        s.holes(vec![(a.at, a.rot), (b.at, b.rot)], hole(), rect());
+        let inside = in_hole;
         if let Some(l) = s.loose.as_mut() {
             let p = l.deck.translation;
             if let Some((i, (from, to))) = [(a, b), (b, a)].into_iter().enumerate()
@@ -317,6 +363,12 @@ impl Sim {
             f.1 = Vec3::new(x, y, z);
             return;
         }
+        if let Some(d) = a.strip_prefix("size ") && let [w, h] = p(d)[..] {
+            return set_half(Vec2::new(w, h) / 2.0);
+        }
+        if let Some(d) = a.strip_prefix("shape ") {
+            return set_rect(d.trim() == "rect");
+        }
         if let Some(d) = a.strip_prefix("aimat ") && let [x, y, z] = p(d)[..] {
             (self.portal.skate_aim, self.portal.aim_fixed) = (Some(Vec3::new(x, y, z)), true);
             return;
@@ -385,7 +437,7 @@ pub fn frame(mut sim: NonSendMut<Sim>, buttons: Res<ButtonInput<MouseButton>>, k
         n.chell = chell.then_some(Quat::IDENTITY);
     }
     let holes = match sim.portal.ends {
-        [Some(a), Some(b)] => [a, b].map(|f| delirium::collision::Hole { at: f.at, rot: f.rot, half: HALF }).to_vec(),
+        [Some(a), Some(b)] => [a, b].map(|f| delirium::collision::Hole { at: f.at, rot: f.rot, half: hole(), rect: rect() }).to_vec(),
         _ => vec![],
     };
     sim.world.holes = holes.clone();
@@ -414,6 +466,34 @@ pub fn settings(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) 
     if sim.portal.on() {
         ui.add(egui::Label::new(format!("Linked: {}", sim.portal.game.as_deref().unwrap_or_default())).wrap());
         crate::info(ui, "The portal gun is in the weapons. Left click: blue, right click: orange. Homer goes through them.");
+        let mut thru = SHOOT_THROUGH.load(std::sync::atomic::Ordering::Relaxed);
+        if ui.checkbox(&mut thru, "Shoot portals through portals").changed() {
+            SHOOT_THROUGH.store(thru, std::sync::atomic::Ordering::Relaxed);
+        }
+        ui.label("Portal shape and size");
+        ui.horizontal(|ui| {
+            let mut r = rect();
+            if ui.radio_value(&mut r, false, "Oval").changed() | ui.radio_value(&mut r, true, "Rectangle").changed() {
+                set_rect(r);
+            }
+        });
+        let mut h = half() * 2.0;
+        let w = ui.add(egui::Slider::new(&mut h.x, 0.4..=6.0).suffix(" m").text("width")).changed();
+        let t = ui.add(egui::Slider::new(&mut h.y, 0.4..=6.0).suffix(" m").text("height")).changed();
+        ui.horizontal_wrapped(|ui| {
+            for (name, size, sq) in [("Portal 2", HALF * 2.0, false), ("Round", Vec2::splat(2.0), false), ("Square", Vec2::splat(2.0), true),
+                                     ("Door", Vec2::new(1.4, 2.4), true), ("Wide", Vec2::new(3.0, 1.6), false), ("Tiny", HALF, false), ("Huge", HALF * 4.0, false)] {
+                if ui.button(name).clicked() {
+                    h = size;
+                    set_half(h / 2.0);
+                    set_rect(sq);
+                }
+            }
+        });
+        if w || t {
+            set_half(h / 2.0);
+        }
+        crate::info(ui, "Takes effect on the open portals at once. Bigger than the wall they're on: shoot them again.");
     } else {
         crate::info(ui, "Portal 2 mode is off. Link a folder or enable the mode to use the remembered installation.");
     }
@@ -737,7 +817,7 @@ pub fn plugin(app: &mut App) {
     clip::plugin(app);
     fx::plugin(app);
     app.add_systems(Update, (frame.after(crate::step), gun_view.after(crate::gun_view)))
-        .add_systems(PostUpdate, ghosts.before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
+        .add_systems(PostUpdate, ghosts.before(crate::phys_start).before(bevy::transform::TransformSystems::Propagate).before(bevy::pbr::check_entities_needing_specialization::<clip::GhostMaterial>));
 }
 
 fn funnel_agent(agent: &mut delirium::nm::Agent, portals: [Frame; 2], dt: f32) {
@@ -784,7 +864,7 @@ fn centre(p: impl Iterator<Item = Vec3>) -> Vec3 {
 
 fn crossed(f: &Frame, last: f32, p: Vec3) -> bool {
     let l = f.local(p);
-    last >= 0.0 && l.z < 0.0 && l.z > -1.0 && (l.x / HALF.x).powi(2) + (l.y / HALF.y).powi(2) < 1.0
+    last >= 0.0 && l.z < 0.0 && l.z > -1.0 && in_hole(l)
 }
 
 pub fn hero_fall(n: &mut crate::hero::Hero, ground: Option<f32>, dt: f32) -> Option<f32> {
@@ -818,7 +898,7 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<Standa
             }
             for (i, (from, to)) in [(a, b), (b, a)].into_iter().enumerate() {
                 let l = from.local(t.translation);
-                if !(l.z > -1.0 && l.z < 0.6 && l.x.abs() < HALF.x + 0.6 && l.y.abs() < HALF.y + 0.6) {
+                if !(l.z > -1.0 && l.z < 0.6 && l.x.abs() < half().x + 0.6 && l.y.abs() < half().y + 0.6) {
                     continue;
                 }
                 let (turn, map) = through(&from, &to);

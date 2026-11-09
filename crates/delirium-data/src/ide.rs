@@ -423,10 +423,10 @@ pub fn car_dirt(f: f32) -> u32 {
 pub fn ide_cars(file: &[u8]) -> Vec<CarModel> {
     #[allow(non_snake_case)]
     #[inline]
-    fn LONG() -> &'static [u32; 15] { static V: std::sync::OnceLock<[u32; 15]> = std::sync::OnceLock::new(); let f = || [crate::kv!(806 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(370 int), crate::kv!(434 int), crate::kv!(807 int), crate::kv!(621 int), crate::kv!(91 int), crate::kv!(467 int), crate::kv!(97 int), crate::kv!(377 int), crate::kv!(329 int), crate::kv!(380 int), crate::kv!(88 int), crate::kv!(808 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn LONG() -> &'static [u32; 15] { static V: std::sync::OnceLock<[u32; 15]> = std::sync::OnceLock::new(); let f = || [crate::kv!(806 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(370 int), crate::kv!(434 int), crate::kv!(807 int), crate::kv!(622 int), crate::kv!(91 int), crate::kv!(467 int), crate::kv!(97 int), crate::kv!(377 int), crate::kv!(329 int), crate::kv!(380 int), crate::kv!(88 int), crate::kv!(808 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     #[allow(non_snake_case)]
     #[inline]
-    fn SHORT() -> &'static [u32; 14] { static V: std::sync::OnceLock<[u32; 14]> = std::sync::OnceLock::new(); let f = || [crate::kv!(806 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(370 int), crate::kv!(434 int), crate::kv!(807 int), crate::kv!(621 int), crate::kv!(91 int), crate::kv!(467 int), crate::kv!(97 int), crate::kv!(377 int), crate::kv!(329 int), crate::kv!(380 int), crate::kv!(808 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn SHORT() -> &'static [u32; 14] { static V: std::sync::OnceLock<[u32; 14]> = std::sync::OnceLock::new(); let f = || [crate::kv!(806 int), crate::kv!(96 int), crate::kv!(89 int), crate::kv!(370 int), crate::kv!(434 int), crate::kv!(807 int), crate::kv!(622 int), crate::kv!(91 int), crate::kv!(467 int), crate::kv!(97 int), crate::kv!(377 int), crate::kv!(329 int), crate::kv!(380 int), crate::kv!(808 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     let mut out = vec![];
     each_ide_line(file, |kind, memory, _| {
         if kind != IdeLine::Cars {
@@ -462,7 +462,7 @@ pub fn ide_cars(file: &[u8]) -> Vec<CarModel> {
             let b = &frame[(at - crate::kv!(88 int)) as usize..];
             b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())].to_vec()
         };
-        let (name, txd, anims, field_7) = (text(&frame, crate::kv!(806 int)), text(&frame, crate::kv!(96 int)), text(&frame, crate::kv!(807 int)), text(&frame, crate::kv!(621 int)));
+        let (name, txd, anims, field_7) = (text(&frame, crate::kv!(806 int)), text(&frame, crate::kv!(96 int)), text(&frame, crate::kv!(807 int)), text(&frame, crate::kv!(622 int)));
         let start = (crate::kv!(434 int) - crate::kv!(88 int)) as usize;
         if frame[start] != 0 {
             let mut k = start + 1;

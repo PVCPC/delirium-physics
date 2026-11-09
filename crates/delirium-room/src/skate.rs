@@ -17,7 +17,7 @@ const FLICK: (f32, f32) = (0.12, 0.1);
 enum Job {
     Tick(f32, Controls),
     Mount(Vec3, f32),
-    World(Affine3A, Vec<(Vec3, Quat)>, Vec2),
+    World(Affine3A, Vec<(Vec3, Quat)>, Vec2, bool),
 }
 
 pub struct Loose {
@@ -50,6 +50,7 @@ pub struct Skate {
     pub center: Vec3,
     holes: Vec<(Vec3, Quat)>,
     half: Vec2,
+    rect: bool,
     seat: Affine3A,
 }
 
@@ -87,11 +88,11 @@ impl Skate {
                             publish.send(Ok(p)).map_err(|e| e.to_string())?;
                             continue;
                         }
-                        Job::World(seat, holes, half) => {
+                        Job::World(seat, holes, half, rect) => {
                             let t = std::time::Instant::now();
                             let inv = seat.inverse();
                             let eng = |p: Vec3| to_skate(inv.transform_point3(p)).to_array();
-                            let cut: Vec<[[f32; 3]; 3]> = near.iter().flat_map(|&t| cut_holes(t, &holes, half)).map(|t| t.map(eng)).collect();
+                            let cut: Vec<[[f32; 3]; 3]> = near.iter().flat_map(|&t| cut_holes(t, &holes, half, rect)).map(|t| t.map(eng)).collect();
                             let rails = room_rails.iter().map(|r| r.iter().map(|&p| eng(p)).collect()).collect();
                             let n = cut.len();
                             let built = s.collision_builder().build(cut, rails)?;
@@ -118,7 +119,7 @@ impl Skate {
             }
         });
         Skate { send, recv, pose: None, riding: true, loose: None, last: vec![], flick: None, stick: Vec2::ZERO, script: vec![], script_stick: Vec2::ZERO, script_pad: (Vec2::ZERO, 0), step_off: 0.0, rejoin: false,
-                pad: None, said: String::new(), was: String::new(), hist: vec![], cam_turn: None, out_of: None, center: feet, holes: vec![], half: Vec2::ZERO,
+                pad: None, said: String::new(), was: String::new(), hist: vec![], cam_turn: None, out_of: None, center: feet, holes: vec![], half: Vec2::ZERO, rect: false,
                 seat: Affine3A::IDENTITY }
     }
 
@@ -152,7 +153,7 @@ impl Skate {
     pub fn mount(&mut self, feet: Vec3, yaw: f32) {
         if self.seat.transform_vector3(Vec3::Z).z < 0.99 {
             self.seat = Affine3A::IDENTITY;
-            let _ = self.send.send(Job::World(self.seat, self.holes.clone(), self.half));
+            let _ = self.send.send(Job::World(self.seat, self.holes.clone(), self.half, self.rect));
         }
         let _ = self.send.send(Job::Mount(self.seat.inverse().transform_point3(feet), yaw - self.turn()));
         (self.riding, self.loose, self.hist, self.said, self.was) = (true, None, vec![], String::new(), String::new());
@@ -172,13 +173,13 @@ impl Skate {
         for h in self.hist.iter_mut() {
             *h = (m.transform_vector3(h.0), m.transform_vector3(h.1));
         }
-        let _ = self.send.send(Job::World(self.seat, self.holes.clone(), self.half));
+        let _ = self.send.send(Job::World(self.seat, self.holes.clone(), self.half, self.rect));
     }
 
-    pub fn holes(&mut self, holes: Vec<(Vec3, Quat)>, half: Vec2) {
-        if holes != self.holes {
-            let _ = self.send.send(Job::World(self.seat, holes.clone(), half));
-            (self.holes, self.half) = (holes, half);
+    pub fn holes(&mut self, holes: Vec<(Vec3, Quat)>, half: Vec2, rect: bool) {
+        if holes != self.holes || half != self.half || rect != self.rect {
+            let _ = self.send.send(Job::World(self.seat, holes.clone(), half, rect));
+            (self.holes, self.half, self.rect) = (holes, half, rect);
         }
     }
 
@@ -337,18 +338,19 @@ impl Skate {
     }
 }
 
-fn cut_holes(t: [Vec3; 3], holes: &[(Vec3, Quat)], half: Vec2) -> Vec<[Vec3; 3]> {
-    const N: usize = 16;
+fn cut_holes(t: [Vec3; 3], holes: &[(Vec3, Quat)], half: Vec2, rect: bool) -> Vec<[Vec3; 3]> {
+    let n = if rect { 4 } else { 16 };
     let corner = |k: usize| {
-        let a = (k as f32 + 0.5) * std::f32::consts::TAU / N as f32;
-        Vec2::new(a.cos(), a.sin()) * half / (std::f32::consts::PI / N as f32).cos()
+        let a = (k as f32 + 0.5) * std::f32::consts::TAU / n as f32;
+        if rect { Vec2::new(a.cos().signum(), a.sin().signum()) * half } else { Vec2::new(a.cos(), a.sin()) * half / (std::f32::consts::PI / n as f32).cos() }
     };
-    let sides: Vec<(Vec2, f32)> = (0..N).map(|k| {
-        let (a, b) = (corner(k), corner((k + 1) % N));
+    let sides: Vec<(Vec2, f32)> = (0..n).map(|k| {
+        let (a, b) = (corner(k), corner((k + 1) % n));
         let n = Vec2::new(b.y - a.y, a.x - b.x).normalize();
         (n, n.dot(a))
     }).collect();
-    let (lo, hi) = (-half / (std::f32::consts::PI / N as f32).cos(), half / (std::f32::consts::PI / N as f32).cos());
+    let r = if rect { half } else { half / (std::f32::consts::PI / n as f32).cos() };
+    let (lo, hi) = (-r, r);
     let clip = |poly: Vec<Vec3>, n: Vec2, c: f32| -> Vec<Vec3> {
         let d = |p: Vec3| n.dot(p.truncate()) - c;
         let mut out = vec![];
@@ -373,7 +375,7 @@ fn cut_holes(t: [Vec3; 3], holes: &[(Vec3, Quat)], half: Vec2) -> Vec<[Vec3; 3]>
                 return vec![t];
             }
             let mut out = vec![];
-            for k in 0..N {
+            for k in 0..sides.len() {
                 let (n, c) = sides[k];
                 let poly = sides[..k].iter().fold(clip(l.to_vec(), -n, -c), |p, &(n, c)| clip(p, n, c));
                 for i in 1..poly.len().saturating_sub(1) {

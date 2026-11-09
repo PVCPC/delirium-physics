@@ -45,7 +45,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<Under>()
         .init_resource::<crate::wet::Wet>().add_systems(Startup, spawn_mirror)
         .add_systems(Update, (ripple, underwater))
-        .add_systems(PostUpdate, mirror.before(bevy::camera::CameraUpdateSystems));
+        .add_systems(PostUpdate, mirror.before(bevy::camera::CameraUpdateSystems).before(crate::phys_start));
 }
 
 const MIRROR_SHADER: Handle<Shader> = bevy::asset::uuid_handle!("5c9d2e71-0a4b-4f3e-8d16-b7e2c4a9f013");
@@ -655,6 +655,9 @@ fn ripple(mut commands: Commands, time: Res<Time>, sim: NonSend<Sim>, water: Que
     let dt = time.delta_secs().max(1e-4);
     for (e, t, shown) in &things {
         let p = t.translation();
+        if !over_pool(p) {
+            continue;
+        }
         let before = was.insert(e, p);
         let Some(q0) = before.filter(|q| shown.get() && q.distance(p) < 0.5) else { continue };
         if !over_pool(p) || (p.z - WATER()).abs() > 0.2 {
