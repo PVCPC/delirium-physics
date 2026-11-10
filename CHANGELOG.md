@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.1
+
+### Fixed
+- **SDK and every plugin**: the follow-up moves a ragdoll queues for itself (catching his fall after a stagger,
+  pedalling his legs in the air...) were never sent outside the Playroom, so they never happened, and the queue grew
+  for as long as the game ran.
+- Turning ray tracing off no longer crashes with MSAA on.
+
+### Added
+- **Endless floor**: the Playroom's floor never ends.
+- **Hero shoulder camera** for every weapon: the mouse aims through the middle of the view, **Q** swaps shoulders,
+  right click locks on, the **Scroll Wheel** zooms.
+- **Portals**: smooth through them in slow motion, the hole is the visible opening, size and oval / rectangle shape
+  settings; shooting portals through portals is an option, off by default.
+- Fast bodies stay smooth, dead bodies burn and can be lit again, and the flamethrower has its own model.
+
 ## 0.7.0
 
 ### Added

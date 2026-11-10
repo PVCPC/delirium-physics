@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.7.0",
+	"VersionName": "0.7.1",
 	"FriendlyName": "Delirium Ragdoll",
 	"Description": "Active ragdolls that keep their balance, stagger, catch their fall and get up (Delirium Physics SDK).",
 	"Category": "Physics",

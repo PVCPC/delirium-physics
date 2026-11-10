@@ -999,6 +999,15 @@ pub unsafe extern "C" fn nm_world_step_agents(w: *const NmWorld, agents: *const 
 }
 
 fn agent_step(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -> i32 {
+    for l in std::mem::take(&mut a.agent.extras.outbox) {
+        if !l.starts_with("#say ") && let Ok(c) = std::ffi::CString::new(l) {
+            unsafe { nm_msg_send_text(a, w, c.as_ptr()) };
+        }
+    }
+    step_agent(a, w, dt, before)
+}
+
+fn step_agent(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -> i32 {
     let dt = dt / a.u.time();
     if a.mode == NM_MODE_FOLLOW {
         return step_in(a, w, dt, &[]);
