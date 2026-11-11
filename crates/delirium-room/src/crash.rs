@@ -80,6 +80,10 @@ fn save(text: &str) {
 
 pub fn render_error(e: &bevy::render::error_handler::RenderError, main: &mut bevy::prelude::World, _: &mut bevy::prelude::World)
     -> bevy::render::error_handler::RenderErrorPolicy {
+    if e.description.contains("Failed to wait for GPU to come idle") {
+        eprintln!("graphics: the card was busy redoing the window; carried on");
+        return bevy::render::error_handler::RenderErrorPolicy::Ignore;
+    }
     save(&format!("The room crashed: graphics error ({:?}): {}\n\n{}", e.ty, e.description, system()));
     main.write_message(bevy::app::AppExit::error());
     bevy::render::error_handler::RenderErrorPolicy::StopRendering

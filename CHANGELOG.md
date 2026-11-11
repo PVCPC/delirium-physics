@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2
+
+### Fixed
+- The cab scene no longer crashes when its taxi has been cleared.
+- A slow graphics card still busy after a quality change (water quality flipped quickly) no longer closes the room.
+
 ## 0.7.1
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "com.delirium_physics.bridge",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "displayName": "Delirium ragdolls",
   "description": "Active ragdolls for any humanoid: they keep their balance, stagger, catch their fall, lie still and get up. Add DeliriumRagdolls to one object and call Ragdoll, Shoot, MeleeHit, Explode, OnFire, Sever, Kill, GetUp. NmCharacter is the low-level way (your own rigidbodies driven by NM).",
   "unity": "2022.3",

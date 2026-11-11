@@ -3337,7 +3337,7 @@ impl Sim {
         };
         let speed = self.taxis.first().map_or(0.0, |c| c.speed.abs());
         let hero = self.hero.is_some();
-        if !(hero && *t >= CAB_GO - 1.0 / 60.0 && *t < CAB_GO && !(self.taxis[0].player && speed > 0.5)) {
+        if !(hero && *t >= CAB_GO - 1.0 / 60.0 && *t < CAB_GO && !(self.taxis.first().is_some_and(|c| c.player) && speed > 0.5)) {
             *t += 1.0 / 60.0;
         }
         let t = *t;
