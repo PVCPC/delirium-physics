@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- The room and SDK now open the game's PC GTAIV.exe however it was packed (another shop's or country's copy, an unwrapped one), not only the exact files of Steam's and the downgraded builds: each number is read where the game keeps it, and the copy is taken only if every number comes out exactly as from those builds, so the physics are the same bit for bit. A copy reported by a player that was turned away now opens.
+
 ## 0.8.0
 
 - Engine synced to the latest exact GTA IV port (a contact point fix among others). Checked against all 108 scenes
