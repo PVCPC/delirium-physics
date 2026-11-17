@@ -50,7 +50,7 @@ pub mod flags {
     pub fn FIRE_PROOF() -> u32 { crate::kv!(816 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn BULLET_PROOF() -> u32 { crate::kv!(925 int) }
+    pub fn BULLET_PROOF() -> u32 { crate::kv!(926 int) }
 }
 
 pub fn set_proofs(bits: u32, [bullet, fire, explosion, collision, melee]: [bool; 5]) -> u32 {
@@ -128,7 +128,7 @@ impl<'a> Hit<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_CUT() -> f32 { crate::kv!(937) }
+pub fn NO_CUT() -> f32 { crate::kv!(938) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Victim {
@@ -196,7 +196,7 @@ fn HEAD() -> u16 { crate::kv!(209 int) }
 fn NECK() -> u16 { crate::kv!(210 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn SPINE() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || [crate::kv!(776 int), crate::kv!(212 int), crate::kv!(777 int), crate::kv!(213 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SPINE() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || -> [u16; 4] { [crate::kv!(776 int), crate::kv!(212 int), crate::kv!(777 int), crate::kv!(213 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn scale(hit: &Hit, victim: &Victim) -> f32 {
     let kind = damage_type(hit.weapon);
@@ -225,15 +225,19 @@ pub fn scale(hit: &Hit, victim: &Victim) -> f32 {
     };
     if cut {
         let third = a * crate::kv!(135);
-        a = if crate::kv!(938) - third >= 0.0 { third } else { crate::kv!(938) };
+        a = if crate::kv!(939) - third >= 0.0 { third } else { crate::kv!(939) };
     }
     a
 }
 
 pub fn damage(h: &mut Health, hit: &Hit, victim: &Victim, rand: &mut Rand) -> Outcome {
+    damage_amount(h, hit, victim, rand).0
+}
+
+pub fn damage_amount(h: &mut Health, hit: &Hit, victim: &Victim, rand: &mut Rand) -> (Outcome, f32) {
     let mut out = Outcome::default();
     if h.health >= INJURED_BELOW() && !allowed(hit, victim) {
-        return out;
+        return (out, 0.0);
     }
     let kind = damage_type(hit.weapon);
     let mut a = scale(hit, victim);
@@ -270,11 +274,11 @@ pub fn damage(h: &mut Health, hit: &Hit, victim: &Victim, rand: &mut Rand) -> Ou
         out.flags |= INSTANT() | KILLED();
         (out.lost, out.absorbed) = (h.health, h.armour);
         (h.health, h.armour) = (0.0, 0.0);
-        return out;
+        return (out, a);
     }
     let d = (a - out.absorbed).max(0.0);
     if hit.floor {
-        let left = (h.health - d).max(crate::kv!(939));
+        let left = (h.health - d).max(crate::kv!(940));
         out.lost = h.health - left;
         h.health = left;
     } else if h.health - d >= INJURED_BELOW() {
@@ -289,7 +293,46 @@ pub fn damage(h: &mut Health, hit: &Hit, victim: &Victim, rand: &mut Rand) -> Ou
         out.lost = h.health;
         h.health = 0.0;
     }
-    out
+    (out, a)
+}
+
+pub const TYPE_VEHICLE: u32 = 2;
+#[allow(non_snake_case)]
+#[inline]
+pub fn TYPE_PED() -> u32 { crate::kv!(0 int) }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Note {
+    Keep,
+    Attacker,
+    Clear,
+}
+
+pub fn notes_damager(hit: &Hit, out: &Outcome, amount: f32, player: bool, below_50: bool, since_ms: u32) -> Note {
+    let fall = hit.number.unwrap_or_else(|| weapon_id(hit.weapon)) == crate::kv!(37 int);
+    let attacker = match hit.attacker {
+        Attacker::Ped if player && fall => Attacker::None,
+        a => a,
+    };
+    if !(amount > 0.0 || out.flags & KILLED() != 0) || below_50 {
+        return Note::Keep;
+    }
+    match attacker {
+        Attacker::Ped | Attacker::Player { .. } | Attacker::Vehicle { .. } => Note::Attacker,
+        Attacker::None if since_ms >= crate::kv!(41 int) && fall => Note::Clear,
+        Attacker::None => Note::Keep,
+    }
+}
+
+pub fn damaged_by_char<E: PartialEq>(script_nm: &mut bool, flag: u32, last: Option<(E, u32)>, by: Option<(E, Option<E>)>) -> bool {
+    if flag & crate::kv!(395 int) != 0 {
+        *script_nm = true;
+    }
+    let Some((d, kind)) = last else { return false };
+    match by {
+        Some((p, car)) => d == p || car.is_some_and(|c| d == c),
+        None => kind == TYPE_PED(),
+    }
 }
 
 fn weapon_id(w: &Weapon) -> u32 {

@@ -7,10 +7,10 @@ pub fn GRAVITY() -> f32 { crate::kv!(34) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn F80_MASK() -> u32 { crate::kv!(1058 int) }
+pub fn F80_MASK() -> u32 { crate::kv!(1059 int) }
 
 pub fn f80_flags(f80: u32, ai_driven: bool) -> u32 {
-    let mut f = if f80 & crate::kv!(969 int) != 0 {
+    let mut f = if f80 & crate::kv!(970 int) != 0 {
         flags::CAP_SLIDE()
     } else if f80 & crate::kv!(648 int) != 0 {
         flags::NO_LOCK()
@@ -19,8 +19,8 @@ pub fn f80_flags(f80: u32, ai_driven: bool) -> u32 {
     } else {
         0
     };
-    for (bits, flag) in [(crate::kv!(1059 int), flags::CAP_SPIN()), (crate::kv!(1060 int), flags::CLAMP_SLIP()), (crate::kv!(1061 int), flags::GRIP_115()),
-                         (crate::kv!(1062 int), flags::GRIP_130())] {
+    for (bits, flag) in [(crate::kv!(1060 int), flags::CAP_SPIN()), (crate::kv!(1061 int), flags::CLAMP_SLIP()), (crate::kv!(1062 int), flags::GRIP_115()),
+                         (crate::kv!(1063 int), flags::GRIP_130())] {
         if f80 & bits != 0 {
             f |= flag;
         }
@@ -148,13 +148,13 @@ fn demands(t: &Tyre, c: &Contact, mass: f32) -> (f32, f32) {
 pub fn rest(t: &mut Tyre, traction_max: f32, brake: f32, mass: f32, dt: f32) -> bool {
     #[allow(non_snake_case)]
     #[inline]
-    fn G() -> f32 { crate::kv!(1063 f32) }
+    fn G() -> f32 { crate::kv!(1064 f32) }
     let braking = brake * G() * mass;
     let (k, total, anchor) = if t.flags & 2 != 0 {
         let f = traction_max * t.load_share * G();
         (crate::kv!(26 f32), f.mul_add(mass, braking), false)
     } else {
-        let least = if t.flags & flags::POWERED() != 0 { 2.0 } else { crate::kv!(1064 f32) };
+        let least = if t.flags & flags::POWERED() != 0 { 2.0 } else { crate::kv!(1065 f32) };
         let roll = t.resistance * G() * mass;
         (crate::kv!(31), if least - roll >= 0.0 { least } else { roll } + braking, true)
     };
@@ -271,7 +271,7 @@ fn clamp(v: f32, cap: f32) -> f32 {
 }
 
 pub fn tyre_force(h: &Handling, t: &mut Tyre, mass: f32, inv_mass: f32, i: &TyreIn) -> [f32; 3] {
-    let mut l = inv_mass * (1.0 / t.load_share) * crate::kv!(1065 f32) * i.load;
+    let mut l = inv_mass * (1.0 / t.load_share) * crate::kv!(1066 f32) * i.load;
     if i.load > 1.0 {
         let e = l - 1.0;
         l *= fneg(fsel(crate::kv!(64) - e, e, crate::kv!(64)).mul_add(crate::kv!(78), -1.0));
@@ -371,7 +371,7 @@ pub fn tyre_force(h: &Handling, t: &mut Tyre, mass: f32, inv_mass: f32, i: &Tyre
     if t.flags & flags::CLAMP_SLIP() != 0 {
         lat = clamp(lat, inv_p * crate::kv!(116));
         let lat2 = lat * lat;
-        let c = crate::kv!(1066 f32);
+        let c = crate::kv!(1067 f32);
         if long.mul_add(long, lat2) > c {
             let r = c - lat2;
             let m = fsel(crate::kv!(72) - r, crate::kv!(72), r).sqrt();

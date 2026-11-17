@@ -11,10 +11,10 @@ use bevy_math::Quat;
 fn CHEST() -> usize { delirium_data::kv!(81 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn HANDS() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(54 int), delirium_data::kv!(127 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn HANDS() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(54 int), delirium_data::kv!(127 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn FEET() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(0 int), delirium_data::kv!(6 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn FEET() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(0 int), delirium_data::kv!(6 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub static MESSAGES: [Message; 15] = [
     Message { name: "yanked", params: &[

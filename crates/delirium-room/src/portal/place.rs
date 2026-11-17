@@ -38,7 +38,21 @@ fn max_slide(half: Vec2) -> f32 {
 }
 
 fn surface_at(w: &dyn World, p: Vec3, n: Vec3) -> bool {
+    if easy() {
+        const SLACK: f32 = 8.0 * U;
+        return w.ray(p + n * SLACK, -n, 2.0 * SLACK).is_some_and(|h| h.distance > 0.0 && (h.distance - SLACK).abs() < SLACK && h.normal.dot(n) > 0.6);
+    }
     w.ray(p + n * U, -n, 2.0 * U).is_some_and(|h| h.distance > 0.0 && (h.distance - U).abs() < 0.5 * U && h.normal.dot(n) > 0.98)
+}
+
+static EASY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn easy() -> bool {
+    EASY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_easy(on: bool) {
+    EASY.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn obstruction(w: &dyn World, from: Vec3, to: Vec3, n: Vec3) -> Option<f32> {
@@ -212,7 +226,19 @@ pub fn place(w: &dyn World, hit: Hit, shot_dir: Vec3, half: Vec2, others: &[Fram
     if !surface_at(w, frame.at, frame.normal()) {
         return Err(Fail::DoesNotFit);
     }
-    let mut fitted = Frame { at: fit_on_surface(w, frame, half).ok_or(Fail::DoesNotFit)?, rot: frame.rot };
+    let at_hit = || {
+        let (n, r, u) = (frame.normal(), frame.right(), frame.up());
+        let (x, y) = (half.x * 0.75, half.y * 0.75);
+        if !easy() || ![(x, 0.0), (-x, 0.0), (0.0, y), (0.0, -y)].iter().all(|&(a, b)| surface_at(w, frame.at + r * a + u * b, n)) {
+            Err(Fail::DoesNotFit)
+        } else if others.iter().any(|o| overlaps(&frame, half, o, half)) {
+            Err(Fail::Overlap)
+        } else {
+            Ok(frame)
+        }
+    };
+    let Some(at) = fit_on_surface(w, frame, half) else { return at_hit() };
+    let mut fitted = Frame { at, rot: frame.rot };
     fitted.at = floor_snap(w, &fitted, half);
     let grid = U / 512.0;
     fitted.at = (fitted.at / grid).round() * grid;
@@ -220,7 +246,7 @@ pub fn place(w: &dyn World, hit: Hit, shot_dir: Vec3, half: Vec2, others: &[Fram
         return Err(Fail::Overlap);
     }
     if !corners_backed(w, &fitted, half) {
-        return Err(Fail::DoesNotFit);
+        return at_hit();
     }
     Ok(fitted)
 }
@@ -275,3 +301,4 @@ pub fn trace_shot(w: &dyn World, origin: Vec3, dir: Vec3, range: f32, half: Vec2
     }
     Trace { hit: None, dir: d }
 }
+

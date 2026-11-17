@@ -5,7 +5,7 @@ pub type V4 = [f32; 4];
 pub const MAX_WHEELS: usize = 8;
 #[allow(non_snake_case)]
 #[inline]
-pub fn GRAVITY() -> &'static V4 { static V: std::sync::OnceLock<V4> = std::sync::OnceLock::new(); let f = || [0.0, 0.0, -crate::kv!(34), 0.0]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn GRAVITY() -> &'static V4 { static V: std::sync::OnceLock<V4> = std::sync::OnceLock::new(); let f = || -> V4 { [0.0, 0.0, -crate::kv!(34), 0.0] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn SIXTH() -> f32 { 1.0 / crate::kv!(35) }
@@ -26,7 +26,7 @@ fn madd(a: V4, s: f32, c: V4) -> V4 {
 }
 
 pub(crate) fn dot3(a: V4, b: V4) -> f32 {
-    (0.0 + a[0] as f64 * b[0] as f64 + a[1] as f64 * b[1] as f64 + a[2] as f64 * b[2] as f64) as f32
+    crate::estimate::vmsum3([a[0] as f64 * b[0] as f64, a[1] as f64 * b[1] as f64, a[2] as f64 * b[2] as f64])
 }
 
 pub(crate) fn fsel(t: f32, a: f32, b: f32) -> f32 {
@@ -297,7 +297,7 @@ pub fn axes(cache: &mut [V4; 2], axle: V4, normal: V4, flags: u32, m: &[V4; 4], 
     let side = by_columns(m, side);
     let n = if flags & crate::kv!(0 int) != 0 { normal } else { m[2] };
     let d = side[0].mul_add(n[0], side[1].mul_add(n[1], side[2] * n[2]));
-    let (fwd, side) = if d.abs() < crate::kv!(1055) {
+    let (fwd, side) = if d.abs() < crate::kv!(1056) {
         let fwd = unit(cross(side, n));
         (fwd, unit(cross(n, fwd)))
     } else {
@@ -334,7 +334,7 @@ pub fn hold(h: &Handling, b: &Mass, w: &Strut, r: &mut Tread, cache: &mut [V4; 2
     let none = r.anchor[0] == 0.0 && r.anchor[1] == 0.0 && r.anchor[2] == 0.0;
     let mut d: V4 = if none { [0.0; 4] } else { std::array::from_fn(|l| r.anchor[l] - w.start[l]) };
     let mut moved = false;
-    if brake == 0.0 || brake.abs() * b.inv_mass * crate::kv!(1065 f32) < along.abs() {
+    if brake == 0.0 || brake.abs() * b.inv_mass * crate::kv!(1066 f32) < along.abs() {
         let k = mul(fwd, d[0].mul_add(fwd[0], d[1].mul_add(fwd[1], d[2] * fwd[2])));
         d = std::array::from_fn(|l| d[l] - k[l]);
         moved = true;
@@ -436,13 +436,13 @@ pub fn tyre(h: &Handling, b: &Mass, w: &Strut, r: &Tread, load: f32, slip: f32, 
         let along_n = mul(n, dot3(n, off));
         let off: V4 = std::array::from_fn(|l| off[l] - along_n[l]);
         d = std::array::from_fn(|l| d[l] - off[l]);
-        let stop = brake.abs() * (b.inv_mass * crate::kv!(1065 f32));
+        let stop = brake.abs() * (b.inv_mass * crate::kv!(1066 f32));
         if brake == 0.0 || along.abs() > stop {
             let k = mul(fwd, dot3(fwd, d));
             d = std::array::from_fn(|l| d[l] - k[l]);
         }
         let len2 = d[0].mul_add(d[0], d[2].mul_add(d[2], d[1] * d[1]));
-        if !(len2 <= reach * reach * crate::kv!(1073)) {
+        if !(len2 <= reach * reach * crate::kv!(1074)) {
             d = mul(mul(d, rsqrte(dot3(d, d))), reach * crate::kv!(33));
         }
         hold_along = fwd[0].mul_add(d[0], fwd[2].mul_add(d[2], fwd[1] * d[1]));

@@ -1,4 +1,24 @@
 use crate::resource::Resource;
+use crate::lift::fctiwz;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EventPhases {
+    pub read: bool,
+    pub at: [f32; 4],
+}
+
+impl Default for EventPhases {
+    fn default() -> Self {
+        EventPhases { read: false, at: [0.0, 1.0, 0.0, 1.0] }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Step {
+    pub events: u32,
+    pub phase: Option<f32>,
+    pub section: bool,
+}
 
 pub const BONE_TRANSLATION: u8 = 0;
 pub const BONE_ROTATION: u8 = 1;
@@ -208,37 +228,71 @@ fn rle(d: &[u8], words: usize, k: u32, pos: &mut usize) -> Result<i32, String> {
 }
 
 impl Animation {
-    pub fn advance(&self, from: f32, to: f32, loop_a: bool, loop_b: bool) -> (u32, Option<f32>) {
+    pub fn advance(&self, from: f32, to: f32, loop_a: bool, loop_b: bool, looping: bool, phases: &mut EventPhases) -> Step {
         let unit = |p: f32| p.clamp(0.0, 1.0);
         let (from, mut to) = (unit(from), unit(to));
         let d = self.duration;
+        let mut out = Step { events: 0, phase: None, section: false };
         if self.events.is_empty() {
-            return (0, None);
+            return out;
         }
         if to < from - 0.5 {
             to += 1.0;
         }
         let a = d * from * crate::kv!(27);
         let mut b = d * to * crate::kv!(27);
-        let (mut f, mut end) = ((a as i32 + 1) as f32, (b as i32) as f32);
-        let (mut events, mut jumped) = (0, None);
+        let (mut f, mut end) = (fctiwz(a).wrapping_add(1) as f32, fctiwz(b) as f32);
         if b < a {
-            return (0, None);
+            return out;
         }
+        let last = d.mul_add(crate::kv!(27), 1.0);
         while f <= end {
             let v = self.event_at(f - 0.5);
-            events |= v;
+            out.events |= v;
+            if f + 1.0 < end && v & crate::kv!(54 int) != 0 {
+                let span = d / (d.mul_add(crate::kv!(27), 1.0) - 1.0);
+                let phase = unit((fctiwz(f) as f32).mul_add(span, span * crate::kv!(78)) / d);
+                (end, out.phase) = (f, Some(phase));
+            }
             f += 1.0;
-            let section = if loop_a && v & 0x2 != 0 { Some((0x1, 0x2)) } else if loop_b && v & crate::kv!(23 int) != 0 { Some((crate::kv!(1 int), crate::kv!(23 int))) } else { None };
-            if let Some((start, stop)) = section {
-                let (start, stop) = (self.event_phase(start).unwrap_or(0.0), self.event_phase(stop).unwrap_or(0.0));
+            let section = if loop_a && v & 0x2 != 0 { Some((0, 1)) } else if loop_b && v & crate::kv!(23 int) != 0 { Some((2, crate::kv!(0 int))) } else { None };
+            if let Some((i, j)) = section {
+                self.read_event_phases(phases);
+                out.section = true;
+                let (start, mark) = (phases.at[i], phases.at[j]);
                 let at = if d > 0.0 { b * (1.0 / crate::kv!(27)) / d } else { 0.0 };
-                let phase = unit(at - stop + start);
-                (f, end, jumped) = (d * start * crate::kv!(27), d * phase * crate::kv!(27), Some(phase));
+                let s = at - mark + start;
+                (f, end, out.phase) = (d * start * crate::kv!(27), d * s * crate::kv!(27), Some(unit(s)));
                 b = end;
             }
+            if f >= last && looping {
+                to -= 1.0;
+                (f, b, end) = (0.0, 0.0, d * to * crate::kv!(27));
+            }
         }
-        (events, jumped)
+        out
+    }
+
+    pub fn read_event_phases(&self, phases: &mut EventPhases) {
+        if phases.read {
+            return;
+        }
+        phases.read = true;
+        if self.events.is_empty() {
+            return;
+        }
+        let d = self.duration;
+        let mut f = 0.0f32;
+        for _ in 0..fctiwz(d.mul_add(crate::kv!(27), 1.0)).max(0) {
+            let v = self.event_at(f - 0.5);
+            let phase = if d > 0.0 { (f * (1.0 / crate::kv!(27))) / d } else { 0.0 };
+            for (k, bit) in [0x1, 0x2, crate::kv!(1 int), crate::kv!(23 int)].into_iter().enumerate() {
+                if v & bit != 0 {
+                    phases.at[k] = if k % 2 == 1 { phase.clamp(0.0, 1.0) } else { phase };
+                }
+            }
+            f += 1.0;
+        }
     }
 
     pub fn events_between(&self, from: f32, to: f32) -> u32 {

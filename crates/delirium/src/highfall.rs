@@ -10,10 +10,10 @@ pub struct Set {
 
 #[allow(non_snake_case)]
 #[inline]
-fn NAMES() -> &'static [(&'static str, f32); 15] { static V: std::sync::OnceLock<[(&'static str, f32); 15]> = std::sync::OnceLock::new(); let f = || [("pdStrengthPlayer", 1.0), ("pdStrengthAI", delirium_data::kv!(60)), ("hfBodyStiffness", delirium_data::kv!(21)), ("hfBodyDamping", 1.0),
+fn NAMES() -> &'static [(&'static str, f32); 15] { static V: std::sync::OnceLock<[(&'static str, f32); 15]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32); 15] { [("pdStrengthPlayer", 1.0), ("pdStrengthAI", delirium_data::kv!(60)), ("hfBodyStiffness", delirium_data::kv!(21)), ("hfBodyDamping", 1.0),
     ("hfCutOffVelocity", delirium_data::kv!(11)), ("hfCatchFallTime", delirium_data::kv!(24)), ("hfArmsUp", delirium_data::kv!(78)), ("hfLegRadius", delirium_data::kv!(24)), ("hfLegAngularSpeed", delirium_data::kv!(128)),
     ("hfArmPeriod", delirium_data::kv!(13)), ("hfArmAmplitude", 0.5), ("hfAimAngle", delirium_data::kv!(60)), ("hfLegSideDistance", delirium_data::kv!(17)), ("hfFowardIKOffset", delirium_data::kv!(9)),
-    ("hfFowardVelCompOnAngle", -delirium_data::kv!(118))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    ("hfFowardVelCompOnAngle", -delirium_data::kv!(118))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 const FLAGS: [(&str, f32); 3] = [("hfForwardRoll", 0.0), ("hfOrientateBodyToFallDirection", 1.0), ("hfUseZeroPose", 0.0)];
 
 impl Set {

@@ -1,5 +1,86 @@
 # Changelog
 
+## Next (unreleased)
+
+- Engine synced to the latest exact GTA IV port (a contact point fix among others). Checked against all 108 scenes
+  recorded from the game: Delirium gives the same results as the port, bit for bit; GTA IV's Homer is unchanged.
+
+- Plugins: the Unity package, the BepInEx mod kit, Unreal and Godot have two new switches, Carry pushes and Get up
+  needs floor (both off, as in GTA IV); the C++ header has `set_carry_pushes`, `set_get_up_needs_floor`,
+  `Agent::save_scene` and `scene_replay`. Playroom: a Carry pushes checkbox under Reactions (off). Docs: the
+  game's own unconscious and dead flags drive NM every frame; the portal exit clamp; animated peds stepping into
+  an opening switch to ragdoll; fewer than four spine bones.
+
+- Fixed: a skeleton with fewer than four spine bones (Hitman's three, Mixamo's and Unreal's) had nothing on NM's
+  chest (Spine3, which the neck and clavicles hang from), so its bend landed in the neck and the upper chest looked
+  detached. `nm_rig_joints` now moves the top spine bones up so the top one drives the chest (pass its cleaned map
+  to `nm_rig_create`), and `nm_rig_check` says when it had to.
+
+- New: `nm_set_get_up_needs_floor(1)` (off by default): a body lying with its hips over a hole (a trapdoor, a floor
+  portal) isn't due to get up, so it never stands up in the hole. Only for hosts that give NM their floor. Docs: a
+  knock-out recipe (out cold till the game wakes him, then his own get-up).
+
+- Fixed: a body twitching against its joint limits or the ground never got up (`nm_agent_should_get_up` waited for it to lie still, under 0.2 m/s). It now also gets up after lying nearly still (under 0.5 m/s) 1.5 s longer. Docs: the get-up thresholds and nm_agent_get_lying's out values, NM knowing only the ground you give it, cutting floor holes (trapdoors, portals) to the opening, and attaching to a game ragdoll that's already on.
+
+- Scene replays: a save carries its weapon's row (ak47, mp5 and your own weapons now replay as fired), and the
+  replay flags ground laid inside the body (a host's ground ray hit him or his ragdoll). Docs: ground rays skip
+  the character's own colliders and ragdoll bodies (not a static-only filter: walkable floors can be dynamic); `nm_agent_is_settled` is 0.4 s still on his feet, and a shot ped who keeps his
+  feet is handed back on it.
+
+- New: `nm_set_carry_pushes(1)`. Off by default, so GTA IV's physics stay exactly as they were. Turn it on if you move bodies yourself (nm_agent_set_part_state, teleports): without it a shot (or any push) on a body that had been moved far from where it was made (set by the host, a teleport, a keyframed ped) spun it and flung its limbs (the pelvis at 19 rad/s, hands at up to 80 m/s): the push was levered about the old place. nm_scene_replay now also names the part that flies, and reads Windows line endings.
+
+- New: `nm_scene_save` and `nm_scene_replay`. Save a character the moment it is shot (its body, pose, floor, walls and the shot) and replay it without the game: it reports a body starting off the ground, sinking, flying or spinning.
+
+- Docs: the guide has a step-by-step recipe for a shot ped, the same as the Playroom does for Homer (health on GTA IV's 200 scale, what to call each frame, when to hand it back).
+
+- New: `nm_rig_check` reports two bones mapped to the neck or to the head (the head comes out small and sunk).
+- Docs: the guide covers fitting a chest whose spine bones run near the back (move joints 7-10 forward), what wakes a resting dead body, and moving the game's own ragdoll onto NM's pose (teleport, not a kinematic move). `nm_player_bump` says forward is the way each one faces and that NOTHING means no player animation, not no reaction.
+
+- Fix: a dead body resting on the ground (its steps skipped after 2 s still) wakes when another character comes within 1.5 m, keyframed ones too, so a player walking into it shoves it instead of passing through.
+
+- New: GTA IV downgraded to 1.0.8.0 (the GTAIVDowngrader's GTAIV.exe) works as well as the Steam 1.2.0.59 one, and so does the unsigned 1.2.0.59 GTAIV.exe some copies come with (27.5 MB, with 1911.dll beside it), which was turned away before.
+
+- Fix: `nm_build_fit` puts each part's joint on the skeleton's joint when the chain from the pelvis misses it by over 2 cm, and keeps the head upright on the chest instead of tipped with a leaning neck bone. On Hitman's 47 the head sat 2 cm inside the neck and the neck part 9 cm to the side.
+
+- Playroom: the hero plays GTA IV's flinch (dam_ad) and knock-down + get-up (dam_ko) when the bump answer says so; `!niko_react flinch|ko [side]` previews them (`tools/flinch-demo.txt`).
+- Bindings: C# (and Unity) and Python gain `nm_world_set_walls` and `nm_player_bump`; the C header's notes now live in the SDK source, so regenerating keeps them.
+
+- `nm_player_bump`: GTA IV's own answer when the player walks into someone (shove, flinch, knocked over or nothing, the side, and which shove animation), checked against the game. The Playroom's hero now shoves Homer with GTA's shove animations, his hands reaching onto Homer's chest, and Homer staggers off the push. Script: `tools/shove-demo.txt`; `!niko_go homer`.
+
+- Fix: a part thrown fast at a thin level wall (15 m/s through a 5 cm sheet) no longer passes through it: after each step a part whose centre crossed a triangle is put back on the near side.
+
+- `nm_world_set_walls`: solid static walls (boxes) that hold a body thrown at any speed from either side, and don't count as car hits. For walls a mod builds itself (from rays).
+- Docs: mesh triangles are one-sided (they stop bodies on the side they face); wind every face outward. A single sheet lets a fast part through.
+
+- Fix: a whole body keyframed (`nm_agent_keyframe` "fb") now sits exactly on the animation. Its parts were held softly, so arms sagged up to 37 degrees off their animation and jittered; a warp in the animation no longer shoves the other bodies.
+
+- `nm_rig_joints`: a spine with fewer bones than Homer's four gets his spine joints spread along it by his own shares (the gap used to be filled evenly, stretching the lower spine parts into a big belly).
+
+- Modding guide: more traps from the Hitman port: one rest pose in the live convention (T-pose and inverse-bind binds), leaving the body's sizes alone, debug drawing, the game's own ragdoll, get-ups with the game's clips, a keyframed player's contacts, dead bodies, hooks.
+
+- `nm_agent_learned_getup` is now marked experimental, do not use: mods get up with the game's own clips.
+
+### Added
+- **SDK, for modding into other games** (from a port into Hitman WoA):
+  - `nm_world_set_mesh`: replace or remove a piece of level by id, for ground that follows a character or a level
+    streamed in and out.
+  - `nm_init_marge`: Marge's body beside Homer's, for women.
+  - `nm_agent_collide_agents`: keep a body out of the other characters' contacts (crowds following their
+    animation no longer shove each other apart).
+  - `nm_agent_get_joint_angle`: how far each joint is bent against its limit, to spot a badly set-up character.
+  - `nm_rig_check` warns of bone rotations stored the wrong way round, names the bent limb's bones, and accepts
+    clavicles under the neck.
+  - `nm_rig_part_for_name` leaves face, cloth, holster, prop and hair bones off the body.
+  - The modding guide's new "Traps hosts have hit" list, and clearer notes on resting poses, get-ups and part sizes.
+  - Clearer docs on return values (0 is success, not a bool), shotgun damage per pellet, starting health, and
+    reading joint angles.
+- **Playroom**: pride and trans flag body colours.
+- **Portals: easy placement** (off by default, `!portal place easy`): portals open on bumpy and small walls too,
+  overhanging a little where Portal 2 would refuse.
+
+### Fixed
+- **SDK**: loading Homer's and Marge's files at the same time on two threads could break the body (NaN).
+
 ## 0.7.2
 
 ### Fixed

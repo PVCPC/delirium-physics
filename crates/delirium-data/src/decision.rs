@@ -343,6 +343,24 @@ pub fn cop_combat(level: i32, network: bool) -> i32 {
 pub const HELI_ANIM_GROUP: i32 = 0x59;
 pub const HELI_SENSE: f32 = 150.0;
 
+pub trait WantedCop {
+    fn is_cop(&self) -> bool;
+    fn is_mission_ped(&self) -> bool;
+    fn set_combat_decisions(&mut self, combat: i32);
+    fn in_helicopter(&self) -> bool;
+    fn set_senses(&mut self, range: f32);
+}
+
+pub fn update_cop<C: WantedCop>(cop: &mut C, level: i32, network: bool) {
+    if !cop.is_cop() || cop.is_mission_ped() {
+        return;
+    }
+    cop.set_combat_decisions(cop_combat(level, network));
+    if cop.in_helicopter() {
+        cop.set_senses(HELI_SENSE);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Store {
     pub indexed: Vec<(DecisionMaker, Kind)>,

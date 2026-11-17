@@ -137,7 +137,7 @@ fall, `nm.Feedback(owner, name, slot, value)` for NM's own behaviour messages (t
 The rest of the Playroom's tools are calls on `nm` too: `SetReactions`, `NearMiss`, `SetDive`, `ThrownAt`, `Jump`,
 `Balance`, `Stop`, `Sit`, `Pose`, `RollUpRelax`, `Script`, `MuscleRise`, `LearnedGetUp` (`[Data] GetUpNet`),
 `LearnedWalk` (`[Data] WalkNet`) with `SetStick`, `SetAttacker` / `GunReady`, `GetParam`, `Raycast`, `CheckSetup`,
-`Messages()` (the Unity package's README has each). `[Feel] StepLimit` and `FireReaction` match the Playroom's switches.
+`Messages()` (the Unity package's README has each). `[Feel] StepLimit`, `FireReaction` and `CarryPushes` match the Playroom's switches; `GetUpNeedsFloor` (off) keeps a body over a hole from getting up.
 A collider's physics material reaches NM (ice slides). A panic in the SDK writes `delirium_physics-crash.txt` next to the config.
 
 

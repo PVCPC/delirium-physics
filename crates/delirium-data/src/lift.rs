@@ -62,6 +62,95 @@ pub fn vrsq(n: f32) -> f32 {
     vmadd(t, half, e)
 }
 
+pub fn fmod(x: f64, y: f64) -> f64 {
+    const NAN: f64 = f64::from_bits(0xFFF8_0000_0000_0000);
+    let sld = |v: u64, n: i64| if (n as u64) & 127 >= 64 { 0 } else { v << ((n as u64) & 127) };
+    let srd = |v: u64, n: i64| if (n as u64) & 127 >= 64 { 0 } else { v >> ((n as u64) & 127) };
+    let (xb, yb) = (x.to_bits(), y.to_bits());
+    if (xb >> 48) & 0x7FF0 == 0x7FF0 {
+        return NAN;
+    }
+    if (yb >> 48) & 0x7FF0 == 0x7FF0 {
+        return if yb & !(1 << 63) == 0x7FF0_0000_0000_0000 { x } else { NAN };
+    }
+    if xb & !(1 << 63) < yb & !(1 << 63) {
+        return x;
+    }
+    let sign = xb & (1 << 63);
+    let top = 1u64 << 63;
+    let (mut ye, ym) = ((yb >> 52 & 0x7FF) as i64, (yb << 11) & !top);
+    let ys = if ye == 0 {
+        if ym == 0 {
+            return NAN;
+        }
+        let z = ym.leading_zeros() as i64;
+        ye = 1 - z;
+        sld(ym, z)
+    } else {
+        ym | top
+    };
+    let (mut xe, mut r) = ((xb >> 52 & 0x7FF) as i64, (xb << 11) & !top);
+    if xe == 0 {
+        if r == 0 {
+            return x;
+        }
+        let z = r.leading_zeros() as i64;
+        r = sld(r, z);
+        xe = 1 - z;
+    } else {
+        r |= top;
+    }
+    let half = ys >> 1;
+    let mut step = |r: &mut u64, xe: &mut i64, by: u64| {
+        *r = r.wrapping_sub(by);
+        let z = r.leading_zeros() as i64;
+        *xe -= z;
+        *r = sld(*r, z);
+    };
+    while xe > ye {
+        let by = if r >= ys { ys } else { half };
+        step(&mut r, &mut xe, by);
+    }
+    if xe == ye && r >= ys {
+        step(&mut r, &mut xe, ys);
+    }
+    if r == 0 {
+        return f64::from_bits(sign);
+    }
+    if xe <= 0 {
+        r = srd(r, 1 - xe);
+        xe = 0;
+    }
+    f64::from_bits(((xe as u64) << 52).wrapping_add((r >> 11) & ((1 << 52) - 1)).wrapping_add(sign))
+}
+
+pub fn fctiwz(x: f32) -> i32 {
+    if x.is_nan() {
+        i32::MIN
+    } else if x >= 2147483648.0 {
+        i32::MAX
+    } else if x < -2147483648.0 {
+        i32::MIN
+    } else {
+        x as i32
+    }
+}
+
+pub fn fits_class(class: u32, slot: u32, flags: u32, mission_only: bool) -> bool {
+    match class {
+        12 => {
+            if slot == 3 {
+                flags & 0x0020_0000 != 0 || flags & 0x0080_0000 != 0 && mission_only
+            } else {
+                matches!(slot, 2 | 4 | 8)
+            }
+        }
+        13 => matches!(slot, 5 | 2 | 4 | 8),
+        14 => matches!(slot, 2 | 4 | 8),
+        _ => matches!(slot, 2 | 4),
+    }
+}
+
 pub fn heading_atan(x: f64) -> f64 {
     use std::f64::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_6};
     let mut t = x.abs();

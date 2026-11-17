@@ -46,7 +46,7 @@ pub fn concerns(hit: Hit, v: &Victim, a: Option<&Attacker>) -> (bool, bool) {
     let a = a.filter(|a| a.ped);
     if let Some(a) = a.filter(|a| !hit.real && a.root == SEEN_BY) {
         let d = [a.at[0] - a.victim_at[0], a.at[1] - a.victim_at[1], a.at[2] - a.victim_at[2]];
-        let s = (0.0f64 + d[0] as f64 * d[0] as f64 + d[1] as f64 * d[1] as f64 + d[2] as f64 * d[2] as f64) as f32;
+        let s = crate::estimate::vmsum3([d[0] as f64 * d[0] as f64, d[1] as f64 * d[1] as f64, d[2] as f64 * d[2] as f64]);
         let e = vrsqrtefp(s);
         let e = if e == f32::INFINITY { 0.0 } else { e };
         let r = (fneg(s.mul_add(e * e, -1.0))).mul_add(0.5 * e, e);

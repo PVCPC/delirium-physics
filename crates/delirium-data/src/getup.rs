@@ -67,7 +67,7 @@ pub fn IDLE_FLAGS() -> u32 { crate::kv!(792 int) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn CLIPS() -> &'static [ClipDef; 19] { static V: std::sync::OnceLock<[ClipDef; 19]> = std::sync::OnceLock::new(); let f = || [
+pub fn CLIPS() -> &'static [ClipDef; 19] { static V: std::sync::OnceLock<[ClipDef; 19]> = std::sync::OnceLock::new(); let f = || -> [ClipDef; 19] { [
     ClipDef { group: RAGDOLL_TRANS(), id: id::INJ_FRONT_TO_DEFAULT(), dict: "ragdoll_trans", clip: "inj_front_to_default", flags: TRANS() },
     ClipDef { group: RAGDOLL_TRANS(), id: id::INJ_LSIDE_TO_DEFAULT(), dict: "ragdoll_trans", clip: "inj_lside_to_default", flags: TRANS() },
     ClipDef { group: RAGDOLL_TRANS(), id: id::INJ_RSIDE_TO_DEFAULT(), dict: "ragdoll_trans", clip: "inj_rside_to_default", flags: TRANS() },
@@ -87,7 +87,7 @@ pub fn CLIPS() -> &'static [ClipDef; 19] { static V: std::sync::OnceLock<[ClipDe
     ClipDef { group: crate::kv!(424 int), id: crate::kv!(329 int), dict: "injured", clip: "inj_rside_idle", flags: crate::kv!(795 int) },
     ClipDef { group: crate::kv!(424 int), id: crate::kv!(372 int), dict: "injured", clip: "inj_default_to_back", flags: crate::kv!(794 int) },
     ClipDef { group: crate::kv!(424 int), id: crate::kv!(410 int), dict: "injured", clip: "inj_back_idle", flags: crate::kv!(795 int) },
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn clip_def(group: i32, id: i32) -> Option<&'static ClipDef> {
     (*CLIPS()).iter().find(|c| c.group == group && c.id == id)
@@ -96,7 +96,7 @@ pub fn clip_def(group: i32, id: i32) -> Option<&'static ClipDef> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SKELETON_BONES() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [crate::kv!(364 int), crate::kv!(287 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SKELETON_BONES() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [crate::kv!(364 int), crate::kv!(287 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
@@ -491,7 +491,7 @@ impl Blender {
             p.player.blend_weight(dt);
         }
         let mut ps: Vec<Player> = self.players.iter().map(|p| p.player.clone()).collect();
-        animblend::sync_phases(&mut ps, dt);
+        animblend::sync_phases(&mut ps, &[], dt);
         for (slot, p) in self.players.iter_mut().zip(ps) {
             slot.player = p;
         }
@@ -900,7 +900,7 @@ pub trait NodeSearch {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NODE_STEP() -> &'static [f32; 3] { static V: std::sync::OnceLock<[f32; 3]> = std::sync::OnceLock::new(); let f = || [crate::kv!(193), crate::kv!(193), crate::kv!(804)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn NODE_STEP() -> &'static [f32; 3] { static V: std::sync::OnceLock<[f32; 3]> = std::sync::OnceLock::new(); let f = || -> [f32; 3] { [crate::kv!(193), crate::kv!(193), crate::kv!(804)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn node_place(w: &dyn NodeSearch, at: [f32; 3], radius: f32) -> Option<[f32; 3]> {
     (0..crate::kv!(36 int)).find_map(|n| {
@@ -935,13 +935,13 @@ pub fn SIMPLE_TASK() -> u32 { crate::kv!(476 int) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SIMPLE_CANDIDATES() -> &'static [(i32, i32); 5] { static V: std::sync::OnceLock<[(i32, i32); 5]> = std::sync::OnceLock::new(); let f = || [
+pub fn SIMPLE_CANDIDATES() -> &'static [(i32, i32); 5] { static V: std::sync::OnceLock<[(i32, i32); 5]> = std::sync::OnceLock::new(); let f = || -> [(i32, i32); 5] { [
     (RAGDOLL_TRANS(), id::RECOVER_ABDOMEN),
     (RAGDOLL_TRANS(), id::INJ_FRONT_TO_DEFAULT()),
     (RAGDOLL_TRANS(), id::INJ_LSIDE_TO_DEFAULT()),
     (RAGDOLL_TRANS(), id::INJ_RSIDE_TO_DEFAULT()),
     (RAGDOLL_TRANS_BACK(), id::INJ_BACK_TO_DEFAULT()),
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Debug)]
 pub struct SimpleGetUp {

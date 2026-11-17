@@ -121,10 +121,7 @@ fn place(p: [f32; 3], m: &Rows) -> [f32; 3] {
 }
 
 fn vmsum3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    let mut s = 0.0f64;
-    for k in 0..3 {
-        s += a[k] as f64 * b[k] as f64;
-    }
+    let s = crate::estimate::vmsum3(std::array::from_fn(|k: usize| a[k] as f64 * b[k] as f64)) as f64;
     s as f32
 }
 

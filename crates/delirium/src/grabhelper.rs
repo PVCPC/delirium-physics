@@ -5,7 +5,7 @@ use crate::{Fma, Vd};
 
 #[allow(non_snake_case)]
 #[inline]
-fn BLOCK() -> &'static [f32; 7] { static V: std::sync::OnceLock<[f32; 7]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(176), delirium_data::kv!(31), delirium_data::kv!(177), delirium_data::kv!(178), delirium_data::kv!(179), 0.0, 1.0]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn BLOCK() -> &'static [f32; 7] { static V: std::sync::OnceLock<[f32; 7]> = std::sync::OnceLock::new(); let f = || -> [f32; 7] { [delirium_data::kv!(176), delirium_data::kv!(31), delirium_data::kv!(177), delirium_data::kv!(178), delirium_data::kv!(179), 0.0, 1.0] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 const NAMES: [&str; 7] = ["defaultGrabStrength", "grabBodyStiffness", "grabDistance", "grabReachAngle", "grabOneSideReachAngle",
                           "grabPullUpStrength", "grabPullUpTimer"];
 
@@ -143,7 +143,7 @@ impl GrabHelper {
     pub fn find_surface(&mut self, i: &FindIn, probe: impl FnOnce(Vec3) -> Option<Hit>) -> Option<Msg> {
         #[allow(non_snake_case)]
         #[inline]
-        fn SPEED() -> &'static [f32; 2] { static V: std::sync::OnceLock<[f32; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(24), 0.5]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+        fn SPEED() -> &'static [f32; 2] { static V: std::sync::OnceLock<[f32; 2]> = std::sync::OnceLock::new(); let f = || -> [f32; 2] { [delirium_data::kv!(24), 0.5] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
         #[allow(non_snake_case)]
         #[inline]
         fn REACH() -> f32 { delirium_data::kv!(24) }

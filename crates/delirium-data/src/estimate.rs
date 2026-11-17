@@ -5,6 +5,10 @@ const RSQRTE: [u32; 32] = [
     0x021D6881, 0x01FD6665, 0x01E16468, 0x01C76287, 0x01AF60C1, 0x01995F12, 0x01855D79, 0x01735BF4,
 ];
 
+pub fn vmsum3(p: [f64; 3]) -> f32 {
+    ((p[0] + p[2]) + p[1]) as f32
+}
+
 pub fn vrsqrtefp(x: f32) -> f32 {
     let b = x.to_bits();
     let (neg, e, m) = (b >> 31 != 0, (b >> 23) & 0xFF, b & 0x7F_FFFF);
@@ -58,7 +62,7 @@ impl Fneg for f32 {
             r
         }
         #[cfg(not(target_arch = "aarch64"))]
-        -self
+        f32::from_bits(std::hint::black_box(self).to_bits() ^ 0x8000_0000)
     }
 }
 impl Fneg for f64 {
@@ -71,12 +75,207 @@ impl Fneg for f64 {
             r
         }
         #[cfg(not(target_arch = "aarch64"))]
-        -self
+        f64::from_bits(std::hint::black_box(self).to_bits() ^ 0x8000_0000_0000_0000)
     }
 }
 impl<T: Fneg, const N: usize> Fneg for [T; N] {
     fn fneg(self) -> Self {
         self.map(Fneg::fneg)
+    }
+}
+
+pub mod vmx {
+    fn flush(x: f32) -> f32 {
+        if x.is_subnormal() { 0.0f32.copysign(x) } else { x }
+    }
+
+    fn first_nan(xs: &[f32]) -> Option<f32> {
+        xs.iter().find(|x| x.is_nan()).map(|x| f32::from_bits(x.to_bits() | 0x40_0000))
+    }
+
+    fn result(r: f32) -> f32 {
+        if r.is_nan() { f32::from_bits(0x7FC0_0000) } else { flush(r) }
+    }
+
+    fn lanes<const N: usize>(a: [f32; N], b: [f32; N], op: impl Fn(f32, f32) -> f32) -> [f32; N] {
+        std::array::from_fn(|i| {
+            let (x, y) = (flush(a[i]), flush(b[i]));
+            first_nan(&[x, y]).unwrap_or_else(|| result(op(x, y)))
+        })
+    }
+
+    pub fn add<const N: usize>(a: [f32; N], b: [f32; N]) -> [f32; N] {
+        lanes(a, b, |x, y| x + y)
+    }
+
+    pub fn sub<const N: usize>(a: [f32; N], b: [f32; N]) -> [f32; N] {
+        lanes(a, b, |x, y| x - y)
+    }
+
+    pub fn scale<const N: usize>(a: [f32; N], s: f32) -> [f32; N] {
+        lanes(a, [s; N], |x, y| x * y)
+    }
+
+    pub fn madd_lanes<const N: usize>(a: [f32; N], b: [f32; N], c: [f32; N]) -> [f32; N] {
+        std::array::from_fn(|i| {
+            let (x, y, z) = (flush(a[i]), flush(b[i]), flush(c[i]));
+            first_nan(&[x, z, y]).unwrap_or_else(|| result(x.mul_add(y, z)))
+        })
+    }
+
+    pub fn madd<const N: usize>(a: [f32; N], s: f32, c: [f32; N]) -> [f32; N] {
+        madd_lanes(a, [s; N], c)
+    }
+
+    pub fn nmsub<const N: usize>(a: [f32; N], s: f32, c: [f32; N]) -> [f32; N] {
+        let s = flush(s);
+        std::array::from_fn(|i| {
+            let (x, z) = (flush(a[i]), flush(c[i]));
+            first_nan(&[x, z, s]).unwrap_or_else(|| result(super::fneg(x.mul_add(s, -z))))
+        })
+    }
+}
+
+pub fn ppc_nan(v: f32, a: f32, b: f32) -> f32 {
+    if v.is_nan() && !a.is_nan() && !b.is_nan() { f32::from_bits(0x7FC0_0000) } else { v }
+}
+
+pub fn fmuls(a: f32, b: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, _) => f32::from_bits(a.to_bits() | 0x40_0000),
+        (_, true) => f32::from_bits(b.to_bits() | 0x40_0000),
+        _ => ppc_nan(a * b, a, b),
+    }
+}
+
+pub fn fdivs(a: f32, b: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, _) => f32::from_bits(a.to_bits() | 0x40_0000),
+        (_, true) => f32::from_bits(b.to_bits() | 0x40_0000),
+        _ => ppc_nan(a / b, a, b),
+    }
+}
+
+pub fn fsubs(a: f32, b: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, _) => f32::from_bits(a.to_bits() | 0x40_0000),
+        (_, true) => f32::from_bits(b.to_bits() | 0x40_0000),
+        _ => ppc_nan(a - b, a, b),
+    }
+}
+
+pub fn fadds(a: f32, b: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, _) => f32::from_bits(a.to_bits() | 0x40_0000),
+        (_, true) => f32::from_bits(b.to_bits() | 0x40_0000),
+        _ => ppc_nan(a + b, a, b),
+    }
+}
+
+pub fn fmadds(a: f32, c: f32, b: f32) -> f32 {
+    for x in [a, b, c] {
+        if x.is_nan() {
+            return f32::from_bits(x.to_bits() | 0x40_0000);
+        }
+    }
+    let r = a.mul_add(c, b);
+    if r.is_nan() { f32::from_bits(0x7FC0_0000) } else { r }
+}
+
+pub fn vflush(x: f32) -> f32 {
+    if x.is_subnormal() { 0.0f32.copysign(x) } else { x }
+}
+
+pub fn vmaddfp(a: f32, c: f32, b: f32) -> f32 {
+    let r = a.mul_add(c, b);
+    if r.is_nan() && !a.is_nan() && !c.is_nan() && !b.is_nan() {
+        return f32::from_bits(0xFFC0_0000);
+    }
+    vflush(r)
+}
+
+pub fn fmuls_ordered(a: f32, b: f32) -> f32 {
+    first_nan(&[a, b]).unwrap_or(a * b)
+}
+
+pub fn fdivs_ordered(a: f32, b: f32) -> f32 {
+    if let Some(n) = first_nan(&[a, b]) {
+        return n;
+    }
+    if a == 0.0 && b == 0.0 { f32::from_bits(0x7FC0_0000) } else { a / b }
+}
+
+fn first_nan(xs: &[f32]) -> Option<f32> {
+    xs.iter().find(|v| v.is_nan()).map(|v| f32::from_bits(v.to_bits() | 0x40_0000))
+}
+
+const VECTOR_INVALID: u32 = 0xFFC0_0000;
+const CONSOLE_INVALID: u32 = 0x7FC0_0000;
+
+pub fn vmulfp_lane(a: f32, b: f32) -> f32 {
+    vmulfp_with(a, b, VECTOR_INVALID)
+}
+
+pub fn vmulfp_console(a: f32, b: f32) -> f32 {
+    vmulfp_with(a, b, CONSOLE_INVALID)
+}
+
+fn vmulfp_with(a: f32, b: f32, invalid: u32) -> f32 {
+    let (a, b) = (vflush(a), vflush(b));
+    if let Some(n) = first_nan(&[a, b]) {
+        return n;
+    }
+    let r = a * b;
+    if r.is_nan() { f32::from_bits(invalid) } else { vflush(r) }
+}
+
+pub fn vmaddfp_lane(a: f32, c: f32, b: f32) -> f32 {
+    vmaddfp_with(a, c, b, VECTOR_INVALID)
+}
+
+pub fn vmaddfp_console(a: f32, c: f32, b: f32) -> f32 {
+    vmaddfp_with(a, c, b, CONSOLE_INVALID)
+}
+
+fn vmaddfp_with(a: f32, c: f32, b: f32, invalid: u32) -> f32 {
+    let (a, c, b) = (vflush(a), vflush(c), vflush(b));
+    if let Some(n) = first_nan(&[a, c]) {
+        return n;
+    }
+    if (a * c).is_nan() {
+        return f32::from_bits(invalid);
+    }
+    if let Some(n) = first_nan(&[b]) {
+        return n;
+    }
+    let r = a.mul_add(c, b);
+    if r.is_nan() { f32::from_bits(invalid) } else { vflush(r) }
+}
+
+pub fn vnmsubfp_lane(a: f32, c: f32, b: f32) -> f32 {
+    let (a, c, b) = (vflush(a), vflush(c), vflush(b));
+    if let Some(n) = first_nan(&[a, c]) {
+        return -n;
+    }
+    if (a * c).is_nan() {
+        return f32::from_bits(0x7FC0_0000);
+    }
+    if let Some(n) = first_nan(&[b]) {
+        return n;
+    }
+    let r = a.mul_add(c, -b);
+    if r.is_nan() { f32::from_bits(0x7FC0_0000) } else { vflush(-r) }
+}
+
+pub fn vsubfp(a: f32, b: f32) -> f32 {
+    let flush = |x: f32| if x.is_subnormal() { 0.0f32.copysign(x) } else { x };
+    match (a.is_nan(), b.is_nan()) {
+        (true, _) => f32::from_bits(a.to_bits() | 0x40_0000),
+        (_, true) => f32::from_bits(b.to_bits() | 0x40_0000),
+        _ => {
+            let (a, b) = (flush(a), flush(b));
+            flush(ppc_nan(a - b, a, b))
+        }
     }
 }
 

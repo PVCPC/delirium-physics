@@ -275,6 +275,8 @@ bool UDeliriumRagdollComponent::Start()
 	nm_crash_report(TCHAR_TO_UTF8(*FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir())));
 	nm_set_step_limit(S->bStepLimit ? 1 : 0);
 	nm_set_fire_reaction(S->bFireReaction ? 1 : 0);
+	nm_set_carry_pushes(S->bCarryPushes ? 1 : 0);
+	nm_set_get_up_needs_floor(S->bGetUpNeedsFloor ? 1 : 0);
 	if (!S->Weapons.IsEmpty()) LoadWeapons(S->Weapons.EndsWith(TEXT(".xml")) ? Resolve(S->Weapons) : S->Weapons);
 	State = 1;
 	return true;

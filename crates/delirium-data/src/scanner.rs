@@ -1,4 +1,10 @@
 use crate::audioconfig::{name_hash, ScannerCrime};
+use std::collections::BTreeMap;
+
+use crate::policescanner::{
+    self as exe, ChaseEnd, Description, Name, NoiseRequest, PhraseRequest, PlaceWords, Said, ScannerGame, SlotNo, SoundOut,
+    SuspectReport,
+};
 use crate::rng::AudioRand;
 
 pub const SLOTS: usize = 32;
@@ -55,7 +61,7 @@ pub enum Wagon {
     Other,
 }
 
-pub trait World {
+pub trait ScannerWorld {
     fn place(&mut self, at: [f32; 3]) -> Place;
     fn crime(&self, hash: u32) -> Option<ScannerCrime>;
 }
@@ -103,6 +109,15 @@ pub struct Phrase {
     pub bank: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SoundHandle(pub u32);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Made {
+    pub sound: Option<SoundHandle>,
+    pub echo: Option<SoundHandle>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Slot {
     pub time: u32,
@@ -111,9 +126,15 @@ pub struct Slot {
     pub sub: u32,
     pub area: u32,
     pub at: u32,
-    pub phrases: Vec<Phrase>,
-    pub queued: bool,
-    pub flag: bool,
+    pub phrases: [Phrase; PHRASES],
+    pub phrase_count: u32,
+    pub made: [Made; PHRASES],
+    pub stray_phrases: BTreeMap<u32, Phrase>,
+    pub stray_made: BTreeMap<u32, Made>,
+    pub predelay: u32,
+    pub radio: bool,
+    pub queued: ByteFlag,
+    pub flag: ByteFlag,
     pub vehicle: bool,
     pub place: Option<[f32; 3]>,
     pub group: u32,
@@ -124,6 +145,96 @@ pub struct Slot {
     pub said: [bool; 4],
     pub on_foot: bool,
     pub follow: Option<u32>,
+}
+
+pub const PHRASES: usize = 16;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ByteFlag(pub u8);
+
+impl ByteFlag {
+    pub const ON: ByteFlag = ByteFlag(1);
+    pub const OFF: ByteFlag = ByteFlag(0);
+    pub fn on(self) -> bool {
+        self.0 != 0
+    }
+}
+
+impl From<bool> for ByteFlag {
+    fn from(on: bool) -> Self {
+        ByteFlag(on as u8)
+    }
+}
+
+impl Slot {
+    pub fn phrase(&self, k: u32) -> Phrase {
+        match self.phrases.get(k as usize) {
+            Some(p) => *p,
+            None => self.stray_phrases.get(&k).copied().unwrap_or_default(),
+        }
+    }
+    pub fn phrase_mut(&mut self, k: u32) -> &mut Phrase {
+        match self.phrases.get_mut(k as usize) {
+            Some(p) => p,
+            None => self.stray_phrases.entry(k).or_default(),
+        }
+    }
+    pub fn made(&self, k: u32) -> Made {
+        match self.made.get(k as usize) {
+            Some(m) => *m,
+            None => self.stray_made.get(&k).copied().unwrap_or_default(),
+        }
+    }
+    pub fn made_mut(&mut self, k: u32) -> &mut Made {
+        match self.made.get_mut(k as usize) {
+            Some(m) => m,
+            None => self.stray_made.entry(k).or_default(),
+        }
+    }
+    pub fn phrase_list(&self) -> &[Phrase] {
+        &self.phrases[..(self.phrase_count as usize).min(PHRASES)]
+    }
+    pub fn set_phrases(&mut self, list: &[Phrase]) {
+        let n = list.len().min(PHRASES);
+        self.phrases[..n].copy_from_slice(&list[..n]);
+        self.phrase_count = n as u32;
+    }
+    pub fn described(&self) -> Option<u32> {
+        (self.described != 0).then_some(self.described)
+    }
+    pub fn said(&self, part: Said) -> bool {
+        self.said[match part {
+            Said::Model => 0,
+            Said::Manufacturer => 1,
+            Said::Colour => 2,
+            Said::Category => 3,
+        }]
+    }
+    pub fn placed(&self) -> bool {
+        self.place.is_some()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HashedNames<const N: usize> {
+    pub made: u32,
+    pub hashes: [u32; N],
+    pub stray: BTreeMap<u32, u32>,
+}
+
+impl<const N: usize> Default for HashedNames<N> {
+    fn default() -> Self {
+        HashedNames { made: 0, hashes: [0; N], stray: BTreeMap::new() }
+    }
+}
+
+impl<const N: usize> HashedNames<N> {
+    pub fn hash(&self, k: u32) -> u32 {
+        match self.hashes.get(k as usize) {
+            Some(&h) => h,
+            None => self.stray.get(&k).copied().unwrap_or(0),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -147,14 +258,7 @@ fn phrase_name(prefix: &str, text: &str) -> u32 {
 
 pub fn quarter(n: [f32; 3]) -> u32 {
     let z0 = n[2] * 0.0;
-    let c = n[0].mul_add(0.0, z0) + n[1];
-    let a = if c <= -1.0 {
-        std::f32::consts::PI
-    } else if c >= 1.0 {
-        0.0
-    } else {
-        crate::mathrt::acos(c as f64) as f32
-    };
+    let a = heading_angle(n[0].mul_add(0.0, z0) + n[1]);
     let mut deg = a * 57.295_776;
     if n[1].mul_add(0.0, z0) + n[0] <= 0.0 {
         deg = 360.0 - deg;
@@ -162,8 +266,18 @@ pub fn quarter(n: [f32; 3]) -> u32 {
     ((deg + 45.0) * 0.011_111_111) as i64 as u32 & 3
 }
 
+pub fn heading_angle(c: f32) -> f32 {
+    if c <= -1.0 {
+        std::f32::consts::PI
+    } else if c >= 1.0 {
+        0.0
+    } else {
+        crate::mathrt::acos(c as f64) as f32
+    }
+}
+
 fn unit(v: [f32; 3]) -> [f32; 3] {
-    let r = 1.0 / (v[2].mul_add(v[2], v[0].mul_add(v[0], v[1] * v[1]))).sqrt();
+    let r = crate::estimate::vrsqrtefp(crate::estimate::vmsum3(v.map(|c| c as f64 * c as f64)));
     [v[0] * r, v[1] * r, v[2] * r]
 }
 
@@ -194,55 +308,27 @@ pub fn place(street: Option<&str>, at: [f32; 3], zone: &PlaceZone) -> Place {
     p
 }
 
-pub fn crime_gate(crime: u32, multiplier: f32, level: u32, fake: i32) -> bool {
-    multiplier >= 0.9 && (level != 0 || fake < 1) && crime < 0x1F
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Report {
     pub place: Place,
     pub long: bool,
     pub priority: u32,
+    pub sound: u32,
+    pub kind: u32,
     pub delay: u32,
     pub sub: u32,
     pub flag: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PhraseState {
-    Gone,
-    Ending,
-    Playing,
-}
-
-pub trait Voice {
-    fn make(&mut self, slot: usize, s: &Slot) -> bool;
-    fn loaded(&mut self, slot: usize) -> u8;
-    fn noise(&mut self, s: &Slot, db: f32);
-    fn stop_noise(&mut self);
-    fn play(&mut self, slot: usize, i: usize, s: &Slot, db: f32) -> bool;
-    fn phrase(&mut self, slot: usize, i: usize) -> PhraseState;
-    fn stop(&mut self, slot: usize);
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Frame {
-    pub now: u32,
-    pub at: [f32; 3],
-    pub level: u32,
-    pub outside_ms: i32,
-    pub police_car: bool,
-    pub blocked: bool,
-    pub faded: bool,
-    pub repeats: bool,
-    pub db: f32,
-    pub wagon: Wagon,
-    pub in_train: bool,
+impl Report {
+    pub fn scripted(sound: u32, kind: u32) -> Report {
+        Report { priority: 4, sound, kind, flag: true, ..Report::default() }
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct Scanner {
-    pub sampled_at: [f32; 3],
+pub struct PoliceScanner {
+    pub sampled_at: [f32; 4],
     pub sampled: u32,
     pub not_before: u32,
     pub last_pick: u32,
@@ -257,12 +343,18 @@ pub struct Scanner {
     pub state: u32,
     pub heading: u32,
     pub last_scripted: u32,
-    pub police_car: bool,
-    pub cut: bool,
+    pub police_car: ByteFlag,
+    pub cut: ByteFlag,
     pub slots: Vec<Slot>,
+    pub stray_slots: BTreeMap<SlotNo, Slot>,
     pub on: bool,
     pub sent: Vec<Sent>,
+    pub noise_sound: Option<SoundHandle>,
     pub described: std::collections::HashMap<u32, [bool; 4]>,
+    pub custody_names: HashedNames<2>,
+    pub down_names: HashedNames<2>,
+    pub vigilante_names: HashedNames<7>,
+    pub beaten_up_name: HashedNames<1>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -271,15 +363,17 @@ pub struct Sent {
     pub units: u32,
     pub kind: u32,
     pub time: u32,
-    pub used: bool,
+    pub used: ByteFlag,
 }
 
-impl Default for Scanner {
+impl Default for PoliceScanner {
     fn default() -> Self {
-        Scanner {
-            sampled_at: [0.0; 3], sampled: 0, not_before: 0, last_pick: 0, next: 0, playing: NONE, last_kind: 0, last_sub: 0,
-            last_area: 0, idle_until: 0, chatter_at: 0, allowed: 1, state: 0, heading: 4, last_scripted: 0, police_car: false,
-            cut: false, slots: vec![Slot::default(); SLOTS], on: ON, sent: vec![Sent::default(); 32], described: Default::default(),
+        PoliceScanner {
+            sampled_at: [0.0; 4], sampled: 0, not_before: 0, last_pick: 0, next: 0, playing: NONE, last_kind: 0, last_sub: 0,
+            last_area: 0, idle_until: 0, chatter_at: 0, allowed: 1, state: 0, heading: 4, last_scripted: 0, police_car: ByteFlag::OFF,
+            cut: ByteFlag::OFF, slots: vec![Slot::default(); SLOTS], stray_slots: BTreeMap::new(), on: ON, sent: vec![Sent::default(); 32],
+            noise_sound: None, described: Default::default(), custody_names: HashedNames::default(),
+            down_names: HashedNames::default(), vigilante_names: HashedNames::default(), beaten_up_name: HashedNames::default(),
         }
     }
 }
@@ -301,7 +395,49 @@ pub struct PlatformStation {
     pub name: Option<u32>,
 }
 
-impl Scanner {
+impl PoliceScanner {
+    pub fn slot(&self, s: SlotNo) -> &Slot {
+        static EMPTY: std::sync::OnceLock<Slot> = std::sync::OnceLock::new();
+        match self.slots.get(s as usize) {
+            Some(slot) => slot,
+            None => self.stray_slots.get(&s).unwrap_or_else(|| EMPTY.get_or_init(Slot::default)),
+        }
+    }
+    pub fn slot_mut(&mut self, s: SlotNo) -> &mut Slot {
+        match self.slots.get_mut(s as usize) {
+            Some(slot) => slot,
+            None => self.stray_slots.entry(s).or_default(),
+        }
+    }
+
+    pub fn chase_names(&self, end: ChaseEnd) -> &HashedNames<2> {
+        match end {
+            ChaseEnd::Custody => &self.custody_names,
+            ChaseEnd::Down => &self.down_names,
+        }
+    }
+    pub fn chase_names_mut(&mut self, end: ChaseEnd) -> &mut HashedNames<2> {
+        match end {
+            ChaseEnd::Custody => &mut self.custody_names,
+            ChaseEnd::Down => &mut self.down_names,
+        }
+    }
+
+    pub fn let_go_ended(&mut self, alive: impl Fn(SoundHandle) -> bool) {
+        let keep = |h: &mut Option<SoundHandle>| {
+            if h.is_some_and(|h| !alive(h)) {
+                *h = None;
+            }
+        };
+        keep(&mut self.noise_sound);
+        for slot in self.slots.iter_mut().chain(self.stray_slots.values_mut()) {
+            for m in slot.made.iter_mut().chain(slot.stray_made.values_mut()) {
+                keep(&mut m.sound);
+                keep(&mut m.echo);
+            }
+        }
+    }
+
     pub fn train_slot(&mut self) -> &mut Slot {
         if self.next == self.playing {
             self.next += 1;
@@ -310,7 +446,7 @@ impl Scanner {
         self.next = (self.next + 1) & 31;
         let old = std::mem::take(&mut self.slots[k]);
         self.slots[k] = Slot {
-            priority: 4, kind: 8, queued: true, category: crate::audioconfig::name_hash("GENERAL_TRAIN_ANNOUNCER"),
+            priority: 4, kind: 8, queued: ByteFlag::ON, category: crate::audioconfig::name_hash("GENERAL_TRAIN_ANNOUNCER"),
             noise: crate::audioconfig::name_hash("NULL_SOUND"), vehicle: old.vehicle, described: old.described, said: old.said,
             on_foot: old.on_foot, ..Slot::default()
         };
@@ -343,7 +479,8 @@ impl Scanner {
             }
         };
         let slot = self.train_slot();
-        (slot.phrases, slot.place, slot.echo, slot.group, slot.time) = (phrases, Some([st.at[0], st.at[1], st.at[2] + 1.5]), 100, 0, now);
+        slot.set_phrases(&phrases);
+        (slot.place, slot.echo, slot.group, slot.time) = (Some([st.at[0], st.at[1], st.at[2] + 1.5]), 100, 0, now);
         true
     }
 
@@ -352,39 +489,13 @@ impl Scanner {
     }
 
     fn start_slot(&mut self, n: usize) {
-        self.slots[n] = Slot { queued: true, noise: name_hash(NOISE_LOOP), ..Default::default() };
+        self.slots[n] = Slot { queued: ByteFlag::ON, noise: name_hash(NOISE_LOOP), predelay: PREDELAY_MS, radio: true, ..Default::default() };
     }
 
     fn say_place(&mut self, r: &Report, n: usize, street_ok: bool, rng: &mut AudioRand) {
-        let p = &r.place;
-        let mut said = false;
-        let mut out = vec![];
-        if p.street == 0 || !street_ok {
-            if r.long && rng_chance(rng, STUMBLE_CHANCE) {
-                out.push(Phrase { sound: name_hash("POLICE_SCANNER_IN"), gap: IN_GAP_MS, bank: 5 });
-                out.push(Phrase { sound: name_hash("POLICE_SCANNER_ERR"), gap: ERR_GAP_MS, bank: 6 });
-                said = true;
-            }
-            if p.dir != 0 {
-                out.push(Phrase { sound: if said { p.dir } else { p.in_dir }, gap: 0, bank: 2 });
-                said = true;
-            }
-            if !said {
-                out.push(Phrase { sound: name_hash("POLICE_SCANNER_IN"), gap: 0, bank: 5 });
-            }
-            said = false;
-        } else {
-            out.push(Phrase { sound: name_hash(if r.long { "POLICE_SCANNER_ON_LONG" } else { "POLICE_SCANNER_ON_SHORT" }), gap: 0, bank: 5 });
-            out.push(Phrase { sound: p.street, gap: STREET_GAP_MS, bank: 2 });
-            said = true;
-        }
-        let s = &mut self.slots[n];
-        s.phrases.extend(out);
-        if !said || self.last_area != p.area || !rng_chance(rng, SAME_AREA_SKIP) {
-            let gap = rng.int_in_range(100, 2000) as u32;
-            s.phrases.push(Phrase { sound: p.area, gap, bank: 3 });
-            s.area = p.area;
-        }
+        let mut count = self.slots[n].phrase_count;
+        exe::say_place(self, &mut Placer { rng, street_ok }, r, n as u32, &mut count);
+        self.slots[n].phrase_count = count;
     }
 
     pub fn queue_crime(&mut self, r: &Report, crime: &ScannerCrime, now: u32, street_ok: bool, rng: &mut AudioRand) {
@@ -406,15 +517,11 @@ impl Scanner {
         s.sub = r.sub;
         s.time = r.delay.wrapping_add(now);
         s.priority = r.priority;
-        s.flag = r.flag;
-        s.phrases = vec![Phrase { sound: opening, gap: 0, bank: 0 }, Phrase { sound: line, gap: 0, bank: 1 }];
+        s.flag = r.flag.into();
+        s.set_phrases(&[Phrase { sound: opening, gap: 0, bank: 0 }, Phrase { sound: line, gap: 0, bank: 1 }]);
         self.say_place(r, n, street_ok, rng);
-        self.slots[n].queued = true;
+        self.slots[n].queued = ByteFlag::ON;
         self.next = (self.next + 1) & 31;
-    }
-
-    pub fn pick(&mut self, f: &Frame) -> u32 {
-        self.pick_with(f.now, f.repeats, |_, s| may_play(s, f))
     }
 
     pub fn pick_with(&mut self, now: u32, repeats: bool, may: impl Fn(usize, &Slot) -> bool) -> u32 {
@@ -422,7 +529,7 @@ impl Scanner {
         for k in 0..32 {
             let n = ((self.next + k) & 31) as usize;
             let s = &self.slots[n];
-            if !(s.queued && (s.priority == 3 || s.priority == 4) && s.time <= now) {
+            if !(s.queued.on() && (s.priority == 3 || s.priority == 4) && s.time <= now) {
                 continue;
             }
             let fits = s.priority == 4
@@ -436,8 +543,8 @@ impl Scanner {
                 waiting = true;
             } else {
                 let s = &mut self.slots[n];
-                s.queued = false;
-                s.flag = false;
+                s.queued = ByteFlag::OFF;
+                s.flag = ByteFlag::OFF;
             }
         }
         if waiting {
@@ -446,7 +553,7 @@ impl Scanner {
         if self.last_pick.wrapping_add(PICK_GAP_MS) < now {
             for n in 0..32 {
                 let s = &self.slots[n];
-                if !(s.queued && now.wrapping_sub(s.time) < 7_500) {
+                if !(s.queued.on() && now.wrapping_sub(s.time) < 7_500) {
                     continue;
                 }
                 if may(n, s) && (repeats || s.kind != self.last_kind || s.sub != self.last_sub) {
@@ -454,197 +561,22 @@ impl Scanner {
                     return n as u32;
                 }
                 let s = &mut self.slots[n];
-                s.queued = false;
-                s.flag = false;
+                s.queued = ByteFlag::OFF;
+                s.flag = ByteFlag::OFF;
             }
         }
         for k in 0..32 {
             let n = ((self.next + k) & 31) as usize;
             let s = &self.slots[n];
-            if s.queued && s.priority == 0 && self.police_car && s.time <= now {
+            if s.queued.on() && s.priority == 0 && self.police_car.on() && s.time <= now {
                 return n as u32;
             }
         }
         NONE
     }
-
-    fn drop_slot(&mut self, n: u32, v: &mut impl Voice) {
-        if let Some(s) = self.slots.get_mut(n as usize) {
-            v.stop(n as usize);
-            s.queued = false;
-            s.flag = false;
-        }
-    }
-
-    pub fn stop_all(&mut self, v: &mut impl Voice) {
-        for n in 0..32 {
-            self.drop_slot(n, v);
-        }
-        self.state = 0;
-        self.sampled = 0;
-        self.not_before = 0;
-        v.stop_noise();
-    }
-
-    pub fn cut_off(&mut self, v: &mut impl Voice) {
-        match self.state {
-            2 => self.cut = true,
-            1 => {
-                self.drop_slot(self.playing, v);
-                self.state = 0;
-            }
-            _ => {}
-        }
-    }
-
-    fn phrase_db(&self, n: usize, f: &Frame) -> f32 {
-        if self.slots[n].priority == 0 { CHATTER_DB + f.db } else { f.db }
-    }
-
-    pub fn frame(&mut self, f: &Frame, rng: &mut AudioRand, v: &mut impl Voice, w: &mut impl World) {
-        let now = f.now;
-        if self.cut && f.faded {
-            if self.state == 2 {
-                self.drop_slot(self.playing, v);
-            }
-            v.stop_noise();
-            self.state = 0;
-            self.cut = false;
-        }
-        if !self.on {
-            return;
-        }
-        if f.police_car {
-            if !self.police_car {
-                self.chatter_at = (rng.int_in_range(5000, 15000) as u32).wrapping_add(now);
-            }
-            self.police_car = true;
-        } else {
-            self.police_car = false;
-        }
-        if f.level == 0 {
-            self.allowed = 1;
-            if !self.police_car {
-                self.last_sub = 0;
-            }
-            self.idle_until = (rng.int_in_range(5000, 15000) as u32).wrapping_add(now);
-        } else if self.last_pick.wrapping_add(60_000) < now {
-            self.allowed = u32::MAX;
-        }
-        self.queued_dispatch(now, f.level, w, rng);
-        if self.police_car {
-            self.chatter(now, f.level, f.at, f.wagon, w, rng);
-        }
-        if self.sampled.wrapping_add(HEADING_MS) <= now {
-            let d = [f.at[0] - self.sampled_at[0], f.at[1] - self.sampled_at[1], f.at[2] - self.sampled_at[2]];
-            self.heading = if d[2].mul_add(d[2], d[0].mul_add(d[0], d[1] * d[1])) <= STANDING_M * STANDING_M { 4 } else { quarter(unit(d)) };
-            self.sampled_at = f.at;
-            self.sampled = now;
-        }
-        match self.state {
-            0 => {
-                self.cut = false;
-                if !(self.not_before < now && !f.blocked) {
-                    return;
-                }
-                self.playing = self.pick(f);
-                if self.playing == NONE {
-                    return;
-                }
-                let n = self.playing as usize;
-                let s = &self.slots[n];
-                if s.priority == 0 || s.priority == 4 || s.kind == 8 || (1u64 << (s.kind & 0x3F)) as u32 & self.allowed != 0 {
-                    if !v.make(n, &self.slots[n]) || v.loaded(n) == 2 {
-                        self.drop_slot(self.playing, v);
-                    } else {
-                        let s = &self.slots[n];
-                        self.last_kind = s.kind;
-                        self.last_sub = s.sub;
-                        if s.area != 0 {
-                            self.last_area = s.area;
-                        }
-                        self.state = 1;
-                        self.allowed = NEXT_KINDS.get(s.kind as usize).copied().unwrap_or(u32::MAX);
-                    }
-                } else {
-                    self.slots[n].queued = false;
-                }
-            }
-            1 => {
-                let n = self.playing as usize;
-                if self.slots.get(n).is_some_and(|s| s.queued) {
-                    match v.loaded(n) {
-                        2 => {
-                            self.drop_slot(self.playing, v);
-                            self.state = 0;
-                            return;
-                        }
-                        1 => {}
-                        _ => return,
-                    }
-                    let noise_db = if self.slots[n].priority == 0 && f.level == 0 { CHATTER_DB + f.db } else { f.db };
-                    v.noise(&self.slots[n], noise_db);
-                    self.slots[n].at = 0;
-                    let db = self.phrase_db(n, f);
-                    if !self.slots[n].phrases.is_empty() && v.play(n, 0, &self.slots[n], db) {
-                        self.state = 2;
-                        let s = &self.slots[n];
-                        if s.described != 0 {
-                            let d = self.described.entry(s.described).or_default();
-                            for k in 0..4 {
-                                d[k] |= s.said[k];
-                            }
-                        }
-                        if s.kind == 7 {
-                            self.last_scripted = now;
-                        }
-                        return;
-                    }
-                }
-                self.drop_slot(self.playing, v);
-                self.state = 0;
-            }
-            2 => {
-                let n = self.playing as usize;
-                let i = self.slots[n].at as usize;
-                if v.phrase(n, i) == PhraseState::Playing {
-                    return;
-                }
-                let gap = self.slots[n].phrases.get(i).map_or(0, |p| p.gap);
-                if gap != 0 {
-                    self.not_before = gap.wrapping_add(now);
-                    self.state = 3;
-                    return;
-                }
-                self.slots[n].at += 1;
-                let i = self.slots[n].at as usize;
-                let db = self.phrase_db(n, f);
-                if i >= self.slots[n].phrases.len() || !v.play(n, i, &self.slots[n], db) {
-                    v.stop_noise();
-                    self.not_before = AFTER_REPORT_MS.wrapping_add(now);
-                    let s = &mut self.slots[n];
-                    s.queued = false;
-                    s.flag = false;
-                    self.playing = NONE;
-                    self.state = 0;
-                }
-            }
-            3 => {
-                if self.not_before < now {
-                    let n = self.playing as usize;
-                    let i = self.slots[n].at as usize;
-                    if let Some(p) = self.slots[n].phrases.get_mut(i) {
-                        p.gap = 0;
-                    }
-                    self.state = 2;
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
-impl Scanner {
+impl PoliceScanner {
     fn take_next(&mut self) -> usize {
         if self.next == self.playing {
             self.next += 1;
@@ -653,11 +585,11 @@ impl Scanner {
     }
 
     fn queued(&mut self, n: usize) {
-        self.slots[n].queued = true;
+        self.slots[n].queued = ByteFlag::ON;
         self.next = (self.next + 1) & 31;
     }
 
-    pub fn chatter(&mut self, now: u32, level: u32, at: [f32; 3], wagon: Wagon, w: &mut impl World, rng: &mut AudioRand) {
+    pub fn chatter(&mut self, now: u32, level: u32, at: [f32; 3], wagon: Wagon, w: &mut impl ScannerWorld, rng: &mut AudioRand) {
         self.chatter_with(now, level, at, rng, |s, c, rng| match c {
             Chatter::Dispatch { units, kind, from } => s.dispatch(units, kind, from, now, w, rng),
             Chatter::Assistance(to) => s.assistance(to, 0, now, w, rng),
@@ -697,11 +629,11 @@ impl Scanner {
         let s = &mut self.slots[n];
         (s.kind, s.time, s.priority) = (6, now, 0);
         let gap = rng.int_in_range(500, 2000) as u32;
-        self.slots[n].phrases = vec![Phrase { sound: name_hash("POLICE_SCANNER_RANDOM_CHAT"), gap, bank: 0 }];
+        self.slots[n].set_phrases(&[Phrase { sound: name_hash("POLICE_SCANNER_RANDOM_CHAT"), gap, bank: 0 }]);
         self.queued(n);
     }
 
-    pub fn assistance(&mut self, at: [f32; 3], priority: u32, now: u32, w: &mut impl World, rng: &mut AudioRand) {
+    pub fn assistance(&mut self, at: [f32; 3], priority: u32, now: u32, w: &mut impl ScannerWorld, rng: &mut AudioRand) {
         if !self.on {
             return;
         }
@@ -711,15 +643,15 @@ impl Scanner {
         self.start_slot(n);
         let s = &mut self.slots[n];
         (s.kind, s.time, s.priority, s.area) = (1, now, priority, place.area);
-        s.phrases = vec![Phrase { sound: name_hash("POLICE_SCANNER_ASSISTANCE_REQUIRED_ASSISTANCE_REQUIRED"), gap: 0, bank: 0 }];
+        s.set_phrases(&[Phrase { sound: name_hash("POLICE_SCANNER_ASSISTANCE_REQUIRED_ASSISTANCE_REQUIRED"), gap: 0, bank: 0 }]);
         let r = Report { place, ..Default::default() };
         self.say_place(&r, n, false, rng);
         self.queued(n);
     }
 
-    pub fn dispatch(&mut self, units: u32, kind: u32, from: [f32; 3], now: u32, w: &mut impl World, rng: &mut AudioRand) {
+    pub fn dispatch(&mut self, units: u32, kind: u32, from: [f32; 3], now: u32, w: &mut impl ScannerWorld, rng: &mut AudioRand) {
         let n = self.take_next();
-        if self.slots[n].queued && self.slots[n].priority >= 2 {
+        if self.slots[n].queued.on() && self.slots[n].priority >= 2 {
             return;
         }
         let place = w.place(from);
@@ -738,11 +670,11 @@ impl Scanner {
         (s.kind, s.sub, s.time, s.area) = (4, kind, now, place.area);
         s.priority = if kind == 2 || units > 3 { 3 } else { 2 };
         let gap = rng.int_in_range(100, 2000) as u32;
-        self.slots[n].phrases = vec![Phrase { sound: line, gap: 0, bank: 0 }, Phrase { sound: place.area, gap, bank: 3 }];
+        self.slots[n].set_phrases(&[Phrase { sound: line, gap: 0, bank: 0 }, Phrase { sound: place.area, gap, bank: 3 }]);
         self.queued(n);
     }
 
-    pub fn ambient_crime(&mut self, at: [f32; 3], wagon: Wagon, now: u32, w: &mut impl World, rng: &mut AudioRand) {
+    pub fn ambient_crime(&mut self, at: [f32; 3], wagon: Wagon, now: u32, w: &mut impl ScannerWorld, rng: &mut AudioRand) {
         let (to, hash, sub) = ambient_pick(at, wagon, rng);
         let Some(crime) = w.crime(hash) else { return };
         let mut place = w.place(to);
@@ -787,7 +719,7 @@ impl Scanner {
         p.push(Phrase { sound: r.place.area, gap: 0, bank: 3 });
         p.push(Phrase { sound: name_hash("POLICE_SCANNER_CONJUNCTIVES_FOR"), gap: 0, bank: 5 });
         p.push(Phrase { sound: line, gap: 0, bank: 1 });
-        self.slots[n].phrases = p;
+        self.slots[n].set_phrases(&p);
         self.queued(n);
     }
 }
@@ -806,50 +738,6 @@ pub fn station_of(x: f32, y: f32) -> u32 {
 
 pub const DISPATCH_BACKUP: &str = "SCRIPTED_REPORTS_DISPATCH_BACKUP";
 pub const TRAIN_TERMINATES_HERE: &str = "SCRIPTED_REPORT_TRAIN_TERMINATES_HERE";
-
-pub const VIGILANTE_CRIMES: [&str; 7] = [
-    "CRIME_FLEEING_CRIME_SCENE", "CRIME_STEAL_CAR", "CRIME_GUN_SPREE", "CRIME_STEAL_CAR", "CRIME_DRIVEBY", "CRIME_DRUG_DEAL",
-    "CRIME_GANG_ACTIVITY",
-];
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Description {
-    pub prefix: u32,
-    pub colour: u32,
-    pub manufacturer: u32,
-    pub model: u32,
-    pub category: u32,
-    pub vehicle: u32,
-    pub marked: bool,
-    pub bike: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Vehicle {
-    pub colour: [u32; 2],
-    pub words: [u32; 3],
-    pub beat_up: bool,
-    pub taxi: bool,
-    pub service: bool,
-    pub id: u32,
-    pub marked: bool,
-    pub bike: bool,
-}
-
-pub fn describe(v: &Vehicle) -> Description {
-    let mut d = Description { prefix: v.colour[0], colour: v.colour[1], manufacturer: v.words[0], model: v.words[1], category: v.words[2],
-                              vehicle: v.id, marked: v.marked, bike: v.bike };
-    if v.beat_up {
-        (d.colour, d.prefix) = (name_hash("POLICE_SCANNER_COLOUR_FUCKED"), 0);
-    }
-    if v.taxi {
-        d.category = 0;
-    }
-    if v.service {
-        (d.colour, d.manufacturer, d.prefix, d.category) = (0, 0, 0, 0);
-    }
-    d
-}
 
 pub fn colour_names(carcols: &str) -> Vec<[u32; 2]> {
     let mut out = vec![];
@@ -878,21 +766,21 @@ pub fn colour_names(carcols: &str) -> Vec<[u32; 2]> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Suspect {
     pub report: Report,
-    pub vehicle: Option<Description>,
+    pub vehicle: Option<Description<u32>>,
     pub priority: u32,
     pub heading: u32,
     pub speed: f32,
     pub extra: bool,
 }
 
-impl Scanner {
+impl PoliceScanner {
     pub fn car_sent(&mut self, station: u32, kind: u32, now: u32) {
         if station >= 16 {
             return;
         }
         let mut free = None;
         for (k, r) in self.sent.iter_mut().enumerate() {
-            if !r.used {
+            if !r.used.on() {
                 free = Some(k);
             } else if r.station == station && r.kind == kind {
                 r.units += 1;
@@ -900,28 +788,11 @@ impl Scanner {
             }
         }
         if let Some(k) = free {
-            self.sent[k] = Sent { station, units: 1, kind, time: now, used: true };
+            self.sent[k] = Sent { station, units: 1, kind, time: now, used: ByteFlag::ON };
         }
     }
 
-    pub fn queued_dispatch(&mut self, now: u32, level: u32, w: &mut impl World, rng: &mut AudioRand) {
-        for k in 0..32 {
-            let r = self.sent[k];
-            if !(r.used && r.time.wrapping_add(2000) < now) {
-                continue;
-            }
-            self.sent[k].used = false;
-            if r.station > 15 {
-                continue;
-            }
-            if r.kind == 0 && r.units < 3 && level as i32 > 1 {
-                continue;
-            }
-            self.dispatch(r.units, r.kind, DISPATCH_PLACES[r.station as usize], now, w, rng);
-        }
-    }
-
-    pub fn report_dispatch(&mut self, units: u32, kind: u32, at: [f32; 3], now: u32, w: &mut impl World, rng: &mut AudioRand) {
+    pub fn report_dispatch(&mut self, units: u32, kind: u32, at: [f32; 3], now: u32, w: &mut impl ScannerWorld, rng: &mut AudioRand) {
         if self.next == self.playing {
             self.next = (self.next + 1) & 31;
         }
@@ -939,36 +810,24 @@ impl Scanner {
             },
         };
         let s = &mut self.slots[n];
-        (s.kind, s.sub, s.time, s.priority, s.flag, s.area) = (4, kind, now, 4, true, place.area);
+        (s.kind, s.sub, s.time, s.priority, s.flag, s.area) = (4, kind, now, 4, ByteFlag::ON, place.area);
         let gap = rng.int_in_range(100, 2000) as u32;
-        self.slots[n].phrases = vec![Phrase { sound: line, gap: 0, bank: 0 }, Phrase { sound: place.area, gap, bank: 3 }];
+        self.slots[n].set_phrases(&[Phrase { sound: line, gap: 0, bank: 0 }, Phrase { sound: place.area, gap, bank: 3 }]);
         self.queued(n);
     }
 
-    pub fn report_crime_at(&mut self, at: [f32; 3], crime: &ScannerCrime, now: u32, w: &mut impl World, rng: &mut AudioRand) {
-        if !self.on {
-            return;
-        }
-        let r = Report { place: w.place(at), priority: 4, flag: true, ..Default::default() };
-        self.queue_crime(&r, crime, now, true, rng);
-    }
-
-    pub fn vigilante(&mut self, at: [f32; 3], crime: &ScannerCrime, now: u32, w: &mut impl World, rng: &mut AudioRand) {
-        self.report_crime_at(at, crime, now, w, rng);
-    }
-
     pub fn scripted(&mut self, name: &str, flags: u32, report: &crate::audioconfig::ScannerScriptedReport, player: [f32; 3], now: u32,
-                    w: &mut impl World, rng: &mut AudioRand) {
+                    w: &mut impl ScannerWorld, rng: &mut AudioRand) {
         if !self.on {
             return;
         }
         let n = self.take_next();
         self.start_slot(n);
         let s = &mut self.slots[n];
-        (s.kind, s.sub, s.time, s.priority, s.flag) = (7, name_hash(name), now, 4, true);
+        (s.kind, s.sub, s.time, s.priority, s.flag) = (7, name_hash(name), now, 4, ByteFlag::ON);
         s.noise = if flags & 3 == 1 { name_hash("NULL_SOUND") } else { name_hash(NOISE_LOOP) };
         s.echo = if flags & 0xC == 4 { 100 } else { 0 };
-        s.phrases = report.phrases.iter().map(|p| Phrase { sound: p.sound, gap: p.gap_ms as u32, bank: p.slot as u32 }).collect();
+        s.set_phrases(&report.phrases.iter().map(|p| Phrase { sound: p.sound, gap: p.gap_ms as u32, bank: p.slot as u32 }).collect::<Vec<_>>());
         if name.eq_ignore_ascii_case(DISPATCH_BACKUP) {
             let r = Report { place: w.place(player), ..Default::default() };
             self.say_place(&r, n, true, rng);
@@ -980,7 +839,7 @@ impl Scanner {
         self.queued(n);
     }
 
-    pub fn hospital(&mut self, at: [f32; 3], group: u32, player: [f32; 3], crime: &ScannerCrime, now: u32, w: &mut impl World,
+    pub fn hospital(&mut self, at: [f32; 3], group: u32, player: [f32; 3], crime: &ScannerCrime, now: u32, w: &mut impl ScannerWorld,
                     rng: &mut AudioRand) {
         let to = offset(player, 400.0, 900.0, rng);
         let mut place = w.place(to);
@@ -997,39 +856,15 @@ impl Scanner {
         let s = &mut self.slots[n];
         (s.category, s.place, s.group, s.noise) = (name_hash("AMBIENCE_HOSPITAL_SCANNER"), Some(at), group, name_hash("POSITIONED_NOISE_LOOP"));
         (s.kind, s.sub, s.time, s.priority) = (8, 0, delay.wrapping_add(now), 4);
-        s.phrases = vec![Phrase { sound: opening, gap: 0, bank: 0 }, Phrase { sound: line, gap: 0, bank: 1 }];
+        s.set_phrases(&[Phrase { sound: opening, gap: 0, bank: 0 }, Phrase { sound: line, gap: 0, bank: 1 }]);
         let r = Report { place, ..Default::default() };
         self.say_place(&r, n, false, rng);
         self.queued(n);
     }
 
-    pub fn spotted(&mut self, at: [f32; 3], moved: bool, extra: bool, vehicle: Option<(Description, f32)>, now: u32, w: &mut impl World,
-                   rng: &mut AudioRand) {
-        if !self.on {
-            return;
-        }
-        if !moved && !rng_chance(rng, 0.001) {
-            if rng_chance(rng, 0.001f32 * 0.3) {
-                self.assistance(at, 2, now, w, rng);
-            }
-            return;
-        }
-        let place = w.place(at);
-        let long = self.last_area != place.area && rng_chance(rng, 1.0);
-        let s = Suspect {
-            report: Report { place, long, ..Default::default() },
-            vehicle: vehicle.map(|v| v.0),
-            priority: if moved { 3 } else { 1 },
-            heading: self.heading,
-            speed: vehicle.map_or(0.0, |v| v.1),
-            extra,
-        };
-        self.suspect(&s, now, rng);
-    }
-
     pub fn suspect(&mut self, r: &Suspect, now: u32, rng: &mut AudioRand) {
         let n = self.take_next();
-        if self.slots[n].queued && self.slots[n].priority > 1 {
+        if self.slots[n].queued.on() && self.slots[n].priority > 1 {
             return;
         }
         self.start_slot(n);
@@ -1050,15 +885,15 @@ impl Scanner {
             sub = 3;
         }
         self.slots[n].sub = sub;
-        self.slots[n].phrases = p;
+        self.slots[n].set_phrases(&p);
         let d = r.vehicle.unwrap_or_default();
-        let known = |k: usize| d.vehicle != 0 && self.described.get(&d.vehicle).is_some_and(|s| s[k]);
+        let known = |k: usize| d.audio != 0 && self.described.get(&d.audio).is_some_and(|s| s[k]);
         let place_only = !r.extra && (!d.marked || !rng_chance(rng, 0.85) || known(0));
         if place_only {
             self.say_place(&r.report, n, true, rng);
         } else {
             let null = name_hash("NULL_SOUND");
-            let mut p = std::mem::take(&mut self.slots[n].phrases);
+            let mut p = self.slots[n].phrase_list().to_vec();
             let mut said = [false; 4];
             if r.vehicle.is_none() {
                 let gap = rng.int_in_range(100, 2000) as u32;
@@ -1076,7 +911,7 @@ impl Scanner {
                     p.push(Phrase { sound: d.colour, gap: 0, bank: 1 });
                     said[2] = true;
                 }
-                if d.manufacturer == 0 || d.manufacturer == null || (d.vehicle != 0 && d.category != 0 && !known(3) && rng_chance(rng, 0.8)) {
+                if d.manufacturer == 0 || d.manufacturer == null || (d.audio != 0 && d.category != 0 && !known(3) && rng_chance(rng, 0.8)) {
                     let gap = rng.int_in_range(400, 2000) as u32;
                     p.push(Phrase { sound: d.category, gap, bank: 2 });
                     no_prefix = false;
@@ -1086,7 +921,7 @@ impl Scanner {
                     said[1] = true;
                 }
                 if no_prefix {
-                    let model = d.category == null || rng_chance(rng, 0.5) || (d.model != null && d.vehicle != 0 && known(3));
+                    let model = d.category == null || rng_chance(rng, 0.5) || (d.model != null && d.audio != 0 && known(3));
                     let gap = rng.int_in_range(100, 2000) as u32;
                     if model {
                         p.push(Phrase { sound: d.model, gap, bank: 3 });
@@ -1102,24 +937,14 @@ impl Scanner {
                     }
                 }
                 self.slots[n].on_foot = false;
-                self.slots[n].described = d.vehicle;
+                self.slots[n].described = d.audio;
             }
-            self.slots[n].phrases = p;
+            self.slots[n].set_phrases(&p);
             self.slots[n].said = said;
             self.slots[n].sub = 1;
         }
         self.queued(n);
     }
-}
-
-pub fn may_play(s: &Slot, f: &Frame) -> bool {
-    if s.kind == 8 && ((s.sub == 1) != f.in_train || f.now > s.time.wrapping_add(4000)) {
-        return false;
-    }
-    if s.priority == 4 {
-        return true;
-    }
-    !s.vehicle && ((f.level != 0 && f.outside_ms < 1) || s.priority == 0 || s.kind == 5)
 }
 
 pub fn rng_chance(rng: &mut AudioRand, p: f32) -> bool {
@@ -1129,5 +954,488 @@ pub fn rng_chance(rng: &mut AudioRand, p: f32) -> bool {
     let x = (rng.value as u64).wrapping_mul(0x5CDC_FAA7).wrapping_add(rng.carry as u64);
     (rng.value, rng.carry) = (x as u32, (x >> 32) as u32);
     ((rng.value & 0x7F_FFFF) as f32) * (1.0 / 8_388_608.0) < p
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VehicleFacts {
+    pub id: u32,
+    pub model: i32,
+    pub colour: [u32; 2],
+    pub manufacturer: u32,
+    pub model_word: u32,
+    pub category: u32,
+    pub beaten_up: bool,
+    pub taxi: bool,
+    pub emergency: bool,
+    pub marked: bool,
+    pub kind: i32,
+    pub radio_on: bool,
+    pub police: bool,
+    pub velocity: [f32; 3],
+    pub forward: [f32; 3],
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Surround {
+    pub now: u32,
+    pub player: Option<[f32; 3]>,
+    pub vehicle: Option<VehicleFacts>,
+    pub level: i32,
+    pub multiplier: f32,
+    pub fake_level: i32,
+    pub out_of_sight_ms: i32,
+    pub on_train: bool,
+    pub paused: bool,
+    pub held: bool,
+    pub fade: f32,
+    pub repeats: bool,
+    pub radio_levels: [f32; 3],
+    pub frame_secs: f32,
+    pub street_ok: bool,
+    pub ambulance_model: i32,
+    pub firetruck_model: i32,
+}
+
+impl Surround {
+    pub fn wagon(&self) -> Wagon {
+        match self.vehicle {
+            Some(v) if v.model == self.ambulance_model => Wagon::Ambulance,
+            Some(v) if v.model == self.firetruck_model => Wagon::FireTruck,
+            _ => Wagon::Other,
+        }
+    }
+}
+
+pub trait Sounds {
+    fn make(&mut self, name: u32, start_ms: u32) -> Option<SoundHandle>;
+    fn alive(&self, sound: SoundHandle) -> bool;
+    fn stop(&mut self, sound: SoundHandle);
+    fn play(&mut self, sound: SoundHandle);
+    fn set_volume(&mut self, sound: SoundHandle, db: f32);
+    fn place(&mut self, sound: SoundHandle, at: Option<[f32; 3]>);
+    fn load_state(&mut self, sound: Option<SoundHandle>) -> i32;
+    fn position(&mut self, sound: SoundHandle) -> u32;
+    fn length(&self, sound: SoundHandle) -> i32;
+}
+
+pub struct Placer<'a> {
+    pub rng: &'a mut AudioRand,
+    pub street_ok: bool,
+}
+
+macro_rules! place_tunables {
+    () => {
+        fn null_sound(&self) -> u32 {
+            name_hash("NULL_SOUND")
+        }
+        fn in_gap_ms(&self) -> u32 {
+            IN_GAP_MS
+        }
+        fn err_gap_ms(&self) -> u32 {
+            ERR_GAP_MS
+        }
+        fn on_gap_ms(&self) -> u32 {
+            STREET_GAP_MS
+        }
+        fn in_chance(&self) -> f32 {
+            STUMBLE_CHANCE
+        }
+        fn skip_area_chance(&self) -> f32 {
+            SAME_AREA_SKIP
+        }
+    };
+}
+
+impl PlaceWords for Placer<'_> {
+    fn hash_name(&mut self, _sc: &mut PoliceScanner, name: Name) -> u32 {
+        name_hash(name.text())
+    }
+    fn uniform(&mut self, _sc: &mut PoliceScanner, lo: u32, hi: u32) -> u32 {
+        self.rng.int_in_range(lo as i32, hi as i32) as u32
+    }
+    fn chance(&mut self, _sc: &mut PoliceScanner, p: f32) -> bool {
+        rng_chance(self.rng, p)
+    }
+    fn street_known(&mut self, _sc: &mut PoliceScanner, _street: u32) -> bool {
+        self.street_ok
+    }
+    place_tunables!();
+}
+
+pub struct Game<'a, V: Sounds, W: ScannerWorld> {
+    pub f: &'a Surround,
+    pub rng: &'a mut AudioRand,
+    pub sounds: &'a mut V,
+    pub world: &'a mut W,
+    pub report: Place,
+}
+
+impl<'a, V: Sounds, W: ScannerWorld> Game<'a, V, W> {
+    pub fn new(f: &'a Surround, rng: &'a mut AudioRand, sounds: &'a mut V, world: &'a mut W) -> Self {
+        Game { f, rng, sounds, world, report: Place::default() }
+    }
+
+    fn facts(&self, id: u32) -> Option<VehicleFacts> {
+        self.f.vehicle.filter(|v| v.id == id)
+    }
+
+    pub fn let_go_ended(&self, sc: &mut PoliceScanner) {
+        sc.let_go_ended(|h| self.sounds.alive(h));
+    }
+}
+
+fn said_index(part: Said) -> usize {
+    match part {
+        Said::Model => 0,
+        Said::Manufacturer => 1,
+        Said::Colour => 2,
+        Said::Category => 3,
+    }
+}
+
+impl<V: Sounds, W: ScannerWorld> PlaceWords for Game<'_, V, W> {
+    fn hash_name(&mut self, _sc: &mut PoliceScanner, name: Name) -> u32 {
+        name_hash(name.text())
+    }
+    fn uniform(&mut self, _sc: &mut PoliceScanner, lo: u32, hi: u32) -> u32 {
+        self.rng.int_in_range(lo as i32, hi as i32) as u32
+    }
+    fn chance(&mut self, _sc: &mut PoliceScanner, p: f32) -> bool {
+        rng_chance(self.rng, p)
+    }
+    fn street_known(&mut self, _sc: &mut PoliceScanner, _street: u32) -> bool {
+        self.f.street_ok
+    }
+    place_tunables!();
+}
+
+impl<V: Sounds, W: ScannerWorld> ScannerGame for Game<'_, V, W> {
+    type Ped = ();
+    type Vehicle = VehicleFacts;
+    type Position = [f32; 3];
+    type Bank = u32;
+    type CrimeName = u32;
+
+    fn now(&self) -> u32 {
+        self.f.now
+    }
+    fn zero(&self) -> f32 {
+        0.0
+    }
+    fn fade_out_db(&self) -> f32 {
+        FADE_OUT_DB
+    }
+    fn fade_limit(&self) -> f32 {
+        FADE_LIMIT
+    }
+    fn heading_interval(&self) -> u32 {
+        HEADING_MS
+    }
+    fn moving_distance(&self) -> f32 {
+        STANDING_M
+    }
+    fn overlap_ms(&self) -> u32 {
+        NEAR_END_MS
+    }
+    fn report_pause_ms(&self) -> u32 {
+        AFTER_REPORT_MS
+    }
+    fn chatter_db(&self) -> f32 {
+        CHATTER_DB
+    }
+    fn area_again_chance(&self) -> f32 {
+        AREA_AGAIN_CHANCE
+    }
+    fn radio_levels(&self) -> [f32; 3] {
+        self.f.radio_levels
+    }
+    fn heading_constants(&self) -> [f32; 4] {
+        HEADING_CONSTANTS
+    }
+    fn speed_scale(&self) -> [f32; 2] {
+        [TO_MPH, MPH_CAP]
+    }
+    fn lead_factors(&self) -> [f32; 2] {
+        [self.f.frame_secs, -1000.0]
+    }
+    fn allowed_after(&self, kind: u32) -> u32 {
+        NEXT_KINDS.get(kind as usize).copied().unwrap_or(u32::MAX)
+    }
+    fn has_player(&self) -> bool {
+        self.f.player.is_some()
+    }
+    fn paused(&self) -> bool {
+        self.f.paused
+    }
+    fn bank_of(&self, slot: u32) -> u32 {
+        slot
+    }
+
+    fn player_wanted_level(&mut self, _sc: &mut PoliceScanner) -> i32 {
+        self.f.level
+    }
+    fn player_wanted_multiplier(&mut self, _sc: &mut PoliceScanner) -> f32 {
+        self.f.multiplier
+    }
+    fn player_ped(&mut self, _sc: &mut PoliceScanner) {}
+    fn player_position(&mut self, _sc: &mut PoliceScanner) -> [f32; 4] {
+        let [x, y, z] = self.f.player.unwrap_or_default();
+        [x, y, z, 0.0]
+    }
+    fn player_vehicle(&mut self, _sc: &mut PoliceScanner) -> Option<VehicleFacts> {
+        self.f.vehicle
+    }
+    fn player_on_train(&mut self, _sc: &mut PoliceScanner) -> bool {
+        self.f.on_train
+    }
+    fn out_of_sight(&mut self, _sc: &mut PoliceScanner) -> i32 {
+        self.f.out_of_sight_ms
+    }
+
+    fn ped_position(&mut self, _sc: &mut PoliceScanner, _ped: ()) -> [f32; 3] {
+        self.f.player.unwrap_or_default()
+    }
+    fn ped_in_vehicle(&self, _ped: ()) -> bool {
+        self.f.vehicle.is_some()
+    }
+    fn ped_vehicle(&self, _ped: ()) -> Option<VehicleFacts> {
+        self.f.vehicle
+    }
+    fn ped_task_vehicle(&mut self, _sc: &mut PoliceScanner, _ped: ()) -> Option<VehicleFacts> {
+        None
+    }
+    fn vehicle_audio(&self, v: VehicleFacts) -> u32 {
+        v.id
+    }
+    fn vehicle_model(&self, v: VehicleFacts) -> i32 {
+        v.model
+    }
+    fn ambulance_model(&self) -> i32 {
+        self.f.ambulance_model
+    }
+    fn firetruck_model(&self) -> i32 {
+        self.f.firetruck_model
+    }
+    fn vehicle_radio_on(&self, v: VehicleFacts) -> bool {
+        v.radio_on
+    }
+    fn vehicle_marked(&self, v: VehicleFacts) -> bool {
+        v.marked
+    }
+    fn vehicle_emergency(&self, v: VehicleFacts) -> bool {
+        v.emergency
+    }
+    fn vehicle_type(&self, v: VehicleFacts) -> i32 {
+        v.kind
+    }
+    fn colour_words(&self, v: VehicleFacts) -> [u32; 2] {
+        v.colour
+    }
+    fn manufacturer_word(&self, v: VehicleFacts, _boat: bool) -> u32 {
+        v.manufacturer
+    }
+    fn model_word(&self, v: VehicleFacts, _boat: bool) -> u32 {
+        v.model_word
+    }
+    fn category_word(&self, v: VehicleFacts, _boat: bool) -> u32 {
+        v.category
+    }
+    fn vehicle_velocity(&mut self, _sc: &mut PoliceScanner, v: VehicleFacts) -> [f32; 3] {
+        v.velocity
+    }
+    fn vehicle_forward(&self, v: VehicleFacts) -> [f32; 3] {
+        v.forward
+    }
+    fn is_police_audio(&mut self, _sc: &mut PoliceScanner, audio: u32) -> bool {
+        self.facts(audio).is_some_and(|v| v.police)
+    }
+    fn is_beaten_up(&mut self, _sc: &mut PoliceScanner, audio: u32) -> bool {
+        self.facts(audio).is_some_and(|v| v.beaten_up)
+    }
+    fn is_taxi(&mut self, _sc: &mut PoliceScanner, model: i32) -> bool {
+        self.f.vehicle.is_some_and(|v| v.model == model && v.taxi)
+    }
+    fn note_said(&mut self, sc: &mut PoliceScanner, audio: u32, part: Said) {
+        sc.described.entry(audio).or_default()[said_index(part)] = true;
+    }
+
+    fn start_slot(&mut self, sc: &mut PoliceScanner, s: SlotNo) {
+        sc.start_slot((s & 31) as usize);
+    }
+    fn clear_slot(&mut self, sc: &mut PoliceScanner, s: SlotNo) {
+        exe::clear_slot(sc, self, s);
+    }
+    fn make_slot(&mut self, sc: &mut PoliceScanner, s: SlotNo) -> bool {
+        exe::make_slot(sc, self, s)
+    }
+    fn slot_load_state(&mut self, sc: &mut PoliceScanner, s: SlotNo) -> u32 {
+        exe::slot_load_state(sc, self, s)
+    }
+    fn note_said_of_playing(&mut self, sc: &mut PoliceScanner) {
+        exe::note_said(sc, self);
+    }
+    fn pick_report(&mut self, sc: &mut PoliceScanner) -> bool {
+        let may: Vec<bool> = (0..SLOTS as u32).map(|n| exe::may_play(sc, self, n)).collect();
+        let (now, repeats) = (self.f.now, self.f.repeats);
+        let picked = sc.pick_with(now, repeats, |n, _| may[n]);
+        sc.playing = picked;
+        picked != NONE
+    }
+    fn queued_dispatch(&mut self, sc: &mut PoliceScanner) {
+        exe::queued_dispatch(sc, self);
+    }
+    fn chatter(&mut self, sc: &mut PoliceScanner, now: u32) {
+        let f = *self.f;
+        let at = f.player.unwrap_or_default();
+        sc.chatter(now, f.level as u32, at, f.wagon(), self.world, self.rng);
+    }
+    fn screen_fade(&mut self, _sc: &mut PoliceScanner) -> f32 {
+        self.f.fade
+    }
+    fn held(&mut self, _sc: &mut PoliceScanner) -> bool {
+        self.f.held
+    }
+    fn heading_angle(&mut self, _sc: &mut PoliceScanner, c: f32) -> f32 {
+        heading_angle(c)
+    }
+
+    fn stop_sound(&mut self, sc: &mut PoliceScanner, sound: SoundHandle) {
+        self.sounds.stop(sound);
+        self.let_go_ended(sc);
+    }
+    fn play(&mut self, sc: &mut PoliceScanner, sound: SoundHandle) {
+        self.sounds.play(sound);
+        self.let_go_ended(sc);
+    }
+    fn play_when_loaded(&mut self, sc: &mut PoliceScanner, sound: SoundHandle, _bank: Option<u32>) {
+        self.sounds.play(sound);
+        self.let_go_ended(sc);
+    }
+    fn load_state(&mut self, _sc: &mut PoliceScanner, sound: Option<SoundHandle>, _bank: u32) -> i32 {
+        self.sounds.load_state(sound)
+    }
+    fn play_position(&mut self, _sc: &mut PoliceScanner, sound: SoundHandle) -> u32 {
+        self.sounds.position(sound)
+    }
+    fn sound_length(&self, sound: SoundHandle) -> i32 {
+        self.sounds.length(sound)
+    }
+    fn set_volume(&mut self, _sc: &mut PoliceScanner, sound: SoundHandle, db: f32) {
+        self.sounds.set_volume(sound, db);
+    }
+    fn set_group(&mut self, _sc: &mut PoliceScanner, _sound: SoundHandle, _group: u32) {}
+    fn unplace(&mut self, _sc: &mut PoliceScanner, sound: SoundHandle) {
+        self.sounds.place(sound, None);
+    }
+    fn place_at_slot(&mut self, sc: &mut PoliceScanner, sound: SoundHandle, s: SlotNo) {
+        let at = sc.slot(s).place;
+        self.sounds.place(sound, at);
+    }
+    fn make_phrase_sound(&mut self, sc: &mut PoliceScanner, _echo: bool, name: u32, out: SoundOut, req: &PhraseRequest) {
+        let h = self.sounds.make(name, req.start);
+        match out {
+            SoundOut::Phrase(s, k) => sc.slot_mut(s).made_mut(k).sound = h,
+            SoundOut::Echo(s, k) => sc.slot_mut(s).made_mut(k).echo = h,
+            SoundOut::Noise => sc.noise_sound = h,
+        }
+    }
+    fn make_noise_sound(&mut self, sc: &mut PoliceScanner, name: u32, s: SlotNo, req: &NoiseRequest) {
+        let h = self.sounds.make(name, 0);
+        if let Some(h) = h {
+            let at = req.placed.and(sc.slot(s).place);
+            self.sounds.place(h, at);
+        }
+        sc.noise_sound = h;
+    }
+
+    fn crime_sound(&mut self, _sc: &mut PoliceScanner, name: u32) -> u32 {
+        if self.world.crime(name).is_some() { name } else { 0 }
+    }
+    fn crime_sound_of(&mut self, sc: &mut PoliceScanner, hash: u32) -> u32 {
+        self.crime_sound(sc, hash)
+    }
+    fn describe_place(&mut self, _sc: &mut PoliceScanner, at: [f32; 3]) {
+        self.report = self.world.place(at);
+    }
+    fn report_place(&self) -> Place {
+        self.report
+    }
+    fn queue_crime(&mut self, sc: &mut PoliceScanner, at: [f32; 3], r: &Report) {
+        let Some(crime) = self.world.crime(r.sound) else { return };
+        let r = Report { place: self.world.place(at), ..*r };
+        let (now, street_ok) = (self.f.now, self.f.street_ok);
+        sc.queue_crime(&r, &crime, now, street_ok, self.rng);
+    }
+    fn describe_vehicle_into(&mut self, sc: &mut PoliceScanner, v: VehicleFacts) -> Description<u32> {
+        exe::describe_vehicle(sc, self, v)
+    }
+    fn queue_suspect(&mut self, sc: &mut PoliceScanner, r: &SuspectReport<u32>) {
+        let s = Suspect {
+            report: Report { place: r.place, long: r.say_area, ..Report::default() },
+            vehicle: r.vehicle,
+            priority: r.priority,
+            heading: r.heading,
+            speed: r.speed,
+            extra: r.last != 0,
+        };
+        sc.suspect(&s, self.f.now, self.rng);
+    }
+    fn report_search(&mut self, sc: &mut PoliceScanner, at: [f32; 3]) {
+        sc.assistance(at, 2, self.f.now, self.world, self.rng);
+    }
+    fn report_dispatch(&mut self, sc: &mut PoliceScanner, units: u32, kind: u32, from: [f32; 3]) {
+        sc.dispatch(units, kind, from, self.f.now, self.world, self.rng);
+    }
+
+    fn crime_multiplier_floor(&self) -> f32 {
+        CRIME_MULTIPLIER_FLOOR
+    }
+    fn fake_level(&self) -> i32 {
+        self.f.fake_level
+    }
+    fn police_crime_hash(&self, crime: u32) -> u32 {
+        CRIME_SOUNDS.get(crime as usize).map_or(0, |c| name_hash(c))
+    }
+    fn spot_chance(&self) -> f32 {
+        SPOT_CHANCE
+    }
+    fn search_share(&self) -> f32 {
+        SEARCH_SHARE
+    }
+    fn station_position(&mut self, _sc: &mut PoliceScanner, station: u32) -> [f32; 3] {
+        let (_, i) = place_entry(1, station).unwrap_or((PlaceTable::Dispatch, 0));
+        DISPATCH_PLACES[i as usize & 15]
+    }
+}
+
+pub const FADE_OUT_DB: f32 = -100.0;
+pub const FADE_LIMIT: f32 = 0.1;
+pub const AREA_AGAIN_CHANCE: f32 = 1.0;
+pub const HEADING_CONSTANTS: [f32; 4] = [57.295_776, 360.0, 45.0, 0.011_111_111];
+pub const TO_MPH: f32 = 2.236_936_3;
+pub const MPH_CAP: f32 = 91.0;
+pub const CRIME_MULTIPLIER_FLOOR: f32 = 0.9;
+pub const SPOT_CHANCE: f32 = 0.001;
+pub const SEARCH_SHARE: f32 = 0.3;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaceTable {
+    Dispatch,
+    Second,
+    Third,
+}
+
+pub fn place_entry(kind: u32, i: u32) -> Option<(PlaceTable, u32)> {
+    let table = match kind {
+        1 => PlaceTable::Dispatch,
+        2 => PlaceTable::Second,
+        3 => PlaceTable::Third,
+        _ => return None,
+    };
+    Some((table, i))
+}
+
+pub fn to_upper(c: u32) -> u32 {
+    if c.wrapping_sub(u32::from(b'a')) <= 25 { c - 32 } else { c }
 }
 

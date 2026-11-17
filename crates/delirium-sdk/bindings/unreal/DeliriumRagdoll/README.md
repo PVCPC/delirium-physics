@@ -63,7 +63,7 @@ shows its feet off the ground.
 `Strength` (0: the project settings') or `SetStrength(K)` makes one character's muscles stronger, 1.3-2 for a heavy
 custom body. A custom body that won't stand: "Tuning a custom body" in `docs/modding.md`.
 
-Settings `bStepLimit` (the game's balance runs out of steps; off: the Playroom's) and `bFireReaction`. A physical
+Settings `bStepLimit` (the game's balance runs out of steps; off: the Playroom's) `bFireReaction`, `bCarryPushes` (pushes keep their place when you move a ragdoll far yourself) and `bGetUpNeedsFloor` (no get-up over a hole). A physical
 material's friction and restitution reach NM (ice slides); a turning mover carries what it touches round. A panic in
 the SDK writes `Saved/delirium_physics-crash.txt`.
 

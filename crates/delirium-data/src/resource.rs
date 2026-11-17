@@ -1,9 +1,8 @@
+use crate::lzx::{LzxStream, STREAM_BLOCK_HEAD};
 use crate::xex::lzx;
 
 const MAGIC: u32 = 0x0543_5352;
 const XCOMPRESS: u32 = 0x0FF5_12EF;
-const FRAME: usize = 0x8000;
-const WINDOW: usize = 0x20000;
 
 pub struct Resource {
     pub kind: u32,
@@ -35,26 +34,26 @@ pub fn parse(raw: &[u8]) -> Result<Resource, String> {
     if be32(raw, 12)? != XCOMPRESS {
         return Err(format!("Unknown resource compression {:08X}", be32(raw, 12)?));
     }
-    let end = 20 + be32(raw, 16)? as usize;
-    let body = raw.get(20..end).ok_or("Truncated resource stream")?;
-    let (mut stream, mut out_len, mut p) = (Vec::with_capacity(body.len()), 0, 0);
-    while p < body.len() {
-        let (frame_out, frame_in);
-        if body[p] == 0xFF {
-            let h = body.get(p + 1..p + 5).ok_or("Truncated frame header")?;
-            (frame_out, frame_in) = (u16::from_be_bytes([h[0], h[1]]) as usize, u16::from_be_bytes([h[2], h[3]]) as usize);
-            p += 5;
-        } else {
-            (frame_out, frame_in) = (FRAME, u16::from_be_bytes([body[p], *body.get(p + 1).ok_or("Truncated frame")?]) as usize);
-            p += 2;
-        }
-        if frame_in == 0 {
-            break;
-        }
-        stream.extend_from_slice(body.get(p..p + frame_in).ok_or("Truncated frame data")?);
-        out_len += frame_out;
-        p += frame_in;
-    }
-    let data = lzx::decompress(&stream, WINDOW, out_len, false)?;
+    let data = unpack(&raw[12..], system_size(flags) + graphics_size(flags))?;
     Ok(Resource { kind, flags, data })
+}
+
+fn unpack(input: &[u8], size: usize) -> Result<Vec<u8>, String> {
+    if input.len() < STREAM_BLOCK_HEAD {
+        return Err("Truncated resource stream".into());
+    }
+    let mut ctx = LzxStream::make_context();
+    let mut stream = LzxStream::default();
+    stream.reset(&mut ctx, 0, size);
+    stream.input_left = input.len();
+    stream.output_room = size;
+    let mut out = vec![0u8; size];
+    while stream.output_made < size {
+        let (made, used) = (stream.output_made, stream.input_at);
+        stream.step(&mut ctx, input, &mut out, &mut |_| false).map_err(|e| format!("Bad resource stream: {e:?}"))?;
+        if stream.output_made == made && stream.input_at == used {
+            return Err("Truncated resource stream".into());
+        }
+    }
+    Ok(out)
 }

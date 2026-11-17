@@ -6,11 +6,11 @@ use bevy::prelude::*;
 pub fn MEAT_DAMAGE() -> f32 { delirium_data::kv!(136) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MEAT_RED() -> &'static LinearRgba { static V: std::sync::OnceLock<LinearRgba> = std::sync::OnceLock::new(); let f = || LinearRgba::rgb(delirium_data::kv!(20), delirium_data::kv!(68), 0.0); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn MEAT_RED() -> &'static LinearRgba { static V: std::sync::OnceLock<LinearRgba> = std::sync::OnceLock::new(); let f = || -> LinearRgba { LinearRgba::rgb(delirium_data::kv!(20), delirium_data::kv!(68), 0.0) }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHOT_EXIT() -> &'static Exit { static V: std::sync::OnceLock<Exit> = std::sync::OnceLock::new(); let f = || Exit { min: 1.0, max: delirium_data::kv!(31), speed: Some(delirium_data::kv!(60)), fail: false }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SHOT_EXIT() -> &'static Exit { static V: std::sync::OnceLock<Exit> = std::sync::OnceLock::new(); let f = || -> Exit { Exit { min: 1.0, max: delirium_data::kv!(31), speed: Some(delirium_data::kv!(60)), fail: false } }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 pub const EXIT_SLOW: f32 = 2.0;
 
 pub fn exit(b: &str) -> Option<Exit> {
@@ -64,7 +64,7 @@ pub fn PELLET_REACH() -> f32 { delirium_data::kv!(116) }
 pub fn BURN_DAMAGE() -> f32 { delirium_data::kv!(38) }
 
 pub fn gun_spread(kind: &str, held: f32, len: f32, acc: f32, mut rnd: impl FnMut() -> f32) -> (f32, f32) {
-    let full = match kind { "pistol" | "deagle" => delirium_data::kv!(928), "smg" => delirium_data::kv!(12), "ak47" => delirium_data::kv!(5), _ => f32::INFINITY };
+    let full = match kind { "pistol" | "deagle" => delirium_data::kv!(929), "smg" => delirium_data::kv!(12), "ak47" => delirium_data::kv!(5), _ => f32::INFINITY };
     let ped = 2.0 * (held / full).min(1.0);
     let p = ped * (delirium_data::kv!(78) + rnd());
     let w = rnd() * acc * if p < 0.5 { (2.0 * p).max(delirium_data::kv!(60)) } else { 1.0 };

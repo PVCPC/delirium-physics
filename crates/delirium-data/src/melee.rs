@@ -67,26 +67,34 @@ fn first_since(v: &IoValue, ms: u32, hit: impl Fn(u8) -> bool) -> bool {
 }
 
 pub fn pressed(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
+    pressed_at(v, ms, lo, hi).is_some()
+}
+
+pub fn pressed_at(v: &IoValue, ms: u32, lo: u8, hi: u8) -> Option<u32> {
     edge_since(v, ms, |before, after| !within(v, before, lo, hi) && within(v, after, lo, hi))
 }
 
 pub fn released(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
+    released_at(v, ms, lo, hi).is_some()
+}
+
+pub fn released_at(v: &IoValue, ms: u32, lo: u8, hi: u8) -> Option<u32> {
     edge_since(v, ms, |before, after| within(v, before, lo, hi) && !within(v, after, lo, hi))
 }
 
-fn edge_since(v: &IoValue, ms: u32, edge: impl Fn(u8, u8) -> bool) -> bool {
+fn edge_since(v: &IoValue, ms: u32, edge: impl Fn(u8, u8) -> bool) -> Option<u32> {
     let h = hist(v);
     let t = since(v, h, ms);
     for i in 1..crate::kv!(188 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
-            return false;
+            return None;
         }
         if edge(e.0, h[back(v.history_at, i - 1)].0) {
-            return true;
+            return Some(e.1);
         }
     }
-    false
+    None
 }
 
 fn byte(x: f32) -> u8 {
@@ -116,7 +124,7 @@ impl Impulse {
         let [r0, r1] = self.range;
         let (lo, hi) = match self.impulse {
             7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(746)), byte((r1 + 1.0) * 0.5 * crate::kv!(746))),
-            9 => (byte(r0.abs() * crate::kv!(924)), byte(r1.abs() * crate::kv!(924))),
+            9 => (byte(r0.abs() * crate::kv!(925)), byte(r1.abs() * crate::kv!(925))),
             3 if setting == 0 => (byte(r0 * crate::kv!(746)), byte(r1 * crate::kv!(746))),
             _ => (crate::kv!(257 int), crate::kv!(395 int)),
         };
@@ -314,10 +322,10 @@ pub fn special_test(hash: u32, me: &Special, from: [f32; 3], target: Option<(u32
         11 => on(crate::kv!(819 int)),
         12 => bit(me, crate::kv!(817 int)),
         13 => on(crate::kv!(817 int)),
-        14 => bit(me, crate::kv!(925 int)),
-        15 => !bit(me, crate::kv!(925 int)),
-        16 => on(crate::kv!(925 int)),
-        17 => off(crate::kv!(925 int)),
+        14 => bit(me, crate::kv!(926 int)),
+        15 => !bit(me, crate::kv!(926 int)),
+        16 => on(crate::kv!(926 int)),
+        17 => off(crate::kv!(926 int)),
         18 => bit(me, crate::kv!(816 int)),
         19 => !bit(me, crate::kv!(816 int)),
         20 => on(crate::kv!(816 int)),
@@ -366,11 +374,11 @@ pub fn special_result(hash: u32) -> SpecialEffect {
     let Some(i) = SPECIAL_RESULTS.iter().position(|n| crate::map::hash_bytes(n.as_bytes(), 0) == hash) else { return e };
     #[allow(non_snake_case)]
     #[inline]
-    fn BITS() -> &'static [u32; 5] { static V: std::sync::OnceLock<[u32; 5]> = std::sync::OnceLock::new(); let f = || [crate::kv!(819 int), crate::kv!(817 int), crate::kv!(925 int), crate::kv!(816 int), crate::kv!(823 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn BITS() -> &'static [u32; 5] { static V: std::sync::OnceLock<[u32; 5]> = std::sync::OnceLock::new(); let f = || -> [u32; 5] { [crate::kv!(819 int), crate::kv!(817 int), crate::kv!(926 int), crate::kv!(816 int), crate::kv!(823 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     match i {
-        0 => (e.me, e.opponent) = ((crate::kv!(925 int), 0), (0, crate::kv!(817 int))),
-        1 => e.me = (crate::kv!(925 int), crate::kv!(926 int)),
-        2 => e.opponent = (crate::kv!(925 int), crate::kv!(926 int)),
+        0 => (e.me, e.opponent) = ((crate::kv!(926 int), 0), (0, crate::kv!(817 int))),
+        1 => e.me = (crate::kv!(926 int), crate::kv!(927 int)),
+        2 => e.opponent = (crate::kv!(926 int), crate::kv!(927 int)),
         3..=22 => {
             let (bit, k) = ((*BITS())[(i - crate::kv!(0 int)) / crate::kv!(1 int)], (i - crate::kv!(0 int)) % crate::kv!(1 int));
             let (set, clear) = if k % 2 == 0 { (bit, 0) } else { (0, bit) };
@@ -498,7 +506,7 @@ pub fn opponent_holds(a: &Action, t: &ActionTable, ask: &Ask) -> bool {
 
 pub fn closest_box_point(rows: [[f32; 3]; 4], min: [f32; 3], max: [f32; 3], p: [f32; 3]) -> ([f32; 3], [f32; 3]) {
     let d = [p[0] - rows[crate::kv!(0 int)][0], p[1] - rows[crate::kv!(0 int)][1], p[2] - rows[crate::kv!(0 int)][2]];
-    let dot3 = |a: [f32; 3], b: [f32; 3]| (((0.0 + a[0] as f64 * b[0] as f64) + a[1] as f64 * b[1] as f64) + a[2] as f64 * b[2] as f64) as f32;
+    let dot3 = |a: [f32; 3], b: [f32; 3]| crate::estimate::vmsum3([a[0] as f64 * b[0] as f64, a[1] as f64 * b[1] as f64, a[2] as f64 * b[2] as f64]);
     let local = [dot3(rows[0], d), dot3(rows[1], d), dot3(rows[2], d)];
     let (at, way) = box_point(min, max, local);
     let col = |c: usize| [rows[0][c], rows[1][c], rows[2][c]];
@@ -521,7 +529,7 @@ fn box_point(min: [f32; 3], max: [f32; 3], p: [f32; 3]) -> ([f32; 3], [f32; 3]) 
                 way[i] += -1.0;
             }
         }
-        let n = (((0.0 + way[0] as f64 * way[0] as f64) + way[1] as f64 * way[1] as f64) + way[2] as f64 * way[2] as f64) as f32;
+        let n = crate::estimate::vmsum3([way[0] as f64 * way[0] as f64, way[1] as f64 * way[1] as f64, way[2] as f64 * way[2] as f64]);
         let y = crate::lift::vrsq(n);
         return (out, way.map(|w| w * y));
     }
@@ -586,6 +594,43 @@ pub fn action_test(a: &Action, t: &ActionTable, ask: &Ask) -> bool {
     let Some(b) = t.actions.iter().find(|b| b.name == a.additional_action_test) else { return false };
     action_test(b, t, &Ask { kind: None, idle: None, impulses: ask.controls.is_some(), ..*ask })
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HudTasks {
+    pub playing: bool,
+    pub given: bool,
+    pub given_res: u32,
+    pub result: Option<(bool, bool)>,
+}
+
+pub fn hud_ask<'a>(tasks: Option<HudTasks>, ask: Ask<'a>) -> Ask<'a> {
+    let t = tasks.unwrap_or_default();
+    let (blocking, just_struck) = t.result.unwrap_or_default();
+    let kind: &[u8] = if tasks.is_some() { b"Melee" } else { b"FromOnFoot" };
+    Ask {
+        kind: Some(crate::map::hash_bytes(kind, 0)),
+        idle: Some(!t.playing),
+        receiving_hit: t.given,
+        opponent_res: t.given_res,
+        blocking,
+        just_struck,
+        lock_on: ask.target.is_some(),
+        impulses: false,
+        controls: None,
+        ..ask
+    }
+}
+
+pub fn hud_action(t: &ActionTable, name: u32) -> Option<&Action> {
+    t.actions.iter().find(|a| a.name == name)
+}
+
+pub fn hud_test(t: &ActionTable, name: u32, tasks: Option<HudTasks>, ask: Ask) -> bool {
+    hud_action(t, name).is_some_and(|a| action_test(a, t, &hud_ask(tasks, ask)))
+}
+
+pub const HUD_STUN: &str = "stun_punch_A_Act";
+pub const HUD_EXECUTION: &str = "Execution_Pistol_Act";
 
 pub fn crt_qsort<T>(v: &mut [T], cmp: impl Fn(&T, &T) -> i32) {
     if v.len() < 2 {

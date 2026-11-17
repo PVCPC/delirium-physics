@@ -88,7 +88,7 @@ impl Lamps {
 
 #[allow(non_snake_case)]
 #[inline]
-fn FIRE_STEPS() -> &'static [f32; 8] { static V: std::sync::OnceLock<[f32; 8]> = std::sync::OnceLock::new(); let f = || [-crate::kv!(753), -crate::kv!(754), -crate::kv!(755), -crate::kv!(82), -crate::kv!(756), -crate::kv!(757), -crate::kv!(73), -crate::kv!(758)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn FIRE_STEPS() -> &'static [f32; 8] { static V: std::sync::OnceLock<[f32; 8]> = std::sync::OnceLock::new(); let f = || -> [f32; 8] { [-crate::kv!(753), -crate::kv!(754), -crate::kv!(755), -crate::kv!(82), -crate::kv!(756), -crate::kv!(757), -crate::kv!(73), -crate::kv!(758)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 impl Health {
     pub fn collision(&mut self, j: f32, mass: f32, mult: [f32; 4], up: f32, engine_end: bool, random: &mut impl FnMut() -> f32) -> Option<f32> {
@@ -238,9 +238,12 @@ impl Health {
         burst
     }
 
+    pub fn engine_fire(&self) -> bool {
+        self.engine < 0.0 && self.engine > -crate::kv!(244)
+    }
+
     pub fn on_fire(&self) -> bool {
-        let (e, p) = (self.engine, self.petrol);
-        !(0.0 <= e || e <= -crate::kv!(244)) || !(p <= -crate::kv!(82) || 0.0 <= p)
+        self.engine_fire() || self.petrol_fire()
     }
 
     pub fn fix(&mut self) {
@@ -249,6 +252,13 @@ impl Health {
 
     pub fn petrol_fire(&self) -> bool {
         self.petrol < 0.0 && self.petrol > -crate::kv!(82)
+    }
+}
+
+pub fn part_hit(health: &mut f32, amount: f32) {
+    *health = *health - amount;
+    if *health < 0.0 {
+        *health = 0.0;
     }
 }
 

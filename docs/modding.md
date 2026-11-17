@@ -309,6 +309,11 @@ Putting it into another game comes down to three things, and the SDK does each:
    bones never move apart, so nothing stretches, and each bone's own roll is
    kept, so elbows and knees bend right. Any bone count works: extra bones
    (twist, fingers, tails) ride along, missing parts are left out.
+   Fewer than four spine bones (Hitman's three, Mixamo's, Unreal's):
+   run `nm_rig_joints` first and pass its cleaned map to `nm_rig_create`. It
+   moves your top spine bones up so the top one drives the chest (Spine3,
+   which the neck and clavicles hang from); otherwise the bend lands in the
+   neck and the upper chest looks detached. `nm_rig_check` warns when it did.
 
 For Mono Unity games there's a ready-made BepInEx plugin doing all of this
 (aim, press F9): `crates/delirium-sdk/bindings/bepinex/` and its README.
@@ -437,6 +442,12 @@ build.
    facing works: the fitted body takes your skeleton's own facing, so create
    the agent with yaw 0. (Skipping the fit and using the base build with a
    skeleton that faces another way twists the limbs: the base body faces -Y.)
+   nm_rig_create keeps each part's offset from its bone as they are at that
+   moment, so the agent's parts must sit on the rest bones then. If the agent
+   isn't standing in the rest pose (it was stepped, or it's another pose than
+   the one you fitted from), first set every part to `nm_build_part_frame`
+   (the fitted build's pose, the bind pose you fitted it to); otherwise the arms
+   are baked off their bones and twitch when keyframed.
 5. *Hand it over.* Pause your engine's animation on it, and stop your AI or
    path agent from moving it: keep its root where it was until you hand it
    back (otherwise the AI walks the root away and the body ends up inside
@@ -453,6 +464,177 @@ Unreal plugins do both).
 **Each frame:** `nm_agent_step(agent, world, dt)` at 60 a second,
 then `nm_rig_pose(rig, agent, out)`: set each bone's local rotation, and the
 hips bone's world place.
+
+**Traps hosts have hit** (the Hitman WoA port):
+
+- *One pose a frame.* Feed `nm_rig_incoming` the frame's final pose, once. An
+  engine that updates bones several times a frame (base, then upper body or
+  aim) gives a different pose each pass; taking whichever ran last makes the
+  upper body twitch.
+- *Draw the animation while keyframed.* While the body follows your clip, draw
+  your clip; NM follows under it. Draw NM's pose (`nm_rig_pose`) only when it
+  ragdolls.
+- *Steps are 1/60 s.* A step under 1/60 s is kept for the next, so at 144 fps
+  most frames step nothing. Call `nm_world_step_agents` once a frame with the
+  frame's time and draw between the last two steps' poses (blend by what's
+  left over / (1/60)), or the ragdoll judders.
+- *Root first.* When you move the character's root onto the ragdoll (its
+  pelvis), move it before you work out and write the pose: the hips bone's
+  place is local to the root, so a pose written against last frame's root
+  draws the mesh off the body.
+- *Kills.* `nm_agent_task_shot` with health under 50 kills (no
+  `nm_agent_set_dead` needed); the bullet's push is yours to add
+  (`nm_agent_apply_push`), or use `nm_weapon_shot` for both.
+- *The fitted build, everywhere.* `nm_build_part_frame` and
+  `nm_build_part_info` on the build you made the agent from (the fitted one),
+  never the base: Homer's frames bake his arms-down pose against your bind
+  pose, so the keyframed arms hang off their bones by the difference.
+- *Per-bone host work.* Cache what you read per rig (bone names, bind pose)
+  and make bodies before they're needed: a memory check per bone name cost
+  Hitman 2.5 s a body; on-screen log lines cost 15 ms each.
+- *Fitted sizes.* Debug-draw capsules from the fitted build's
+  `nm_build_part_info`, not Homer's.
+- *Rest pose.* Rest, the joints you fit to and the part bake must all come from
+  one pose, in the same convention as your live frames. Safest: one frame of your
+  own idle, read through the same path as every live frame. A skinning bind pose
+  can be stored as inverse bind matrices (the wrong way round in a way no
+  conjugate fixes); a T-pose bind reads about 2 on `nm_agent_get_joint_angle` at
+  the shoulders (outside Homer's arms-down range), so the body starts outside its
+  limits. Right after `nm_agent_create`, put every part on `nm_build_part_frame`
+  with `nm_agent_set_part_state` (any mode), then `nm_rig_create`. Do not call
+  `nm_agent_recentre_joint` on a rest already inside the joints: it moves the
+  ragdoll limits for good and knees and elbows bend backwards.
+- *Quaternions.* Some engines store bone rotations inverted (Glacier). Check
+  with your bind pose: forward kinematics should give level, mirror-image
+  hands. If the hands come out up or forward, conjugate every rotation in and
+  out.
+- *Helper bones.* `nm_rig_part_for_name` leaves twist, roll, face, cloth,
+  holster and prop bones off the body (-1). Check your map: a helper on a part
+  corkscrews the limb.
+- *Ground from rays.* NM knows only the floor and walls you give it; it can't
+  see your game's collision. A host with no level mesh to give builds patches
+  from raycasts (a grid of downward rays round each body, rebuilt as it
+  moves). Skip the character's own colliders and ragdoll bodies, by entity
+  or by place (a hit higher than that body's centre less 3 cm): the game's
+  ragdoll can switch on with the shot, and a ray that hits it lays the floor
+  at his hips (he sinks, floats or falls through). Don't cast at static
+  geometry only: floors people stand on (porches, platforms) can be dynamic,
+  and missing them lays the ground under them (he jumps up when shot); keep the last hit when a ray misses; make walls slabs ~30 cm
+  thick (one side is enough: contact is two-sided, but a fast part passes a
+  paper-thin wall between steps); leave holes where portals open. Cut a hole (a trapdoor, a floor portal) to the
+  opening's own shape, to about 0.1 m: a hole of coarse cells is either too
+  small, or reaches past the rim, where the body bridges it or drops outside
+  the opening. Count a body as through once its centre of mass is under the
+  opening's plane, not only once it's inside the opening: a body tipping over
+  the rim misses an inside-only test. Coming out the other side, clamp each
+  part to the exit plane plus the depth of the deepest part plus its capsule
+  radius, so nothing comes out inside the wall. A ped walking (animated) into
+  an opening switches to ragdoll there: an animated body doesn't fall.
+- *Crowds.* `nm_agent_collide_agents(a, 0)` while a body follows its clip, 1
+  when it ragdolls: keyframed bodies overlapping push each other hard.
+- *Deaths.* Let your engine ragdoll its dead if its death code needs that
+  (blocking Hitman's crashed it); taking a host-owned ragdoll over is FOLLOW
+  mode.
+- *Contortion check.* `nm_agent_get_joint_angle` per part: over ~1.2 means the
+  drawn body is bent past its joint, so look at that character's map or
+  rotations.
+- *Walls.* Triangles are one-sided: each stops bodies only on the side it faces, so wind every face outward (a floor's up); wound the other way bodies walk through it. A single thin sheet lets a part thrown at 15 m/s through. For walls you build yourself (from rays), use `nm_world_set_walls` (solid boxes: they hold at any speed, from either side); for the level, feed its real collision triangles near each body with `nm_world_set_mesh`. Never leave out a wall a part is already in. Every body in a world meets every mesh in it: add the level once (`nm_world_add_mesh`, or streamed pieces with `nm_world_set_mesh`), not a copy per body.
+- *A downed body bounces.* a patch rebuild that moves the floor under a lying body shoves it up. Keep the last hit for a missed ray, and freeze a still body's patch until it moves. While ragdolled, read part 0 out and never write the entity's position back in.
+- *Leave the body's sizes alone.* The fit takes your bone lengths and Homer's
+  girth. `nm_build_sized` scales whole regions (width 0.65 also halved the
+  arms' thickness); the Playroom Homer is 1 on every slider. For a thinner or
+  heavier body, weigh it from the skin (`nm_build_weigh_skin`) or by weight
+  (`nm_build_set_weight`).
+- *The head.* The head is sized and placed by the neck's length (joint 11 to 12). With two neck bones, map only the lower one to the neck (the other -1), or the head comes out small and sunk into the neck; a tall skull: `nm_build_set_head` (0.05 m, 1.08). `nm_rig_check` reports two bones on the neck or head.
+- *The chest.* The trunk parts (7-10) are centred on the joint line, as the game's spine runs through the body's middle. If your spine bones run near the back (Hitman's), the chest sticks out behind as a hump and sits low: before `nm_build_fit`, move joints 7-10 forward along the facing by about half the chest part's radius (5 cm on Hitman's 47), and raise joint 10 toward the middle of 10 and 11 if bare neck shows above the chest. Map the mesh from the parts by the bone-to-part offsets measured at rest, so the mesh doesn't move with them.
+- *Debug drawing.* `nm_agent_get_part_transform` is the capsule frame, along
+  its local Y; `nm_agent_get_part_body` returns 2 and half extents for the feet
+  (boxes). Homer's spine parts are short, wide capsules lying across the body:
+  drawn as outlines their end rings look like two big circles from the side.
+  Draw them solid.
+- *The game's own ragdoll.* If the game ragdolls a body itself (a kill), do
+  not drive its ragdoll bodies onto NM every frame: the game re-powers them
+  each update, they fight, and the mesh jitters. Leave the game's ragdoll
+  alive (blocking it can crash; its death code expects it), and make the mesh
+  take your pose (`nm_rig_pose`) instead of the game ragdoll's: find where the
+  game picks the ragdoll's pose over the animator's and keep it on the
+  animator for bodies NM owns. If the game's ragdoll was already on when you
+  attach, its root and the animated root disagree: take his place from the
+  ragdoll's bodies, not the animated root, or he jumps. If you must move the
+  game's ragdoll bodies onto
+  NM's pose, teleport each one every frame (set its place and turn, speed
+  zero), with each body's offset from its bone measured on the animation pose
+  the game built the ragdoll from. A kinematic move (Hitman's MoveTransform)
+  lands only at the game's physics rate, so it lags, and over a big gap it
+  sweeps through things. Call `nm_set_carry_pushes(1)` once at start when
+  you move bodies yourself: off (the default, the original game's), a shot on a body
+  you moved far from where it was spins it and flings its limbs.
+- *A ped is shot (the Playroom's Homer, step by step).* Health is on the game's
+  scale: a fresh ped has 200. Map yours to it (200 x health / max); a ped
+  passed under 100 goes down, and under 50 he's dead.
+  1. The frame of the hit: keyframe `"fb"` 0 (whole ragdoll) and collide on,
+     then `left = nm_agent_shoot_weapon(a, w, nm_weapon_find("pistol"), part,
+     hit point, bullet direction, health)`. Keep `left` as his health and pass
+     it with the next shot (a second hit carries on the same reaction).
+  2. Step him every frame. The reaction (staggering, holding the wound,
+     looking at it, fighting to stay up) runs itself inside `nm_agent_step`
+     while `nm_agent_task_running` is 1. Don't stop it, send other tasks, or
+     feed incoming transforms meanwhile.
+  3. `nm_agent_is_dead` 1: a corpse; leave it (see Dead bodies).
+  4. Down and alive: when `nm_agent_should_get_up(a, 1.0)` (1 only once he
+     lies still, never mid-stagger), use the game's get-up (next entry).
+  5. Still standing when the task ends (`nm_agent_task_running` 0) or when
+     `nm_agent_is_settled` (on his feet and still for 0.4 s): back to
+     animation (`nm_rig_take`, then keyframe `"fb"`, faded over 0.25 s).
+     Check both: a ped who keeps his feet never reaches should_get_up, so
+     without them his ragdoll never ends.
+- *Knocked out (out cold till woken).* Send `stopAllBehaviours`, then
+  `bodyRelax` (start, relaxation 100), and `nm_agent_set_dead(a, 1)`: he
+  drops, gets no reactions and never gets up, and lying still he rests like a
+  corpse. When the game wakes him, `nm_agent_set_dead(a, 0)`: no reset needed.
+  He's due to get up (`nm_agent_should_get_up`) once he has lain still
+  `after` again, then use the game's get-up as usual.
+- *Let the game's own state drive NM.* Every frame, read the game's
+  unconscious and dead flags for each ragdoll and push them into NM
+  (`nm_agent_set_dead`, the knock-out above): don't rely on catching the hit
+  or death event. Events get missed (a takedown, a scripted kill, a save
+  loaded), a flag read each frame never is.
+- *Checking a fix without the game.* Call `nm_scene_save(agent, world,
+  path, weapon, part, at, dir, health)` right before `nm_agent_shoot_weapon`
+  with the same values: it writes the body, its pose and speeds, the floor and
+  walls around it, and the shot with your weapon's row (so a replay needs
+  no weapons table). `nm_scene_replay(path, seconds, buf, len)`
+  plays it back and reports the pelvis over the ground every 0.25 s, then the
+  problems it found: starting off the ground, ground laid inside his body
+  (your rays hit him), no ground under him, sinking
+  into it, a part flying (over 10 m/s), the pelvis spinning. Send the files to
+  whoever fixes it; 0 problems before you test in the game.
+- *Get-ups.* Use the game's own get-up: when `nm_agent_should_get_up`, read
+  `nm_agent_get_lying`, hand the body to the game's recovery (its get-up clip
+  picked from how the body lies), then `nm_rig_take` and keyframe `"fb"`. Fade
+  NM's last pose into the clip over about 0.25 s. Not the learned get-up.
+- *The player's contacts.* A keyframed agent touching a ragdoll hits it with
+  its pose change per step as velocity: a root warp or a frame that banks two
+  steps flings the ragdoll across the map. Keep a keyframed player out of agent
+  contacts (`nm_agent_collide_agents` 0) for now.
+- *Bumps.* Walking into a standing character gives no push: past 2.5 m/s,
+  within 0.7 m and moving toward it, start `nm_agent_task_balance` (set "WEAK"
+  for health under 140 or a timid character, else "*", looking at the bumper's
+  head) and it staggers away by itself; one bump per 2.5 s. Lying bodies get
+  nothing from being walked into. An impulse here flings bodies.
+  For the player's side, `nm_player_bump` gives the original game's answer the frame he
+  first touches someone: a shove (play your game's shove on his head, neck
+  and arms over his walk, hands reaching the other's chest; give the body
+  about 30 N s at the chest along his facing with the balance), a flinch, a
+  knock-over, or nothing. Call it once per touch, not every frame.
+- *Dead bodies.* A dead body lying still for 2 s rests: `nm_agent_step`
+  skips it (`nm_agent_is_resting` 1), so keep stepping it. It wakes when
+  anything is done to it (a push, a hit, a task, a message), a moving box comes
+  within 3 m, or another agent's part (a keyframed player's too, unless either
+  has `nm_agent_collide_agents` 0) comes within 1.5 m of its pelvis.
+- *Hooks.* MinHook's status 9 (MH_ERROR_MEMORY_ALLOC) means no free page
+  within 2 GB of the target: allocate early at load, or poll the game state
+  instead.
 
 **Hitting it** (your health stays yours; pass it in):
 
@@ -492,9 +674,13 @@ ragdoll has it, and keep its root on the ragdoll's hips. When it gets up, put
 the AI where the body is before you unpause it, or it snaps back to where it
 was hit.
 
-**Handing it back:** once `nm_agent_should_get_up(a, seconds)` (alive, lying
-still that long), `nm_agent_get_lying(a, head, face_up)` says which way it
-lies: move its root to the hips on the floor facing `-head` when face up (else
+**Handing it back:** once `nm_agent_should_get_up(a, seconds)` (alive, and
+lying still that long with its centre of mass under 0.2 m/s, or nearly still,
+under 0.5 m/s, 1.5 s longer: a body twitching against its limits or the ground
+still gets up; with `nm_set_get_up_needs_floor(1)`, only with your floor
+under his hips, so he never stands up in a hole), `float lying = nm_agent_get_lying(a, float head[3], int
+*face_up)` says which way it lies (it returns how long it has lain still;
+`head` the flat way from hips to head, `face_up` 1 on its back): move its root to the hips on the floor facing `-head` when face up (else
 `head`), unpause your animation, start your own get-up animation, and blend
 from the ragdoll's last pose into it over a fraction of a second. Then free
 the rig, agent, build and world.
@@ -534,7 +720,7 @@ unless you need the engine to move the parts.
 | Health and get-up | `nm_agent_aim_hit`, `nm_agent_is_dead`, `set_dead`, `nm_set_headshot_kills`, `nm_agent_get_lying`, `should_get_up` |
 | Animation pose | `nm_agent_set_incoming_transforms(a, transforms, parts)` (7 floats per part; `parts = 0` clears), used by `activePose` and `incomingTransforms` |
 | Events | `nm_agent_feedback_count`, `nm_agent_feedback_get` |
-| World | `nm_world_add_floor`, `nm_world_add_mesh`, `nm_world_set_boxes`, `nm_world_set_box_spins`, `nm_world_raycast`, `nm_set_surface(material, friction, elasticity)` |
+| World | `nm_world_add_floor`, `nm_world_add_mesh`, `nm_world_set_mesh(id, ...)` (replace; 0 triangles removes), `nm_world_set_boxes`, `nm_world_set_box_spins`, `nm_world_raycast`, `nm_set_surface(material, friction, elasticity)` |
 | Playroom tools | `nm_agent_set_reactions` (NM_XR_*), `near_miss`, `set_dive`, `thrown_at`, `jump`, `task_sit`, `task_pose`, `task_roll_up_relax`, `task_script`, `task_stop`, `task_running`, `muscle_rise`, `learned_getup`, `learned_walk`, `set_stick`, `set_attacker`, `gun_ready` |
 | Weapons | `nm_weapons_parse`, `nm_weapons_load_info` (weaponinfo.xml), `nm_weapon_count`, `find`, `get`, `nm_agent_shoot_weapon`, `nm_shotgun_fan` + `nm_agent_task_shotgun` |
 | Parameters | `nm_agent_get_param`, `get_param_string`, `nm_message_count`, `nm_message_name`, `nm_message_param_*` (name, kind, default, doc, used) |
@@ -797,6 +983,12 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 
 **Errors**
 
+**0 means success.** A call that does or gets something returns 0 (or a count) when it works and a
+negative `NM_E_*` when it fails; it is not a bool (only the yes/no questions,
+`nm_agent_has_fallen` and the like, answer 1/0). `if (!nm_build_part_frame(...))`
+is true when it WORKED (the Hitman port skipped its whole bake this way). Test
+`< 0`.
+
 | Symptom | Cause and fix |
 |---|---|
 | `NM_E_ARG` from `step` | `dt` was not in (0, 0.25]. Use 1/60. |
@@ -846,6 +1038,7 @@ One `name value` per line. Booleans are `0` or `1`. Unknown keys are ignored.
 - `delirium-room` needs your own copy of the game files described in the
   README. The game path is remembered in `game_path.txt`.
 - On macOS, clear the quarantine flag once: `xattr -dr com.apple.quarantine .`
+- The learned get-up (`nm_agent_learned_getup`, getup.net) is an experiment that failed: do not use it in a mod. Get characters up with the game's own get-up clips.
 - If learned get-up says `no getup.net yet (train: --learn)`, the network file
   is missing from the folder above the executable; copy `getup.net` there or
   train one.

@@ -5,10 +5,22 @@ pub struct Extents {
     pub bound: Bound,
     pub reach: f32,
     pub off_centre: bool,
+    pub w: [f32; 3],
+}
+
+pub trait CompositeParts {
+    fn parts(&self) -> (Vec<Option<[[f32; 3]; 2]>>, Vec<Rows>, Vec<Rows>);
+    fn store(&mut self, e: &Extents, radius: bool);
+}
+
+pub fn update_extents(c: &mut impl CompositeParts) {
+    let (kids, cur, last) = c.parts();
+    c.store(&extents(&kids, &cur, &last), false);
 }
 
 pub fn extents(kids: &[Option<[[f32; 3]; 2]>], cur: &[Rows], last: &[Rows]) -> Extents {
     let (mut mn, mut mx) = ([f32::MAX; 3], [-f32::MAX; 3]);
+    let (mut mnw, mut mxw) = (0.0f32, 0.0f32);
     let mut any = false;
     for i in (0..kids.len()).rev() {
         let Some([low, high]) = kids[i] else { continue };
@@ -31,9 +43,11 @@ pub fn extents(kids: &[Option<[[f32; 3]; 2]>], cur: &[Rows], last: &[Rows]) -> E
             mn[j] = vmin(mn[j], w[j] - e[j]);
             mx[j] = vmax(mx[j], e[j] + w[j]);
         }
+        mnw = vmin(mnw, mid[0] - e[0]);
+        mxw = vmax(mxw, e[0] + mid[0]);
     }
     if !any {
-        (mn, mx) = ([0.0; 3], [0.0; 3]);
+        (mn, mx, mnw, mxw) = ([0.0; 3], [0.0; 3], 0.0, 0.0);
     }
     let len2 = |v: [f32; 3]| v[0].mul_add(v[0], v[1].mul_add(v[1], v[2] * v[2]));
     let (lo2, hi2) = (len2(mn), len2(mx));
@@ -42,11 +56,11 @@ pub fn extents(kids: &[Option<[[f32; 3]; 2]>], cur: &[Rows], last: &[Rows]) -> E
     let off_centre = centroid.iter().any(|&v| v != 0.0);
     let o = sub(mx, centroid);
     let radius = o[2].mul_add(o[2], o[1].mul_add(o[1], o[0] * o[0])).sqrt();
-    Extents { bound: Bound { radius, high: mx, low: mn, centroid }, reach, off_centre }
+    Extents { bound: Bound { radius, high: mx, low: mn, centroid }, reach, off_centre, w: [mnw, mxw, (mxw + mnw) * 0.0] }
 }
 
 fn vmsum3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    (0.0f64 + a[0] as f64 * b[0] as f64 + a[1] as f64 * b[1] as f64 + a[2] as f64 * b[2] as f64) as f32
+    crate::estimate::vmsum3([a[0] as f64 * b[0] as f64, a[1] as f64 * b[1] as f64, a[2] as f64 * b[2] as f64])
 }
 
 fn vmsum4(a: [f32; 4], b: [f32; 4]) -> f32 {

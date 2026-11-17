@@ -1282,10 +1282,14 @@ impl ScannerCrime {
         (at == b.len()).then_some(ScannerCrime { opening, crime })
     }
 
-    pub fn pick(list: &[(u32, f32)], mut x: f32) -> u32 {
+    pub fn pick(list: &[(u32, f32)], x: f32) -> u32 {
+        Self::pick_below(list, x, 0.0)
+    }
+
+    pub fn pick_below(list: &[(u32, f32)], mut x: f32, zero: f32) -> u32 {
         for &(sound, weight) in list {
             x -= weight;
-            if x <= 0.0 {
+            if !(x > zero) {
                 return sound;
             }
         }

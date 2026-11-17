@@ -9,16 +9,16 @@ pub fn MOVING() -> f32 { delirium_data::kv!(57) }
 pub fn MOVING_FAST() -> f32 { delirium_data::kv!(26) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn HANDS() -> &'static [u16; 2] { static V: std::sync::OnceLock<[u16; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(58 int), delirium_data::kv!(59 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn HANDS() -> &'static [u16; 2] { static V: std::sync::OnceLock<[u16; 2]> = std::sync::OnceLock::new(); let f = || -> [u16; 2] { [delirium_data::kv!(58 int), delirium_data::kv!(59 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn PROBE_RADIUS() -> f32 { delirium_data::kv!(60) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BALANCE_MS() -> &'static [u32; 2] { static V: std::sync::OnceLock<[u32; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(41 int), delirium_data::kv!(61 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn BALANCE_MS() -> &'static [u32; 2] { static V: std::sync::OnceLock<[u32; 2]> = std::sync::OnceLock::new(); let f = || -> [u32; 2] { [delirium_data::kv!(41 int), delirium_data::kv!(61 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn COMPLEX_MS() -> &'static [u32; 2] { static V: std::sync::OnceLock<[u32; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(43 int), delirium_data::kv!(62 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn COMPLEX_MS() -> &'static [u32; 2] { static V: std::sync::OnceLock<[u32; 2]> = std::sync::OnceLock::new(); let f = || -> [u32; 2] { [delirium_data::kv!(43 int), delirium_data::kv!(62 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn LEAN() -> f32 { delirium_data::kv!(33) }

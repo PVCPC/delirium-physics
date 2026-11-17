@@ -66,7 +66,7 @@ pub enum Pen {
 
 #[allow(non_snake_case)]
 #[inline]
-fn SPHERE() -> &'static [[f32; 3]; 42] { static V: std::sync::OnceLock<[[f32; 3]; 42]> = std::sync::OnceLock::new(); let f = || [
+fn SPHERE() -> &'static [[f32; 3]; 42] { static V: std::sync::OnceLock<[[f32; 3]; 42]> = std::sync::OnceLock::new(); let f = || -> [[f32; 3]; 42] { [
     [0.0, -0.0, -1.0], [delirium_data::kv!(149), -delirium_data::kv!(150), -delirium_data::kv!(151)], [-delirium_data::kv!(152), -delirium_data::kv!(153), -delirium_data::kv!(151)],
     [-delirium_data::kv!(154), -0.0, -delirium_data::kv!(155)], [-delirium_data::kv!(152), delirium_data::kv!(153), -delirium_data::kv!(156)], [delirium_data::kv!(149), delirium_data::kv!(150), -delirium_data::kv!(151)],
     [delirium_data::kv!(152), -delirium_data::kv!(153), delirium_data::kv!(156)], [-delirium_data::kv!(149), -delirium_data::kv!(150), delirium_data::kv!(151)], [-delirium_data::kv!(149), delirium_data::kv!(150), delirium_data::kv!(151)],
@@ -81,7 +81,7 @@ fn SPHERE() -> &'static [[f32; 3]; 42] { static V: std::sync::OnceLock<[[f32; 3]
     [-delirium_data::kv!(162), -delirium_data::kv!(163), delirium_data::kv!(164)], [-delirium_data::kv!(165), 0.0, delirium_data::kv!(166)], [-delirium_data::kv!(162), delirium_data::kv!(163), delirium_data::kv!(164)],
     [delirium_data::kv!(169), delirium_data::kv!(170), delirium_data::kv!(166)], [delirium_data::kv!(167), 0.0, delirium_data::kv!(168)], [delirium_data::kv!(160), -delirium_data::kv!(161), delirium_data::kv!(159)],
     [-delirium_data::kv!(157), -delirium_data::kv!(158), delirium_data::kv!(159)], [-delirium_data::kv!(157), delirium_data::kv!(158), delirium_data::kv!(159)], [delirium_data::kv!(160), delirium_data::kv!(161), delirium_data::kv!(159)],
-]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Closest {

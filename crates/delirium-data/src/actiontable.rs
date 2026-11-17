@@ -31,11 +31,11 @@ const POINTS: [&str; 16] = [
 ];
 #[allow(non_snake_case)]
 #[inline]
-fn BONES() -> &'static [(&'static str, u32); 14] { static V: std::sync::OnceLock<[(&'static str, u32); 14]> = std::sync::OnceLock::new(); let f = || [
+fn BONES() -> &'static [(&'static str, u32); 14] { static V: std::sync::OnceLock<[(&'static str, u32); 14]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, u32); 14] { [
     ("PELVIS", crate::kv!(211 int)), ("HEAD", crate::kv!(209 int)), ("R_UPPERARM", crate::kv!(607 int)), ("R_FOREARM", crate::kv!(608 int)), ("R_HAND", crate::kv!(58 int)), ("L_UPPERARM", crate::kv!(609 int)),
     ("L_FOREARM", crate::kv!(610 int)), ("L_HAND", crate::kv!(59 int)), ("L_THIGH", crate::kv!(611 int)), ("L_CALF", crate::kv!(612 int)), ("L_FOOT", crate::kv!(613 int)), ("R_THIGH", crate::kv!(614 int)),
     ("R_CALF", crate::kv!(615 int)), ("R_FOOT", crate::kv!(616 int)),
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn h(s: &[u8]) -> u32 {
     hash_bytes(s, 0)

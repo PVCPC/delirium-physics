@@ -35,6 +35,11 @@ pub struct Hero {
     last: Vec<Transform>,
     dt: f32,
     stagger: f32,
+    shove: Option<(usize, f32)>,
+    homer_was: Option<Vec3>,
+    touching: bool,
+    homer_chest: Option<Vec3>,
+    act: Option<(usize, f32, Option<usize>)>,
     pub go: (Vec3, usize),
     pub hold: Option<(usize, f32, Vec3)>,
     pub hand: Vec3,
@@ -54,7 +59,7 @@ pub struct Hero {
 
 pub enum Hit {
     Swing(f32, Vec3, Vec3),
-    Bump(Vec3),
+    Bump(Vec3, Option<(Vec3, Vec3)>),
 }
 
 impl Hero {
@@ -64,7 +69,7 @@ impl Hero {
         let mut n = Hero { feet, yaw: (-fwd.y).atan2(-fwd.x), vel: Vec3::ZERO, clip: getup::IDLE, phase: 0.0, fight: Default::default(), pad: Default::default(),
                            press: 0, keys: 0, scripted: 0, clock: 0.0, ai: None, foe_pad: None, foe_task: None, rand: Default::default(), bones: vec![],
                            speeds: [speed(getup::WALK()), speed(getup::WALK() + 1), speed(getup::WALK() + 2)],
-                           caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, go: (Vec3::ZERO, 0),
+                           caps: vec![], last: vec![], dt: 0.0, stagger: 0.0, shove: None, homer_was: None, touching: false, homer_chest: None, act: None, go: (Vec3::ZERO, 0),
                            hold: None, hand: feet + Vec3::Z * 1.0, grip: Quat::IDENTITY, fist: (feet + Vec3::Z * 1.0, Vec3::Z), homer: vec![], foe: Default::default(),
                            #[cfg(feature = "portal")] chell: None, #[cfg(feature = "portal")] fall: 0.0, swimming: false, drift: Vec3::ZERO };
         n.pose(clips);
@@ -131,6 +136,16 @@ impl Hero {
         self.feet + Vec3::Z * EYE
     }
 
+    pub fn react(&mut self, clips: &Clips, ko: bool, side: u32) {
+        let side = side.min(3) as usize;
+        self.act = if ko {
+            clips.kos.map(|k| (k + side, 0.0, Some(if side == 2 { 0 } else { 1 })))
+        } else {
+            clips.flinches.map(|k| (k + side, 0.0, None))
+        };
+        self.shove = None;
+    }
+
     pub fn punch(&mut self) {
         self.press |= melee::ATTACK_BIT();
     }
@@ -142,6 +157,11 @@ impl Hero {
             return None;
         }
         self.stagger -= dt;
+        self.shove = self.shove.map(|(c, t)| (c, t + dt / clips.duration(c).max(0.01))).filter(|s| s.1 < 1.0);
+        if let Some((c, t, then)) = self.act {
+            let t = t + dt / clips.duration(c).max(0.01);
+            self.act = if t < 1.0 { Some((c, t, then)) } else { then.map(|n| (n, 0.0, None)) };
+        }
         let mut hit = None;
         let fight = clips.fight.as_ref().map(|f| f.0.clone());
         let mut locked = false;
@@ -199,6 +219,9 @@ impl Hero {
             self.phase = (self.phase + dt / clips.duration(c)).fract();
             self.vel = Vec3::ZERO;
         }
+        if self.act.is_some() {
+            self.vel = Vec3::ZERO;
+        }
         self.feet += (self.vel + self.drift) * dt;
         let ground = world.ground(self.feet.with_z(self.feet.z.max(water.unwrap_or(self.feet.z))) + Vec3::Z * 1.0, 3.5);
         self.swimming = water.zip(ground).is_some_and(|(w, g)| w - g > SWIM_DEEP);
@@ -215,11 +238,36 @@ impl Hero {
                 self.feet += out.normalize_or(-self.facing()) * (BOUND + r - out.length()) * 0.5;
             }
         }
-        if let Some((f, ..)) = homer {
+        self.homer_chest = homer.and_then(|f| f.3[2]);
+        if let Some((f, heading, health, _)) = homer {
+            use delirium_data::playerbump as pb;
             let into = (f - self.feet).with_z(0.0);
+            let homer_v = self.homer_was.map_or(0.0, |w| (f - w).with_z(0.0).length() / dt);
+            let touching = into.length() < 0.7;
+            if touching && !self.touching {
+                let me = if self.vel.length() < 0.1 { pb::state::STILL } else { pb::state::WALK + gait.min(2) as i32 };
+                let other = [0.3, 2.0, 4.0].iter().filter(|&&s| homer_v >= s).count() as i32 + 1;
+                let b = pb::Bump { me, other, my_forward: [0.0; 3], other_forward: [0.0; 3], d: [0.0; 3], in_formation: false,
+                    shoved_last: self.stagger > 0.0, friend: false, health, my_weakness: 1.3, other_weakness: 1.3 };
+                let (a, c) = pb::decide(b, (self.feet + Vec3::Z * PELVIS).into(), self.facing().into(), f.into(),
+                    [-heading.sin(), heading.cos(), 0.0], held.is_some());
+                eprintln!("hero  bumps Homer: {a:?}, shove clip {:?} (him {me}, Homer {other} at {homer_v:.1} m/s)", c.map(|c| pb::SHOVES[c].1));
+                match (a, clips.shoves, c) {
+                    (pb::Answer::Shove, Some(s), Some(c)) => self.shove = Some((s + c, 0.0)),
+                    (pb::Answer::HitResponse(s), ..) => self.react(clips, false, s),
+                    (pb::Answer::FallAndGetUp(s), ..) => self.react(clips, true, s),
+                    _ => {}
+                }
+                if a != pb::Answer::Nothing && self.stagger <= 0.0 {
+                    self.stagger = STAGGER_TIME;
+                    let push = (a == pb::Answer::Shove).then(|| (f + Vec3::Z * 0.35, self.facing() * MELEE_PUSH));
+                    hit = hit.or(Some(Hit::Bump(self.feet, push)));
+                }
+            }
+            (self.homer_was, self.touching) = (Some(f), touching);
             if self.stagger <= 0.0 && into.length() < 0.7 && self.vel.length() > BUMP_SPEED && self.vel.dot(into) > 0.0 {
                 self.stagger = STAGGER_TIME;
-                hit = hit.or(Some(Hit::Bump(self.feet)));
+                hit = hit.or(Some(Hit::Bump(self.feet, None)));
             }
         }
         self.dt = dt;
@@ -244,7 +292,22 @@ impl Hero {
         if clips.hero.is_none() {
             return;
         }
-        let mut p = clips.play(self.clip, self.phase.clamp(0.0, 1.0));
+        let mut p = match self.act {
+            Some((c, t, _)) => clips.play(c, t),
+            None => clips.play(self.clip, self.phase.clamp(0.0, 1.0)),
+        };
+        if let Some((c, t)) = self.shove {
+            clips.upper(&mut p, c, t);
+            if let Some(chest) = self.homer_chest {
+                let body = Transform::from_translation(self.feet + Vec3::Z * PELVIS).with_rotation(Quat::from_rotation_z(self.yaw - std::f32::consts::FRAC_PI_2));
+                let (fwd, right) = (self.facing(), self.facing().cross(Vec3::Z));
+                let near = chest - fwd * 0.14;
+                let w = (t * std::f32::consts::PI).sin().powf(0.5);
+                for (side, s) in [("R", 1.0f32), ("L", -1.0)] {
+                    clips.reach(&mut p, body, side, near + right * (0.15 * s), right * (0.6 * s) - Vec3::Z, w);
+                }
+            }
+        }
         let body = Transform::from_translation(self.feet + Vec3::Z * PELVIS).with_rotation(Quat::from_rotation_z(self.yaw - std::f32::consts::FRAC_PI_2));
         if let Some((c, _, at)) = self.hold.filter(|h| h.0 == self.clip) {
             let chest = self.feet + Vec3::Z * 1.4;

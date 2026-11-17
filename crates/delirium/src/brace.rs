@@ -15,17 +15,17 @@ pub struct Set {
 
 #[allow(non_snake_case)]
 #[inline]
-fn F() -> &'static [(&'static str, f32); 9] { static V: std::sync::OnceLock<[(&'static str, f32); 9]> = std::sync::OnceLock::new(); let f = || [("stayUprightStiffness", delirium_data::kv!(5)), ("braceDistance", delirium_data::kv!(8)), ("braceReachAbsorbtionTime", delirium_data::kv!(9)),
+fn F() -> &'static [(&'static str, f32); 9] { static V: std::sync::OnceLock<[(&'static str, f32); 9]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32); 9] { [("stayUprightStiffness", delirium_data::kv!(5)), ("braceDistance", delirium_data::kv!(8)), ("braceReachAbsorbtionTime", delirium_data::kv!(9)),
     ("braceTargetPredictionTime", delirium_data::kv!(10)), ("braceGrabStrength", delirium_data::kv!(11)), ("braceGrabDistance", 2.0), ("braceGrabReachAngle", delirium_data::kv!(12)),
-    ("braceGrabHoldTimerL", 0.5), ("braceGrabHoldTimerH", delirium_data::kv!(13))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    ("braceGrabHoldTimerL", 0.5), ("braceGrabHoldTimerH", delirium_data::kv!(13))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn GUN() -> &'static [(&'static str, f32); 4] { static V: std::sync::OnceLock<[(&'static str, f32); 4]> = std::sync::OnceLock::new(); let f = || [("braceMinTimeBeforeGunThreaten", 0.0), ("braceMaxTimeBeforeGunThreaten", delirium_data::kv!(14)),
-    ("braceMinTimeBetweenFireGun", delirium_data::kv!(15)), ("braceMaxTimeBetweenFireGun", delirium_data::kv!(16))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn GUN() -> &'static [(&'static str, f32); 4] { static V: std::sync::OnceLock<[(&'static str, f32); 4]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32); 4] { [("braceMinTimeBeforeGunThreaten", 0.0), ("braceMaxTimeBeforeGunThreaten", delirium_data::kv!(14)),
+    ("braceMinTimeBetweenFireGun", delirium_data::kv!(15)), ("braceMaxTimeBetweenFireGun", delirium_data::kv!(16))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn ARM() -> &'static [(&'static str, f32); 7] { static V: std::sync::OnceLock<[(&'static str, f32); 7]> = std::sync::OnceLock::new(); let f = || [("bracePointArmTwistL", 0.0), ("bracePointArmTwistH", delirium_data::kv!(17)), ("bracePointArmStraightnessL", delirium_data::kv!(18)),
-    ("bracePointArmStraightnessH", delirium_data::kv!(19)), ("braceAimAngleDPThreshold", delirium_data::kv!(20)), ("braceLegStiffness", delirium_data::kv!(21)), ("balanceStepClampScale", 1.0)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn ARM() -> &'static [(&'static str, f32); 7] { static V: std::sync::OnceLock<[(&'static str, f32); 7]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32); 7] { [("bracePointArmTwistL", 0.0), ("bracePointArmTwistH", delirium_data::kv!(17)), ("bracePointArmStraightnessL", delirium_data::kv!(18)),
+    ("bracePointArmStraightnessH", delirium_data::kv!(19)), ("braceAimAngleDPThreshold", delirium_data::kv!(20)), ("braceLegStiffness", delirium_data::kv!(21)), ("balanceStepClampScale", 1.0)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 impl Set {
     pub fn read(tp: &TaskParams, set: &str) -> Set {

@@ -32,7 +32,7 @@ pub struct RagePad {
 impl RagePad {
     pub fn set_motor(&mut self, v: f32, motor: usize) {
         let v = (v as f64).clamp(0.0, 1.0);
-        self.motor_speed[motor] = (v * crate::kv!(935)) as i64 as u16;
+        self.motor_speed[motor] = (v * crate::kv!(936)) as i64 as u16;
         self.motors_changed = true;
     }
 
@@ -48,7 +48,7 @@ impl RagePad {
 
 #[allow(non_snake_case)]
 #[inline]
-fn BUTTONS() -> &'static [(u32, Option<usize>); 16] { static V: std::sync::OnceLock<[(u32, Option<usize>); 16]> = std::sync::OnceLock::new(); let f = || [
+fn BUTTONS() -> &'static [(u32, Option<usize>); 16] { static V: std::sync::OnceLock<[(u32, Option<usize>); 16]> = std::sync::OnceLock::new(); let f = || -> [(u32, Option<usize>); 16] { [
     (crate::kv!(1 int), Some(crate::kv!(23 int))),
     (0x0001, Some(crate::kv!(81 int))),
     (crate::kv!(182 int), None),
@@ -65,7 +65,7 @@ fn BUTTONS() -> &'static [(u32, Option<usize>); 16] { static V: std::sync::OnceL
     (crate::kv!(52 int), Some(0x00)),
     (crate::kv!(722 int), None),
     (crate::kv!(96 int), None),
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PadState(pub [i32; 20]);
@@ -134,7 +134,7 @@ impl Pad {
         rigid.set_motor(0.0, 1);
         for (motor, s) in [(0, a), (1, b)] {
             if s > 0 {
-                rigid.set_motor((s as f64 * (1.0 / crate::kv!(936))) as f32, motor);
+                rigid.set_motor((s as f64 * (1.0 / crate::kv!(937))) as f32, motor);
                 rigid.set_motors_on(true);
                 self.rumble_start = now;
             }

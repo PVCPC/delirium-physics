@@ -91,6 +91,14 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Feel")
 	bool bFireReaction = true;
 
+	/** Pushes queued on a ragdoll keep their place when you move it far yourself (a portal, a teleport): off, a shot can spin him. Off as in the game. */
+	UPROPERTY(Config, EditAnywhere, Category = "Feel")
+	bool bCarryPushes = false;
+
+	/** A body lying with its hips over a hole (a trapdoor, a floor portal) does not get up. Off as in the game. */
+	UPROPERTY(Config, EditAnywhere, Category = "Feel")
+	bool bGetUpNeedsFloor = false;
+
 	/** LearnedGetUp's and LearnedWalk's networks (the release's getup.net and walk.net). */
 	UPROPERTY(Config, EditAnywhere, Category = "Data")
 	FString GetUpNet = TEXT("getup.net");

@@ -37,6 +37,18 @@ pub fn matrix_fix(m: &mut [f32; 16]) {
     }
 }
 
+const BLAST_FLOOR: f32 = 0.0001;
+
+pub fn blast_rows(dir: [f32; 4], pos: [f32; 4], len: f32) -> [[f32; 4]; 4] {
+    let mut y = dir;
+    if y[0] == 0.0 && y[1] == 0.0 {
+        (y[0], y[1]) = (BLAST_FLOOR, BLAST_FLOOR);
+    }
+    let x = unit(cross([0.0, 0.0, 1.0, 0.0], y));
+    let z = unit(cross(y, x));
+    [x, y, z, from_fn(|l| (dir[l] * len).mul_add(0.5, pos[l]))]
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KeyRecord {
     pub key: u32,

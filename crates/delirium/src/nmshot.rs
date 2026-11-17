@@ -9,10 +9,10 @@ use crate::nmrs::{Character, ANKLE, CLAVICLE, ELBOW, HIP, KNEE, SHOULDER, SPINE,
 
 #[allow(non_snake_case)]
 #[inline]
-fn SP() -> &'static [usize; 7] { static V: std::sync::OnceLock<[usize; 7]> = std::sync::OnceLock::new(); let f = || [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int), delirium_data::kv!(113 int), delirium_data::kv!(55 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SP() -> &'static [usize; 7] { static V: std::sync::OnceLock<[usize; 7]> = std::sync::OnceLock::new(); let f = || -> [usize; 7] { [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int), delirium_data::kv!(113 int), delirium_data::kv!(55 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn SE() -> &'static [usize; 6] { static V: std::sync::OnceLock<[usize; 6]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int), delirium_data::kv!(113 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SE() -> &'static [usize; 6] { static V: std::sync::OnceLock<[usize; 6]> = std::sync::OnceLock::new(); let f = || -> [usize; 6] { [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int), delirium_data::kv!(113 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn HEAD() -> usize { delirium_data::kv!(55 int) }

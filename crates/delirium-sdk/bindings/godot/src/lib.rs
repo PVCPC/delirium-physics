@@ -136,6 +136,8 @@ fn base() -> Option<*mut NmBuild> {
         unsafe { nm_crash_report(c(&ProjectSettings::singleton().globalize_path("user://").to_string()).as_ptr()) };
         nm_set_step_limit(setting_b("step_limit", true) as i32);
         nm_set_fire_reaction(setting_b("fire_reaction", true) as i32);
+        nm_set_carry_pushes(setting_b("carry_pushes", false) as i32);
+        nm_set_get_up_needs_floor(setting_b("get_up_needs_floor", false) as i32);
         let weapons = path(&setting_s("weapons", ""));
         if weapons.ends_with(".xml") {
             check(unsafe { nm_weapons_load_info(c(&weapons).as_ptr()) }, "weapons");

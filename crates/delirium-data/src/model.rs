@@ -1,4 +1,14 @@
+use crate::drawable::{Drawable, DrawableParts, LodGroup};
+use crate::grmmodel::Model;
+use crate::instancedata::Value;
+use crate::resourcemap::{Links, ResourceBytes};
+use crate::shaderfx::{read_shader_slots, Shader};
+use crate::shadergroup::{GroupParts, ShaderGroup};
+use crate::texture::{read_dictionary_at, Texture};
 use crate::resource::{system_size, Resource};
+use crate::resourcemap::{Location, ResourceMap};
+use crate::vertexbuffer::VertexBufferEditor;
+use crate::vertexformat::{Channel, ChannelSet, ElementType, VertexFormat};
 
 #[derive(Default, Clone)]
 pub struct Mesh {
@@ -17,27 +27,8 @@ pub struct Mesh {
     pub params: ShaderParams,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Declaration {
-    pub usage: u32,
-    pub stride: u8,
-    pub types: u64,
-}
-
-const POSITION: u32 = 0;
-const BLEND_WEIGHT: u32 = 1;
-const BLEND_INDEX: u32 = 2;
-const NORMAL: u32 = 3;
-const COLOR: u32 = 4;
-const TEXCOORD0: u32 = 6;
-const TANGENT0: u32 = 14;
-
-pub fn type_size(t: u32) -> Option<usize> {
-    match t {
-        1 | 9 | 0xA => Some(crate::kv!(1 int)),
-        6 => Some(crate::kv!(55 int)),
-        _ => None,
-    }
+fn decoded(t: ElementType) -> bool {
+    matches!(t, ElementType::Half2 | ElementType::Float3 | ElementType::Colour | ElementType::Dec3n)
 }
 
 fn be32(d: &[u8], at: usize) -> Result<u32, String> {
@@ -65,29 +56,63 @@ fn array(r: &Resource, at: usize) -> Result<Vec<usize>, String> {
     (0..count).map(|i| ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)).collect()
 }
 
-fn c_string(d: &[u8], at: usize) -> String {
-    String::from_utf8_lossy(d[at..].split(|&b| b == 0).next().unwrap_or_default()).into_owned()
+struct FileParts<'r> {
+    r: &'r Resource,
+    textures: bool,
+    shaders: bool,
 }
 
-fn shaders(r: &Resource, group: usize) -> Result<Vec<(Option<String>, String)>, String> {
-    let d = &r.data;
-    array(r, group + crate::kv!(23 int))?
-        .into_iter()
+impl GroupParts for FileParts<'_> {
+    type Textures = Vec<Texture>;
+    type Shader = Shader;
+    fn textures(&mut self, src: &impl ResourceBytes, map: &ResourceMap, field: Location, links: &mut impl Links)
+        -> Result<Option<Vec<Texture>>, String> {
+        if !self.textures {
+            return Ok(None);
+        }
+        map.follow(src, field, links)?.map(|at| read_dictionary_at(self.r, at.0 as usize)).transpose()
+    }
+    fn shader(&mut self, src: &impl ResourceBytes, map: &ResourceMap, slot: Location, links: &mut impl Links)
+        -> Result<Option<Shader>, String> {
+        if !self.shaders {
+            return Ok(None);
+        }
+        Ok(read_shader_slots(src, map, slot, 1, links)?.pop().flatten())
+    }
+}
+
+impl DrawableParts for FileParts<'_> {
+    type Skeleton = ();
+    fn skeleton(&mut self, src: &impl ResourceBytes, map: &ResourceMap, field: Location, links: &mut impl Links)
+        -> Result<Option<()>, String> {
+        Ok(map.follow(src, field, links)?.map(|_| ()))
+    }
+}
+
+fn drawable(r: &Resource, at: usize, textures: bool, shaders: bool) -> Result<Drawable<Vec<Texture>, Shader, ()>, String> {
+    let map = ResourceMap::of(r);
+    Drawable::read(r, &map, Location(at as u32), &mut FileParts { r, textures, shaders }, &mut ())
+}
+
+fn group_shaders(group: Option<ShaderGroup<Vec<Texture>, Shader>>) -> Result<Vec<Shader>, String> {
+    let group = group.ok_or("A drawable without a shader group")?;
+    group.shaders.into_iter().map(|s| s.ok_or_else(|| "An empty shader slot".to_string())).collect()
+}
+
+fn preset_of(shader: &Shader) -> String {
+    shader.preset_name().unwrap_or_default()
+}
+
+fn shaders(shaders: &[Shader]) -> Result<Vec<(Option<String>, String)>, String> {
+    shaders
+        .iter()
         .map(|shader| {
-            let preset = ptr(r, be32(d, shader + crate::kv!(482 int))?).map(|at| c_string(d, at)).unwrap_or_default();
-            let count = be32(d, shader + crate::kv!(85 int))? as usize;
-            if count == 0 {
-                return Ok((None, preset));
-            }
-            let (params, types) = (ptr(r, be32(d, shader + crate::kv!(127 int))?)?, ptr(r, be32(d, shader + crate::kv!(94 int))?)?);
-            for i in 0..count {
-                let value = be32(d, params + i * crate::kv!(1 int))?;
-                if d[types + i] == 0 && value != 0 {
-                    let tex = ptr(r, value)?;
-                    return Ok((Some(c_string(d, ptr(r, be32(d, tex + crate::kv!(127 int))?)?)), preset));
-                }
-            }
-            Ok((None, preset))
+            let preset = preset_of(shader);
+            let texture = shader.instance.variables.iter().find_map(|v| match &v.value {
+                Some(Value::Texture(t)) => Some(t.name.clone().ok_or("A texture variable without a name")),
+                _ => None,
+            });
+            Ok((texture.transpose()?, preset))
         })
         .collect()
 }
@@ -99,57 +124,61 @@ pub struct ShaderParams {
     pub vectors: Vec<(u32, [f32; 4])>,
 }
 
-pub fn shader_params(r: &Resource, drawable: usize) -> Result<Vec<ShaderParams>, String> {
-    let d = &r.data;
-    array(r, ptr(r, be32(d, drawable + crate::kv!(23 int))?)? + crate::kv!(23 int))?
-        .into_iter()
+pub fn shader_params(r: &Resource, drawable_at: usize) -> Result<Vec<ShaderParams>, String> {
+    Ok(params_of(&group_shaders(drawable(r, drawable_at, false, true)?.shader_group)?))
+}
+
+fn params_of(shaders: &[Shader]) -> Vec<ShaderParams> {
+    shaders
+        .iter()
         .map(|shader| {
-            let mut out = ShaderParams { preset: ptr(r, be32(d, shader + crate::kv!(482 int))?).map(|at| c_string(d, at)).unwrap_or_default(), ..Default::default() };
-            let count = be32(d, shader + crate::kv!(85 int))? as usize;
-            if count == 0 {
-                return Ok(out);
-            }
-            let (params, types, hashes) =
-                (ptr(r, be32(d, shader + crate::kv!(127 int))?)?, ptr(r, be32(d, shader + crate::kv!(94 int))?)?, ptr(r, be32(d, shader + crate::kv!(385 int))?)?);
-            for i in 0..count {
-                let (value, hash) = (be32(d, params + i * crate::kv!(1 int))?, be32(d, hashes + i * crate::kv!(1 int))?);
-                if value == 0 {
-                    continue;
-                }
-                let at = ptr(r, value)?;
-                if d[types + i] == 0 {
-                    if let Ok(name) = ptr(r, be32(d, at + crate::kv!(127 int))?) {
-                        out.textures.push((hash, c_string(d, name)));
-                    }
-                } else {
-                    let f = |k: usize| be32(d, at + k * crate::kv!(1 int)).map(f32::from_bits);
-                    out.vectors.push((hash, [f(0)?, f(1)?, f(2)?, f(crate::kv!(0 int))?]));
+            let mut out = ShaderParams { preset: preset_of(shader), ..Default::default() };
+            for v in &shader.instance.variables {
+                match &v.value {
+                    Some(Value::Texture(t)) => out.textures.extend(t.name.clone().map(|name| (v.name.0, name))),
+                    Some(Value::Registers(rows)) => out.vectors.extend(rows.first().map(|&row| (v.name.0, row))),
+                    None => {}
                 }
             }
-            Ok(out)
+            out
         })
         .collect()
 }
 
 pub fn drawables(r: &Resource) -> Result<Vec<usize>, String> {
-    if be32(&r.data, 0)? & crate::kv!(749 int) == crate::kv!(931 int) { array(r, crate::kv!(107 int)) } else { Ok(vec![0]) }
+    if be32(&r.data, 0)? & crate::kv!(749 int) == crate::kv!(932 int) { array(r, crate::kv!(107 int)) } else { Ok(vec![0]) }
 }
 
-pub fn declarations(r: &Resource) -> Result<Vec<Declaration>, String> {
+pub fn declarations(r: &Resource) -> Result<Vec<VertexFormat>, String> {
+    Ok(declaration_records(r)?.iter().map(format_from_record).collect())
+}
+
+pub fn declaration_records(r: &Resource) -> Result<Vec<[u8; 16]>, String> {
     let mut out = vec![];
     for at in drawables(r)? {
         for (_, g) in geometries(r, at)? {
-            out.push(declaration(r, g)?);
+            out.push(declaration_record(r, g)?);
         }
     }
     Ok(out)
 }
 
-fn declaration(r: &Resource, geometry: usize) -> Result<Declaration, String> {
+fn declaration_record(r: &Resource, geometry: usize) -> Result<[u8; 16], String> {
     let vb = ptr(r, be32(&r.data, geometry + crate::kv!(55 int))?)?;
     let decl = ptr(r, be32(&r.data, vb + crate::kv!(54 int))?)?;
-    let d = &r.data;
-    Ok(Declaration { usage: be32(d, decl)?, stride: d[decl + crate::kv!(1 int)], types: u64::from_be_bytes(d[decl + crate::kv!(23 int)..decl + crate::kv!(54 int)].try_into().unwrap()) })
+    let b = r.data.get(decl..decl + crate::kv!(54 int)).ok_or("Read out of range")?;
+    Ok(b.try_into().unwrap())
+}
+
+pub fn format_from_record(b: &[u8; 16]) -> VertexFormat {
+    let types = u64::from_be_bytes(b[crate::kv!(23 int)..crate::kv!(54 int)].try_into().unwrap());
+    VertexFormat {
+        channels: ChannelSet(u16::from_be_bytes([b[2], b[crate::kv!(0 int)]])),
+        vertex_size: b[crate::kv!(1 int)],
+        packed_positions: b[crate::kv!(2 int)] & 1 != 0,
+        packed: b[crate::kv!(6 int)] != 0,
+        types: core::array::from_fn(|n| ElementType::from_code((types >> (crate::kv!(1 int) * n)) as u8)),
+    }
 }
 
 fn geometries(r: &Resource, drawable: usize) -> Result<Vec<(usize, usize)>, String> {
@@ -169,7 +198,7 @@ fn geometries(r: &Resource, drawable: usize) -> Result<Vec<(usize, usize)>, Stri
 }
 
 fn half(h: u16) -> f32 {
-    let (sign, exp, mant) = ((h >> crate::kv!(189 int)) as u32, ((h >> crate::kv!(81 int)) & crate::kv!(462 int)) as i32, (h & crate::kv!(932 int)) as f32);
+    let (sign, exp, mant) = ((h >> crate::kv!(189 int)) as u32, ((h >> crate::kv!(81 int)) & crate::kv!(462 int)) as i32, (h & crate::kv!(933 int)) as f32);
     let v = match exp {
         0 => mant * 2f32.powi(-crate::kv!(107 int)),
         31 => if mant == 0.0 { f32::INFINITY } else { f32::NAN },
@@ -179,7 +208,7 @@ fn half(h: u16) -> f32 {
 }
 
 fn dec3n(v: u32) -> [f32; 3] {
-    let s = |x: u32| { let x = (x & crate::kv!(932 int)) as i32; (if x & crate::kv!(182 int) != 0 { x - crate::kv!(183 int) } else { x }) as f32 / crate::kv!(933) };
+    let s = |x: u32| { let x = (x & crate::kv!(933 int)) as i32; (if x & crate::kv!(182 int) != 0 { x - crate::kv!(183 int) } else { x }) as f32 / crate::kv!(934) };
     [s(v), s(v >> crate::kv!(81 int)), s(v >> crate::kv!(127 int))]
 }
 
@@ -192,9 +221,8 @@ pub fn dictionary(r: &Resource) -> Result<Vec<(u32, usize)>, String> {
     entries.into_iter().enumerate().map(|(i, at)| Ok((be32(&r.data, hashes + i * crate::kv!(1 int))?, at))).collect()
 }
 
-pub fn embedded_textures(r: &Resource, drawable: usize) -> Option<usize> {
-    let group = ptr(r, be32(&r.data, drawable + crate::kv!(23 int)).ok()?).ok()?;
-    ptr(r, be32(&r.data, group + crate::kv!(1 int)).ok()?).ok()
+pub fn embedded_texture_dictionary(r: &Resource, at: usize) -> Vec<Texture> {
+    drawable(r, at, true, false).ok().and_then(|d| d.shader_group).and_then(|g| g.textures).unwrap_or_default()
 }
 
 pub fn fragment_root(r: &Resource) -> Result<usize, String> {
@@ -203,7 +231,7 @@ pub fn fragment_root(r: &Resource) -> Result<usize, String> {
 
 pub fn fragment_inertia(r: &Resource) -> Result<[f32; 3], String> {
     let f = |at: usize| be32(&r.data, at).map(f32::from_bits);
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(398 int))?)?, *r.data.get(crate::kv!(934 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(398 int))?)?, *r.data.get(crate::kv!(935 int)).ok_or("Truncated fragment")? as usize);
     let mut total = 0.0;
     for i in 0..count {
         total += f(ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)? + crate::kv!(1 int))?;
@@ -311,56 +339,72 @@ pub fn lights(r: &Resource, drawable: usize) -> Result<Vec<LightAttr>, String> {
     }).collect()
 }
 
+fn lod_models(lod_group: LodGroup) -> Result<Vec<Model>, String> {
+    let [high, ..] = lod_group.lods;
+    high.unwrap_or_default().into_iter().map(|m| m.ok_or_else(|| "An empty model slot".to_string())).collect()
+}
+
 pub fn meshes(r: &Resource, geometry: usize, shading: usize) -> Result<Vec<Mesh>, String> {
-    let d = &r.data;
-    let shaders = shaders(r, ptr(r, be32(d, shading + crate::kv!(23 int))?)?)?;
-    let params = shader_params(r, shading).unwrap_or_default();
-    geometries(r, geometry)?
-        .into_iter()
+    let Drawable { shader_group, lod_group, .. } = drawable(r, geometry, false, geometry == shading)?;
+    let shading_group = if geometry == shading { shader_group } else { drawable(r, shading, false, true)?.shader_group };
+    let shader_list = group_shaders(shading_group)?;
+    let shaders = shaders(&shader_list)?;
+    let params = params_of(&shader_list);
+    let geometries = lod_models(lod_group)?.into_iter().flat_map(|model| {
+        let shader_indices = model.shader_indices;
+        model.geometries.into_iter().enumerate().map(move |(i, g)| (shader_indices.get(i).copied(), g))
+    });
+    geometries
         .map(|(shader, g)| {
-            let decl = declaration(r, g)?;
-            let vb = ptr(r, be32(d, g + crate::kv!(55 int))?)?;
-            let ib = ptr(r, be32(d, g + crate::kv!(85 int))?)?;
-            let (vcount, stride) = (be16(d, vb + crate::kv!(1 int))? as usize, decl.stride as usize);
-            let (vdata, idata) = (ptr(r, be32(d, vb + crate::kv!(23 int))?)?, ptr(r, be32(d, ib + crate::kv!(23 int))?)?);
+            let g = g.ok_or("A model with an empty geometry slot")?;
+            let shader = shader.ok_or("A geometry without a shader index")? as usize;
+            let [Some(mut vertex_buffer), ..] = g.vertex_buffers else { return Err("A geometry without a vertex buffer".into()) };
+            let [Some(index_buffer), ..] = g.index_buffers else { return Err("A geometry without an index buffer".into()) };
+            let decl = vertex_buffer.format;
+            let (vcount, stride) = (vertex_buffer.count as usize, vertex_buffer.stride);
             let (texture, preset) = shaders.get(shader).cloned().unwrap_or_default();
             let mut mesh = Mesh { texture, shader: preset, params: params.get(shader).cloned().unwrap_or_default(), ..Default::default() };
-            let map_count = be16(d, g + crate::kv!(310 int))? as usize;
-            if map_count > 0 {
-                let map = ptr(r, be32(d, g + crate::kv!(323 int))?)?;
-                mesh.bone_map = (0..map_count).map(|i| be16(d, map + i * 2)).collect::<Result<_, _>>()?;
+            mesh.bone_map = g.bone_map;
+            mesh.indices = index_buffer.indices.iter().map(|&i| u32::from(i)).collect();
+            let mut sized = decl;
+            sized.update_vertex_size();
+            if sized.vertex_size != decl.vertex_size || stride != decl.vertex_size as u32 {
+                return Err(format!("Vertex format sizes sum to {}, stride is {stride}", sized.vertex_size));
             }
-            mesh.indices = (0..be32(d, ib + crate::kv!(1 int))? as usize).map(|i| be16(d, idata + i * 2).map(u32::from)).collect::<Result<_, _>>()?;
-            let mut offset = 0;
-            for bit in 0..crate::kv!(7 int) {
-                if decl.usage & (1 << bit) == 0 {
+            let editor = VertexBufferEditor::new(&mut vertex_buffer, true, true);
+            let vb = &mut *editor.buffer;
+            for n in 0..crate::kv!(54 u8) {
+                let channel = Channel::from_number(n);
+                if !decl.channels.has(channel) {
                     continue;
                 }
-                let t = ((decl.types >> (bit * crate::kv!(1 int))) & crate::kv!(189 int)) as u32;
-                let size = type_size(t).ok_or(format!("Unknown vertex element type {t} (usage bit {bit})"))?;
-                for v in 0..vcount {
-                    let at = vdata + v * stride + offset;
-                    let f = |k: usize| be32(d, at + k * crate::kv!(1 int)).map(f32::from_bits);
-                    match (bit, t) {
-                        (POSITION, 6) => mesh.positions.push([f(0)?, f(1)?, f(2)?]),
-                        (NORMAL, 6) => mesh.normals.push([f(0)?, f(1)?, f(2)?]),
-                        (NORMAL, 0xA) => mesh.normals.push(dec3n(be32(d, at)?)),
-                        (TANGENT0, 0xA) => {
-                            let v = be32(d, at)?;
+                let t = decl.types[n as usize];
+                if !decoded(t) {
+                    return Err(format!("Unknown vertex element type {} (channel {n})", t.code()));
+                }
+                for v in 0..vcount as u32 {
+                    let bytes = vb.element_bytes(v, channel, t.size() as usize).to_vec();
+                    let f = |k: usize| f32::from_bits(u32::from_be_bytes(bytes[k * crate::kv!(1 int)..k * crate::kv!(1 int) + crate::kv!(1 int)].try_into().unwrap()));
+                    let h = |k: usize| half(u16::from_be_bytes([bytes[k * 2], bytes[k * 2 + 1]]));
+                    match (channel, t) {
+                        (Channel::Position, ElementType::Float3) => mesh.positions.push([f(0), f(1), f(2)]),
+                        (Channel::Normal, ElementType::Float3) => mesh.normals.push([f(0), f(1), f(2)]),
+                        (Channel::Normal, ElementType::Dec3n) => mesh.normals.push(dec3n(vb.element_word(v, channel))),
+                        (Channel::Tangent(0), ElementType::Dec3n) => {
+                            let v = vb.element_word(v, channel);
                             let [x, y, z] = dec3n(v);
                             let w = match v >> 30 { 1 => 1.0, 0 => 0.0, _ => -1.0 };
                             mesh.tangents.push([x, y, z, w]);
                         }
-                        (BLEND_WEIGHT, 9) => mesh.weights.push(be32(d, at)?.to_be_bytes()),
-                        (BLEND_INDEX, 9) => mesh.joints.push(be32(d, at)?.to_be_bytes()),
-                        (COLOR, 9) => { let [a, r, g, b] = be32(d, at)?.to_be_bytes(); mesh.colors.push([r, g, b, a]) }
-                        (TEXCOORD0, 1) => {
-                            let h = |k: usize| half(be16(d, at + k * 2).unwrap_or(0));
-                            mesh.uvs.push([h(0), h(1)]);
+                        (Channel::BlendWeight, ElementType::Colour) => mesh.weights.push(vb.element_word(v, channel).to_be_bytes()),
+                        (Channel::BlendIndex, ElementType::Colour) => mesh.joints.push(vb.element_word(v, channel).to_be_bytes()),
+                        (Channel::Colour, ElementType::Colour) => {
+                            let [a, r, g, b] = vb.element_word(v, channel).to_be_bytes();
+                            mesh.colors.push([r, g, b, a])
                         }
-                        (7..=13, 1) => {
-                            let h = |k: usize| half(be16(d, at + k * 2).unwrap_or(0));
-                            let i = (bit - crate::kv!(22 int)) as usize;
+                        (Channel::TexCoord(0), ElementType::Half2) => mesh.uvs.push([h(0), h(1)]),
+                        (Channel::TexCoord(set), ElementType::Half2) => {
+                            let i = (set - 1) as usize;
                             if mesh.texcoords.len() <= i {
                                 mesh.texcoords.resize(i + 1, Vec::new());
                             }
@@ -369,10 +413,6 @@ pub fn meshes(r: &Resource, geometry: usize, shading: usize) -> Result<Vec<Mesh>
                         _ => break,
                     }
                 }
-                offset += size;
-            }
-            if offset != stride {
-                return Err(format!("Declaration sizes sum to {offset}, stride is {stride}"));
             }
             Ok(mesh)
         })

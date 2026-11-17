@@ -24,11 +24,11 @@ impl ObjectDef {
     pub fn model_flags(&self) -> u32 {
         #[allow(non_snake_case)]
         #[inline]
-        fn MOVES() -> &'static [(u32, u32); 14] { static V: std::sync::OnceLock<[(u32, u32); 14]> = std::sync::OnceLock::new(); let f = || [
+        fn MOVES() -> &'static [(u32, u32); 14] { static V: std::sync::OnceLock<[(u32, u32); 14]> = std::sync::OnceLock::new(); let f = || -> [(u32, u32); 14] { [
             (crate::kv!(648 int), crate::kv!(1 int)), (crate::kv!(52 int), crate::kv!(181 int)), (crate::kv!(722 int), crate::kv!(54 int)), (crate::kv!(7 int), crate::kv!(712 int)), (crate::kv!(257 int), crate::kv!(648 int)), (crate::kv!(816 int), crate::kv!(184 int)), (crate::kv!(817 int), crate::kv!(818 int)),
             (crate::kv!(819 int), crate::kv!(820 int)), (crate::kv!(821 int), crate::kv!(822 int)), (crate::kv!(822 int), crate::kv!(676 int)), (crate::kv!(823 int), crate::kv!(183 int)), (crate::kv!(824 int), crate::kv!(722 int)), (crate::kv!(182 int), crate::kv!(825 int)),
             (crate::kv!(183 int), crate::kv!(826 int)),
-        ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+        ] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
         let mut out = (self.kind as u32) << crate::kv!(107 int);
         for (from, to) in (*MOVES()) {
             if self.ide_flags & from != 0 {
@@ -81,7 +81,7 @@ pub struct Xpl<'a> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn XPL_SECTIONS() -> &'static [(usize, usize); 11] { static V: std::sync::OnceLock<[(usize, usize); 11]> = std::sync::OnceLock::new(); let f = || [(crate::kv!(1 int), crate::kv!(93 int)), (crate::kv!(23 int), crate::kv!(330 int)), (crate::kv!(55 int), crate::kv!(93 int)), (crate::kv!(54 int), crate::kv!(323 int)), (crate::kv!(127 int), crate::kv!(415 int)), (crate::kv!(107 int), crate::kv!(415 int)), (crate::kv!(85 int), crate::kv!(127 int)), (crate::kv!(188 int), crate::kv!(368 int)), (crate::kv!(94 int), crate::kv!(188 int)), (crate::kv!(95 int), crate::kv!(780 int)), (crate::kv!(415 int), crate::kv!(107 int))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn XPL_SECTIONS() -> &'static [(usize, usize); 11] { static V: std::sync::OnceLock<[(usize, usize); 11]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 11] { [(crate::kv!(1 int), crate::kv!(93 int)), (crate::kv!(23 int), crate::kv!(330 int)), (crate::kv!(55 int), crate::kv!(93 int)), (crate::kv!(54 int), crate::kv!(323 int)), (crate::kv!(127 int), crate::kv!(415 int)), (crate::kv!(107 int), crate::kv!(415 int)), (crate::kv!(85 int), crate::kv!(127 int)), (crate::kv!(188 int), crate::kv!(368 int)), (crate::kv!(94 int), crate::kv!(188 int)), (crate::kv!(95 int), crate::kv!(780 int)), (crate::kv!(415 int), crate::kv!(107 int))] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn be32(d: &[u8], at: usize) -> Option<u32> {
     d.get(at..at + crate::kv!(1 int)).map(|b| u32::from_be_bytes(b.try_into().unwrap()))

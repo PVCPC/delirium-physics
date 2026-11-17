@@ -46,7 +46,7 @@ fn in_hole(l: Vec3) -> bool {
 const COLORS: [Color; 2] = [Color::srgb(0.15, 0.55, 1.0), Color::srgb(1.0, 0.55, 0.1)];
 const PATH: &str = "portal2_path.txt";
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Frame {
     at: Vec3,
     rot: Quat,
@@ -366,6 +366,9 @@ impl Sim {
         if let Some(d) = a.strip_prefix("size ") && let [w, h] = p(d)[..] {
             return set_half(Vec2::new(w, h) / 2.0);
         }
+        if let Some(d) = a.strip_prefix("place ") {
+            return place::set_easy(d.trim() == "easy");
+        }
         if let Some(d) = a.strip_prefix("shape ") {
             return set_rect(d.trim() == "rect");
         }
@@ -470,6 +473,11 @@ pub fn settings(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) 
         if ui.checkbox(&mut thru, "Shoot portals through portals").changed() {
             SHOOT_THROUGH.store(thru, std::sync::atomic::Ordering::Relaxed);
         }
+        let mut e = place::easy();
+        if ui.checkbox(&mut e, "Easy placement").changed() {
+            place::set_easy(e);
+        }
+        crate::info(ui, "Portals open on bumpy and small walls too, overhanging a little. Off: Portal 2's own rules.");
         ui.label("Portal shape and size");
         ui.horizontal(|ui| {
             let mut r = rect();

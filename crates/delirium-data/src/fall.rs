@@ -82,7 +82,7 @@ pub const DEFAULT_CLIP: (i32, i32) = (DAMAGE_KO, id::KO_FRONT);
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn CLIPS() -> &'static [ClipDef; 12] { static V: std::sync::OnceLock<[ClipDef; 12]> = std::sync::OnceLock::new(); let f = || [
+pub fn CLIPS() -> &'static [ClipDef; 12] { static V: std::sync::OnceLock<[ClipDef; 12]> = std::sync::OnceLock::new(); let f = || -> [ClipDef; 12] { [
     ClipDef { group: DAMAGE_KO, id: id::KO_FRONT, dict: "dam_ko", clip: "ko_front", flags: crate::kv!(768 int) },
     ClipDef { group: DAMAGE_KO, id: id::KO_BACK(), dict: "dam_ko", clip: "ko_back", flags: crate::kv!(768 int) },
     ClipDef { group: DAMAGE_KO, id: id::KO_LEFT(), dict: "dam_ko", clip: "ko_left", flags: crate::kv!(768 int) },
@@ -95,7 +95,7 @@ pub fn CLIPS() -> &'static [ClipDef; 12] { static V: std::sync::OnceLock<[ClipDe
     ClipDef { group: DAMAGE_REACT_FLOOR(), id: id::REACT_FLOOR_FRONT(), dict: "dam_rec_civi", clip: "floor_front", flags: crate::kv!(771 int) },
     ClipDef { group: DAMAGE_REACT_FLOOR(), id: id::REACT_FLOOR_BACK(), dict: "dam_rec_civi", clip: "floor_back", flags: crate::kv!(772 int) },
     ClipDef { group: DAMAGE_KO, id: id::DROWN(), dict: "dam_ko", clip: "drown", flags: crate::kv!(180 int) },
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn clip_def(group: i32, id: i32) -> Option<&'static ClipDef> {
     (*CLIPS()).iter().find(|c| c.group == group && c.id == id)
@@ -179,7 +179,7 @@ pub const EXPLOSION: u32 = 51;
 pub fn FALL_DAMAGE() -> u32 { crate::kv!(37 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn TORSO() -> &'static [u16; 9] { static V: std::sync::OnceLock<[u16; 9]> = std::sync::OnceLock::new(); let f = || [crate::kv!(211 int), crate::kv!(776 int), crate::kv!(212 int), crate::kv!(777 int), crate::kv!(213 int), crate::kv!(210 int), crate::kv!(209 int), crate::kv!(778 int), crate::kv!(779 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn TORSO() -> &'static [u16; 9] { static V: std::sync::OnceLock<[u16; 9]> = std::sync::OnceLock::new(); let f = || -> [u16; 9] { [crate::kv!(211 int), crate::kv!(776 int), crate::kv!(212 int), crate::kv!(777 int), crate::kv!(213 int), crate::kv!(210 int), crate::kv!(209 int), crate::kv!(778 int), crate::kv!(779 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Hit {

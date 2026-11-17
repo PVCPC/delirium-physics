@@ -83,15 +83,7 @@ impl Route {
 }
 
 fn rsqrte(v: f32) -> f32 {
-    if v.is_nan() || v < 0.0 {
-        f32::NAN
-    } else if v == 0.0 {
-        if v.is_sign_negative() { f32::NEG_INFINITY } else { f32::INFINITY }
-    } else if v == f32::INFINITY {
-        0.0
-    } else {
-        (1.0 / (v as f64).sqrt()) as f32
-    }
+    crate::estimate::vrsqrtefp(v)
 }
 
 fn unit(d: Point) -> Point {
@@ -99,7 +91,7 @@ fn unit(d: Point) -> Point {
 }
 
 fn unit_len(d: Point) -> (Point, f32) {
-    let s = (0.0 + d[0] as f64 * d[0] as f64 + d[1] as f64 * d[1] as f64 + d[2] as f64 * d[2] as f64) as f32;
+    let s = crate::estimate::vmsum3([d[0] as f64 * d[0] as f64, d[1] as f64 * d[1] as f64, d[2] as f64 * d[2] as f64]);
     let e = rsqrte(s);
     let e = if e == f32::INFINITY { 0.0 } else { e };
     let e2 = e * e;
@@ -526,7 +518,7 @@ pub struct Course {
 impl Course {
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SCRIPT() -> &'static Course { static V: std::sync::OnceLock<Course> = std::sync::OnceLock::new(); let f = || Course { arrive: ARRIVE, slow: SLOW(), radius: -1.0, past: false, smooth: true, stand: true, index: 0 }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    pub fn SCRIPT() -> &'static Course { static V: std::sync::OnceLock<Course> = std::sync::OnceLock::new(); let f = || -> Course { Course { arrive: ARRIVE, slow: SLOW(), radius: -1.0, past: false, smooth: true, stand: true, index: 0 } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 }
 
 impl FollowPointRoute {

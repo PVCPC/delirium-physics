@@ -35,7 +35,7 @@ namespace Delirium.Ragdoll
         float push, getUpAfter, getUpBlend;
         bool balance, bodySymmetric, armsOutEarly;
         string body, customBody, overrides, hold, follow, keyframe;
-        bool recentreJoints, enginePhysics, stepLimit, fireReaction;
+        bool recentreJoints, enginePhysics, stepLimit, fireReaction, carryPushes, getUpNeedsFloor;
         string weaponTable, getUpNet, walkNet;
         int bodySeed;
         float bodyVariance;
@@ -80,6 +80,10 @@ namespace Delirium.Ragdoll
         public bool stepLimit = true;
         [Tooltip("A burning character reacts (flails, staggers, writhes). Off: he burns but carries on.")]
         public bool fireReaction = true;
+        [Tooltip("Pushes queued on a ragdoll keep their place when you move it far yourself (a portal, a teleport): off, a shot can spin him. Off as in the game.")]
+        public bool carryPushes;
+        [Tooltip("A body lying with its hips over a hole (a trapdoor, a floor portal) does not get up. Off as in the game.")]
+        public bool getUpNeedsFloor;
         [Tooltip("The learned nets (in StreamingAssets): LearnedGetUp's and LearnedWalk's.")]
         public string getUpNet = "getup.net", walkNet = "walk.net";
         [Header("Body")]
@@ -237,6 +241,8 @@ namespace Delirium.Ragdoll
                 "(a ped has 100-200; under 100 left goes down, under 50 is a kill); pellets: a shotgun's. Empty: pistol, smg, rifle, shotgun.").Value;
             stepLimit = Config.Bind("Feel", "StepLimit", true, "The game's balance runs out of steps (a push he can't take up in so many drops him). Off: he keeps stepping (the Playroom's).").Value;
             fireReaction = Config.Bind("Feel", "FireReaction", true, "A burning character reacts (flails, staggers, writhes). Off: he burns but carries on.").Value;
+            carryPushes = Config.Bind("Feel", "CarryPushes", false, "Pushes queued on a ragdoll keep their place when you move it far yourself (a portal, a teleport): off, a shot can spin him. Off as in the game.").Value;
+            getUpNeedsFloor = Config.Bind("Feel", "GetUpNeedsFloor", false, "A body lying with its hips over a hole (a trapdoor, a floor portal) does not get up. Off as in the game.").Value;
             getUpNet = Config.Bind("Data", "GetUpNet", "getup.net", "LearnedGetUp's network (absolute, or next to this plugin).").Value;
             walkNet = Config.Bind("Data", "WalkNet", "walk.net", "LearnedWalk's network (absolute, or next to this plugin).").Value;
             Adaptive = Config.Bind("Body", "Adaptive", true, "Fit each kind of character to its own shape: its weight from its skin and its " +
@@ -283,6 +289,8 @@ namespace Delirium.Ragdoll
                 nm_crash_report(Path.GetDirectoryName(tunes));
                 nm_set_step_limit(stepLimit ? 1 : 0);
                 nm_set_fire_reaction(fireReaction ? 1 : 0);
+                nm_set_carry_pushes(carryPushes ? 1 : 0);
+                nm_set_get_up_needs_floor(getUpNeedsFloor ? 1 : 0);
                 if (LoadWeapons(weaponTable.EndsWith(".xml") ? Find(weaponTable) : weaponTable) < 0) Logger.LogWarning($"Weapons: {LastError()}");
                 if (gameExe != "") Check(nm_unlock(gameExe));
                 Check(nm_init(Find(xrt)));

@@ -123,6 +123,10 @@ pub unsafe extern "C" fn nm_last_error(buf: *mut c_char, len: i32) -> i32 {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_init_memory(xrt: *const u8, len: i32) -> i32 {
+    unsafe { init_asset(delirium::nmrs::HOMER, xrt, len) }
+}
+
+unsafe fn init_asset(nm: usize, xrt: *const u8, len: i32) -> i32 {
     if xrt.is_null() || len <= 0 {
         return fail(NM_E_ARG, "nm_init_memory: no data");
     }
@@ -133,10 +137,19 @@ pub unsafe extern "C" fn nm_init_memory(xrt: *const u8, len: i32) -> i32 {
     if !delirium_data::kv::open() {
         return fail(NM_E_STATE, "nm_init: call nm_unlock with your own GTAIV.exe first (the PC game's)");
     }
-    let fresh = delirium::nmrs::ASSET[delirium::nmrs::HOMER].get().is_none();
+    let fresh = delirium::nmrs::ASSET[nm].get().is_none();
     drop(asset);
-    delirium::nmrs::load(delirium::nmrs::HOMER, d);
+    delirium::nmrs::load(nm, d);
     if fresh { 0 } else { 1 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_init_marge(xrt_path: *const c_char) -> i32 {
+    let Some(p) = (unsafe { text(xrt_path) }) else { return fail(NM_E_ARG, "nm_init_marge: no path") };
+    match std::fs::read(p) {
+        Ok(d) => unsafe { init_asset(delirium::nmrs::MARGE, d.as_ptr(), d.len() as i32) },
+        Err(e) => fail(NM_E_IO, format!("nm_init_marge: {p}: {e}")),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -159,7 +172,7 @@ pub unsafe extern "C" fn nm_unlock(exe_path: *const c_char) -> i32 {
         Ok(d) => d,
         Err(e) => return fail(NM_E_IO, format!("nm_unlock: {e}")),
     };
-    if delirium_data::kv::unlock(&d) { 0 } else { fail(NM_E_STATE, format!("nm_unlock: {p} isn't a version the numbers are read from (the Steam GTAIV.exe or the disc's default.xex)")) }
+    if delirium_data::kv::unlock(&d) { 0 } else { fail(NM_E_STATE, format!("nm_unlock: {p} isn't a version the numbers are read from (the Steam GTAIV.exe 1.2.0.59 or 1.0.8.0, or the disc's default.xex)")) }
 }
 
 #[unsafe(no_mangle)]
@@ -239,6 +252,24 @@ pub unsafe extern "C" fn nm_world_destroy(w: *mut NmWorld) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_add_mesh(w: *mut NmWorld, positions: *const f32, vertices: i32, triangles: *const u32, count: i32,
                                            materials: *const u8) -> i32 {
+    unsafe { put_mesh(w, None, positions, vertices, triangles, count, materials) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_world_set_mesh(w: *mut NmWorld, id: i32, positions: *const f32, vertices: i32, triangles: *const u32,
+                                           count: i32, materials: *const u8) -> i32 {
+    if id < 0 {
+        return fail(NM_E_ARG, "nm_world_set_mesh: id under 0");
+    }
+    if let Some(w) = unsafe { w.as_mut() } && count == 0 {
+        w.0.remove_chunk(id as u64);
+        return 0;
+    }
+    unsafe { put_mesh(w, Some(id as u64), positions, vertices, triangles, count, materials) }
+}
+
+unsafe fn put_mesh(w: *mut NmWorld, key: Option<u64>, positions: *const f32, vertices: i32, triangles: *const u32, count: i32,
+                   materials: *const u8) -> i32 {
     let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
     if positions.is_null() || triangles.is_null() || vertices < 0 || count < 0 {
         return fail(NM_E_ARG, "nm_world_add_mesh: bad arrays");
@@ -252,7 +283,13 @@ pub unsafe extern "C" fn nm_world_add_mesh(w: *mut NmWorld, positions: *const f3
     let s = w.2.len();
     let mut p: Vec<[f32; 3]> = p.iter().map(|v| v.map(|x| x / s)).collect();
     let (t, m) = split_big(&mut p, t, &m);
-    w.0.add(&p, &t, &m);
+    match key {
+        Some(k) => {
+            w.0.remove_chunk(k);
+            w.0.add_chunk(k, &p, &t, &m);
+        }
+        None => w.0.add(&p, &t, &m),
+    }
     0
 }
 
@@ -316,18 +353,82 @@ pub unsafe extern "C" fn nm_world_set_boxes(w: *mut NmWorld, boxes: *const f32, 
     }
     let f = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(boxes, count as usize * 13) } };
     let u = w.2;
+    let walls: Vec<Obstacle> = w.1.drain(..).filter(|o| o.id < 0).collect();
     w.1 = f.chunks(13).enumerate().map(|(k, b)| {
         let c = Vec3::new(b[0], b[1], b[2]) / u.len();
         let (rot, half, vel) = (Quat::from_xyzw(b[3], b[4], b[5], b[6]).normalize(), Vec3::new(b[7], b[8], b[9]) / u.len(), Vec3::new(b[10], b[11], b[12]) / u.time());
         Obstacle { frame_end: false, id: k as i32, at: c, rot, centre: c, half, vel, spin: Vec3::ZERO, com: c, parts: &[], last: None, entity: 0, first: false, inv_mass: 0.0, inv_inertia: None, force: Vec3::ZERO, turn: None }
     }).collect();
+    w.1.extend(walls);
     0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_world_set_walls(w: *mut NmWorld, boxes: *const f32, count: i32) -> i32 {
+    let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
+    if count < 0 || (count > 0 && boxes.is_null()) {
+        return fail(NM_E_ARG, "nm_world_set_walls: bad array");
+    }
+    let f = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(boxes, count as usize * 10) } };
+    if f.iter().any(|v| !v.is_finite()) {
+        return fail(NM_E_ARG, "nm_world_set_walls: not a number");
+    }
+    let u = w.2;
+    w.1.retain(|o| o.id >= 0);
+    w.1.extend(f.chunks(10).map(|b| {
+        let c = Vec3::new(b[0], b[1], b[2]) / u.len();
+        let (rot, half) = (Quat::from_xyzw(b[3], b[4], b[5], b[6]).normalize(), Vec3::new(b[7], b[8], b[9]).abs() / u.len());
+        Obstacle { frame_end: false, id: -1, at: c, rot, centre: c, half, vel: Vec3::ZERO, spin: Vec3::ZERO, com: c, parts: &[], last: None, entity: 0, first: false, inv_mass: 0.0, inv_inertia: None, force: Vec3::ZERO, turn: None }
+    }));
+    0
+}
+
+pub const NM_BUMP_NOTHING: i32 = 0;
+pub const NM_BUMP_SHOVE: i32 = 1;
+pub const NM_BUMP_FLINCH: i32 = 2;
+pub const NM_BUMP_KNOCKED_OVER: i32 = 3;
+pub const NM_BUMP_IN_FORMATION: i32 = 1;
+pub const NM_BUMP_SHOVED_LAST: i32 = 2;
+pub const NM_BUMP_FRIEND: i32 = 4;
+pub const NM_BUMP_ARMED: i32 = 8;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_player_bump(w: *const NmWorld, me: i32, other: i32, me_at: *const f32, other_at: *const f32, health: f32,
+                                        my_weakness: f32, other_weakness: f32, flags: i32, side: *mut i32, clip: *mut i32) -> i32 {
+    use delirium_data::playerbump as pb;
+    if me_at.is_null() || other_at.is_null() {
+        return fail(NM_E_ARG, "nm_player_bump: null place");
+    }
+    let (a, b) = unsafe { (std::slice::from_raw_parts(me_at, 6), std::slice::from_raw_parts(other_at, 6)) };
+    let len = unsafe { w.as_ref() }.map_or(1.0, |w| w.2.len());
+    let m = |s: &[f32]| [s[0] / len, s[1] / len, s[2] / len];
+    let f = |s: &[f32]| [s[3], s[4], s[5]];
+    let bump = pb::Bump { me, other, my_forward: [0.0; 3], other_forward: [0.0; 3], d: [0.0; 3],
+        in_formation: flags & NM_BUMP_IN_FORMATION != 0, shoved_last: flags & NM_BUMP_SHOVED_LAST != 0, friend: flags & NM_BUMP_FRIEND != 0,
+        health, my_weakness, other_weakness };
+    let (a, c) = pb::decide(bump, m(a), f(a), m(b), f(b), flags & NM_BUMP_ARMED != 0);
+    let (answer, s) = match a {
+        pb::Answer::Nothing => (NM_BUMP_NOTHING, -1),
+        pb::Answer::Shove => (NM_BUMP_SHOVE, -1),
+        pb::Answer::HitResponse(s) => (NM_BUMP_FLINCH, s as i32),
+        pb::Answer::FallAndGetUp(s) => (NM_BUMP_KNOCKED_OVER, s as i32),
+    };
+    let c = c.map_or(-1, |k| k as i32);
+    unsafe {
+        if let Some(p) = side.as_mut() { *p = s; }
+        if let Some(p) = clip.as_mut() { *p = c; }
+    }
+    answer
+}
+
+fn boxes(w: &NmWorld) -> usize {
+    w.1.iter().take_while(|o| o.id >= 0).count()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_set_box_kinds(w: *mut NmWorld, kinds: *const i32, count: i32) -> i32 {
     let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
-    if count < 0 || count as usize != w.1.len() || (count > 0 && kinds.is_null()) {
+    if count < 0 || count as usize != boxes(w) || (count > 0 && kinds.is_null()) {
         return fail(NM_E_ARG, "nm_world_set_box_kinds: count is not the boxes' number");
     }
     let k = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(kinds, count as usize) } };
@@ -346,7 +447,7 @@ pub const NM_HIT_PLAYER: i32 = 16;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_world_set_box_spins(w: *mut NmWorld, spins: *const f32, count: i32) -> i32 {
     let Some(w) = (unsafe { w.as_mut() }) else { return fail(NM_E_ARG, "null world") };
-    if count < 0 || count as usize != w.1.len() || (count > 0 && spins.is_null()) {
+    if count < 0 || count as usize != boxes(w) || (count > 0 && spins.is_null()) {
         return fail(NM_E_ARG, "nm_world_set_box_spins: count is not the boxes' number");
     }
     let f = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(spins, count as usize * 3) } };
@@ -829,12 +930,16 @@ pub struct NmAgent {
     clock: f64,
     frame: f64,
     still: f32,
+    nearly: f32,
+    floor: bool,
     u: Units,
     more: More,
 }
 
 #[derive(Default)]
 struct More {
+    alone: bool,
+    warped: bool,
     partial: Option<delirium::partial::Partial>,
     partial_event: i32,
     sit: Option<delirium::nmsit::Sit>,
@@ -911,7 +1016,7 @@ pub unsafe extern "C" fn nm_agent_create(b: *const NmBuild, pos: *const f32, yaw
     let agent = Agent::new(&b.build, Ragdoll::new(&b.build, &frames, Vec3::ZERO), Quat::from_rotation_z(yaw), seed);
     let n = frames.len();
     let mut a = Box::new(NmAgent { agent, build: b.build.clone(), mode: NM_MODE_LEAD, set: vec![false; n], pending: None, shot: None, blast: None, dead: false, fire: None, fall: None, grab: None, car: (None, f32::MAX), door: None, bank: 0.0, world: 0, stairs: (None, 0, false), cuts: vec![], tackle: None, water: (None, false), singe: 0.0, shock: 0.0, more: More { zero: delirium::learned::zero(&b.build, &b.frames), tune: b.tune.clone(), ..Default::default() }, clock: 0.0,
-                                     frame: 0.0, still: 0.0, u: Units(b.scale) });
+                                     frame: 0.0, still: 0.0, nearly: 0.0, floor: true, u: Units(b.scale) });
     tuned(&mut a, &b.tune);
     Box::into_raw(a)
 }
@@ -934,6 +1039,7 @@ macro_rules! agent {
         match unsafe { $a.as_mut() } {
             Some(a) => {
                 a.still = 0.0;
+                a.nearly = 0.0;
                 a
             }
             None => return fail(NM_E_ARG, "null agent"),
@@ -1026,7 +1132,8 @@ fn step_agent(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -
         let (now, keep) = (b.0, 2 * b.1.len() as u64 + 2);
         b.1.retain(|e| e.0 == me || now - e.1 <= keep);
         let at = a.agent.doll.com().0;
-        let mut near: Vec<delirium::ragdoll::Capsule> = before.unwrap_or(&b.1).iter().filter(|e| e.0 != me).flat_map(|e| e.2.iter().copied())
+        let alone = a.more.alone;
+        let mut near: Vec<delirium::ragdoll::Capsule> = before.unwrap_or(&b.1).iter().filter(|e| e.0 != me && !alone).flat_map(|e| e.2.iter().copied())
             .filter(|c| ((c.0 + c.1) / 2.0).distance(at) < 3.0).collect();
         near.sort_by(|x, y| x.0.to_array().iter().chain(&x.1.to_array()).map(|v| v.to_bits()).cmp(y.0.to_array().iter().chain(&y.1.to_array()).map(|v| v.to_bits())));
         near
@@ -1063,11 +1170,22 @@ fn step_agent(a: &mut NmAgent, w: &NmWorld, dt: f32, before: Option<&Stepped>) -
     let burning = a.fire.as_ref().is_some_and(|f| f.1);
     let mut b = w.3.lock().unwrap_or_else(|e| e.into_inner());
     let now = b.0;
+    if a.more.alone || a.more.warped {
+        b.1.retain(|e| e.0 != me);
+        return r;
+    }
     match b.1.iter_mut().find(|e| e.0 == me) {
         Some(e) => (e.1, e.2, e.3) = (now, caps, burning),
         None => b.1.push((me, now, caps, burning)),
     }
     r
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_collide_agents(a: *mut NmAgent, on: i32) -> i32 {
+    let Some(a) = (unsafe { a.as_mut() }) else { return fail(NM_E_ARG, "null agent") };
+    a.more.alone = on == 0;
+    0
 }
 
 fn more_step(a: &mut NmAgent, w: &NmWorld, dt: f32) {
@@ -1146,6 +1264,7 @@ fn reactions(a: &mut NmAgent, w: &NmWorld) {
     if a.more.xs.curl.is_some_and(|t| now >= t) {
         a.more.xs.curl = None;
         a.still = 0.0;
+        a.nearly = 0.0;
         send(a, w, "bodyFoetal", &[("start", b(false))]);
     }
     if a.agent.balancing() {
@@ -1409,12 +1528,62 @@ fn step_in(a: &mut NmAgent, w: &NmWorld, dt: f32, others: &[delirium::ragdoll::C
             learned_done(a, w);
         }
     } else {
+        let n = a.build.parts.len();
+        let whole = a.agent.incoming.len() == n && (0..n).all(|k| a.agent.keyframe.contains(&k));
+        let kf: Vec<(usize, Transform)> = if whole { a.agent.incoming.iter().copied().enumerate().collect() } else { vec![] };
+        let before: Vec<Transform> = a.agent.doll.frames().collect();
         a.agent.step(&a.build, &w.0, dt, &w.1, others);
+        if !whole {
+            unsweep(a, w, &before);
+        }
+        a.more.warped = kf.iter().any(|&(k, t)| before.get(k).is_some_and(|p| p.translation.distance(t.translation) > KEYFRAMED_WARP));
+        for (k, t) in kf {
+            let Some(p) = before.get(k) else { continue };
+            if a.more.warped {
+                a.agent.doll.set_body(k, t.translation, t.rotation, Vec3::ZERO, Vec3::ZERO);
+                continue;
+            }
+            let v = ((t.translation - p.translation) / dt).clamp_length_max(KEYFRAMED_SPEED);
+            let (axis, ang) = (t.rotation * p.rotation.inverse()).normalize().to_axis_angle();
+            let ang = if ang > std::f32::consts::PI { ang - std::f32::consts::TAU } else { ang };
+            let spin = (axis * ang / dt).clamp_length_max(KEYFRAMED_SPIN);
+            a.agent.doll.set_body(k, t.translation, t.rotation, v, spin);
+        }
     }
     a.set.fill(false);
-    a.still = if !a.agent.balancing() && a.agent.doll.com().1.length() < 0.2 { a.still + dt } else { 0.0 };
+    let com = a.agent.doll.com().1.length();
+    a.still = if !a.agent.balancing() && com < 0.2 { a.still + dt } else { 0.0 };
+    a.nearly = if !a.agent.balancing() && com < 0.5 { a.nearly + dt } else { 0.0 };
+    if a.nearly > 0.0 && GET_UP_NEEDS_FLOOR.load(std::sync::atomic::Ordering::Relaxed) {
+        let hips = a.agent.doll.frames().next().map_or(Vec3::ZERO, |t| t.translation);
+        a.floor = w.0.cast(hips + Vec3::Z * 0.5, -Vec3::Z, 2.0).is_some();
+    }
     0
 }
+
+fn unsweep(a: &mut NmAgent, w: &NmWorld, before: &[Transform]) {
+    let now: Vec<Transform> = a.agent.doll.frames().collect();
+    for (k, (p0, p1)) in before.iter().zip(&now).enumerate() {
+        let r = a.build.parts[k].radius;
+        let d = p1.translation - p0.translation;
+        let len = d.length();
+        if len < r * 0.5 || !len.is_finite() {
+            continue;
+        }
+        let dir = d / len;
+        let Some((t, n, _)) = w.0.contact(p0.translation, dir, len) else { continue };
+        if n.dot(dir) >= 0.0 {
+            continue;
+        }
+        let (v, spin) = a.agent.doll.motion(k);
+        let into = v.dot(n).min(0.0);
+        a.agent.doll.set_body(k, p0.translation + dir * (t - r).max(0.0), p1.rotation, v - n * into, spin);
+    }
+}
+
+const KEYFRAMED_SPEED: f32 = 10.0;
+const KEYFRAMED_SPIN: f32 = 30.0;
+const KEYFRAMED_WARP: f32 = 0.25;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_set_mode(a: *mut NmAgent, mode: i32) -> i32 {
@@ -1709,6 +1878,33 @@ pub unsafe extern "C" fn nm_agent_get_joint(a: *const NmAgent, i: i32, parent: *
         }
     }
     if j.hinge { 2 } else { 1 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_agent_get_joint_angle(a: *const NmAgent, i: i32, angles: *mut f32) -> f32 {
+    let Some(a) = (unsafe { a.as_ref() }) else { fail(NM_E_ARG, "null agent"); return 0.0 };
+    let Some(k) = part(a, i) else { fail(NM_E_ARG, "no such part"); return 0.0 };
+    let Some(j) = a.agent.joints(&a.build)[k] else { return 0.0 };
+    let (r, x) = joint_angle(&j, a.agent.doll.frames().nth(j.parent).unwrap_or_default().rotation, a.agent.doll.frames().nth(k).unwrap_or_default().rotation);
+    unsafe { put3(angles, r) };
+    x
+}
+
+fn joint_angle(j: &delirium::ragdoll::JointInfo, parent: Quat, child: Quat) -> (Vec3, f32) {
+    let rel = ((parent * j.in_parent).inverse() * (child * j.in_child)).normalize();
+    let rel = if rel.w < 0.0 { -rel } else { rel };
+    let twist = Quat::from_xyzw(0.0, 0.0, rel.z, rel.w).normalize();
+    let swing = rel * twist.inverse();
+    let t = 2.0 * twist.z.atan2(twist.w);
+    if j.hinge {
+        let (lo, hi) = (j.limits[0], j.limits[1]);
+        let over = if t < lo { 1.0 + (lo - t) / (hi - lo).max(1e-3) } else if t > hi { 1.0 + (t - hi) / (hi - lo).max(1e-3) } else { 0.0 };
+        return (Vec3::new(t, 0.0, 0.0), over.max(((t - (lo + hi) * 0.5).abs() / ((hi - lo) * 0.5).max(1e-3)).min(1.0)));
+    }
+    let (axis, ang) = swing.to_axis_angle();
+    let (lx, ly) = (axis.x * ang, axis.y * ang);
+    let e = ((lx / j.limits[0].max(1e-3)).powi(2) + (ly / j.limits[1].max(1e-3)).powi(2)).sqrt();
+    (Vec3::new(lx, ly, t), e.max(t.abs() / j.limits[2].max(1e-3)))
 }
 
 #[unsafe(no_mangle)]
@@ -2181,7 +2377,10 @@ fn resting(a: &NmAgent, w: &NmWorld) -> bool {
         return false;
     }
     let pelvis = a.agent.doll.frames().next().unwrap_or_default().translation;
+    let me = a as *const NmAgent as usize;
     !w.1.iter().any(|o| (o.vel.length_squared() > 1e-4 || o.spin.length_squared() > 1e-4) && o.at.distance(pelvis) < 3.0 + o.half.length())
+        && (a.more.alone || !w.3.lock().unwrap_or_else(|e| e.into_inner()).1.iter().filter(|e| e.0 != me)
+            .any(|e| e.2.iter().any(|c| c.0.distance(pelvis).min(c.1.distance(pelvis)) < 1.5 + c.2)))
 }
 
 #[unsafe(no_mangle)]
@@ -2199,6 +2398,18 @@ pub extern "C" fn nm_set_step_limit(on: i32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn nm_set_fire_reaction(on: i32) {
     FIRE_REACTION.store(on != 0, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nm_set_carry_pushes(on: i32) {
+    delirium::ragdoll::CARRY_PUSHES.store(on != 0, std::sync::atomic::Ordering::Relaxed);
+}
+
+static GET_UP_NEEDS_FLOOR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nm_set_get_up_needs_floor(on: i32) {
+    GET_UP_NEEDS_FLOOR.store(on != 0, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[unsafe(no_mangle)]
@@ -2220,7 +2431,7 @@ pub unsafe extern "C" fn nm_agent_set_dead(a: *mut NmAgent, dead: i32) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_should_get_up(a: *const NmAgent, after: f32) -> i32 {
     let a = agent_ref!(a);
-    (!a.dead && !legless(a) && a.more.xs.curl.is_none() && after > 0.0 && a.still * a.u.time() >= after) as i32
+    (!a.dead && !legless(a) && a.more.xs.curl.is_none() && after > 0.0 && (a.floor || !GET_UP_NEEDS_FLOOR.load(std::sync::atomic::Ordering::Relaxed)) && (a.still * a.u.time() >= after || a.nearly * a.u.time() >= after + 1.5)) as i32
 }
 
 fn legless(a: &NmAgent) -> bool {
@@ -2489,6 +2700,10 @@ pub unsafe extern "C" fn nm_weapon_get(i: i32, name: *mut c_char, name_len: i32,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nm_agent_shoot_weapon(a: *mut NmAgent, w: *const NmWorld, weapon: i32, part: i32, at: *const f32, dir: *const f32, health: f32) -> f32 {
     let Some(wp) = usize::try_from(weapon).ok().and_then(|i| weapons().get(i).cloned()) else { return fail(NM_E_ARG, "no such weapon") as f32 };
+    unsafe { shoot(a, w, &wp, part, at, dir, health) }
+}
+
+unsafe fn shoot(a: *mut NmAgent, w: *const NmWorld, wp: &Weapon, part: i32, at: *const f32, dir: *const f32, health: f32) -> f32 {
     if at.is_null() || dir.is_null() {
         return fail(NM_E_ARG, "null vector") as f32;
     }
@@ -2498,7 +2713,7 @@ pub unsafe extern "C" fn nm_agent_shoot_weapon(a: *mut NmAgent, w: *const NmWorl
         return r as f32;
     }
     let left = (health - wp.v[1]).max(0.0);
-    let set = std::ffi::CString::new(wp.set).unwrap_or_default();
+    let set = std::ffi::CString::new(wp.set.as_str()).unwrap_or_default();
     let r = unsafe { nm_agent_task_shot(a, w, set.as_ptr(), part, at, dir, left) };
     if r < 0 { r as f32 } else { left }
 }
@@ -2840,6 +3055,7 @@ pub unsafe extern "C" fn nm_agent_near_miss(a: *mut NmAgent, w: *const NmWorld, 
         if !a.dead && a.more.xr & NM_XR_CURL_SHOT != 0 {
             send(a, w, "bodyFoetal", &[("start", b(true))]);
             a.still = 0.0;
+            a.nearly = 0.0;
             send(a, w, "headLook", &look);
         }
         return 1;
@@ -2901,6 +3117,7 @@ pub unsafe extern "C" fn nm_agent_muscle_rise(a: *mut NmAgent, w: *const NmWorld
     nm::task_pose(&mut a.agent, &a.build, &w.0, &mut RAND.lock().unwrap_or_else(|e| e.into_inner()), 11.0, 12.0);
     a.more.musc = Some(if help < 0.0 { 0.5 } else { help });
     a.still = 0.0;
+    a.nearly = 0.0;
     0
 }
 
@@ -3115,7 +3332,7 @@ pub unsafe extern "C" fn nm_agent_car_hit(a: *mut NmAgent, w: *const NmWorld, he
     let Some((k, sum, at, _)) = a.car.0.filter(|h| h.3 >= 8.0 / 60.0 - 1e-4) else { return 0 };
     a.car = (None, 0.0);
     let d = &a.agent.doll;
-    let kind = if w.4.len() == w.1.len() { w.4.get(k as usize).copied() } else { None };
+    let kind = if w.4.len() == boxes(w) { w.4.get(k as usize).copied() } else { None };
     let player_driver = kind.map_or(player_driver != 0, |k| k & NM_HIT_PLAYER != 0);
     let train = |o: &Obstacle| bump::Train { axes: [o.rot * Vec3::X, o.rot * Vec3::Y, o.rot * Vec3::Z], place: o.centre, vel: o.vel, size: Some(o.half * 2.0) };
     let other = Thing { id: k, kind: match kind.map(|k| k & !NM_HIT_PLAYER) {
@@ -3286,6 +3503,7 @@ fn tackle(a: &mut NmAgent, dt: f32) {
     let Some(t) = (unsafe { tk.target.as_mut() }) else { return };
     tk.t += dt;
     a.still = 0.0;
+    a.nearly = 0.0;
     let held = tk.grips.iter().filter_map(|g| g.2).reduce(f32::min);
     if held.is_none() && tk.t > TK_WHIFF || held.is_some_and(|s| !tk.keep && tk.t - s > TK_HOLD) {
         return;
@@ -3432,3 +3650,167 @@ pub unsafe extern "C" fn nm_agent_task_flinch(a: *mut NmAgent, w: *const NmWorld
     0
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_scene_save(a: *const NmAgent, w: *const NmWorld, path: *const c_char, weapon: *const c_char, part: i32,
+                                       at: *const f32, dir: *const f32, health: f32) -> i32 {
+    let a = agent_ref!(a);
+    let Some(w) = (unsafe { w.as_ref() }) else { return fail(NM_E_ARG, "null world") };
+    let Some(path) = (unsafe { text(path) }) else { return fail(NM_E_ARG, "nm_scene_save: no path") };
+    use std::fmt::Write;
+    let (s, f) = (a.u.len(), frames(a));
+    let pelvis = f.first().map_or(Vec3::ZERO, |t| t.translation);
+    let v = |x: Vec3| format!("{} {} {}", x.x, x.y, x.z);
+    let carry = delirium::ragdoll::CARRY_PUSHES.load(std::sync::atomic::Ordering::Relaxed);
+    let mut o = format!("delirium-scene 1\nscale {s}\ndead {}\nalone {}\ncarry_pushes {}\n", a.dead as i32, a.more.alone as i32, carry as i32);
+    if let Some(wp) = unsafe { text(weapon) } {
+        if at.is_null() || dir.is_null() {
+            return fail(NM_E_ARG, "nm_scene_save: a shot needs at and dir");
+        }
+        let _ = writeln!(o, "shot {wp} {part} {} {} {health}", v(unsafe { v3(at) }), v(unsafe { v3(dir) }));
+        if let Some(r) = weapons().iter().find(|r| r.name.eq_ignore_ascii_case(wp)) {
+            let _ = writeln!(o, "weapon {}={}:{}", r.name, r.set, r.v.map(|x| x.to_string()).join(":"));
+        }
+    }
+    for (k, t) in f.iter().enumerate() {
+        let (lv, av) = a.agent.doll.motion(k);
+        let q = t.rotation;
+        let _ = writeln!(o, "part {} {} {} {} {} {} {}", v(t.translation * s), q.x, q.y, q.z, q.w, v(lv * a.u.time()), v(av / a.u.time()));
+    }
+    for t in w.0.triangles().iter().filter(|t| t.iter().any(|p| p.distance(pelvis) < 10.0)) {
+        let _ = writeln!(o, "tri {} {} {}", v(t[0] * s), v(t[1] * s), v(t[2] * s));
+    }
+    for b in w.1.iter().filter(|b| b.id < 0) {
+        let _ = writeln!(o, "wall {} {} {} {} {} {}", v(b.at * s), b.rot.x, b.rot.y, b.rot.z, b.rot.w, v(b.half * s));
+    }
+    o += "build\n";
+    o += &a.build.dump(&f);
+    match std::fs::write(path, o) {
+        Ok(()) => 0,
+        Err(e) => fail(NM_E_ARG, format!("nm_scene_save: {path}: {e}")),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nm_scene_replay(path: *const c_char, seconds: f32, buf: *mut c_char, len: i32) -> i32 {
+    let Some(path) = (unsafe { text(path) }) else { return fail(NM_E_ARG, "nm_scene_replay: no path") };
+    let Ok(t) = std::fs::read_to_string(path) else { return fail(NM_E_ARG, format!("nm_scene_replay: can't read {path}")) };
+    let t = t.replace("\r\n", "\n");
+    let Some((head, build)) = t.split_once("\nbuild\n") else { return fail(NM_E_PARSE, "nm_scene_replay: no build") };
+    let nums = |l: &str| l.split_whitespace().skip(1).filter_map(|x| x.parse::<f32>().ok()).collect::<Vec<f32>>();
+    let line = |k: &str| head.lines().find(|l| l.split_whitespace().next() == Some(k));
+    let s = line("scale").map_or(1.0, |l| nums(l)[0]);
+    let build = build.to_string();
+    let Ok((b, frames)) = std::panic::catch_unwind(move || Build::undump(&build)) else { return fail(NM_E_PARSE, "nm_scene_replay: bad build") };
+    let nb = NmBuild { build: b, frames, scale: s, tune: vec![] };
+    let parts: Vec<Vec<f32>> = head.lines().filter(|l| l.starts_with("part ")).map(nums).collect();
+    let tris: Vec<f32> = head.lines().filter(|l| l.starts_with("tri ")).flat_map(nums).collect();
+    let walls: Vec<f32> = head.lines().filter(|l| l.starts_with("wall ")).flat_map(nums).collect();
+    let (mut out, mut bad) = (vec![], vec![]);
+    unsafe {
+        let w = nm_world_create();
+        nm_world_set_scale(w, s);
+        let idx: Vec<u32> = (0..tris.len() as u32 / 3).collect();
+        if !idx.is_empty() {
+            nm_world_add_mesh(w, tris.as_ptr(), idx.len() as i32, idx.as_ptr(), idx.len() as i32 / 3, std::ptr::null());
+        }
+        if !walls.is_empty() {
+            nm_world_set_walls(w, walls.as_ptr(), walls.len() as i32 / 10);
+        }
+        let a = nm_agent_create(&nb, std::ptr::null(), 0.0, 0.3);
+        if a.is_null() {
+            nm_world_destroy(w);
+            return NM_E_STATE;
+        }
+        for (k, p) in parts.iter().enumerate().filter(|(_, p)| p.len() == 13) {
+            nm_agent_set_part_state(a, k as i32, p.as_ptr(), p[3..].as_ptr(), p[7..].as_ptr(), p[10..].as_ptr());
+        }
+        nm_agent_set_dead(a, line("dead").is_some_and(|l| nums(l)[0] != 0.0) as i32);
+        let carry_was = delirium::ragdoll::CARRY_PUSHES.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(l) = line("carry_pushes") {
+            nm_set_carry_pushes(nums(l)[0] as i32);
+        }
+        let ground = |p: [f32; 3]| {
+            let (mut d, mut n) = (0.0f32, [0.0f32; 3]);
+            let from = [p[0], p[1], p[2] + s];
+            (nm_world_raycast(w, from.as_ptr(), [0.0f32, 0.0, -1.0].as_ptr(), 5.0 * s, &mut d, n.as_mut_ptr()) == 1).then(|| p[2] + s - d)
+        };
+        let pelvis = |a: *const NmAgent| {
+            let mut p = [0.0f32; 7];
+            nm_agent_get_part_transforms(a, p.as_mut_ptr(), 1);
+            [p[0], p[1], p[2]]
+        };
+        let p0 = pelvis(a);
+        match ground(p0) {
+            Some(g) => {
+                out.push(format!("start: pelvis {:.2} m over the ground under him", p0[2] - g));
+                let low = parts.iter().filter(|p| p.len() >= 3).map(|p| p[2]).fold(f32::MAX, f32::min);
+                if g > low + 0.25 * s {
+                    bad.push(format!("start: the ground under him is {:.2} m over his lowest part: the host's ground rays hit his body (cast at static level geometry only)", g - low));
+                }
+                if p0[2] - g > 1.3 * s {
+                    bad.push(format!("start: floating, pelvis {:.2} m over the ground (a standing one's is about 1)", p0[2] - g));
+                }
+            }
+            None => bad.push("start: no ground within 4 m under his pelvis".to_string()),
+        }
+        if let Some(l) = line("shot") {
+            let w2: Vec<&str> = l.split_whitespace().collect();
+            let n = nums(l);
+            if w2.len() >= 10 && n.len() >= 8 {
+                let name = std::ffi::CString::new(w2[1]).unwrap_or_default();
+                let saved = line("weapon").and_then(|l| parse_weapons(l.trim_start_matches("weapon").trim()).ok()).and_then(|r| r.into_iter().next());
+                let left = match saved {
+                    Some(wp) => shoot(a, w, &wp, w2[2].parse().unwrap_or(0), n[1..].as_ptr(), n[4..].as_ptr(), n[7]),
+                    None => nm_agent_shoot_weapon(a, w, nm_weapon_find(name.as_ptr()), w2[2].parse().unwrap_or(0), n[1..].as_ptr(), n[4..].as_ptr(), n[7]),
+                };
+                out.push(format!("shot {} on part {}: health {} > {left}", w2[1], w2[2], n[7]));
+            }
+        }
+        let steps = (seconds.clamp(0.0, 60.0) * 60.0) as usize;
+        let (mut flew, mut spun, mut sank, mut lost) = (false, false, false, false);
+        for k in 1..=steps {
+            let at = k as f32 / 60.0;
+            nm_agent_step(a, w, 1.0 / 60.0);
+            let (mut fastest, mut which) = (0.0f32, 0);
+            for i in 0..parts.len() as i32 {
+                let (mut lv, mut av) = ([0.0f32; 3], [0.0f32; 3]);
+                nm_agent_get_part_velocity(a, i, lv.as_mut_ptr(), av.as_mut_ptr());
+                if Vec3::from(lv).length() > fastest {
+                    (fastest, which) = (Vec3::from(lv).length(), i as usize);
+                }
+                if i == 0 && Vec3::from(av).length() > 15.0 && !spun {
+                    spun = true;
+                    bad.push(format!("{at:.2} s: pelvis spinning at {:.0} rad/s", Vec3::from(av).length()));
+                }
+            }
+            if fastest > 10.0 * s.sqrt() && !flew {
+                flew = true;
+                bad.push(format!("{at:.2} s: part {which} ({}) flying at {fastest:.1} m/s", nb.build.parts.get(which).map_or("?", |p| p.name.as_str())));
+            }
+            let p = pelvis(a);
+            let g = ground(p);
+            match g {
+                None if !lost => {
+                    lost = true;
+                    bad.push(format!("{at:.2} s: no ground under him"));
+                }
+                Some(g) if p[2] - g < 0.05 * s && !sank => {
+                    sank = true;
+                    bad.push(format!("{at:.2} s: sunk, pelvis {:.2} m from the ground", p[2] - g));
+                }
+                _ => {}
+            }
+            if k % 15 == 0 {
+                out.push(format!("{at:.2} s: pelvis {} over ground, fastest part {fastest:.1} m/s, task {}",
+                                 g.map_or("?".into(), |g| format!("{:.2} m", p[2] - g)), nm_agent_task_running(a)));
+            }
+        }
+        nm_set_carry_pushes(carry_was as i32);
+        nm_agent_destroy(a);
+        nm_world_destroy(w);
+    }
+    let n = bad.len() as i32;
+    out.extend(bad.into_iter().map(|b| format!("PROBLEM {b}")));
+    unsafe { put(&out.join("\n"), buf, len) };
+    n
+}

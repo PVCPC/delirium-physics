@@ -19,16 +19,16 @@ pub type Mapper = u32;
 pub const M0: Mapper = 0x000;
 #[allow(non_snake_case)]
 #[inline]
-pub fn M1() -> &'static Mapper { static V: std::sync::OnceLock<Mapper> = std::sync::OnceLock::new(); let f = || crate::kv!(658 int); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn M1() -> &'static Mapper { static V: std::sync::OnceLock<Mapper> = std::sync::OnceLock::new(); let f = || -> Mapper { crate::kv!(658 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn M2() -> &'static Mapper { static V: std::sync::OnceLock<Mapper> = std::sync::OnceLock::new(); let f = || crate::kv!(659 int); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn M2() -> &'static Mapper { static V: std::sync::OnceLock<Mapper> = std::sync::OnceLock::new(); let f = || -> Mapper { crate::kv!(659 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn M3() -> &'static Mapper { static V: std::sync::OnceLock<Mapper> = std::sync::OnceLock::new(); let f = || crate::kv!(660 int); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn M3() -> &'static Mapper { static V: std::sync::OnceLock<Mapper> = std::sync::OnceLock::new(); let f = || -> Mapper { crate::kv!(660 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAPPERS() -> &'static [Mapper; 4] { static V: std::sync::OnceLock<[Mapper; 4]> = std::sync::OnceLock::new(); let f = || [M0, (*M1()), (*M2()), (*M3())]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn MAPPERS() -> &'static [Mapper; 4] { static V: std::sync::OnceLock<[Mapper; 4]> = std::sync::OnceLock::new(); let f = || -> [Mapper; 4] { [M0, (*M1()), (*M2()), (*M3())] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Binding {
@@ -223,7 +223,7 @@ fn TAIL() -> &'static [Binding] { static V: std::sync::OnceLock<Box<[Binding]>> 
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SETUP_WORDS() -> &'static [u32; 2] { static V: std::sync::OnceLock<[u32; 2]> = std::sync::OnceLock::new(); let f = || [crate::kv!(188 int), crate::kv!(7 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SETUP_WORDS() -> &'static [u32; 2] { static V: std::sync::OnceLock<[u32; 2]> = std::sync::OnceLock::new(); let f = || -> [u32; 2] { [crate::kv!(188 int), crate::kv!(7 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn bindings(controller: bool, setting: u32) -> Vec<Binding> {
     let mut v = vec![];
@@ -280,7 +280,7 @@ pub fn READ_DEAD_ZONE() -> f32 { crate::kv!(17) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn AXIS_PAIRS() -> &'static [(u32, u32); 8] { static V: std::sync::OnceLock<[(u32, u32); 8]> = std::sync::OnceLock::new(); let f = || [(crate::kv!(682 int), crate::kv!(683 int)), (crate::kv!(684 int), crate::kv!(685 int)), (crate::kv!(686 int), crate::kv!(687 int)), (crate::kv!(688 int), crate::kv!(689 int)), (crate::kv!(696 int), crate::kv!(697 int)), (crate::kv!(698 int), crate::kv!(699 int)), (crate::kv!(700 int), crate::kv!(701 int)), (crate::kv!(702 int), crate::kv!(703 int))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn AXIS_PAIRS() -> &'static [(u32, u32); 8] { static V: std::sync::OnceLock<[(u32, u32); 8]> = std::sync::OnceLock::new(); let f = || -> [(u32, u32); 8] { [(crate::kv!(682 int), crate::kv!(683 int)), (crate::kv!(684 int), crate::kv!(685 int)), (crate::kv!(686 int), crate::kv!(687 int)), (crate::kv!(688 int), crate::kv!(689 int)), (crate::kv!(696 int), crate::kv!(697 int)), (crate::kv!(698 int), crate::kv!(699 int)), (crate::kv!(700 int), crate::kv!(701 int)), (crate::kv!(702 int), crate::kv!(703 int))] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn pick(pair: (u32, u32), first: &IoValue) -> u32 {
     if first.stick_int() < 0 { pair.0 } else { pair.1 }
@@ -443,18 +443,18 @@ pub fn index(offset: u32) -> usize {
 
 #[allow(non_snake_case)]
 #[inline]
-fn KEEP_HISTORY() -> &'static [u32; 19] { static V: std::sync::OnceLock<[u32; 19]> = std::sync::OnceLock::new(); let f = || [crate::kv!(690 int), crate::kv!(691 int), crate::kv!(692 int), crate::kv!(693 int), crate::kv!(694 int), crate::kv!(695 int), crate::kv!(667 int), crate::kv!(686 int), crate::kv!(687 int), crate::kv!(682 int), crate::kv!(683 int), crate::kv!(684 int), crate::kv!(685 int), crate::kv!(706 int),
-                                 crate::kv!(711 int), crate::kv!(713 int), crate::kv!(714 int), crate::kv!(677 int), crate::kv!(707 int)]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn KEEP_HISTORY() -> &'static [u32; 19] { static V: std::sync::OnceLock<[u32; 19]> = std::sync::OnceLock::new(); let f = || -> [u32; 19] { [crate::kv!(690 int), crate::kv!(691 int), crate::kv!(692 int), crate::kv!(693 int), crate::kv!(694 int), crate::kv!(695 int), crate::kv!(667 int), crate::kv!(686 int), crate::kv!(687 int), crate::kv!(682 int), crate::kv!(683 int), crate::kv!(684 int), crate::kv!(685 int), crate::kv!(706 int),
+                                 crate::kv!(711 int), crate::kv!(713 int), crate::kv!(714 int), crate::kv!(677 int), crate::kv!(707 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-fn RESET_TABLES() -> &'static [&'static [usize]; 3] { static V: std::sync::OnceLock<[&'static [usize]; 3]> = std::sync::OnceLock::new(); let f = || [
+fn RESET_TABLES() -> &'static [&'static [usize]; 3] { static V: std::sync::OnceLock<[&'static [usize]; 3]> = std::sync::OnceLock::new(); let f = || -> [&'static [usize]; 3] { [
     Box::leak(Box::new([0x00, 0x01, 0x02, crate::kv!(0 int), crate::kv!(1 int), crate::kv!(2 int), crate::kv!(6 int), crate::kv!(22 int), crate::kv!(23 int), crate::kv!(104 int), crate::kv!(81 int), crate::kv!(113 int), crate::kv!(55 int), crate::kv!(114 int), crate::kv!(56 int), crate::kv!(189 int), crate::kv!(54 int), crate::kv!(110 int), crate::kv!(217 int), crate::kv!(204 int), crate::kv!(127 int),
       crate::kv!(111 int), crate::kv!(105 int), crate::kv!(106 int), crate::kv!(107 int), crate::kv!(108 int), crate::kv!(109 int), crate::kv!(337 int), crate::kv!(85 int), crate::kv!(481 int)])).as_slice(),
     Box::leak(Box::new([crate::kv!(401 int), crate::kv!(347 int), crate::kv!(489 int), crate::kv!(397 int), crate::kv!(310 int), crate::kv!(258 int)])).as_slice(),
     Box::leak(Box::new([crate::kv!(282 int), crate::kv!(462 int), crate::kv!(7 int), crate::kv!(319 int), crate::kv!(443 int), crate::kv!(316 int), crate::kv!(94 int), crate::kv!(301 int), crate::kv!(391 int), crate::kv!(427 int), crate::kv!(95 int), crate::kv!(354 int), crate::kv!(407 int), crate::kv!(424 int), crate::kv!(415 int), crate::kv!(472 int), crate::kv!(93 int), crate::kv!(459 int), crate::kv!(36 int), crate::kv!(453 int), crate::kv!(385 int),
       crate::kv!(292 int), crate::kv!(37 int), crate::kv!(355 int), crate::kv!(323 int), crate::kv!(317 int), crate::kv!(404 int)])).as_slice(),
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Controls {

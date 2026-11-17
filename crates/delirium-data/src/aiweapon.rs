@@ -61,10 +61,16 @@ pub fn ammo_back(w: &mut Weapons, rows: &Rows) {
     }
 }
 
+pub trait Arg {
+    fn class(&mut self) -> u32;
+    fn mission_only(&mut self) -> bool;
+}
+
 struct Env<'a> {
     rows: &'a Rows,
     hand: Option<Hand>,
     slot_object: Option<Weapon>,
+    arg: Option<&'a mut dyn Arg>,
 }
 
 impl weaponselect::Env for Env<'_> {
@@ -76,10 +82,13 @@ impl weaponselect::Env for Env<'_> {
         0
     }
     fn arg_class(&mut self, _: u32) -> u32 {
-        0
+        self.arg.as_mut().map_or(0, |a| a.class())
     }
-    fn fits(&mut self, _: u32, _: u32) -> bool {
-        false
+    fn fits(&mut self, weapon: u32, _: u32) -> bool {
+        let Some(a) = self.arg.as_mut() else { return false };
+        let row = self.rows.of(weapon as i32);
+        let class = a.class();
+        crate::lift::fits_class(class, row.slot as u32, row.flags, a.mission_only())
     }
     fn release(&mut self, _: u32) {}
     fn keep_held(&mut self, w: &weaponselect::Weapons) -> bool {
@@ -93,10 +102,14 @@ impl weaponselect::Env for Env<'_> {
 }
 
 pub fn select(w: &mut Weapons, rows: &Rows, mode: u32, slot: u32, delay: u32) -> bool {
+    select_for(w, rows, mode, slot, delay, None)
+}
+
+pub fn select_for<'a>(w: &mut Weapons, rows: &'a Rows, mode: u32, slot: u32, delay: u32, arg: Option<&'a mut dyn Arg>) -> bool {
     let mut s = weaponselect::Weapons {
         cur: w.current as u32,
-        pending1: weaponselect::NONE,
-        pending2: weaponselect::NONE,
+        pending1: w.pending1 as u32,
+        pending2: w.pending2 as u32,
         prev: w.previous as u32,
         slots: [weaponselect::Slot::default(); SLOTS],
         flag_8d: w.flag_8d,
@@ -106,9 +119,11 @@ pub fn select(w: &mut Weapons, rows: &Rows, mode: u32, slot: u32, delay: u32) ->
     for (to, from) in s.slots.iter_mut().zip(&w.slots) {
         *to = weaponselect::Slot { weapon: from.kind as u32, ammo: from.ammo, held: from.flag };
     }
-    let mut env = Env { rows, hand: w.hand, slot_object: w.slot_object };
-    let changed = weaponselect::select(&mut s, &mut env, mode, slot, delay, 0);
+    let r7 = arg.is_some() as u32;
+    let mut env = Env { rows, hand: w.hand, slot_object: w.slot_object, arg };
+    let changed = weaponselect::select(&mut s, &mut env, mode, slot, delay, r7);
     (w.current, w.previous, w.flag_8d, w.flag_8f, w.halfword_84) = (s.cur as i32, s.prev as i32, s.flag_8d, s.flag_8f, s.delay as i16);
+    (w.pending1, w.pending2) = (s.pending1 as i32, s.pending2 as i32);
     for (to, from) in w.slots.iter_mut().zip(&s.slots) {
         *to = Slot { kind: from.weapon as i32, ammo: from.ammo, flag: from.held };
     }

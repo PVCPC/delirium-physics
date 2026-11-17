@@ -1,4 +1,12 @@
+use crate::anim::{Animation, EventPhases};
 use crate::estimate::fneg;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EndCallback {
+    pub func: u32,
+    pub arg: u32,
+    pub owner: Option<u32>,
+}
 
 pub const UNSET: f32 = -1.0;
 
@@ -29,6 +37,11 @@ pub struct Player {
     pub blend_out_at_end: bool,
     pub own_channel: bool,
     pub skip_weight: bool,
+    pub loop_a: bool,
+    pub loop_b: bool,
+    pub events: u32,
+    pub event_phases: EventPhases,
+    pub end_callback: Option<EndCallback>,
 }
 
 impl Player {
@@ -38,7 +51,8 @@ impl Player {
             weight_step: UNSET, phase_step: UNSET, blend_out: -crate::kv!(84), priority: 0, mask: 0,
             playing: false, paused: false, finished: false, looped: false, hold: false, blending: false,
             active: false, loops: false, synced: false, remove_blended_out: false, blend_out_at_end: false,
-            own_channel: false, skip_weight: false,
+            own_channel: false, skip_weight: false, loop_a: false, loop_b: false, events: 0,
+            event_phases: EventPhases::default(), end_callback: None,
         }
     }
 
@@ -147,7 +161,7 @@ impl Player {
             } else if self.phase < 0.0 {
                 self.finished = true;
                 if self.looped {
-                    self.phase = ((self.phase + crate::kv!(26)) as f64 % 1.0) as f32;
+                    self.phase = crate::lift::fmod((self.phase + crate::kv!(26)) as f64, 1.0) as f32;
                 } else {
                     self.phase = 0.0;
                     if self.hold { self.prev_phase = 0.0 } else { self.playing = false }
@@ -159,21 +173,40 @@ impl Player {
         }
     }
 
-    pub fn update(&mut self, dt: f32) {
+    pub fn update_clip(&mut self, dt: f32, clip: Option<&Animation>) -> Option<EndCallback> {
+        self.events = 0;
         if self.loops {
             self.looped = true;
         } else {
             (self.looped, self.hold) = (false, true);
         }
+        let from = self.phase;
         self.advance_phase(dt);
+        if let (Some(_), Some(c)) = (self.duration, clip) {
+            let s = c.advance(from, self.phase, self.loop_a, self.loop_b, self.looped, &mut self.event_phases);
+            self.events |= s.events;
+            if s.section {
+                self.finished = false;
+            }
+            if let Some(p) = s.phase {
+                (self.phase, self.prev_phase) = (p, p);
+            }
+        }
         if self.looped || !self.finished {
-            return;
+            return None;
         }
         self.active = false;
         if self.blend_out_at_end {
             self.remove_blended_out = true;
             self.set_blend(self.blend_out);
         }
+        self.end_callback.take()
+    }
+}
+
+impl Player {
+    pub fn update(&mut self, dt: f32) -> Option<EndCallback> {
+        self.update_clip(dt, None)
     }
 }
 
@@ -182,7 +215,7 @@ fn frame_rate(duration: f32) -> f32 {
     crate::kv!(27) / if 1.0 - frames >= 0.0 { 1.0 } else { frames }
 }
 
-pub fn sync_phases(players: &mut [Player], dt: f32) {
+pub fn sync_phases(players: &mut [Player], clips: &[Option<&Animation>], dt: f32) -> Vec<(usize, EndCallback)> {
     let (mut sum_w, mut sum_d) = (0.0f32, 0.0f32);
     for p in players.iter().filter(|p| p.active && p.synced) {
         if let Some(d) = p.duration {
@@ -199,13 +232,17 @@ pub fn sync_phases(players: &mut [Player], dt: f32) {
             (d / p.rate / average) * (frame_rate(d) * p.rate * dt)
         };
     }
-    for p in players.iter_mut() {
+    let mut ended = vec![];
+    for (i, p) in players.iter_mut().enumerate() {
         if p.active && p.duration.is_some() {
-            p.update(dt);
+            if let Some(cb) = p.update_clip(dt, clips.get(i).copied().flatten()) {
+                ended.push((i, cb));
+            }
         } else {
             p.prev_phase = p.phase;
         }
     }
+    ended
 }
 
 pub fn priority_weights(players: &[Player]) -> Vec<f32> {
@@ -397,7 +434,7 @@ pub const MASK_BONES: [u16; 1] = [0];
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MASKS() -> &'static [&'static [(u8, u8)]; 12] { static V: std::sync::OnceLock<[&'static [(u8, u8)]; 12]> = std::sync::OnceLock::new(); let f = || [
+pub fn MASKS() -> &'static [&'static [(u8, u8)]; 12] { static V: std::sync::OnceLock<[&'static [(u8, u8)]; 12]> = std::sync::OnceLock::new(); let f = || -> [&'static [(u8, u8)]; 12] { [
     Box::leak(Box::new([(0, crate::kv!(368 int))])).as_slice(),
     Box::leak(Box::new([(2, crate::kv!(37 int)), (crate::kv!(401 int), crate::kv!(401 int)), (crate::kv!(188 int), crate::kv!(368 int))])).as_slice(),
     Box::leak(Box::new([(2, crate::kv!(22 int))])).as_slice(),
@@ -410,7 +447,7 @@ pub fn MASKS() -> &'static [&'static [(u8, u8)]; 12] { static V: std::sync::Once
     Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
     Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(337 int))])).as_slice(),
     Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(55 int)), (crate::kv!(7 int), crate::kv!(316 int)), (crate::kv!(355 int), crate::kv!(404 int)), (crate::kv!(347 int), crate::kv!(258 int))])).as_slice(),
-]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn mask_passes(mask: u8, bone: u16) -> bool {
     MASK_BONES.iter().position(|&b| b == bone)

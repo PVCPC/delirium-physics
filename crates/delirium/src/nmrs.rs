@@ -72,34 +72,34 @@ pub(crate) fn ours(v: [f32; 3]) -> Vec3 {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIP() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [0, delirium_data::kv!(0 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn HIP() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [0, delirium_data::kv!(0 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn KNEE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [1, delirium_data::kv!(1 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KNEE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [1, delirium_data::kv!(1 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn ANKLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [2, delirium_data::kv!(2 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn ANKLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [2, delirium_data::kv!(2 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SPINE() -> &'static [usize; 4] { static V: std::sync::OnceLock<[usize; 4]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SPINE() -> &'static [usize; 4] { static V: std::sync::OnceLock<[usize; 4]> = std::sync::OnceLock::new(); let f = || -> [usize; 4] { [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn NECK() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(81 int), delirium_data::kv!(113 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn NECK() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(81 int), delirium_data::kv!(113 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CLAVICLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(55 int), delirium_data::kv!(54 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn CLAVICLE() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(55 int), delirium_data::kv!(54 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHOULDER() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(114 int), delirium_data::kv!(110 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SHOULDER() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(114 int), delirium_data::kv!(110 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn ELBOW() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(56 int), delirium_data::kv!(217 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn ELBOW() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(56 int), delirium_data::kv!(217 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn WRIST() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(189 int), delirium_data::kv!(204 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn WRIST() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(189 int), delirium_data::kv!(204 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LIMBS() -> &'static [(usize, usize); 4] { static V: std::sync::OnceLock<[(usize, usize); 4]> = std::sync::OnceLock::new(); let f = || [(delirium_data::kv!(114 int), delirium_data::kv!(56 int)), (delirium_data::kv!(110 int), delirium_data::kv!(217 int)), (0, 1), (delirium_data::kv!(0 int), delirium_data::kv!(1 int))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn LIMBS() -> &'static [(usize, usize); 4] { static V: std::sync::OnceLock<[(usize, usize); 4]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 4] { [(delirium_data::kv!(114 int), delirium_data::kv!(56 int)), (delirium_data::kv!(110 int), delirium_data::kv!(217 int)), (0, 1), (delirium_data::kv!(0 int), delirium_data::kv!(1 int))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[derive(Clone, Debug)]
 pub struct JointDef {

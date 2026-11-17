@@ -54,6 +54,10 @@ impl Transmission {
         h.gear_ratios.get(gear.max(0) as usize).copied().unwrap_or(1.0)
     }
 
+    pub fn max_wheel_speed(&self, h: &Handling) -> f32 {
+        h.max_flat_velocity / self.ratio(h, self.gear)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn gear_change(&mut self, h: &Handling, c: Controls, s1: f32, s2: f32, drive_wheels: usize, grounded: usize,
                    dt: f32, now_ms: u32) {
@@ -93,7 +97,7 @@ impl Transmission {
         }
         let per = 1.0 / mfv;
         let g = self.gear;
-        let (to, flags) = if self.ratio(h, g) * per * slow > f * crate::kv!(1054) {
+        let (to, flags) = if self.ratio(h, g) * per * slow > f * crate::kv!(1055) {
             if g >= h.gears as i16 || thr <= 0.0 || grounded != drive_wheels || !can_up {
                 return;
             }
@@ -155,7 +159,7 @@ impl Transmission {
         }
         if self.revs > 1.0 {
             (self.throttle, self.revs) = (self.throttle * 0.0, crate::kv!(28));
-            thr *= crate::kv!(1055);
+            thr *= crate::kv!(1056);
         } else if ratio / h.max_flat_velocity * s2 > 1.0 {
             thr = 0.0;
         }
@@ -166,9 +170,9 @@ impl Transmission {
         }
         let k = clutch * 2.0;
         let force = thr.abs() * ratio * sel(1.0 - k, k, 1.0) * h.drive_force * (self.revs / target) / drive_wheels as f32;
-        if c.flags_f80 & crate::kv!(1056 int) != 0 {
+        if c.flags_f80 & crate::kv!(1057 int) != 0 {
             force * crate::kv!(12)
-        } else if c.flags_f80 & crate::kv!(1057 int) != 0 {
+        } else if c.flags_f80 & crate::kv!(1058 int) != 0 {
             force * crate::kv!(136)
         } else {
             force

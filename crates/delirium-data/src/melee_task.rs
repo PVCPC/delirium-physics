@@ -3,7 +3,7 @@ use crate::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KIND() -> u32 { crate::kv!(927 int) }
+pub fn KIND() -> u32 { crate::kv!(928 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -18,7 +18,7 @@ pub enum Step {
 pub fn SEEK_BEYOND() -> f32 { crate::kv!(504) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_NEAR() -> f32 { crate::kv!(928) }
+pub fn SEEK_NEAR() -> f32 { crate::kv!(929) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn ROUTE_WITHIN() -> f32 { crate::kv!(12) }
@@ -28,7 +28,7 @@ pub fn ROUTE_PAST() -> f32 { crate::kv!(64) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_STAGES() -> &'static [(f32, f32); 3] { static V: std::sync::OnceLock<[(f32, f32); 3]> = std::sync::OnceLock::new(); let f = || [(SEEK_NEAR(), crate::kv!(128)), (crate::kv!(9), crate::kv!(140)), (crate::kv!(28), crate::kv!(80))]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SEEK_STAGES() -> &'static [(f32, f32); 3] { static V: std::sync::OnceLock<[(f32, f32); 3]> = std::sync::OnceLock::new(); let f = || -> [(f32, f32); 3] { [(SEEK_NEAR(), crate::kv!(128)), (crate::kv!(9), crate::kv!(140)), (crate::kv!(28), crate::kv!(80))] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn SEEK_LOOK_MS() -> u32 { crate::kv!(43 int) }
@@ -122,7 +122,7 @@ fn TOP() -> f32 { crate::kv!(18) }
 fn PLAYING() -> f32 { crate::kv!(200) }
 #[allow(non_snake_case)]
 #[inline]
-fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(929 int)) }
+fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(930 int)) }
 
 pub fn chance(dist: f32, playing: bool) -> f32 {
     if playing {
@@ -142,7 +142,7 @@ pub fn wait(rng: &mut Rand) -> f32 {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn TURN_SPEED() -> f32 { crate::kv!(930) }
+pub fn TURN_SPEED() -> f32 { crate::kv!(931) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keep {
@@ -156,13 +156,13 @@ pub struct Keep {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP_WAITING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || Keep { keep: crate::kv!(33), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KEEP_WAITING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: crate::kv!(33), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP_FIGHTING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || Keep { keep: 1.0, dead: crate::kv!(60), far: crate::kv!(12), ..(*KEEP_WAITING()) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KEEP_FIGHTING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: 1.0, dead: crate::kv!(60), far: crate::kv!(12), ..(*KEEP_WAITING()) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP_OFF() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || Keep { keep: crate::kv!(491), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KEEP_OFF() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: crate::kv!(491), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn CIRCLE() -> f32 { crate::kv!(17) }

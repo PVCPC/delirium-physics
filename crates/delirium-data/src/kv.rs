@@ -4,11 +4,11 @@
 //! as the number it stands for; all 0 until `unlock`.
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 
-const N: usize = 1096;
+const N: usize = 1097;
 static K64: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 static K32: [AtomicU32; N] = [const { AtomicU32::new(0) }; N];
 static OPEN: AtomicBool = AtomicBool::new(false);
-static MAPS: [&[u8]; 2] = [include_bytes!("kv.map"), include_bytes!("kv-disc.map")];
+static MAPS: &[&[u8]] = &[include_bytes!("kv.map"), include_bytes!("kv-disc.map"), include_bytes!("kv-pc1.map"), include_bytes!("kv-pc2.map")];
 
 /// The release reads its numbers from the game's program (the PC GTAIV.exe or the disc's default.xex), so a PS3 game won't do.
 pub const FROM_GAME: bool = true;

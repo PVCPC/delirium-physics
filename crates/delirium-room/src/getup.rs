@@ -27,6 +27,9 @@ pub struct Clips {
     pub fight: Option<(std::rc::Rc<crate::melee::Data>, std::collections::HashMap<String, usize>)>,
     fight_from: usize,
     pub swim: Option<usize>,
+    pub shoves: Option<usize>,
+    pub flinches: Option<usize>,
+    pub kos: Option<usize>,
     parts: Vec<(usize, Transform)>,
     chest: usize,
     pub(crate) scale: (Vec<f32>, Vec<f32>),
@@ -216,6 +219,18 @@ impl Clips {
                 clips.extend(s);
                 clips.len() - delirium_data::kv!(1 int)
             });
+        let shoves = delirium_data::playerbump::SHOVES.iter().map(|s| clip("ped.xad", s.1.trim_start_matches("ped/"))).collect::<Result<Vec<_>, _>>()
+            .map_err(|e| eprintln!("shoves: {e}")).ok().map(|s| {
+                clips.extend(s);
+                clips.len() - delirium_data::playerbump::SHOVES.len()
+            });
+        let mut four = |dict: &str, names: [&str; 4]| names.iter().map(|n| clip(dict, n)).collect::<Result<Vec<_>, _>>()
+            .map_err(|e| eprintln!("{dict}: {e}")).ok().map(|s| {
+                clips.extend(s);
+                clips.len() - delirium_data::kv!(1 int)
+            });
+        let flinches = four("dam_ad.xad", ["front", "left", "back", "right"]);
+        let kos = four("dam_ko.xad", ["ko_front", "ko_left", "ko_back", "ko_right"]);
         let mut fight_from = clips.len();
         let fight = (|| -> Result<crate::melee::Data, String> {
             let (c, toc) = if pc() { (vec![], vec![]) } else { let c = rd("common.rpf")?; let t = rpf::read_toc(&c, &key)?; (c, t) };
@@ -258,7 +273,7 @@ impl Clips {
                 let bind: Vec<(Vec3, Quat)> = bones.iter().map(|b| (Vec3::from(b.translation), Quat::from_array(b.rotation).normalize())).collect();
                 delirium::ragdoll::Rig::new(&p, &bones.iter().map(|b| b.parent).collect::<Vec<_>>(), &bind, &bones, delirium::nmrs::HOMER)
             }).map(std::rc::Rc::new),
-            clips, parts, chest, guns, names: bones.iter().map(|b| b.name.clone()).collect(), ids: bones.iter().map(|b| b.id).collect(), fight, fight_from, swim,
+            clips, parts, chest, guns, names: bones.iter().map(|b| b.name.clone()).collect(), ids: bones.iter().map(|b| b.id).collect(), fight, fight_from, swim, shoves, flinches, kos,
         })
     }
 
@@ -341,6 +356,36 @@ impl Clips {
         let parent = self.parents[i].map_or(body.rotation, |p| world[p].1);
         pose[i].1 = (parent.inverse() * r * world[i].1).normalize();
         true
+    }
+
+    pub fn upper(&self, pose: &mut [(Vec3, Quat)], c: usize, phase: f32) {
+        let top = self.pose(c, phase);
+        for (k, n) in self.names.iter().enumerate() {
+            if ["Head", "Neck", "Clavicle", "Arm", "Hand", "Finger"].iter().any(|m| n.contains(m)) {
+                pose[k] = top[k];
+            }
+        }
+    }
+
+    pub fn reach(&self, pose: &mut [(Vec3, Quat)], body: Transform, side: &str, target: Vec3, pole: Vec3, weight: f32) {
+        let n = |b: &str| format!("Char_{side}_{b}");
+        let at = |b: &str| self.names.iter().position(|x| *x == n(b));
+        let (Some(u), Some(f), Some(h)) = (at("UpperArm"), at("Forearm"), at("Hand")) else { return };
+        let w = self.world(pose, body);
+        let (s, e, hd) = (w[u].0, w[f].0, w[h].0);
+        let (a, b) = (s.distance(e), e.distance(hd));
+        let to = target - s;
+        let d = to.length().clamp((a - b).abs() + delirium_data::kv!(51), (a + b) * delirium_data::kv!(268));
+        let dir = to.normalize_or(Vec3::Z);
+        let x = (a * a - b * b + d * d) / (2.0 * d);
+        let bend = (pole - dir * pole.dot(dir)).normalize_or(Vec3::NEG_Z);
+        let elbow = s + dir * x + bend * (a * a - x * x).max(0.0).sqrt();
+        let was = (pose[u].1, pose[f].1);
+        self.point_bone(pose, body, &n("UpperArm"), &n("Forearm"), elbow - s);
+        self.point_bone(pose, body, &n("Forearm"), &n("Hand"), s + dir * d - elbow);
+        let k = weight.clamp(0.0, 1.0);
+        pose[u].1 = was.0.slerp(pose[u].1, k);
+        pose[f].1 = was.1.slerp(pose[f].1, k);
     }
 
     pub fn names(&self) -> &[String] {

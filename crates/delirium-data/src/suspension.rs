@@ -136,7 +136,7 @@ pub struct WheelPart {
 pub fn steer_flags(corner: usize, rear_steer: bool, bike: bool) -> u32 {
     let (left, rear) = (corner % 2 == 0, corner >= 2);
     if bike {
-        return if rear { crate::kv!(978 int) } else { crate::kv!(979 int) };
+        return if rear { crate::kv!(979 int) } else { crate::kv!(980 int) };
     }
     let side = if left { crate::kv!(722 int) } else { 0 } | if rear { crate::kv!(181 int) } else { 0 };
     side | match (rear, rear_steer) {

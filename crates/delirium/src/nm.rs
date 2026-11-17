@@ -388,10 +388,10 @@ pub struct Agent {
 
 #[allow(non_snake_case)]
 #[inline]
-pub(crate) fn LEG_PAIRS() -> &'static [(usize, usize); 7] { static V: std::sync::OnceLock<[(usize, usize); 7]> = std::sync::OnceLock::new(); let f = || [(1, delirium_data::kv!(1 int)), (1, delirium_data::kv!(2 int)), (2, delirium_data::kv!(1 int)), (2, delirium_data::kv!(2 int)), (2, delirium_data::kv!(6 int)), (delirium_data::kv!(0 int), delirium_data::kv!(2 int)), (delirium_data::kv!(0 int), delirium_data::kv!(6 int))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub(crate) fn LEG_PAIRS() -> &'static [(usize, usize); 7] { static V: std::sync::OnceLock<[(usize, usize); 7]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 7] { [(1, delirium_data::kv!(1 int)), (1, delirium_data::kv!(2 int)), (2, delirium_data::kv!(1 int)), (2, delirium_data::kv!(2 int)), (2, delirium_data::kv!(6 int)), (delirium_data::kv!(0 int), delirium_data::kv!(2 int)), (delirium_data::kv!(0 int), delirium_data::kv!(6 int))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub(crate) fn HAND_PAIRS() -> &'static [(usize, usize); 3] { static V: std::sync::OnceLock<[(usize, usize); 3]> = std::sync::OnceLock::new(); let f = || [(delirium_data::kv!(127 int), delirium_data::kv!(54 int)), (delirium_data::kv!(127 int), delirium_data::kv!(189 int)), (delirium_data::kv!(204 int), delirium_data::kv!(54 int))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub(crate) fn HAND_PAIRS() -> &'static [(usize, usize); 3] { static V: std::sync::OnceLock<[(usize, usize); 3]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 3] { [(delirium_data::kv!(127 int), delirium_data::kv!(54 int)), (delirium_data::kv!(127 int), delirium_data::kv!(189 int)), (delirium_data::kv!(204 int), delirium_data::kv!(54 int))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 pub(crate) fn pair_on((a, b): (usize, usize), legs: bool, hands: bool) -> bool {
     !(legs && (*LEG_PAIRS()).contains(&(a.min(b), a.max(b))) || hands && (*HAND_PAIRS()).contains(&(a.max(b), a.min(b))))
 }
@@ -2402,7 +2402,7 @@ pub struct PointGun {
 impl PointGun {
     #[allow(non_snake_case)]
     #[inline]
-    fn BONES() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || [delirium_data::kv!(211 int), delirium_data::kv!(212 int), delirium_data::kv!(213 int), delirium_data::kv!(209 int)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn BONES() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || -> [u16; 4] { [delirium_data::kv!(211 int), delirium_data::kv!(212 int), delirium_data::kv!(213 int), delirium_data::kv!(209 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
     pub fn pointing(&self) -> bool {
         self.started

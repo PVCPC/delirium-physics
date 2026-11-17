@@ -51,6 +51,8 @@ pub struct Slot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Weapons {
     pub current: i32,
+    pub pending1: i32,
+    pub pending2: i32,
     pub previous: i32,
     pub hand: Option<Hand>,
     pub slot_object: Option<Weapon>,
@@ -65,6 +67,8 @@ impl Default for Weapons {
     fn default() -> Self {
         Weapons {
             current: 0,
+            pending1: 11,
+            pending2: 11,
             previous: 0,
             hand: None,
             slot_object: None,

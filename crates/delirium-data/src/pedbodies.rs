@@ -102,7 +102,7 @@ pub struct Target {
 }
 
 fn vdot3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    ((0.0f64 + a[0] as f64 * b[0] as f64) + a[1] as f64 * b[1] as f64 + a[2] as f64 * b[2] as f64) as f32
+    crate::estimate::vmsum3([a[0] as f64 * b[0] as f64, a[1] as f64 * b[1] as f64, a[2] as f64 * b[2] as f64])
 }
 
 fn support(d: [f32; 3], margin: [f32; 3]) -> [f32; 3] {

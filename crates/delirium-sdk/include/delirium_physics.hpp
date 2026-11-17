@@ -63,6 +63,10 @@ inline std::string part_name(int i) { return text([&](char* b, int32_t n) { retu
 inline void set_step_limit(bool on) { nm_set_step_limit(on); }
 /// Off: burning marks him burning without the OnFire reaction.
 inline void set_fire_reaction(bool on) { nm_set_fire_reaction(on); }
+/// Pushes keep their place when you move a ragdoll far yourself (off as the game).
+inline void set_carry_pushes(bool on) { nm_set_carry_pushes(on); }
+/// No get-up for a body lying over a hole (off as the game).
+inline void set_get_up_needs_floor(bool on) { nm_set_get_up_needs_floor(on); }
 inline void set_headshot_kills(bool on) { nm_set_headshot_kills(on); }
 /// A closed mesh's weight at a body's density (kg).
 inline float mesh_weight(const std::vector<Vec3>& v, const std::vector<std::array<uint32_t, 3>>& t) {
@@ -135,6 +139,14 @@ public:
     }
     /// Moving boxes (cars, platforms), 13 floats each: centre, quaternion xyzw, half size, velocity. Set before each step.
     void set_boxes(const std::vector<std::array<float, 13>>& b) { check(nm_world_set_boxes(get(), b.empty() ? nullptr : b[0].data(), (int32_t)b.size())); }
+    /// Solid static walls (centre 3, rotation 4, half extents 3 each): see nm_world_set_walls.
+    void set_walls(const std::vector<std::array<float, 10>>& b) { check(nm_world_set_walls(get(), b.empty() ? nullptr : b[0].data(), (int32_t)b.size())); }
+    /// the game's player-bumps-ped answer (NM_BUMP_*), its side and shove clip: see nm_player_bump.
+    struct Bump { int32_t answer, side, clip; };
+    Bump player_bump(int32_t me, int32_t other, const std::array<float, 6>& me_at, const std::array<float, 6>& other_at, float health,
+                     float my_weakness = 1.3f, float other_weakness = 1.3f, int32_t flags = 0) const {
+        Bump r{}; r.answer = nm_player_bump(get(), me, other, me_at.data(), other_at.data(), health, my_weakness, other_weakness, flags, &r.side, &r.clip); return r;
+    }
     /// The boxes' spins (rad/s, world axes), one per box of the last set_boxes. Set after them, before each step.
     void set_box_spins(const std::vector<Vec3>& s) { check(nm_world_set_box_spins(get(), s.empty() ? nullptr : s[0].data(), (int32_t)s.size())); }
     /// What each box is (NM_HIT_*), one per box of the last set_boxes.
@@ -401,6 +413,9 @@ public:
     }
     /// A weapon's shot (weapons::find); returns the health left.
     float shoot(const World& w, int weapon, int part, const Vec3& at, const Vec3& dir, float health) { return nm_agent_shoot_weapon(get(), w.get(), weapon, part, at.data(), dir.data(), health); }
+    /// This moment and the shot about to be fired, for scene_replay (weapon empty: no shot): see nm_scene_save.
+    void save_scene(const World& w, const std::string& path, const std::string& weapon = "", int part = 0, const Vec3& at = {}, const Vec3& dir = {}, float health = 0) {
+        check(nm_scene_save(get(), w.get(), path.c_str(), weapon.empty() ? nullptr : weapon.c_str(), part, at.data(), dir.data(), health)); }
     /// A shotgun's pellets on him at once: 7 floats each (part, at, dir).
     void shotgun(const World& w, const char* set, const std::vector<float>& hits, float health, float force = 400.f) {
         check(nm_agent_task_shotgun(get(), w.get(), set, hits.data(), (int32_t)(hits.size() / 7), health, force));
@@ -417,7 +432,7 @@ public:
     void thrown_at(const World& w, const Vec3& at, const Vec3& vel, bool look = true, bool avoid = true) { check(nm_agent_thrown_at(get(), w.get(), at.data(), vel.data(), look, avoid)); }
     /// The muscles get-up (your get-up clip through set_incoming); off: he balances.
     void muscle_rise(const World& w, bool on, float help = -1.f) { check(nm_agent_muscle_rise(get(), w.get(), on, help)); }
-    /// The learned get-up (getup.net) and walk (walk.net; "": off).
+    /// EXPERIMENTAL, do not use in a mod (see delirium_physics.h). The learned get-up (getup.net) and walk (walk.net; "": off).
     void learned_getup(const std::string& net) { check(nm_agent_learned_getup(get(), net.c_str())); }
     bool learned_getup_running() const { return nm_agent_learned_getup_running(get()) == 1; }
     void learned_walk(const World& w, const std::string& net, float cycle = 1.f) { check(nm_agent_learned_walk(get(), w.get(), net.empty() ? nullptr : net.c_str(), cycle)); }
@@ -444,6 +459,15 @@ inline void step_all(const World& w, const std::vector<Agent*>& agents, float dt
 
 /// Your skeleton on an agent (nm_rig_*): made once with both standing in the same pose, then `pose` each frame
 /// gives every bone its rotation under its parent (set only those) and the hips bone its world place.
+/// Replays a scene_save file for `seconds`: what happened (a line per 0.25 s, then each problem); `problems` how many.
+inline std::string scene_replay(const std::string& path, float seconds, int* problems = nullptr) {
+    std::string s(1 << 16, '\0');
+    int r = check(nm_scene_replay(path.c_str(), seconds, s.data(), (int32_t)s.size()));
+    if (problems) *problems = r;
+    s.resize(s.find('\0'));
+    return s;
+}
+
 class Rig {
     std::unique_ptr<NmRig, decltype(&nm_rig_destroy)> p;
     std::vector<float> out;

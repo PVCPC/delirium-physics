@@ -15,7 +15,7 @@ impl Rand {
     }
 
     pub fn next(&mut self) -> u32 {
-        self.seed = self.seed.wrapping_mul(crate::kv!(966 int)).wrapping_add(crate::kv!(967 int));
+        self.seed = self.seed.wrapping_mul(crate::kv!(967 int)).wrapping_add(crate::kv!(968 int));
         (self.seed >> crate::kv!(54 int)) & crate::kv!(566 int)
     }
 
@@ -76,7 +76,7 @@ pub fn float_from_draw(draw: u32, min: f32, max: f32) -> f32 {
 }
 
 pub fn int_from_draw(draw: u32, min: i32, max: i32) -> i32 {
-    let unit = (draw & crate::kv!(53 int)) as f32 * crate::kv!(968 f32);
+    let unit = (draw & crate::kv!(53 int)) as f32 * crate::kv!(969 f32);
     let scaled = unit * max.wrapping_sub(min) as f32;
     (scaled as i32).wrapping_add(min)
 }
@@ -89,7 +89,7 @@ pub struct AudioRand {
 
 impl Default for AudioRand {
     fn default() -> Self {
-        AudioRand { value: 1, carry: crate::kv!(969 int) }
+        AudioRand { value: 1, carry: crate::kv!(970 int) }
     }
 }
 

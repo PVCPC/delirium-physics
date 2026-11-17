@@ -78,7 +78,8 @@ body; it takes effect at once. A custom body that won't stand: "Tuning a custom 
 - Reading: `get_param(message, param)`, `raycast(from, to)` ({part, point, normal}), `check_setup()`,
   `DeliriumRagdoll.messages()` (every message and parameter with its kind, default and doc, for pickers).
 - Settings `delirium/step_limit` (the game's balance runs out of steps; off: the Playroom's endless stepping) and
-  `delirium/fire_reaction`. A physics material's friction and bounce on a static body reach NM (ice slides). A panic in
+  `delirium/fire_reaction`, `delirium/carry_pushes` (pushes keep their place when you move a ragdoll far yourself) and
+  `delirium/get_up_needs_floor` (no get-up over a hole). A physics material's friction and bounce on a static body reach NM (ice slides). A panic in
   the SDK writes `user://delirium_physics-crash.txt`.
 
 - **Bodies and parameters (the Playroom's):** `body` is `Fitted` (its own skeleton's, the default), `Small`,

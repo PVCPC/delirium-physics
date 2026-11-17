@@ -158,6 +158,10 @@ impl PartDef {
     }
 }
 
+#[allow(non_snake_case)]
+#[inline]
+fn SNAP() -> f32 { delirium_data::kv!(118) }
+
 impl Build {
     pub fn undump(text: &str) -> (Build, Vec<Transform>) {
         let mut parts = vec![];
@@ -215,11 +219,11 @@ impl Build {
     }
 
     pub fn fit(&self, frames: &[Transform], joints: &[Vec3]) -> (Build, Vec<Transform>) {
-        self.fit_capped(frames, joints, 1.0)
+        self.fit_capped(frames, joints, 1.0, true)
     }
 
     pub fn fit_neck(&self, frames: &[Transform], joints: &[Vec3], neck: f32) -> (Build, Vec<Transform>) {
-        let (mut b, mut f) = self.fit_capped(frames, joints, neck);
+        let (mut b, mut f) = self.fit_capped(frames, joints, neck, true);
         if neck != 1.0 && let Some(k) = b.parts.iter().position(|p| p.name.ends_with("Head")) {
             let (one, fo) = self.fit(frames, joints);
             let at = f[k].translation + f[k].rotation * b.parts[k].anchor;
@@ -242,7 +246,7 @@ impl Build {
         }
     }
 
-    fn fit_capped(&self, frames: &[Transform], joints: &[Vec3], neck: f32) -> (Build, Vec<Transform>) {
+    fn fit_capped(&self, frames: &[Transform], joints: &[Vec3], neck: f32, snap: bool) -> (Build, Vec<Transform>) {
         let n = self.parts.len();
         let mut j = joints.to_vec();
         if n == delirium_data::kv!(111 int) {
@@ -271,6 +275,7 @@ impl Build {
             let named = |tag: &str| kids.iter().copied().find(|&c| self.parts[c].name.contains(tag));
             let middle = kids.iter().copied().find(|&c| !self.parts[c].name.contains("_L_") && !self.parts[c].name.contains("_R_"));
             (size[k], turn[k]) = match kids[..] {
+                [] if snap && self.parts[k].name.ends_with("Head") => (s0, self.parts[k].parent.and_then(|p| self.parts[p].parent).map_or(t0, |g| turn[g])),
                 [] => (s0, t0),
                 [c] => {
                     let (ours, theirs) = (pivot(c) - pivot(k), joints[c] - joints[k]);
@@ -307,6 +312,10 @@ impl Build {
         for c in 1..n {
             if let Some(p) = build.parts[c].parent {
                 let at = out[p].translation + out[p].rotation * build.parts[c].anchor_parent;
+                let at = if snap && at.distance(joints[c]) > SNAP() {
+                    build.parts[c].anchor_parent = out[p].rotation.inverse() * (joints[c] - out[p].translation);
+                    joints[c]
+                } else { at };
                 out[c].translation = at - out[c].rotation * build.parts[c].anchor;
             }
         }
@@ -321,7 +330,7 @@ impl Build {
                 joints[c] = joints[q] + (pivot(c) - pivot(q)) * len[q];
             }
         }
-        let (mut b, f) = self.fit(frames, &joints);
+        let (mut b, f) = self.fit_capped(frames, &joints, 1.0, false);
         let w: f32 = self.parts.iter().map(|p| p.mass).sum();
         let v = self.parts.iter().zip(&b.parts).map(|(a, p)| a.mass * p.size.powi(3)).sum::<f32>() / w;
         let g = (m / v).sqrt();
@@ -1808,6 +1817,8 @@ pub const SUBSTEPS: usize = 2;
 #[allow(non_snake_case)]
 #[inline]
 fn GHOST() -> f32 { delirium_data::kv!(60) }
+
+pub static CARRY_PUSHES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub struct Ragdoll {
     pub nm: usize,
@@ -3368,6 +3379,9 @@ impl Ragdoll {
         self.bodies.iter_mut().for_each(|b| b.x += back);
         self.pins.iter_mut().flatten().for_each(|p| p.translation += back);
         pose.iter_mut().flatten().for_each(|p| p.0 += back);
+        if CARRY_PUSHES.load(std::sync::atomic::Ordering::Relaxed) {
+            self.pending.iter_mut().for_each(|p| p.1 += back);
+        }
         back
     }
 
@@ -3450,6 +3464,9 @@ impl Ragdoll {
             self.o += d;
             self.bodies.iter_mut().for_each(|b| b.x -= d);
             self.pins.iter_mut().flatten().for_each(|p| p.translation -= d);
+            if CARRY_PUSHES.load(std::sync::atomic::Ordering::Relaxed) {
+                self.pending.iter_mut().for_each(|p| p.1 -= d);
+            }
         }
         self.age += dt;
         for t in &mut self.touch {
@@ -4498,16 +4515,16 @@ impl Build {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn PROFILES() -> &'static [(&'static str, f32, f32, f32); 6] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32); 6]> = std::sync::OnceLock::new(); let f = || [("Small", delirium_data::kv!(491), delirium_data::kv!(584), 1.0), ("Average", delirium_data::kv!(13), delirium_data::kv!(585), 1.0), ("Large", delirium_data::kv!(192), delirium_data::kv!(46), 1.0), ("Lanky", delirium_data::kv!(192), delirium_data::kv!(569), delirium_data::kv!(506)), ("Fat", delirium_data::kv!(586), delirium_data::kv!(587), delirium_data::kv!(19)), ("Stocky", delirium_data::kv!(588), delirium_data::kv!(589), delirium_data::kv!(28))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn PROFILES() -> &'static [(&'static str, f32, f32, f32); 6] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32); 6]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32, f32, f32); 6] { [("Small", delirium_data::kv!(491), delirium_data::kv!(584), 1.0), ("Average", delirium_data::kv!(13), delirium_data::kv!(585), 1.0), ("Large", delirium_data::kv!(192), delirium_data::kv!(46), 1.0), ("Lanky", delirium_data::kv!(192), delirium_data::kv!(569), delirium_data::kv!(506)), ("Fat", delirium_data::kv!(586), delirium_data::kv!(587), delirium_data::kv!(19)), ("Stocky", delirium_data::kv!(588), delirium_data::kv!(589), delirium_data::kv!(28))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SHAPES() -> &'static [(&'static str, f32, f32, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || [("Waddler", delirium_data::kv!(119), delirium_data::kv!(80), delirium_data::kv!(136), delirium_data::kv!(207), delirium_data::kv!(590)), ("Guard", delirium_data::kv!(80), delirium_data::kv!(28), delirium_data::kv!(138), delirium_data::kv!(20), delirium_data::kv!(103)), ("Brute", delirium_data::kv!(80), delirium_data::kv!(207), 1.0, delirium_data::kv!(80), delirium_data::kv!(47))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SHAPES() -> &'static [(&'static str, f32, f32, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32, f32, f32, f32, f32); 3] { [("Waddler", delirium_data::kv!(119), delirium_data::kv!(80), delirium_data::kv!(136), delirium_data::kv!(207), delirium_data::kv!(590)), ("Guard", delirium_data::kv!(80), delirium_data::kv!(28), delirium_data::kv!(138), delirium_data::kv!(20), delirium_data::kv!(103)), ("Brute", delirium_data::kv!(80), delirium_data::kv!(207), 1.0, delirium_data::kv!(80), delirium_data::kv!(47))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BRAWLER_BODY() -> &'static Sizes { static V: std::sync::OnceLock<Sizes> = std::sync::OnceLock::new(); let f = || Sizes { legs: delirium_data::kv!(10), arms: delirium_data::kv!(74), trunk: 1.0, width: delirium_data::kv!(179), head: delirium_data::kv!(12), neck: 1.0, kg: delirium_data::kv!(63), height: 0.0 }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn BRAWLER_BODY() -> &'static Sizes { static V: std::sync::OnceLock<Sizes> = std::sync::OnceLock::new(); let f = || -> Sizes { Sizes { legs: delirium_data::kv!(10), arms: delirium_data::kv!(74), trunk: 1.0, width: delirium_data::kv!(179), head: delirium_data::kv!(12), neck: 1.0, kg: delirium_data::kv!(63), height: 0.0 } }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn BRUISER_BODY() -> &'static Sizes { static V: std::sync::OnceLock<Sizes> = std::sync::OnceLock::new(); let f = || Sizes { legs: delirium_data::kv!(492), arms: delirium_data::kv!(18), trunk: delirium_data::kv!(28), width: delirium_data::kv!(80), head: delirium_data::kv!(192), neck: 1.0, kg: delirium_data::kv!(195), height: 0.0 }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn BRUISER_BODY() -> &'static Sizes { static V: std::sync::OnceLock<Sizes> = std::sync::OnceLock::new(); let f = || -> Sizes { Sizes { legs: delirium_data::kv!(492), arms: delirium_data::kv!(18), trunk: delirium_data::kv!(28), width: delirium_data::kv!(80), head: delirium_data::kv!(192), neck: 1.0, kg: delirium_data::kv!(195), height: 0.0 } }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 impl Build {
     pub fn profile(&self, frames: &[Transform], height: f32, kg: f32, limbs: f32) -> (Build, Vec<Transform>, Vec<f32>, f32) {
@@ -4540,7 +4557,7 @@ impl Build {
             j[sh] = wide(s);
         }
         let j: Vec<Vec3> = j.iter().map(|v| o + *v / leg).collect();
-        let (mut b, f) = self.fit(frames, &j);
+        let (mut b, f) = self.fit_capped(frames, &j, 1.0, false);
         for p in b.parts.iter_mut().filter(|p| !p.lower && !p.name.ends_with("Pelvis")) {
             p.radius *= w;
         }

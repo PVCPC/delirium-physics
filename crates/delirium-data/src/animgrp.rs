@@ -19,6 +19,24 @@ pub const BUILT_IN: [&str; 101] = [
     "MOVE_CROUCH_RIFLE", "", "", "",
 ];
 
+pub const GUN_CLIPS: [&str; 17] = ["Fire", "Fire_Crouch", "Reload", "P_Load", "Reload_Crouch", "Melee", "Melee_Crouch",
+    "Holster", "Holster_Crouch", "Discard", "Discard_Crouch", "Holster_2_Aim", "Unholster", "Unholster_Crouch",
+    "Wall_block_idle", "DBFire", "DBFire_L"];
+pub const RIFLE_CLIPS: [&str; 17] = ["Fire_Alt", "Fire_Crouch_Alt", "Reload", "P_Load", "Reload_Crouch", "Melee",
+    "Melee_Crouch", "Holster", "Holster_Crouch", "Discard", "Discard_Crouch", "Holster_2_Aim", "Unholster",
+    "Unholster_Crouch", "Wall_block_idle", "DBFire", "DBFire_L"];
+
+pub fn gun_clip(group: &str, clip: &str) -> Option<String> {
+    let id = GUN_CLIPS.iter().position(|c| c.eq_ignore_ascii_case(clip))?;
+    let g = group.to_ascii_lowercase();
+    let (dict, name) = match g.as_str() {
+        "gun@rifle" => ("gun@rifle", RIFLE_CLIPS[id]),
+        "gun@m40a1" => ("gun@rifle", GUN_CLIPS[id]),
+        _ => (g.as_str(), GUN_CLIPS[id]),
+    };
+    Some(format!("{dict}/{}", name.to_ascii_lowercase()))
+}
+
 pub const BUILT_IN_SLOTS: [(usize, &str); 13] = [
     (47, "move_m@generic"), (48, "move_f@generic"), (49, "move_player"), (50, "move_rifle"), (51, "move_f@armed"),
     (52, "move_combat_strafe"), (53, "move_combat_strafe_c"), (54, "move_crouch"), (55, "move_crouch_rifle"),

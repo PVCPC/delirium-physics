@@ -40,7 +40,7 @@ pub fn read(r: &Resource) -> Result<Vec<Part>, String> {
         let c = p(children + i * crate::kv!(1 int))?;
         let group = byte(d, c + crate::kv!(55 int))?;
         let bone = crate::u16_of([byte(d, c + crate::kv!(56 int))?, byte(d, c + crate::kv!(189 int))?]) as usize;
-        let parent_group = byte(d, p(groups + group as usize * crate::kv!(1 int))? + crate::kv!(965 int))?;
+        let parent_group = byte(d, p(groups + group as usize * crate::kv!(1 int))? + crate::kv!(966 int))?;
         let k = p(kids + i * crate::kv!(1 int))?;
         let ext = |a: usize| -> Result<f32, String> { Ok((bef(d, k + crate::kv!(54 int) + a)? - bef(d, k + crate::kv!(7 int) + a)?) / 2.0) };
         let (radius, along) = (ext(0)?.min(ext(crate::kv!(23 int))?), ext(crate::kv!(1 int))?);

@@ -2,7 +2,7 @@ use delirium_data::estimate::fneg;
 use std::f32::consts::{FRAC_2_PI, FRAC_PI_4, TAU};
 
 pub fn vunit3(v: [f32; 3]) -> [f32; 3] {
-    let n = (((0.0 + v[0] as f64 * v[0] as f64) + v[1] as f64 * v[1] as f64) + v[2] as f64 * v[2] as f64) as f32;
+    let n = crate::estimate::vmsum3([v[0] as f64 * v[0] as f64, v[1] as f64 * v[1] as f64, v[2] as f64 * v[2] as f64]);
     let mut e = crate::estimate::vrsqrtefp(n);
     if e == f32::INFINITY {
         e = 0.0;

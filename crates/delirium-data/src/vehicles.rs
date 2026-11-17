@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Handling {
     pub mass: f32,
     pub drag: f32,
@@ -215,16 +215,65 @@ pub fn read_ide_types(text: &str) -> HashMap<String, (i32, i32)> {
     }).collect()
 }
 
+#[allow(non_snake_case)]
+#[inline]
+pub fn MODEL_FLAGS() -> &'static [(&'static [u8], u32); 28] { static V: std::sync::OnceLock<[(&'static [u8], u32); 28]> = std::sync::OnceLock::new(); let f = || -> [(&'static [u8], u32); 28] { [
+    (b"noboot", crate::kv!(1 int)),
+    (b"smallworker", 0x1),
+    (b"big", 0x2),
+    (b"onlyduringofficehours", crate::kv!(23 int)),
+    (b"bootinfront", crate::kv!(54 int)),
+    (b"isvan", crate::kv!(7 int)),
+    (b"avoidturns", crate::kv!(188 int)),
+    (b"livery", crate::kv!(257 int)),
+    (b"liveryextra", crate::kv!(808 int)),
+    (b"sports", crate::kv!(182 int)),
+    (b"delivery", crate::kv!(183 int)),
+    (b"noambocc", crate::kv!(722 int)),
+    (b"onlyonhighways", crate::kv!(181 int)),
+    (b"ext_gang", crate::kv!(184 int)),
+    (b"ext_conv", crate::kv!(648 int)),
+    (b"ext_taxi", crate::kv!(818 int)),
+    (b"ext_rare", crate::kv!(820 int)),
+    (b"ext_requi", crate::kv!(825 int)),
+    (b"ext_strong", crate::kv!(826 int)),
+    (b"ext_script", crate::kv!(822 int)),
+    (b"ext_all", crate::kv!(823 int)),
+    (b"ext_sunroof", crate::kv!(816 int)),
+    (b"tallship", crate::kv!(52 int)),
+    (b"truckfx", crate::kv!(676 int)),
+    (b"truckenginefx", crate::kv!(676 int)),
+    (b"truckexhaustfx", crate::kv!(712 int)),
+    (b"truckfirefx", crate::kv!(926 int)),
+    (b"bangerexhaustfx", crate::kv!(817 int)),
+] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+
+pub fn flag_words(s: &[u8]) -> Vec<&[u8]> {
+    let mut out = Vec::new();
+    if s.is_empty() {
+        return out;
+    }
+    let mut p = 0;
+    loop {
+        while p < s.len() && s[p] == b'+' {
+            p += 1;
+        }
+        let start = p;
+        while p < s.len() && s[p] != b'+' {
+            p += 1;
+        }
+        out.push(&s[start..p]);
+        if p >= s.len() {
+            return out;
+        }
+    }
+}
+
+pub fn model_flags(s: &[u8]) -> u32 {
+    flag_words(s).iter().filter_map(|w| (*MODEL_FLAGS()).iter().find(|(n, _)| n == w)).fold(0, |a, (_, b)| a | b)
+}
+
 pub fn read_ide_flags(text: &str) -> HashMap<String, u32> {
-    #[allow(non_snake_case)]
-    #[inline]
-    fn NAMES() -> &'static [(&'static str, u32); 27] { static V: std::sync::OnceLock<[(&'static str, u32); 27]> = std::sync::OnceLock::new(); let f = || [
-        ("smallworker", 0x1), ("big", 0x2), ("noboot", crate::kv!(1 int)), ("onlyduringofficehours", crate::kv!(23 int)), ("bootinfront", crate::kv!(54 int)), ("isvan", crate::kv!(7 int)), ("avoidturns", crate::kv!(188 int)), ("livery", crate::kv!(257 int)), ("liveryextra", crate::kv!(808 int)), ("sports", crate::kv!(182 int)),
-        ("delivery", crate::kv!(183 int)), ("noambocc", crate::kv!(722 int)), ("onlyonhighways", crate::kv!(181 int)), ("tallship", crate::kv!(52 int)), ("truckfx", crate::kv!(676 int)),
-        ("truckenginefx", crate::kv!(712 int)), ("ext_gang", crate::kv!(184 int)), ("ext_conv", crate::kv!(648 int)), ("ext_taxi", crate::kv!(818 int)), ("ext_rare", crate::kv!(820 int)),
-        ("ext_requi", crate::kv!(825 int)), ("ext_strong", crate::kv!(826 int)), ("ext_script", crate::kv!(822 int)), ("ext_all", crate::kv!(823 int)),
-        ("ext_sunroof", crate::kv!(816 int)), ("truckfirefx", crate::kv!(925 int)), ("bangerexhaustfx", crate::kv!(817 int)),
-    ]; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     let mut cars = false;
     lines(text).filter_map(|l| {
         match l {
@@ -232,7 +281,7 @@ pub fn read_ide_flags(text: &str) -> HashMap<String, u32> {
             "end" => cars = false,
             _ if cars => {
                 let t: Vec<&str> = l.split(',').map(str::trim).collect();
-                let bits = t.last()?.split_whitespace().last()?.split('+').filter_map(|f| (*NAMES()).iter().find(|(n, _)| n.eq_ignore_ascii_case(f))).fold(0, |a, (_, b)| a | b);
+                let bits = model_flags(t.last()?.split_whitespace().last()?.as_bytes());
                 return Some((t.first()?.to_ascii_lowercase(), bits));
             }
             _ => {}
@@ -244,7 +293,7 @@ pub fn read_ide_flags(text: &str) -> HashMap<String, u32> {
 pub fn start_extras(bike: bool, flags: u32, create: u32, present: impl Fn(u32) -> bool, rand: &mut impl FnMut(i32, i32) -> i32) -> u32 {
     let (mut never, mut a, mut b, mut c, mut d) = (0u32, 0u32, 0u32, 0u32, u32::MAX);
     if bike {
-        (a, b, c, d) = (crate::kv!(56 int), crate::kv!(93 int), crate::kv!(1067 int), crate::kv!(180 int));
+        (a, b, c, d) = (crate::kv!(56 int), crate::kv!(93 int), crate::kv!(1068 int), crate::kv!(180 int));
     } else if flags & crate::kv!(184 int) == 0 {
         if flags & crate::kv!(648 int) == 0 && flags & crate::kv!(816 int) == 0 {
             if flags & crate::kv!(818 int) == 0 {
@@ -289,7 +338,7 @@ pub fn start_extras(bike: bool, flags: u32, create: u32, present: impl Fn(u32) -
     let mut pc = if cc > 0 { rand(1, cc + 1) } else { -1 };
     let mut pd = -1;
     if cd > 0 {
-        let m = if flags & crate::kv!(820 int) != 0 { (cd & crate::kv!(1068 int)) << 2 } else { cd };
+        let m = if flags & crate::kv!(820 int) != 0 { (cd & crate::kv!(1069 int)) << 2 } else { cd };
         pd = rand(0, m + 1);
         if cd < pd {
             pd = 0;
@@ -339,19 +388,7 @@ pub fn livery_textures(sign_1: &str, has: impl Fn(&str) -> bool) -> Vec<String> 
 }
 
 pub fn rand_range(a: i32, b: i32, rand: u32) -> i32 {
-    ((rand as u16 as f32 * crate::kv!(968 f32)) * (b - a) as f32) as i32 + a
-}
-
-pub fn pick_livery(count: u8, extra: bool, off: u32, mut rand: impl FnMut() -> u32) -> i32 {
-    let last = count as i8 as i32 - 1;
-    if !extra {
-        return rand_range(0, count as i8 as i32, rand());
-    }
-    let first_clear = if off == 0 { -1 } else { (0..crate::kv!(23 int)).find(|b| off & 1 << b == 0).map_or(-1, |b| b as i32) };
-    if first_clear == -1 {
-        return last;
-    }
-    if rand_range(0, crate::kv!(0 int), rand()) & 1 != 0 { last } else { first_clear }
+    ((rand as u16 as f32 * crate::kv!(969 f32)) * (b - a) as f32) as i32 + a
 }
 
 pub fn new_dirt(min: u32, rand: u32) -> f32 {
@@ -361,7 +398,7 @@ pub fn new_dirt(min: u32, rand: u32) -> f32 {
 
 pub fn dirt_step(dirt: f32, velocity: [f32; 3], step: f32) -> f32 {
     let speed = velocity[0].mul_add(velocity[0], velocity[1] * velocity[1]).sqrt();
-    let k = crate::kv!(1069 f32);
+    let k = crate::kv!(1070 f32);
     let d = ((speed * k) as f64 * step as f64 + dirt as f64) as f32;
     if d - crate::kv!(30) >= 0.0 { crate::kv!(30) } else { d }
 }
@@ -503,8 +540,8 @@ pub struct WheelFx {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_FX() -> &'static WheelFx { static V: std::sync::OnceLock<WheelFx> = std::sync::OnceLock::new(); let f = || WheelFx { skid: crate::kv!(1070), friction: [crate::kv!(1070); 2], group: 0, friction_scale: 0.0, friction_fx: "",
-                                     disp: [crate::kv!(1070); 2], disp_scale: 0.0, disp_fx: "", collide: 0 }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn NO_FX() -> &'static WheelFx { static V: std::sync::OnceLock<WheelFx> = std::sync::OnceLock::new(); let f = || -> WheelFx { WheelFx { skid: crate::kv!(1071), friction: [crate::kv!(1071); 2], group: 0, friction_scale: 0.0, friction_fx: "",
+                                     disp: [crate::kv!(1071); 2], disp_scale: 0.0, disp_fx: "", collide: 0 } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn read_wheel_fx(materials: &str, vehiclefx: &str) -> Vec<[WheelFx; 4]> {
     let mut groups = HashMap::<String, [WheelFx; 4]>::new();
@@ -517,7 +554,7 @@ pub fn read_wheel_fx(materials: &str, vehiclefx: &str) -> Vec<[WheelFx; 4]> {
             section = None;
         } else if let (Some(k), true) = (section, l.starts_with(|c: char| c.is_ascii_alphabetic())) {
             let f: Vec<&str> = l.split_whitespace().collect();
-            let num = |i: usize| f.get(i).and_then(|v| v.parse().ok()).unwrap_or(crate::kv!(1070));
+            let num = |i: usize| f.get(i).and_then(|v| v.parse().ok()).unwrap_or(crate::kv!(1071));
             let range = |a: usize| {
                 let r = if num(a) < 0.0 { [f32::MAX; 2] } else { [num(a), num(a + 1)] };
                 (r, 1.0 / (r[1] - r[0]))

@@ -5,10 +5,10 @@ use crate::tasks::{ABORT_IMMEDIATE, ABORT_LEAVE};
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIT_WALL_KIND() -> u32 { crate::kv!(970 int) }
+pub fn HIT_WALL_KIND() -> u32 { crate::kv!(971 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn COWER_KIND() -> u32 { crate::kv!(971 int) }
+pub fn COWER_KIND() -> u32 { crate::kv!(972 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Row {
@@ -22,18 +22,18 @@ pub struct Row {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIT_WALL() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: 1, dict: "ped", clip: "hit_wall", flags: crate::kv!(972 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn HIT_WALL() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || -> Row { Row { group: 0, id: 1, dict: "ped", clip: "hit_wall", flags: crate::kv!(973 int), layer: crate::kv!(0 int) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn DUCK_COWER() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || Row { group: 0, id: crate::kv!(0 int), dict: "ped", clip: "duck_cower", flags: crate::kv!(973 int), layer: crate::kv!(0 int) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn DUCK_COWER() -> &'static Row { static V: std::sync::OnceLock<Row> = std::sync::OnceLock::new(); let f = || -> Row { Row { group: 0, id: crate::kv!(0 int), dict: "ped", clip: "duck_cower", flags: crate::kv!(974 int), layer: crate::kv!(0 int) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn AVOIDS() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(290 int), "avoids", crate::kv!(974 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn AVOIDS() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || -> [Row; 8] { avoid(crate::kv!(290 int), "avoids", crate::kv!(975 int)) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn EV_DIVES() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || avoid(crate::kv!(291 int), "ev_dives", crate::kv!(975 int)); if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn EV_DIVES() -> &'static [Row; 8] { static V: std::sync::OnceLock<[Row; 8]> = std::sync::OnceLock::new(); let f = || -> [Row; 8] { avoid(crate::kv!(291 int), "ev_dives", crate::kv!(976 int)) }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 fn avoid(group: i32, dict: &'static str, flags: u32) -> [Row; 8] {
     const CLIPS: [&str; 8] = ["avoid_fl", "avoid_fr", "avoid_bl", "avoid_br", "avoid_lf", "avoid_lb", "avoid_rf", "avoid_rb"];
@@ -48,7 +48,7 @@ fn avoid(group: i32, dict: &'static str, flags: u32) -> [Row; 8] {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn RUN_ANIM_KIND() -> u32 { crate::kv!(976 int) }
+pub fn RUN_ANIM_KIND() -> u32 { crate::kv!(977 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Clip {
@@ -121,7 +121,7 @@ impl Anims {
             p.player.blend_weight(dt);
         }
         let mut ps: Vec<Player> = self.players.iter().map(|p| p.player.clone()).collect();
-        animblend::sync_phases(&mut ps, dt);
+        animblend::sync_phases(&mut ps, &[], dt);
         for (slot, p) in self.players.iter_mut().zip(ps) {
             slot.player = p;
         }

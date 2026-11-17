@@ -47,7 +47,7 @@ pub fn held(v: [f32; 3], cap: f32) -> Option<f32> {
     let f = |x: f32| x as f64;
     let r = |x: f64| x as f32 as f64;
     let n2 = r(f(v[2]).mul_add(f(v[2]), r(f(v[0]).mul_add(f(v[0]), r(f(v[1]) * f(v[1]))))));
-    if n2 <= r(f(cap) * f(cap)) {
+    if !(n2 > r(f(cap) * f(cap))) {
         return None;
     }
     let mut y = crate::estimate::frsqrte(n2);

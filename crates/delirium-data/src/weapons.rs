@@ -32,6 +32,7 @@ pub struct Weapon {
     pub anims: Option<String>,
     pub melee_groups: [Option<String>; 2],
     pub rumble: (f32, f32),
+    pub row: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,6 +42,7 @@ pub struct Projectile {
     pub explosion: Option<String>,
     pub force: f32,
     pub explode_impact: f32,
+    pub vehicle_velocity: f32,
     pub offset: [f32; 3],
     pub rot_offset: [f32; 3],
 }
@@ -208,6 +210,7 @@ fn from_row(w: &Element, data: &Element, name: &str, row: &Row) -> Weapon {
             explosion: (explosion >= 0).then(|| EXPLOSIONS.get(explosion as usize).copied().unwrap_or("").to_string()),
             force: if p.children.iter().any(|c| c.name == "physics") { float(row, crate::kv!(107 int)) } else { 0.0 },
             explode_impact: float(row, crate::kv!(370 int)),
+            vehicle_velocity: float(row, crate::kv!(363 int)),
             offset: [float(row, crate::kv!(91 int)), float(row, crate::kv!(97 int)), float(row, crate::kv!(467 int))],
             rot_offset: [float(row, crate::kv!(460 int)), float(row, crate::kv!(373 int)), float(row, crate::kv!(89 int))],
         }
@@ -243,6 +246,7 @@ fn from_row(w: &Element, data: &Element, name: &str, row: &Row) -> Weapon {
         anims: desc_attr(w, "anim", "group").map(str::to_string),
         melee_groups: ["meleegroup1", "meleegroup2"].map(|k| desc_attr(w, "anim", k).map(str::to_string)),
         rumble: (word(row, crate::kv!(437 int)) as i32 as f32, float(row, crate::kv!(376 int))),
+        row: row.to_vec(),
     }
 }
 
@@ -253,20 +257,7 @@ pub fn pad_motors(intensity: f32) -> (u8, u8) {
     } else if i < crate::kv!(78) {
         (0, (i * crate::kv!(31)).mul_add(crate::kv!(147), crate::kv!(79)) as u8)
     } else {
-        (i.mul_add(crate::kv!(1072), crate::kv!(30)) as u8, if i >= crate::kv!(28) { crate::kv!(306 int) } else { 0 })
+        (i.mul_add(crate::kv!(1073), crate::kv!(30)) as u8, if i >= crate::kv!(28) { crate::kv!(306 int) } else { 0 })
     }
-}
-
-pub fn water_hit(quads: &[[[f32; 3]; 4]], from: [f32; 3], to: [f32; 3]) -> Option<[f32; 3]> {
-    quads.iter().find_map(|q| {
-        let h = q[0][2];
-        if (from[2] - h) * (to[2] - h) > 0.0 || from[2] == to[2] {
-            return None;
-        }
-        let t = (h - from[2]) / (to[2] - from[2]);
-        let (x, y) = (from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t);
-        let (lo, hi) = q.iter().fold(([f32::MAX; 2], [f32::MIN; 2]), |(lo, hi), v| ([lo[0].min(v[0]), lo[1].min(v[1])], [hi[0].max(v[0]), hi[1].max(v[1])]));
-        (x >= lo[0] && x <= hi[0] && y >= lo[1] && y <= hi[1]).then_some([x, y, h])
-    })
 }
 

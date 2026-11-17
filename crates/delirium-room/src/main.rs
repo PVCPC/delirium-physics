@@ -453,16 +453,17 @@ vorticity {}
 spray_physics {}
 skate3_bails {}
 step_limit {}
+carry_pushes {}
 bone_skin {}
 fullscreen {}
 phys_thread {}
 render_thread {}
 ",
-            sim.ped_color, b(sim.eyes), b(sim.brows), b(sim.skel), sim.skel_style, b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
+            PED_COLORS[sim.ped_color].0, b(sim.eyes), b(sim.brows), b(sim.skel), sim.skel_style, b(sim.clean), b(sim.look), b(sim.avoid), b(sim.tasks), sim.getup_mode, b(sim.god), b(sim.weak),
             b(sim.passive), b(sim.walk), b(sim.hero_ots), b(sim.hero_physics), b(sim.super_punch), b(sim.even), b(sim.homer_wild), b(sim.gun_ai), b(sim.dive), b(sim.shadows), sim.body_alpha,
             b(sim.soft), sim.shadow, sim.fill_k, sim.sun_color[0], sim.sun_color[1], sim.sun_color[2], b(sim.sound),
             sim.volume[0], sim.volume[1], sim.volume[2], sim.volume[3], sim.amb_theme, sim.volume[4], sim.dodge_gap, b(sim.extra), sim.extra_pick, sim.hero_alpha, sim.render_scale, sim.msaa, sim.shadow_q, sim.gpu, sim.aa, sim.smaa_q, sim.dlss_q, sim.sharpen, sim.fps_limit, sim.upscaler, sim.fsr_q, sim.xess_q,
-            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails), b(sim.step_limit), b(sim.bone_skin), b(sim.fullscreen), b(sim.phys_thread), b(sim.render_thread)) + &params::save(&sim.param_edits)
+            sim.ssao, sim.ao_strength, sim.bloom, sim.dof, sim.sharp_by.map(|x| x.to_string()).join(","), sim.contact, sim.contact_k, sim.vignette, sim.lens, sim.chroma, sim.rt, sim.sky, b(sim.god_rays), b(sim.restir), sim.fire, b(sim.real_fire), b(sim.smoke), b(sim.fire_react), sim.water_q, b(sim.voxel_water), b(sim.photons), b(sim.water_caustics), b(sim.water_spray), b(sim.water_waves), b(sim.water_pixels), b(sim.water_haze), b(sim.water_mirror), b(sim.water_foam), b(sim.water_wet), b(sim.wet_film), b(sim.wet_drips), b(sim.sky_shade), b(sim.water_traced), b(sim.glass_tint), b(sim.glass_shade), b(sim.water_ripples), b(sim.water_refract), b(sim.real_surface), b(sim.real_ripples), b(sim.water_clear), b(sim.wet_trail), b(sim.water_impact), b(sim.water_faucet), b(sim.fire_light), b(sim.fire_homer), sim.shadow_filter, b(sim.water_mist), b(sim.water_fine), b(sim.water_depth), b(sim.water_relax), b(sim.water_ghost), b(sim.water_vort), b(sim.water_spray_phys), b(sim.skate3_bails), b(sim.step_limit), b(sim.carry_pushes), b(sim.bone_skin), b(sim.fullscreen), b(sim.phys_thread), b(sim.render_thread)) + &params::save(&sim.param_edits)
 }
 
 const XR: [(&str, &str); 9] = [
@@ -502,6 +503,12 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             params::load_param(&mut sim.param_edits, v);
             continue;
         }
+        if k == "pedcol" {
+            if let Some(c) = ped_colour(v.trim()) {
+                (sim.ped_color, sim.body_alpha) = c;
+            }
+            continue;
+        }
         if k == "sharp_by" {
             for (to, x) in sim.sharp_by.iter_mut().zip(v.trim().split(',')) {
                 *to = x.parse::<f32>().unwrap_or(0.0).clamp(0.0, 1.0);
@@ -511,7 +518,6 @@ fn apply_settings(sim: &mut Sim, t: &str) {
         let Ok(x) = v.trim().parse::<f32>() else { continue };
         let (n, on) = (x.max(0.0) as usize, x != 0.0);
         match k {
-            "pedcol" => if let Some(c) = ped_colour(v.trim()) { (sim.ped_color, sim.body_alpha) = c },
             "opacity" => sim.body_alpha = x.clamp(0.1, 1.0),
             "hero_opacity" => sim.hero_alpha = x.clamp(0.1, 1.0),
             #[cfg(feature = "portal")]
@@ -599,6 +605,7 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "weak" => sim.weak = on,
             "skate3_bails" => sim.skate3_bails = on,
             "step_limit" => sim.step_limit = on,
+            "carry_pushes" => sim.carry_pushes = on,
             "bone_skin" => sim.bone_skin = on,
             "fullscreen" => sim.fullscreen = on,
             "phys_thread" => sim.phys_thread = on,
@@ -715,12 +722,12 @@ fn taxi_of(id: i32) -> i32 {
 const PLANK_ID: i32 = 200;
 #[allow(non_snake_case)]
 #[inline]
-fn BODIES() -> &'static [(&'static str, &'static str, f32, f32, f32); 13] { static V: std::sync::OnceLock<[(&'static str, &'static str, f32, f32, f32); 13]> = std::sync::OnceLock::new(); let f = || [("S", "Small", (*PROFILES())[0].1, (*PROFILES())[0].2, (*PROFILES())[0].3), ("A", "Average", (*PROFILES())[1].1, (*PROFILES())[1].2, (*PROFILES())[1].3),
+fn BODIES() -> &'static [(&'static str, &'static str, f32, f32, f32); 13] { static V: std::sync::OnceLock<[(&'static str, &'static str, f32, f32, f32); 13]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, &'static str, f32, f32, f32); 13] { [("S", "Small", (*PROFILES())[0].1, (*PROFILES())[0].2, (*PROFILES())[0].3), ("A", "Average", (*PROFILES())[1].1, (*PROFILES())[1].2, (*PROFILES())[1].3),
                                                  ("L", "Large", (*PROFILES())[2].1, (*PROFILES())[2].2, (*PROFILES())[2].3), ("K", "Lanky", (*PROFILES())[3].1, (*PROFILES())[3].2, (*PROFILES())[3].3),
                                                  ("F", "Fat", (*PROFILES())[4].1, (*PROFILES())[4].2, (*PROFILES())[4].3), ("T", "Stocky", (*PROFILES())[5].1, (*PROFILES())[5].2, (*PROFILES())[5].3),
                                                  ("W", "Waddler", HW.0, HW.1, 1.0), ("G", "Guard", HG.0, HG.1, 1.0), ("B", "Brute", HB.0, HB.1, 1.0),
                                                  ("R", "Random", 0.0, 0.0, 1.0), ("C", "Custom", 0.0, 0.0, 1.0),
-                                                 ("X", "Brawler", 0.0, (*BRAWLER_BODY()).kg, 1.0), ("U", "Bruiser", 0.0, (*BRUISER_BODY()).kg, 1.0)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+                                                 ("X", "Brawler", 0.0, (*BRAWLER_BODY()).kg, 1.0), ("U", "Bruiser", 0.0, (*BRUISER_BODY()).kg, 1.0)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 const RANDOM: usize = 9;
 const CUSTOM: usize = 10;
 const BRAWLER: usize = 11;
@@ -1107,6 +1114,7 @@ struct Sim {
     meat_wipe: bool,
     skate3_bails: bool,
     step_limit: bool,
+    carry_pushes: bool,
     meat_screen: Option<Option<hom::Screen>>,
     shot_scene: String,
     photo_note: String,
@@ -2817,7 +2825,7 @@ impl Sim {
             }
         }
         let head = n.head();
-        let what = if matches!(hit, hero::Hit::Bump(_)) { "hero  runs into Homer" } else { "hero  punch lands" };
+        let what = if matches!(hit, hero::Hit::Bump(..)) { "hero  runs into Homer" } else { "hero  punch lands" };
         self.land(hit, head, what);
     }
 
@@ -3127,17 +3135,17 @@ impl Sim {
                 }
                 (if self.rand.float_in_range(0.0, 1.0) > BALANCE_ROLL() { "balance" } else { "flinch" }, vec![imp(k, at, j)])
             }
-            hero::Hit::Bump(_) => ("balance", vec![]),
+            hero::Hit::Bump(_, push) => ("balance", push.map(|(at, j)| imp(self.agent.doll.nearest(&self.build, at), at, j)).into_iter().collect()),
         };
         let set = match (task, &hit) {
             ("flinch", _) if self.agility < 3 => "MELEE_PASIVE",
             ("flinch", _) => "MELEE",
-            (_, hero::Hit::Bump(_)) => delirium::nm::balance_set(self.agility, self.health, false, false),
+            (_, hero::Hit::Bump(..)) => delirium::nm::balance_set(self.agility, self.health, false, false),
             _ => "*",
         };
         let (mo, until) = hero_task(&self.tp, task, set, head, pelvis, ours.fwd, &mut self.rand);
         o.extend(mo);
-        if let hero::Hit::Bump(from) = hit {
+        if let hero::Hit::Bump(from, _) = hit {
             let lean = |d: Vec3| format!("leanInDirection start=true applyAsForce=true leanAmount={} dir={}", BUMP_LEAN(), v3(d.with_z(0.0)));
             o.push(lean(pelvis - from));
             self.lean_stop = Some(now + BUMP_LEAN_SECS);
@@ -5439,7 +5447,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
     let mut sim = Sim { build, frames, world, tp, agent, msgs: msg::State::default(), paused: false, speed: 1.0, acc: 0.0, steps: 0, arrows: false,
                         shot_task: None, rand: Default::default(), sg_seed: 1, sg_aim: None,
                         log: VecDeque::new(), console: String::new(), script, typing: false,
-                        weapons, weapon: 0, weak: false, param_edits: Default::default(), param_search: String::new(), param_changed_only: false, sel: 0, over_ui: false, held: true, cam_step: (0, Vec3::ZERO, Vec3::ZERO), floor_at: Vec2::ZERO,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, hero_ots: true, ots_right: true, ots_dist: 2.0, ots: None, ots_on: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, fullscreen: false, phys_thread: false, phys_queued: 0, render_thread: true, extra: false, extra_pick: 0x1ff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, partial: None, partial_r: 10.0, part: delirium::partial::Partial::new(delirium::partial::Mode::Legs), partial_mode: PARTIAL_PLANTED,  contact_air: vec![], contact_wait: vec![], contact_feet: vec![],   even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, cam_prev: None, cam_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, step_limit: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
+                        weapons, weapon: 0, weak: false, param_edits: Default::default(), param_search: String::new(), param_changed_only: false, sel: 0, over_ui: false, held: true, cam_step: (0, Vec3::ZERO, Vec3::ZERO), floor_at: Vec2::ZERO,   show_ui: true, sens: 0.5, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, hero_ots: true, ots_right: true, ots_dist: 2.0, ots: None, ots_on: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, fullscreen: false, phys_thread: false, phys_queued: 0, render_thread: true, extra: false, extra_pick: 0x1ff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, partial: None, partial_r: 10.0, part: delirium::partial::Partial::new(delirium::partial::Mode::Legs), partial_mode: PARTIAL_PLANTED,  contact_air: vec![], contact_wait: vec![], contact_feet: vec![],   even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, cam_prev: None, cam_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, step_limit: false, carry_pushes: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, ties: vec![], line_k: 1.0, line_leash: false, line_wrap: true, drag_hold: None, drag_len: 0.0, tie_hover: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: 1, sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35, 0.015, 1.0], amb_theme: 0, blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
                         scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, body_alpha: BODY_ALPHA, eyes: true, bone_skin: false, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
@@ -5502,7 +5510,7 @@ fn main() {
     let game_dir = game_dir.filter(|g| {
         !delirium_data::kv::FROM_GAME || numbers(g) || {
             eprintln!("{g}: this copy isn't a version Delirium reads its numbers from (a disc's key is fetched from the internet \
-                the first time). You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)");
+                the first time). You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59, or downgraded to 1.0.8.0) or the original Xbox 360 disc (not included)");
             false
         }
     });
@@ -5882,7 +5890,7 @@ fn pick_game(args: &[String]) -> ! {
                         let big = if pick.hover { "Let go to use it" } else { "Drag your game here" };
                         ui.label(egui::RichText::new(big).size(28.0).strong().color(line));
                         if delirium_data::kv::FROM_GAME {
-                            ui.label(egui::RichText::new("You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)").strong());
+                            ui.label(egui::RichText::new("You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59, or downgraded to 1.0.8.0) or the original Xbox 360 disc (not included)").strong());
                             ui.label("Use its disc image (.iso), or the PC game folder (the one with GTAIV.exe in it).");
                             ui.label(egui::RichText::new("The physics numbers are read from it; a disc's key is fetched from the internet the first time. \
                                 The PS3 version isn't supported for now.").small());
@@ -5925,7 +5933,7 @@ fn pick_game(args: &[String]) -> ! {
                 exit.write(AppExit::Success);
             } else {
                 pick.err = if delirium_data::kv::FROM_GAME && ["GTAIV.exe", "default.xex"].iter().any(|f| std::path::Path::new(&g).join(f).is_file()) {
-                    format!("That copy isn't a version Delirium reads its numbers from: {g}\nYou need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)")
+                    format!("That copy isn't a version Delirium reads its numbers from: {g}\nYou need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59, or downgraded to 1.0.8.0) or the original Xbox 360 disc (not included)")
                 } else {
                     format!("That isn't it: {g}\nDrag your game .iso file (or its game folder).")
                 };
@@ -5935,7 +5943,7 @@ fn pick_game(args: &[String]) -> ! {
         match done {
             Some(Ok(f)) if !is_game(&f) => {
                 pick.copy = None;
-                pick.err = "That disc isn't a version Delirium reads its numbers from (its key is fetched from the internet the first time).\nYou need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59) or the original Xbox 360 disc (not included)".into();
+                pick.err = "That disc isn't a version Delirium reads its numbers from (its key is fetched from the internet the first time).\nYou need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59, or downgraded to 1.0.8.0) or the original Xbox 360 disc (not included)".into();
             }
             Some(Ok(f)) => {
                 save_game(&f);
@@ -6884,6 +6892,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
     new.meat_on = sim.meat_on;
     new.skate3_bails = sim.skate3_bails;
     new.step_limit = sim.step_limit;
+    new.carry_pushes = sim.carry_pushes;
     (new.ped_color, new.body_alpha, new.skel, new.soft, new.eyes, new.film, new.bone_skin) = (sim.ped_color, sim.body_alpha, sim.skel, sim.soft, sim.eyes, sim.film, sim.bone_skin);
     apply_settings(&mut new, &settings(&sim));
     new.scene = Some(scene.clone());
@@ -9527,11 +9536,18 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                     _ => sim.hero_gun_frame(aim, 0.0, true, false, false),
                 }
             }
-            ("!hero_go", Some(a)) => if let Some(n) = sim.hero.as_mut() {
-                let mut a = a.split_whitespace();
-                let v: Vec<f32> = a.next().unwrap_or("").split(',').filter_map(|x| x.parse().ok()).collect();
-                n.go = (Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), 0.0), a.next().and_then(|g| g.parse().ok()).unwrap_or(0));
+            ("!hero_react", Some(a)) => if let s = &mut *sim && let (Some(n), Some(c)) = (s.hero.as_mut(), s.getup.as_ref()) {
+                let mut w = a.split_whitespace();
+                let ko = w.next() == Some("ko");
+                n.react(c, ko, w.next().and_then(|s| s.parse().ok()).unwrap_or(0));
             },
+            ("!hero_go", Some(a)) => { let at = sim.agent.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation); if let Some(n) = sim.hero.as_mut() {
+                let mut a = a.split_whitespace();
+                let way = a.next().unwrap_or("");
+                let v: Vec<f32> = if way == "homer" { let d = (at - n.feet).with_z(0.0).normalize_or_zero(); vec![d.x, d.y] }
+                    else { way.split(',').filter_map(|x| x.parse().ok()).collect() };
+                n.go = (Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), 0.0), a.next().and_then(|g| g.parse().ok()).unwrap_or(0));
+            }},
             ("!blast", Some(a)) => {
                 let v: Vec<f32> = a.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 sim.explode(Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)));
@@ -9978,6 +9994,7 @@ impl Sim {
 
     fn tick(&mut self) {
         delirium::nmdbm::STEP_LIMIT.store(self.step_limit, std::sync::atomic::Ordering::Relaxed);
+        delirium::ragdoll::CARRY_PUSHES.store(self.carry_pushes, std::sync::atomic::Ordering::Relaxed);
         self.tunes_in();
         self.extras_frame();
         self.bridge();
@@ -10300,7 +10317,22 @@ fn caps_of(build: &Build, d: &Ragdoll) -> Vec<Capsule> {
     }).collect()
 }
 
-const PED_COLORS: [(&str, &str); 3] = [("mixed", "Red & blue"), ("blue", "All blue"), ("red", "All red")];
+const PED_COLORS: [(&str, &str); 5] = [("mixed", "Red & blue"), ("blue", "All blue"), ("red", "All red"), ("pride1", "pride1"), ("pride2", "pride2")];
+const PRIDE: [[f32; 3]; 6] = [[0.894, 0.012, 0.012], [1.0, 0.549, 0.0], [1.0, 0.929, 0.0], [0.0, 0.502, 0.149], [0.0, 0.302, 1.0], [0.459, 0.027, 0.529]];
+const TRANS: [[f32; 3]; 5] = [[0.357, 0.808, 0.98], [0.961, 0.663, 0.722], [1.0, 1.0, 1.0], [0.961, 0.663, 0.722], [0.357, 0.808, 0.98]];
+fn stripe(name: &str, trans: bool) -> usize {
+    let part = name.trim_end_matches("_Left").trim_end_matches("_Right");
+    let (pride, tr) = match part {
+        "Head" | "Neck" => (0, 0),
+        "Spine3" | "Clavicle" | "Upper_Arm" => (1, 1),
+        "Spine2" => (2, 1),
+        "Spine1" | "Lower_Arm" => (2, 2),
+        "Spine0" | "Buttocks" | "Hand" => (3, 2),
+        "Thigh" => (4, 3),
+        _ => (5, 4),
+    };
+    if trans { tr } else { pride }
+}
 const BODY_ALPHA: f32 = 0.55;
 fn ped_colour(k: &str) -> Option<(usize, f32)> {
     match k {
@@ -10314,13 +10346,15 @@ fn part_color(c: usize, name: &str, a: f32) -> Color {
     match c {
         1 => blue,
         2 => red,
+        3 => { let [r, g, b] = PRIDE[stripe(name, false)]; Color::srgba(r, g, b, a) }
+        4 => { let [r, g, b] = TRANS[stripe(name, true)]; Color::srgba(r, g, b, a) }
         _ if name.ends_with("Left") => red,
         _ if name.ends_with("Right") => blue,
         _ => Color::srgba(0.72, 0.72, 0.74, (a + 0.05).min(1.0)),
     }
 }
 fn bone_tint(c: usize) -> Option<Color> {
-    [None, Some(Color::srgb(0.35, 0.55, 1.0)), Some(Color::srgb(1.0, 0.35, 0.3)), Some(Color::srgb(0.35, 0.55, 1.0)), None][c.min(4)]
+    [None, Some(Color::srgb(0.35, 0.55, 1.0)), Some(Color::srgb(1.0, 0.35, 0.3))].get(c).copied().flatten()
 }
 
 #[cfg(windows)]
@@ -10640,7 +10674,7 @@ const PARTIAL_CIRCLE: u8 = 1;
 const FOLLOW_RATE: f32 = 10.0;
 const PARTIAL_BOXER: u8 = 2;
 
-const TIPS: [(&str, &str); 60] = [
+const TIPS: [(&str, &str); 62] = [
     ("skate", "Skate 3 mode (J): Homer on a skateboard, run by the Skate 3 Rust engine on your own Skate 3 (link it in Settings, Skate 3 · bonus). W push, S brake, A/D steer, Space ollie, Q kickflip, E heelflip, hold the wheel button and move the mouse for the right stick's flick tricks, Shift/Ctrl crouch and grab, F (X), Z/X bumpers, land on a rail or ledge to grind. R off the board: WASD walk, Shift run, Space jump, F throw the board, Ctrl drop it, either again calls it back, R back on. Bails are Skate 3's own or Homer's ragdoll (Settings, Skate 3 · bonus); after a ragdoll he gets up and walks on as in Skate 3. J leaves Skate 3 mode. A gamepad works as in Skate 3."),
     ("throw ball", "Throws a ball at Homer. Hold Ctrl and point first: it goes there instead."), ("throw box", "Throws a box at Homer. Hold Ctrl and point first: it goes there instead."),
     ("drop crate", "Drops a heavy crate on Homer."), ("crowd", "Four more peds beside Homer, balancing. Again: take them away."), ("grid", "24 more peds in a grid round Homer. Again: take them away."),
@@ -10655,6 +10689,8 @@ const TIPS: [(&str, &str); 60] = [
     ("mixed", "Left side red, right side blue: easy to tell his left and right apart."),
     ("blue", "All blue."),
     ("red", "All red."),
+    ("pride1", "The rainbow pride flag's stripes, head to feet."),
+    ("pride2", "The trans flag's stripes, head to feet: blue, pink, white, pink, blue."),
     ("#skel", "The skeleton's lines and joints drawn over Homer's body."),
     ("#clean", "Hides every debug drawing on the characters (skeleton, boxes, centre of mass, arrows, look and avoid markers) and makes their bodies solid instead of see-through."),
     ("#eyes", "Homer's eyes: they look where he's reacting to, blink, squint when he's hurt and shut when he's out."),
@@ -11099,6 +11135,8 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             ui.label(section_title("Reactions"));
             ui.checkbox(&mut sim.step_limit, "Step limit")
                 .on_hover_text("As in the game: a stumbling Homer falls after so many steps. Off: he keeps stepping until he finds his balance.");
+            ui.checkbox(&mut sim.carry_pushes, "Carry pushes")
+                .on_hover_text("A shot or push on a ragdoll that was just moved far (through a portal) lands where it hit. Off, as in the game: it can spin him.");
             info(ui, "Start a reaction, then poke, shoot or pull Homer to see how he responds.");
             let per = per_row(ui, 108.0);
             egui::Grid::new("beh").spacing([10.0, 8.0]).show(ui, |ui| {

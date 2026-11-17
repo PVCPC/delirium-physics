@@ -226,7 +226,7 @@ impl<P: Copy + PartialEq> Groups<P> {
 
     pub fn handle(&mut self, i: usize) -> i32 {
         let g = &mut self.0[i];
-        g.generation = if g.generation >= crate::kv!(940 int) { 1 } else { g.generation + 1 };
+        g.generation = if g.generation >= crate::kv!(941 int) { 1 } else { g.generation + 1 };
         (i32::from(g.generation) << crate::kv!(54 int)) | (i as i32 & crate::kv!(53 int))
     }
 
@@ -322,10 +322,10 @@ pub fn script_formation(n: i32) -> Option<u8> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn TURNS() -> u32 { crate::kv!(941 int) }
+fn TURNS() -> u32 { crate::kv!(942 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_LEADER() -> u32 { crate::kv!(942 int) }
+fn FACE_LEADER() -> u32 { crate::kv!(943 int) }
 #[allow(non_snake_case)]
 #[inline]
 fn FACE_AWAY() -> u32 { crate::kv!(824 int) }
@@ -361,15 +361,15 @@ pub struct Formation {
 impl Formation {
     pub fn new(kind: u8) -> Formation {
         let (spacing, flags) = match kind {
-            LOOSE => (crate::kv!(33), crate::kv!(943 int)),
-            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(944 int)),
-            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(945 int)),
-            FOLLOW_IN_LINE => (2.0, crate::kv!(946 int)),
-            _ => (2.0, crate::kv!(947 int)),
+            LOOSE => (crate::kv!(33), crate::kv!(944 int)),
+            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(945 int)),
+            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(946 int)),
+            FOLLOW_IN_LINE => (2.0, crate::kv!(947 int)),
+            _ => (2.0, crate::kv!(948 int)),
         };
         let catch_up = if kind == FOLLOW_IN_LINE { [1.0, crate::kv!(64)] } else { [crate::kv!(5), crate::kv!(139)] };
         Formation { kind, spacing, catch_up, flags, places: Default::default(), leader: Place::default(), count: 0,
-            last: [crate::kv!(948 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
+            last: [crate::kv!(949 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
             trail_near: [0.0; 8] }
     }
 

@@ -66,7 +66,9 @@ pub fn part_for_name(name: &str) -> i32 {
     }
     words.retain(|w| !w.is_empty() && !["bip01", "bip001", "npc", "def", "mixamorig", "b", "jnt", "bone", "char", "bn"].contains(&w.as_str()));
     let has = |s: &str| words.iter().any(|w| w.starts_with(s));
-    if ["finger", "thumb", "index", "middle", "ring", "pinky", "toe", "twist", "roll", "end", "nub", "top", "eye", "jaw", "ik", "pole"].iter().any(|s| has(s)) {
+    if ["finger", "thumb", "index", "middle", "ring", "pinky", "toe", "twist", "roll", "end", "nub", "top", "eye", "jaw", "ik", "pole",
+        "fa", "face", "lip", "brow", "cheek", "tongue", "xtra", "extra", "helper", "corrective", "cloth", "holster", "bag", "attach", "prop",
+        "weapon", "hair", "skirt", "coat", "cape"].iter().any(|s| has(s)) {
         return -1;
     }
     let left = words.iter().any(|w| w == "l" || w == "left" || w.starts_with("left"));
@@ -111,15 +113,24 @@ pub unsafe extern "C" fn nm_rig_check(bones: i32, parents: *const i32, rest: *co
     if unsafe { nm_rig_joints(bones, parents, rest, parts.as_mut_ptr(), j.as_mut_ptr()) } < 0 {
         lines.push(crate::ERR.with(|e| e.borrow().clone()));
     } else {
+        let orig = unsafe { std::slice::from_raw_parts(map, n) };
+        if (0..n).any(|b| parts[b] == 10 && (7..=9).contains(&orig[b])) {
+            lines.push("no bone on Spine3 (the chest the neck and clavicles hang from): nm_rig_joints moves your top spine bones up onto it, so pass its cleaned map to nm_rig_create, or map your top spine bone to 10 yourself".into());
+        }
         let g = |k: usize| Vec3::from_slice(&j[k * 3..k * 3 + 3]);
         if (g(1) - g(4)).dot(g(14) - g(18)) < 0.0 {
             lines.push("left and right swapped between the legs and the arms: fix the map".into());
+        }
+        if g(16).z > g(12).z + 0.1 || g(20).z > g(12).z + 0.1 {
+            lines.push("a hand is above the head in the rest pose: if that's not your bind pose, your engine may store bone rotations                         inverted (Glacier does): conjugate them (x, y, z negated) in and out".into());
         }
         let bend = |a: usize, b: usize, c: usize| (g(b) - g(a)).angle_between(g(c) - g(b)).to_degrees();
         for (what, a, b, c, most) in [("left knee", 1, 2, 3, 30.0), ("right knee", 4, 5, 6, 30.0), ("left elbow", 14, 15, 16, 60.0), ("right elbow", 18, 19, 20, 60.0)] {
             let d = bend(a, b, c);
             if d > most {
-                lines.push(format!("{what} bent {d:.0} degrees in the rest pose: pass the bind pose (the mesh's neutral pose), not the animated one"));
+                let bone = |k: usize| parts.iter().position(|&p| p == k as i32).map_or("none".into(), |i| i.to_string());
+                lines.push(format!("{what} bent {d:.0} degrees in the rest pose (bones {}, {}, {}): pass the bind pose (the mesh's neutral pose), \
+                                    not the animated one; or the map is wrong if those bones aren't that limb", bone(a), bone(b), bone(c)));
             }
         }
     }
@@ -140,8 +151,15 @@ pub unsafe extern "C" fn nm_rig_check(bones: i32, parents: *const i32, rest: *co
         while a >= 0 && !(0..21).contains(&parts[a as usize]) {
             a = par[a as usize];
         }
-        if let Some(q) = (a >= 0).then(|| parts[a as usize]).filter(|&q| q != p && !above(p, q)) {
+        let clavicle_on_neck = (p == 13 || p == 17) && a >= 0 && parts[a as usize] == 11;
+        if let Some(q) = (a >= 0).then(|| parts[a as usize]).filter(|&q| q != p && !above(p, q) && !clavicle_on_neck) {
             lines.push(format!("bone {b} ({}) is under bone {a} ({}): fix the map", name(p), name(q)));
+        }
+    }
+    for (p, what) in [(11, "neck: map only the lower one (the other -1)"), (12, "head: map only one")] {
+        let on: Vec<String> = (0..n).filter(|&b| parts[b] == p).map(|b| b.to_string()).collect();
+        if on.len() > 1 {
+            lines.push(format!("bones {} are all on the {what}", on.join(", ")));
         }
     }
     unsafe { crate::put(&lines.join("\n"), buf, len) };
@@ -166,6 +184,14 @@ pub unsafe extern "C" fn nm_rig_joints(bones: i32, parents: *const i32, rest: *c
                 parts[b] = -1;
             }
             a = parents[a as usize];
+        }
+    }
+    if !parts.contains(&10) {
+        let mut sp: Vec<usize> = (0..n).filter(|&b| (7..=9).contains(&parts[b])).collect();
+        sp.sort_by_key(|&b| parts[b]);
+        let k = sp.len();
+        for (i, &b) in sp.iter().enumerate().skip(1) {
+            parts[b] = 10 - (k - 1 - i) as i32;
         }
     }
     if !parts.contains(&12) {
@@ -194,6 +220,26 @@ pub unsafe extern "C" fn nm_rig_joints(bones: i32, parents: *const i32, rest: *c
         }
     }
     let chain = [0, 7, 8, 9, 10, 11, 12];
+    const HOMER_ARC: [f32; 7] = [0.0, 0.0924, 0.1628, 0.2397, 0.3562, 0.5995, 0.6957];
+    if (1..5).any(|i| j[chain[i]].is_none()) {
+        let end = if j[11].is_some() { 5 } else { 6 };
+        let pts: Vec<Vec3> = (0..=end).filter_map(|i| j[chain[i]]).collect();
+        let segs: Vec<f32> = pts.windows(2).map(|w| w[0].distance(w[1])).collect();
+        let total: f32 = segs.iter().sum();
+        for i in 1..5 {
+            let mut s = total * HOMER_ARC[i] / HOMER_ARC[end];
+            let mut at = pts[0];
+            for (w, &l) in pts.windows(2).zip(&segs) {
+                if s <= l || l == 0.0 {
+                    at = w[0].lerp(w[1], if l > 0.0 { s / l } else { 0.0 });
+                    break;
+                }
+                s -= l;
+                at = w[1];
+            }
+            j[chain[i]] = Some(at);
+        }
+    }
     for i in 1..chain.len() - 1 {
         if j[chain[i]].is_some() {
             continue;

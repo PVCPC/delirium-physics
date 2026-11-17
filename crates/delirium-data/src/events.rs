@@ -381,7 +381,7 @@ impl<P: Pedlike> Event<P> {
             (None, kind::SWITCH2NM) => 98 + if self.switch.as_ref().is_some_and(|s| s.flag) { 2 } else { 0 },
             (None, kind::GUN_SHOT_WHIZZED_BY) => 47,
             (None, kind::GUN_SHOT) => 46,
-            (None, kind::BULLET_IMPACT) => 48,
+            (None, kind::BULLET_IMPACT) => crate::policecmds::bullet_impact_priority() as i32,
             (None, kind::GUN_AIMED_AT) => 67,
             (None, kind::DRAGGED_OUT_CAR) => 52,
             (None, kind::DISLIKE) => 27,

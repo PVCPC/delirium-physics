@@ -9,7 +9,7 @@ pub fn FLOOR_HALF() -> f32 { delirium_data::kv!(26) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn POOL() -> &'static [Vec2; 2] { static V: std::sync::OnceLock<[Vec2; 2]> = std::sync::OnceLock::new(); let f = || [Vec2::new(-delirium_data::kv!(5), delirium_data::kv!(64)), Vec2::new(delirium_data::kv!(5), delirium_data::kv!(38))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn POOL() -> &'static [Vec2; 2] { static V: std::sync::OnceLock<[Vec2; 2]> = std::sync::OnceLock::new(); let f = || -> [Vec2; 2] { [Vec2::new(-delirium_data::kv!(5), delirium_data::kv!(64)), Vec2::new(delirium_data::kv!(5), delirium_data::kv!(38))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn POOL_DEEP() -> f32 { delirium_data::kv!(12) }
@@ -50,8 +50,8 @@ pub fn over_pool(p: Vec3) -> bool {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KINDS() -> &'static [(&'static str, f32, f32, f32); 5] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32); 5]> = std::sync::OnceLock::new(); let f = || [("ball", delirium_data::kv!(9), 2.0, delirium_data::kv!(126)), ("box", delirium_data::kv!(60), delirium_data::kv!(65), delirium_data::kv!(137)), ("crate", delirium_data::kv!(10), delirium_data::kv!(11), 0.0),
-    ("barrel", delirium_data::kv!(24), delirium_data::kv!(27), 0.0), ("wrecking ball", 0.5, delirium_data::kv!(753), 0.0)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KINDS() -> &'static [(&'static str, f32, f32, f32); 5] { static V: std::sync::OnceLock<[(&'static str, f32, f32, f32); 5]> = std::sync::OnceLock::new(); let f = || -> [(&'static str, f32, f32, f32); 5] { [("ball", delirium_data::kv!(9), 2.0, delirium_data::kv!(126)), ("box", delirium_data::kv!(60), delirium_data::kv!(65), delirium_data::kv!(137)), ("crate", delirium_data::kv!(10), delirium_data::kv!(11), 0.0),
+    ("barrel", delirium_data::kv!(24), delirium_data::kv!(27), 0.0), ("wrecking ball", 0.5, delirium_data::kv!(753), 0.0)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn PART_KG() -> f32 { delirium_data::kv!(11) }
@@ -120,11 +120,11 @@ impl rapier3d::prelude::PhysicsHooks for Holes<'_> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn PAD_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || Vec3::new(delirium_data::kv!(12), delirium_data::kv!(12), delirium_data::kv!(17)); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn PAD_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || -> Vec3 { Vec3::new(delirium_data::kv!(12), delirium_data::kv!(12), delirium_data::kv!(17)) }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn PLAT_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || Vec3::new(2.0, 2.0, delirium_data::kv!(17)); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn PLAT_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || -> Vec3 { Vec3::new(2.0, 2.0, delirium_data::kv!(17)) }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn plat(stage: &str, t: f32) -> Option<(Vec3, Quat)> {
     let s = |f: f32, p: f32| (std::f32::consts::TAU * f * t + p).sin();
@@ -132,7 +132,7 @@ pub fn plat(stage: &str, t: f32) -> Option<(Vec3, Quat)> {
     Some(match stage {
         "quake" => {
             let g = go(delirium_data::kv!(31));
-            (Vec3::new(delirium_data::kv!(199) * s(delirium_data::kv!(1079), 0.0) + delirium_data::kv!(68) * s(delirium_data::kv!(1080), 1.0), delirium_data::kv!(130) * s(delirium_data::kv!(537), 2.0) + delirium_data::kv!(68) * s(delirium_data::kv!(1081), 0.5), delirium_data::kv!(131) * s(delirium_data::kv!(533), delirium_data::kv!(24))) * g + Vec3::Z * 0.5,
+            (Vec3::new(delirium_data::kv!(199) * s(delirium_data::kv!(1080), 0.0) + delirium_data::kv!(68) * s(delirium_data::kv!(1081), 1.0), delirium_data::kv!(130) * s(delirium_data::kv!(537), 2.0) + delirium_data::kv!(68) * s(delirium_data::kv!(1082), 0.5), delirium_data::kv!(131) * s(delirium_data::kv!(533), delirium_data::kv!(24))) * g + Vec3::Z * 0.5,
              Quat::from_euler(EulerRot::XYZ, g * delirium_data::kv!(131) * s(delirium_data::kv!(500), delirium_data::kv!(74)), g * delirium_data::kv!(131) * s(delirium_data::kv!(192), delirium_data::kv!(179)), 0.0))
         }
         "bull" => {
@@ -150,10 +150,10 @@ pub const PLANKS: usize = 12;
 pub fn BRIDGE_TOP() -> f32 { delirium_data::kv!(65) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn PLANK_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || Vec3::new(delirium_data::kv!(20), delirium_data::kv!(9), delirium_data::kv!(131)); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn PLANK_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || -> Vec3 { Vec3::new(delirium_data::kv!(20), delirium_data::kv!(9), delirium_data::kv!(131)) }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn PIECE_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || Vec3::new(delirium_data::kv!(116), delirium_data::kv!(9), delirium_data::kv!(131)); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn PIECE_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || -> Vec3 { Vec3::new(delirium_data::kv!(116), delirium_data::kv!(9), delirium_data::kv!(131)) }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn TEETH() -> usize { delirium_data::kv!(23 int) }
@@ -177,19 +177,19 @@ pub fn ROPE_X() -> f32 { delirium_data::kv!(124) }
 pub fn ROPES() -> usize { 2 * (2 * PLANKS + 1) + 2 * (PLANKS + 1) + 2 * PLANKS + 2 * (*SIDE_ROPES()).len() * (PLANKS + 1) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SIDE_ROPES() -> &'static [f32; 2] { static V: std::sync::OnceLock<[f32; 2]> = std::sync::OnceLock::new(); let f = || [1.0 / delirium_data::kv!(5), 2.0 / delirium_data::kv!(5)]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SIDE_ROPES() -> &'static [f32; 2] { static V: std::sync::OnceLock<[f32; 2]> = std::sync::OnceLock::new(); let f = || -> [f32; 2] { [1.0 / delirium_data::kv!(5), 2.0 / delirium_data::kv!(5)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn ROPE_REACH() -> f32 { delirium_data::kv!(78) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn POST_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || Vec3::new(delirium_data::kv!(68), delirium_data::kv!(68), delirium_data::kv!(119)); if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn POST_HALF() -> &'static Vec3 { static V: std::sync::OnceLock<Vec3> = std::sync::OnceLock::new(); let f = || -> Vec3 { Vec3::new(delirium_data::kv!(68), delirium_data::kv!(68), delirium_data::kv!(119)) }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn HAND() -> f32 { delirium_data::kv!(237) }
 #[allow(non_snake_case)]
 #[inline]
-fn SLACK() -> (f32, f32) { (delirium_data::kv!(1082), delirium_data::kv!(1083)) }
+fn SLACK() -> (f32, f32) { (delirium_data::kv!(1083), delirium_data::kv!(1084)) }
 #[allow(non_snake_case)]
 #[inline]
 fn WIND_N() -> f32 { delirium_data::kv!(38) }
@@ -201,7 +201,7 @@ fn PLANK_KG() -> f32 { delirium_data::kv!(21) }
 fn KNOT_KG() -> f32 { delirium_data::kv!(12) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn HOMER_KG() -> f32 { delirium_data::kv!(1084) }
+pub fn HOMER_KG() -> f32 { delirium_data::kv!(1085) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn HOMER_N() -> f32 { HOMER_KG() * delirium_data::kv!(115) }
@@ -422,15 +422,15 @@ pub fn GLASS_HALF() -> f32 { delirium_data::kv!(17) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn HALL() -> &'static [Vec2; 2] { static V: std::sync::OnceLock<[Vec2; 2]> = std::sync::OnceLock::new(); let f = || [Vec2::new(-delirium_data::kv!(5), -delirium_data::kv!(1085)), Vec2::new(delirium_data::kv!(5), delirium_data::kv!(35))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn HALL() -> &'static [Vec2; 2] { static V: std::sync::OnceLock<[Vec2; 2]> = std::sync::OnceLock::new(); let f = || -> [Vec2; 2] { [Vec2::new(-delirium_data::kv!(5), -delirium_data::kv!(1086)), Vec2::new(delirium_data::kv!(5), delirium_data::kv!(35))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn HALL_TOP() -> f32 { delirium_data::kv!(84) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn QUARTERS() -> &'static [(Vec3, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(Vec3, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || [(Vec3::new(-delirium_data::kv!(126), delirium_data::kv!(33), 0.0), std::f32::consts::FRAC_PI_2, delirium_data::kv!(33), delirium_data::kv!(65)),
-    (Vec3::new(-delirium_data::kv!(137), delirium_data::kv!(33), 0.0), -std::f32::consts::FRAC_PI_2, delirium_data::kv!(33), delirium_data::kv!(65)), (Vec3::new(0.0, delirium_data::kv!(126), 0.0), 0.0, delirium_data::kv!(5), delirium_data::kv!(25))]; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn QUARTERS() -> &'static [(Vec3, f32, f32, f32); 3] { static V: std::sync::OnceLock<[(Vec3, f32, f32, f32); 3]> = std::sync::OnceLock::new(); let f = || -> [(Vec3, f32, f32, f32); 3] { [(Vec3::new(-delirium_data::kv!(126), delirium_data::kv!(33), 0.0), std::f32::consts::FRAC_PI_2, delirium_data::kv!(33), delirium_data::kv!(65)),
+    (Vec3::new(-delirium_data::kv!(137), delirium_data::kv!(33), 0.0), -std::f32::consts::FRAC_PI_2, delirium_data::kv!(33), delirium_data::kv!(65)), (Vec3::new(0.0, delirium_data::kv!(126), 0.0), 0.0, delirium_data::kv!(5), delirium_data::kv!(25))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn QUARTER_SLABS() -> usize { delirium_data::kv!(93 int) }
@@ -452,7 +452,7 @@ fn quarter_deck(at: Vec3, yaw: f32, r: f32, wide: f32, deck: f32, row: u8, metal
     let q = Quat::from_rotation_z(yaw);
     let put = |c: Vec3, h: Vec3, row| (Transform::from_translation(at + q * c).with_rotation(q), h, row);
     vec![put(Vec3::new(0.0, r + deck * 0.5, r * 0.5), Vec3::new(wide * 0.5, deck * 0.5, r * 0.5), row),
-         put(Vec3::new(0.0, r + delirium_data::kv!(131), r - delirium_data::kv!(131)), Vec3::new(wide * 0.5 + delirium_data::kv!(570), delirium_data::kv!(1086), delirium_data::kv!(1086)), metal)]
+         put(Vec3::new(0.0, r + delirium_data::kv!(131), r - delirium_data::kv!(131)), Vec3::new(wide * 0.5 + delirium_data::kv!(570), delirium_data::kv!(1087), delirium_data::kv!(1087)), metal)]
 }
 
 pub fn quarter_mesh(i: usize) -> Mesh {
@@ -516,14 +516,14 @@ fn park(row: u8, metal: u8) -> Vec<(Transform, Vec3, u8)> {
     for (at, yaw, r, wide) in (*QUARTERS()) {
         v.extend(quarter_deck(at, yaw, r, wide, 2.0, row, metal));
     }
-    v.extend(kicker(Vec3::new(0.0, delirium_data::kv!(84), 0.0), 0.0, delirium_data::kv!(491), delirium_data::kv!(930), delirium_data::kv!(33), row));
+    v.extend(kicker(Vec3::new(0.0, delirium_data::kv!(84), 0.0), 0.0, delirium_data::kv!(491), delirium_data::kv!(931), delirium_data::kv!(33), row));
     let (f, hz) = (Vec3::new(delirium_data::kv!(65), delirium_data::kv!(84), 0.0), delirium_data::kv!(24));
     let put = |c: Vec3, h: Vec3, row| (Transform::from_translation(c), h, row);
     v.push(put(f + Vec3::Z * hz, Vec3::new(delirium_data::kv!(12), 2.0, hz), row));
     let deg = (2.0 * hz / delirium_data::kv!(207)).atan().to_degrees();
     let len = (delirium_data::kv!(207 f32).powi(2) + (2.0 * hz).powi(2)).sqrt();
-    v.extend(kicker(f + Vec3::new(0.0, -delirium_data::kv!(1087), 0.0), 0.0, len, deg, delirium_data::kv!(5), row));
-    v.extend(kicker(f + Vec3::new(0.0, delirium_data::kv!(1087), 0.0), PI, len, deg, delirium_data::kv!(5), row));
+    v.extend(kicker(f + Vec3::new(0.0, -delirium_data::kv!(1088), 0.0), 0.0, len, deg, delirium_data::kv!(5), row));
+    v.extend(kicker(f + Vec3::new(0.0, delirium_data::kv!(1088), 0.0), PI, len, deg, delirium_data::kv!(5), row));
     v.push(put(f + Vec3::Z * (2.0 * hz + delirium_data::kv!(116)), Vec3::new(delirium_data::kv!(260), 2.0, delirium_data::kv!(260)), metal));
     v.extend([-delirium_data::kv!(491), delirium_data::kv!(491)].map(|y| put(f + Vec3::new(0.0, y, 2.0 * hz + delirium_data::kv!(60)), Vec3::new(delirium_data::kv!(118), delirium_data::kv!(118), delirium_data::kv!(60)), metal)));
     let b = Vec3::new(delirium_data::kv!(64), -delirium_data::kv!(35), 0.0);
@@ -561,8 +561,8 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
             let (v, start) = stage("bigstairs", brick, concrete)?;
             (v.into_iter().map(|(c, h, r)| (c * Vec3::new(1.0, -1.0, 1.0), h, r)).collect(), start)
         }
-        "portalwall" => (vec![b([-delirium_data::kv!(499), 0.0, delirium_data::kv!(33)], [delirium_data::kv!(9), delirium_data::kv!(84), delirium_data::kv!(33)], concrete)], Vec3::new(delirium_data::kv!(1088), -delirium_data::kv!(1089), 0.0)),
-        "rooftop" => (vec![b([0.0, -delirium_data::kv!(141), 2.0], [delirium_data::kv!(5), delirium_data::kv!(1090), 2.0], concrete)], Vec3::Z * delirium_data::kv!(84)),
+        "portalwall" => (vec![b([-delirium_data::kv!(499), 0.0, delirium_data::kv!(33)], [delirium_data::kv!(9), delirium_data::kv!(84), delirium_data::kv!(33)], concrete)], Vec3::new(delirium_data::kv!(1089), -delirium_data::kv!(1090), 0.0)),
+        "rooftop" => (vec![b([0.0, -delirium_data::kv!(141), 2.0], [delirium_data::kv!(5), delirium_data::kv!(1091), 2.0], concrete)], Vec3::Z * delirium_data::kv!(84)),
         "highledge" => (vec![b([0.0, delirium_data::kv!(186), delirium_data::kv!(35)], [delirium_data::kv!(64), delirium_data::kv!(64), delirium_data::kv!(35)], concrete)], Vec3::Z * delirium_data::kv!(21)),
         "lowwall" => (vec![b([0.0, delirium_data::kv!(10), delirium_data::kv!(10)], [delirium_data::kv!(84), delirium_data::kv!(9), delirium_data::kv!(10)], brick)], Vec3::ZERO),
         "kerb" => (vec![b([0.0, delirium_data::kv!(10), delirium_data::kv!(206)], [delirium_data::kv!(84), delirium_data::kv!(9), delirium_data::kv!(206)], brick)], Vec3::ZERO),
@@ -571,16 +571,16 @@ fn stage(name: &str, brick: u8, concrete: u8) -> Option<(Vec<(Vec3, Vec3, u8)>, 
         "lights" => {
             let (c, h) = (((*HALL())[0] + (*HALL())[1]) * 0.5, ((*HALL())[1] - (*HALL())[0]) * 0.5);
             let t = delirium_data::kv!(9);
-            (vec![b([c.x, c.y, -delirium_data::kv!(1091)], [h.x, h.y, delirium_data::kv!(78)], concrete), b([c.x, c.y, HALL_TOP() + t], [h.x + 2.0 * t, h.y + 2.0 * t, t], concrete),
+            (vec![b([c.x, c.y, -delirium_data::kv!(1092)], [h.x, h.y, delirium_data::kv!(78)], concrete), b([c.x, c.y, HALL_TOP() + t], [h.x + 2.0 * t, h.y + 2.0 * t, t], concrete),
                   b([(*HALL())[0].x - t, c.y, HALL_TOP() * 0.5], [t, h.y, HALL_TOP() * 0.5], concrete), b([(*HALL())[1].x + t, c.y, HALL_TOP() * 0.5], [t, h.y, HALL_TOP() * 0.5], concrete),
                   b([c.x, (*HALL())[0].y - t, HALL_TOP() * 0.5], [h.x + 2.0 * t, t, HALL_TOP() * 0.5], concrete),
                   b([c.x, (*HALL())[1].y + t, HALL_TOP() * 0.5], [h.x + 2.0 * t, t, HALL_TOP() * 0.5], concrete)], Vec3::ZERO)
         }
-        "rail" => (vec![b([0.0, -0.5, delirium_data::kv!(1092)], [delirium_data::kv!(12), delirium_data::kv!(131), delirium_data::kv!(131)], concrete), b([-delirium_data::kv!(12), -0.5, delirium_data::kv!(119)], [delirium_data::kv!(131), delirium_data::kv!(131), delirium_data::kv!(119)], concrete),
+        "rail" => (vec![b([0.0, -0.5, delirium_data::kv!(1093)], [delirium_data::kv!(12), delirium_data::kv!(131), delirium_data::kv!(131)], concrete), b([-delirium_data::kv!(12), -0.5, delirium_data::kv!(119)], [delirium_data::kv!(131), delirium_data::kv!(131), delirium_data::kv!(119)], concrete),
                         b([delirium_data::kv!(12), -0.5, delirium_data::kv!(119)], [delirium_data::kv!(131), delirium_data::kv!(131), delirium_data::kv!(119)], concrete)], Vec3::ZERO),
         "street" => {
             let mut v = vec![b([0.0, delirium_data::kv!(35), delirium_data::kv!(232)], [delirium_data::kv!(27), 2.0, delirium_data::kv!(232)], concrete), b([0.0, -delirium_data::kv!(35), delirium_data::kv!(232)], [delirium_data::kv!(27), 2.0, delirium_data::kv!(232)], concrete)];
-            v.extend((0..delirium_data::kv!(23 int)).map(|i| b([0.0, -delirium_data::kv!(128) + i as f32, delirium_data::kv!(1093)], [delirium_data::kv!(12), delirium_data::kv!(17), delirium_data::kv!(1093)], concrete)));
+            v.extend((0..delirium_data::kv!(23 int)).map(|i| b([0.0, -delirium_data::kv!(128) + i as f32, delirium_data::kv!(1094)], [delirium_data::kv!(12), delirium_data::kv!(17), delirium_data::kv!(1094)], concrete)));
             (v, Vec3::ZERO)
         }
         "bridge" => {
@@ -642,7 +642,7 @@ impl Room {
         let mut fixed = [vec![], vec![]];
         for (i, w) in w.iter_mut().enumerate() {
             w.gravity = Vector::new(0.0, 0.0, -delirium_data::kv!(115));
-            for (lo, hi) in floor_rects(pool && i == 0, delirium_data::kv!(1094)) {
+            for (lo, hi) in floor_rects(pool && i == 0, delirium_data::kv!(1095)) {
                 let (c, h) = ((lo + hi) * 0.5, (hi - lo) * 0.5);
                 fixed[i].push(w.insert(RigidBodyBuilder::fixed().translation(Vector::new(c.x, c.y, -0.5)), ColliderBuilder::cuboid(h.x, h.y, 0.5).friction(1.0)).0);
             }
@@ -671,9 +671,9 @@ impl Room {
         let mut blocks = vec![(Vec3::new(0.0, delirium_data::kv!(128), 0.5), Vec3::new(delirium_data::kv!(84), delirium_data::kv!(9), 0.5), row("BRICK_WALL"))];
         for i in 0..delirium_data::kv!(81 int) {
             let top = delirium_data::kv!(142) * (i + 1) as f32;
-            blocks.push((Vec3::new(-delirium_data::kv!(1095), -delirium_data::kv!(12) + delirium_data::kv!(24) * i as f32 + delirium_data::kv!(9), top * 0.5), Vec3::new(delirium_data::kv!(18), delirium_data::kv!(9), top * 0.5), row("CONCRETE")));
+            blocks.push((Vec3::new(-delirium_data::kv!(1096), -delirium_data::kv!(12) + delirium_data::kv!(24) * i as f32 + delirium_data::kv!(9), top * 0.5), Vec3::new(delirium_data::kv!(18), delirium_data::kv!(9), top * 0.5), row("CONCRETE")));
         }
-        blocks.push((Vec3::new(-delirium_data::kv!(1095), 2.0, delirium_data::kv!(28)), Vec3::new(delirium_data::kv!(18), 0.5, delirium_data::kv!(28)), row("CONCRETE")));
+        blocks.push((Vec3::new(-delirium_data::kv!(1096), 2.0, delirium_data::kv!(28)), Vec3::new(delirium_data::kv!(18), 0.5, delirium_data::kv!(28)), row("CONCRETE")));
         let ([a, b], d, rim) = ((*POOL()), POOL_DEEP(), delirium_data::kv!(24));
         let (m, hw, z) = ((a + b) * 0.5, (b - a) * 0.5, -(d + delirium_data::kv!(60)) * 0.5 - delirium_data::kv!(134));
         for (c, h) in [(Vec2::new(a.x - rim * 0.5, m.y), Vec2::new(rim * 0.5, hw.y + rim)), (Vec2::new(b.x + rim * 0.5, m.y), Vec2::new(rim * 0.5, hw.y + rim)),
@@ -689,7 +689,7 @@ impl Room {
         blocks.extend([(Vec3::new(delirium_data::kv!(31), 0.0, delirium_data::kv!(5)), Vec3::new(delirium_data::kv!(9), delirium_data::kv!(84), delirium_data::kv!(5)), row("CONCRETE")),
                        (Vec3::new(delirium_data::kv!(35), delirium_data::kv!(5), delirium_data::kv!(64)), Vec3::new(delirium_data::kv!(5), delirium_data::kv!(5), delirium_data::kv!(78)), row("CONCRETE"))].into_iter().skip(glass as usize));
         if glass {
-            blocks.extend((0..delirium_data::kv!(460 int)).map(|i| (Vec3::new(delirium_data::kv!(31), -delirium_data::kv!(1095) + 0.5 * (i % delirium_data::kv!(54 int)) as f32, delirium_data::kv!(17) + 0.5 * (i / delirium_data::kv!(54 int)) as f32), Vec3::splat(GLASS_HALF()), row("CONCRETE"))));
+            blocks.extend((0..delirium_data::kv!(460 int)).map(|i| (Vec3::new(delirium_data::kv!(31), -delirium_data::kv!(1096) + 0.5 * (i % delirium_data::kv!(54 int)) as f32, delirium_data::kv!(17) + 0.5 * (i / delirium_data::kv!(54 int)) as f32), Vec3::splat(GLASS_HALF()), row("CONCRETE"))));
             let (at, half, deep, g) = (crate::SKY_POOL, crate::SKY_HALF, crate::SKY_DEEP, delirium_data::kv!(24));
             blocks.extend([(Vec3::new(0.0, 0.0, -g * 0.5), half.extend(g * 0.5) + Vec3::new(g, g, 0.0)),
                            (Vec3::new(half.x + g * 0.5, 0.0, deep * delirium_data::kv!(119)), Vec3::new(g * 0.5, half.y + g, deep * delirium_data::kv!(119))),
