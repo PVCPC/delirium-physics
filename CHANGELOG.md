@@ -1,6 +1,6 @@
 # Changelog
 
-## Next (unreleased)
+## 0.8.0
 
 - Engine synced to the latest exact GTA IV port (a contact point fix among others). Checked against all 108 scenes
   recorded from the game: Delirium gives the same results as the port, bit for bit; GTA IV's Homer is unchanged.
