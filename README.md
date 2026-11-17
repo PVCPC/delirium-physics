@@ -1,6 +1,12 @@
 > [!IMPORTANT]
 > **You need your own Grand Theft Auto IV: The Complete Edition for PC (Steam, version 1.2.0.59, or downgraded to 1.0.8.0) or the original Xbox 360 disc (not included).** Both the Playroom and the SDK need it: the engine's numbers are read from your own copy's program (the PC version's GTAIV.exe, or default.xex on the Xbox 360 disc), and the character, animations and settings from your own game files. Use the Xbox 360 disc image (.iso) or the PC game folder (the one with GTAIV.exe in it); the disc's key is fetched from the internet the first time. The PS3 version isn't supported for now. No game files or game numbers come with it, and neither the Playroom nor the SDK runs without them. For integrating the engine into another game, see [For developers](#for-developers).
 
+# Delirium Physics
+
+A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
+
+Delirium is a reverse-engineered port of Euphoria, NaturalMotion's ragdoll and character physics engine, as it runs in GTA IV: rewritten in Rust from the game's own program code and checked against the running game. It comes with an SDK (C, C++, C#, Python), plugins for Unity, Unreal Engine 5 and Godot 4, and the room you see here. It was written with AI coding tools (Claude). It isn't affiliated with or endorsed by Rockstar Games, Take-Two Interactive or NaturalMotion. An earlier version of this README said the behaviours were written from scratch by separate people; that was wrong, and it has been removed.
+
 <p align="center">
   <img src="docs/montage.gif" alt="Taser, skeleton, damage, Homers on fire, splash, coloured light, 50 Homers" width="480">
   <img src="docs/homer-wave.gif" alt="Homer waving" width="320">
@@ -14,12 +20,6 @@
   <img src="docs/grab.gif" alt="Grabbing Homer by different parts with the mouse and dragging him around" width="400">
   <img src="docs/skate.gif" alt="Homer skating, bailing into a portal" width="400">
 </p>
-
-# Delirium Physics
-
-A physics playground for an active ragdoll. Homer isn't animated. His muscles keep him standing, so he balances, stumbles, braces, grabs, flails and falls on his own. Push him, shoot him, throw things at him, drop him off a bridge, or step in as Hero and fight him.
-
-Delirium is a reverse-engineered port of Euphoria, NaturalMotion's ragdoll and character physics engine, as it runs in GTA IV: rewritten in Rust from the game's own program code and checked against the running game. It comes with an SDK (C, C++, C#, Python), plugins for Unity, Unreal Engine 5 and Godot 4, and the room you see here. It was written with AI coding tools (Claude). It isn't affiliated with or endorsed by Rockstar Games, Take-Two Interactive or NaturalMotion. An earlier version of this README said the behaviours were written from scratch by separate people; that was wrong, and it has been removed.
 
 <p align="center">
   <img src="docs/playroom.png" alt="The Playroom: Homer on the left panel's Character tab, his skeleton and joints shown" width="800">
