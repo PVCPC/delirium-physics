@@ -6128,7 +6128,7 @@ fn main() {
         .add_systems(Update, (loose_frame, obj_ground))
         .add_systems(PostUpdate, phys_start.after(bevy_egui::EguiPostUpdateSet::EndPass)
             .before(bevy::transform::TransformSystems::Propagate));
-    app.sub_app_mut(bevy::render::RenderApp).add_systems(bevy::render::Render, pin_render);
+    app.sub_app_mut(bevy::render::RenderApp).add_systems(bevy::render::Render, (pin_render, ui::cast::count_waiting));
     sfx::plugin(&mut app);
     app.add_plugins((bevy::solari::SolariPlugins, bevy::solari::pathtracer::PathtracingPlugin))
         .insert_resource(bevy::pbr::DefaultOpaqueRendererMethod::forward())

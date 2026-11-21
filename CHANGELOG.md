@@ -6,6 +6,9 @@
   preprocessing) when the side panel first opened on the Cast page. The camera that draws the body thumbnails is now
   set to direct drawing the moment it is made, not a frame later.
 
+- Fixed: the Cast page's body thumbnails could stay blank on DirectX 12 (they were drawn before DirectX 12 had its
+  shaders ready). They are drawn once the renderer's shaders are built.
+
 ## 0.9.0
 
 - New playroom interface: six tabs (Cast, Play, Scene, Reactions, Lab, Settings) with pages, pop-out windows and a

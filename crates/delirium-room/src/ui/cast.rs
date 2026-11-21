@@ -37,12 +37,20 @@ fn bake_key(sim: &Sim) -> u64 {
 #[derive(Component)]
 pub struct Baking;
 
+pub static PIPELINES_WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub fn count_waiting(cache: Res<bevy::render::render_resource::PipelineCache>) {
+    PIPELINES_WAITING.store(cache.waiting_pipelines().count(), std::sync::atomic::Ordering::Relaxed);
+}
+
 pub fn bake(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets<Image>>, mut meshes: ResMut<Assets<Mesh>>,
             mut mats: ResMut<Assets<StandardMaterial>>, mut tex: ResMut<bevy_egui::EguiUserTextures>, temp: Query<Entity, With<Baking>>,
-            mut st: Local<Option<(Handle<Image>, u64, f32, f32, u8)>>, mut old: Local<Option<Handle<Image>>>) {
+            mut st: Local<Option<(Handle<Image>, u64, f32, f32, u16)>>, mut old: Local<Option<Handle<Image>>>) {
     use bevy::camera::visibility::RenderLayers;
     if let Some((img, key, cell, k, frames)) = st.as_mut() {
         *frames += 1;
+        if *frames >= 90 && PIPELINES_WAITING.load(std::sync::atomic::Ordering::Relaxed) > 0 && *frames < 1200 {
+            *frames = 80;
+        }
         if *frames >= 90 {
             let mut n = 0;
             for e in &temp {
