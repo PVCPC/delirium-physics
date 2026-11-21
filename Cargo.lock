@@ -2719,7 +2719,7 @@ checksum = "0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f"
 
 [[package]]
 name = "delirium"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "bevy_ecs",
  "bevy_math",
@@ -2731,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "delirium-data"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "aes",
  "blake3",
@@ -2740,7 +2740,7 @@ dependencies = [
 
 [[package]]
 name = "delirium-room"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2772,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "delirium-sdk"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "delirium",
  "delirium-data",
@@ -5513,7 +5513,7 @@ dependencies = [
 
 [[package]]
 name = "rdr2-data"
-version = "0.9.1"
+version = "0.9.2"
 
 [[package]]
 name = "read-fonts"
@@ -5902,11 +5902,11 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "skate-core"
-version = "0.9.1"
+version = "0.9.2"
 
 [[package]]
 name = "skate-data"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "flate2",
  "serde",
@@ -5916,7 +5916,7 @@ dependencies = [
 
 [[package]]
 name = "skate-host"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "bevy",
  "serde",
@@ -5927,7 +5927,7 @@ dependencies = [
 
 [[package]]
 name = "skate-hud"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "serde",
  "serde_json",

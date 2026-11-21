@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.1
+## 0.9.2
 
 - Fixed: on DirectX 12 the room closed with a graphics error ("BindGroupLayout ... not compatible", mesh
   preprocessing) when the side panel first opened on the Cast page. The camera that draws the body thumbnails is now
