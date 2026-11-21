@@ -381,6 +381,7 @@ pub struct Core {
     last: Vec<Quat>,
     locked: Vec<Quat>,
     shift: Option<(usize, f32)>,
+    share_d: Vec3,
     remeasured: bool,
     hipw_done: bool,
     hit_part: usize,
@@ -490,7 +491,7 @@ const WALK_LOOK: f32 = 0.15;
 const WALK_SPEED: f32 = 0.4;
 const SET: &str = "frictionScale=3;frictionscaleend=3;steptimescale=0.3;spineStiffness=18";
 fn knob(name: &str) -> Option<String> {
-    std::env::var(name).ok().or_else(|| tuned().then(|| {
+    std::env::var(name).ok().or_else(|| share_on().then(|| "1".to_string()).filter(|_| matches!(name, "HORSE_STEP" | "HORSE_SHIFT"))).or_else(|| tuned().then(|| {
         if name == "HORSE_KS" && super::ours::hybrid() { return Some("1.5".to_string()); }
         KNOBS.iter().find(|k| k.0 == name).map(|k| k.1.to_string())
     }).flatten())
@@ -498,6 +499,10 @@ fn knob(name: &str) -> Option<String> {
 
 fn tuned() -> bool {
     std::env::var_os("HORSE_TUNE").is_some() || super::ours::hybrid()
+}
+
+fn share_on() -> bool {
+    std::env::var("HORSE_SHARE").is_ok_and(|v| v != "0") && !super::ours::hybrid()
 }
 
 fn ours_step() -> bool {
@@ -637,7 +642,7 @@ impl Horse {
             flail: 0.0, flail_t: 0.0, lying_t: 0.0, on_parts: false, lying: false, support_t: 0.0, out_t: 0.0, fs: 1.0, fs2: 1.0, fl: 1.0,
             legs: [Leg::default(); 4], gait: -1, last_leg: (p!(v, "gaitstate") as usize).min(4), first_gait: 4, phase: 0.0, sigma: 0.0, roll: 0.0,
             upright: 1.0, roll_go: 1.0, seed: [123.0, 321.0], writhe_t: 0.0, fade: [1.0; 2], push_lean: None, push_force: None,
-            ground_n: Vec3::Z, ground_p: com - Vec3::Z, rng: [seed | 1, (seed << 7) | 3], last: vec![], locked: vec![], shift: None, remeasured: false, hipw_done: false, hit_part: 0, width: [0.1, 0.65], fresh3_flag: false,
+            ground_n: Vec3::Z, ground_p: com - Vec3::Z, rng: [seed | 1, (seed << 7) | 3], last: vec![], locked: vec![], shift: None, share_d: Vec3::ZERO, remeasured: false, hipw_done: false, hit_part: 0, width: [0.1, 0.65], fresh3_flag: false,
             said: HashSet::new(), tr, rig, scale: (m / 618.0).sqrt(), unit,
         };
         c.seed = [c.rand(0) * 1000.0, c.rand(0) * 1000.0];
@@ -1059,6 +1064,28 @@ impl Horse {
             c.h += (c.unit * (p!(pv, "height") - (1.0 - c.roll_go) * 0.8) - c.h) * 0.1;
         }
 
+        let share_k = if share_on() { std::env::var("HORSE_SHARE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0) } else { 0.0 };
+        if share_k != 0.0 {
+            let stance: Vec<Vec3> = (0..4).filter(|&j| c.legs[j].state == 0 && c.legs[j].planted && c.shift.is_none_or(|s| s.0 != j)).map(|j| c.legs[j].sole).collect();
+            let goal = if c.state < 2 && (c.legs.iter().any(|l| l.state == 1) || c.shift.is_some()) && stance.len() >= 2 {
+                let d = com - stance.iter().sum::<Vec3>() / stance.len() as f32;
+                (d - w * d.dot(w)).clamp_length_max(0.15 * c.unit) * share_k
+            } else { Vec3::ZERO };
+            c.share_d += (goal - c.share_d) * (dt / 0.1).min(1.0);
+        }
+        if let Some((i, t0)) = std::env::var("HORSE_LIFTTEST").ok().and_then(|v| v.split_once(',').and_then(|(a, b)| Some((a.parse::<usize>().ok()?.min(3), b.parse::<f32>().ok()?)))) {
+            if c.legs[i].state == 0 && c.t >= t0 && c.t < t0 + 0.05 {
+                let n = c.legs[i].neutral;
+                let t: Vec<Vec3> = (0..4).filter(|&j| j != i).map(|j| c.legs[j].sole).collect();
+                eprintln!("hlift {i} COM {:.3} m inside the other three", tri_margin([t[0], t[1], t[2]], com, w));
+                if knob("HORSE_SHIFT").is_some_and(|v| v != "0") {
+                    c.shift = c.shift.or(Some((i, 0.0)));
+                } else {
+                    self.begin_step(&mut c, &pv, i, Vec3::new(0.0, n.y, n.z));
+                    c.legs[i].end = c.t + 0.4;
+                }
+            }
+        }
         let mut targets = self.targets.clone();
         if ((c.state == 2 && !c.free) || c.state == 3) && !c.spine_gone() {
             c.sigma = 0.5 * (speed.min(1.0) + spin.min(1.0));
@@ -1146,7 +1173,7 @@ impl Horse {
                         force[k] += f;
                     }
                 }
-                let to = c.to_world(c.legs[i].target);
+                let to = c.to_world(c.legs[i].target) + c.share_d;
                 say!(c, "0x2ae3f1c", "leg {i}: stance, target {to:.3}, sole {:.3}", c.legs[i].sole);
                 request = request.or(Some((to, None)));
             }

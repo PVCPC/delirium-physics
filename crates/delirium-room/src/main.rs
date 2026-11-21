@@ -6295,8 +6295,8 @@ fn renderer(app: &mut App, gpu: Option<String>, safe: bool, piped: bool) -> (bev
         }
     }
     if dx12 {
-        app.add_systems(Update, |q: Query<Entity, Added<Camera3d>>, mut c: Commands| for e in &q {
-            c.entity(e).insert(bevy::render::view::NoIndirectDrawing);
+        app.add_observer(|add: On<Add<Camera3d>>, mut c: Commands| {
+            c.entity(add.entity).insert(bevy::render::view::NoIndirectDrawing);
         });
     }
     let backends = dx12.then_some(wgpu::Backends::DX12).or(bevy::render::settings::WgpuSettings::default().backends);

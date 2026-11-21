@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+- Fixed: on DirectX 12 the room closed with a graphics error ("BindGroupLayout ... not compatible", mesh
+  preprocessing) when the side panel first opened on the Cast page. The camera that draws the body thumbnails is now
+  set to direct drawing the moment it is made, not a frame later.
+
 ## 0.9.0
 
 - New playroom interface: six tabs (Cast, Play, Scene, Reactions, Lab, Settings) with pages, pop-out windows and a
