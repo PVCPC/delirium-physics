@@ -126,8 +126,53 @@ pub struct Poly {
 }
 
 impl Poly {
+    pub fn edge_law(&self, t: [Vec3; 3], p: Vec3, n: Vec3, margin: f32, query_e1: bool) -> Option<Vec3> {
+        if self.edges[delirium_data::kv!(0 int)].is_some() {
+            return Some(n);
+        }
+        if n.dot(self.n) < 0.0 {
+            return None;
+        }
+        let e = [t[1] - t[0], t[2] - t[1], t[0] - t[2]];
+        let (mut has, mut on) = (0u32, 0u32);
+        let mut en = [self.n; 3];
+        for k in 0..delirium_data::kv!(0 int) {
+            let u = e[k].normalize_or_zero();
+            let r = p - t[k];
+            if (r - u * r.dot(u)).length_squared() <= margin * margin * delirium_data::kv!(69) {
+                on |= 1 << k;
+            }
+            if let Some(m) = self.edges[k].map(|x| x.2) {
+                has |= 1 << k;
+                let out = u.cross(self.n).normalize_or_zero();
+                let c = if m.dot(out) > 0.0 { self.n.dot(m).clamp(-1.0, 1.0) } else { 1.0 };
+                en[k] = self.n * c + out * (1.0 - c * c).max(0.0).sqrt();
+            }
+        }
+        let mut n = n;
+        if query_e1 {
+            let mut off = 0u32;
+            for k in 0..delirium_data::kv!(0 int) {
+                let u = e[k].normalize_or_zero();
+                let across = (n - u * n.dot(u)).normalize_or_zero();
+                if across.dot(self.n) < en[k].dot(self.n) - delirium_data::kv!(51) {
+                    off |= 1 << k;
+                }
+            }
+            if has & off & on != 0 {
+                crate::ragdoll::trace_once("edge drop", || "contact on an edge, its normal outside the edge's: dropped (0x2821184)".to_string());
+                return None;
+            }
+        }
+        if on & !has != 0 {
+            crate::ragdoll::trace_once("edge face", || "contact on an edge without data: the face's normal (0x2821184)".to_string());
+            n = self.n;
+        }
+        Some(n)
+    }
+
     pub fn clamp(&self, hits: &mut [(Vec3, Vec3)], margin: f32) {
-        let tol = margin * margin * delirium_data::kv!(69);
+        let tol = margin * margin * delirium_data::kv!(70);
         let own = self.frame.and_then(|f| f.own.map(|o| (f, o.0)));
         let into = |f: &Placed, v: Vec3| Vec3::new(f.turn.x_axis.vd(v), f.turn.y_axis.vd(v), f.turn.z_axis.vd(v));
         let (mut axis, mut cos) = (own.map_or(self.n, |o| o.1), 1.0);
@@ -161,9 +206,9 @@ fn from_frame(f: &Placed, n: Vec3) -> Vec3 {
 fn on_edge(a: Vec3, b: Vec3, p: Vec3, tol: f32) -> bool {
     let (ap, e) = (p - a, b - a);
     let t = ap.dot(e);
-    let c = if !(t > delirium_data::kv!(70)) {
+    let c = if !(t > delirium_data::kv!(71)) {
         -ap
-    } else if e.dot(e) - t > delirium_data::kv!(70) {
+    } else if e.dot(e) - t > delirium_data::kv!(71) {
         e * (t * crate::gjk::recip(t + (e.dot(e) - t))) + -ap
     } else {
         e + -ap
@@ -190,7 +235,7 @@ fn expand_cone(axis: &mut Vec3, cos: &mut f32, v: Vec3) {
     if d >= *cos {
         return;
     }
-    if *cos >= delirium_data::kv!(71) {
+    if *cos >= delirium_data::kv!(72) {
         let h = (v + *axis) * 0.5;
         let l2 = h.dot(h);
         *axis = if l2 > delirium_data::kv!(50) { h * crate::gjk::rsq(l2) } else { Vec3::Z };
@@ -205,9 +250,9 @@ fn expand_cone(axis: &mut Vec3, cos: &mut f32, v: Vec3) {
 }
 
 fn clamp_to_cone(n: Vec3, axis: Vec3, cos: f32) -> Vec3 {
-    if n.x.fma(axis.x, n.z.fma(axis.z, n.y * axis.y)) >= cos - delirium_data::kv!(72) {
+    if n.x.fma(axis.x, n.z.fma(axis.z, n.y * axis.y)) >= cos - delirium_data::kv!(73) {
         n
-    } else if cos >= delirium_data::kv!(71) {
+    } else if cos >= delirium_data::kv!(72) {
         axis
     } else {
         let p = crate::artic::at_point((axis, Vec3::ZERO), n);
@@ -295,7 +340,7 @@ impl Collision {
             let Some(tri) = t.iter().map(|&i| positions.get(i as usize).map(|p| Vec3::from(*p))).collect::<Option<Vec<_>>>() else { continue };
             let tri = [tri[0], tri[1], tri[2]];
             let (lo, hi) = (tri[0].min(tri[1]).min(tri[2]), tri[0].max(tri[1]).max(tri[2]));
-            if (hi - lo).truncate().max_element() > delirium_data::kv!(73) || !lo.is_finite() || !hi.is_finite() {
+            if (hi - lo).truncate().max_element() > delirium_data::kv!(74) || !lo.is_finite() || !hi.is_finite() {
                 continue;
             }
             let id = chunk.triangles.len() as u32;
@@ -372,6 +417,10 @@ impl Collision {
 
     pub fn len(&self) -> usize {
         self.count
+    }
+
+    pub fn tri_of(&self, id: (u32, u32)) -> Option<[Vec3; 3]> {
+        self.chunks.get(id.0 as usize)?.as_ref()?.triangles.get(id.1 as usize).copied()
     }
 
     pub fn triangles(&self) -> Vec<[Vec3; 3]> {
@@ -600,7 +649,7 @@ impl Collision {
                 for &(slot, id) in self.cells.get(&(x, y)).into_iter().flatten() {
                     let Some(chunk) = self.chunks[slot as usize].as_ref() else { continue };
                     if let Some((t, n)) = ray_triangle(chunk.triangles[id as usize], from, dir, len, best.map(|b| b.0)) {
-                        if ground && n.z.abs() < delirium_data::kv!(74) {
+                        if ground && n.z.abs() < delirium_data::kv!(75) {
                             continue;
                         }
                         #[cfg(feature = "portal")]
@@ -677,7 +726,7 @@ fn segment_triangle([a, b, c]: [Vec3; 3], n: Vec3, s: Vec3, e: Vec3) -> Result<f
     match () {
         _ if !(ns >= 0.0) || ne >= 0.0 => Err(2),
         _ if !(t >= 0.0) || t > 1.0 => Err(delirium_data::kv!(0 int)),
-        _ if !(area >= delirium_data::kv!(75)) => Err(1),
+        _ if !(area >= delirium_data::kv!(76)) => Err(1),
         _ if !(u >= 0.0) || u > area => Err(delirium_data::kv!(1 int)),
         _ if !(v >= 0.0) || u + v > area => Err(delirium_data::kv!(2 int)),
         _ => Ok(t),
@@ -688,7 +737,7 @@ fn ray_triangle([a, b, c]: [Vec3; 3], from: Vec3, dir: Vec3, len: f32, best: Opt
     let (e1, e2) = (b - a, c - a);
     let p = dir.cross(e2);
     let det = e1.dot(p);
-    if det.abs() < delirium_data::kv!(76) {
+    if det.abs() < delirium_data::kv!(77) {
         return None;
     }
     let s = (from - a) / det;
@@ -781,14 +830,14 @@ impl Walker {
             let v = Vec3::new(wish.x, wish.y, up);
             let (dir, v) = if self.anchors[0] != Vec3::ZERO && self.stairs {
                 let d = p - self.anchors[0];
-                let d = if len2(d) < delirium_data::kv!(77) && self.anchors[1] != Vec3::ZERO { p - self.anchors[1] } else { d };
+                let d = if len2(d) < delirium_data::kv!(78) && self.anchors[1] != Vec3::ZERO { p - self.anchors[1] } else { d };
                 (if d.y.mul_add(d.y, d.x * d.x) > delirium_data::kv!(68) { crate::nmdbm::vnorm(d.cross(Vec3::Z).cross(d)) } else { n }, v)
             } else {
                 (n, v - self.ground_vel)
             };
             let rel = dir.z.mul_add(v.z, dir.y.mul_add(v.y, dir.x * v.x));
-            let rel = if n.z > delirium_data::kv!(78) { rel / dir.z } else { rel };
-            let damp = (-2.0 * SPRING().sqrt() * rel).clamp(-delirium_data::kv!(79), delirium_data::kv!(79));
+            let rel = if n.z > delirium_data::kv!(79) { rel / dir.z } else { rel };
+            let damp = (-2.0 * SPRING().sqrt() * rel).clamp(-delirium_data::kv!(80), delirium_data::kv!(80));
             up += (lift + damp) * dt;
         }
         up -= GRAVITY() * dt;
@@ -796,7 +845,7 @@ impl Walker {
             Some((p, _)) if self.anchors[0] == Vec3::ZERO => [p, p],
             Some((p, _)) => {
                 let d = p - self.anchors[0];
-                if d.x.mul_add(d.x, d.z.mul_add(d.z, d.y * d.y)) > delirium_data::kv!(77) { [p, self.anchors[0]] } else { self.anchors }
+                if d.x.mul_add(d.x, d.z.mul_add(d.z, d.y * d.y)) > delirium_data::kv!(78) { [p, self.anchors[0]] } else { self.anchors }
             }
             None => [Vec3::ZERO; 2],
         };
@@ -851,7 +900,7 @@ impl Walker {
         self.fall = -(v.z - plane);
         self.before |= had;
         let root = self.feet + Vec3::Z * ROOT;
-        self.grounded = self.ground.is_some_and(|(p, _)| p.z - root.z > -1.0 || self.before && p.z - root.z > -delirium_data::kv!(80));
+        self.grounded = self.ground.is_some_and(|(p, _)| p.z - root.z > -1.0 || self.before && p.z - root.z > -delirium_data::kv!(81));
         if self.grounded {
             self.jumping = false;
         }
@@ -859,9 +908,9 @@ impl Walker {
 }
 
 pub fn street_spawn(world: &Collision, around: Vec2) -> Option<Vec3> {
-    let tops: Vec<Vec3> = (-delirium_data::kv!(81 int)..=delirium_data::kv!(81 int))
-        .flat_map(|i| (-delirium_data::kv!(81 int)..=delirium_data::kv!(81 int)).map(move |j| around + Vec2::new(i as f32, j as f32) * delirium_data::kv!(31)))
-        .filter_map(|p| world.ground(p.extend(delirium_data::kv!(82)), delirium_data::kv!(83)).map(|z| p.extend(z)))
+    let tops: Vec<Vec3> = (-delirium_data::kv!(82 int)..=delirium_data::kv!(82 int))
+        .flat_map(|i| (-delirium_data::kv!(82 int)..=delirium_data::kv!(82 int)).map(move |j| around + Vec2::new(i as f32, j as f32) * delirium_data::kv!(31)))
+        .filter_map(|p| world.ground(p.extend(delirium_data::kv!(83)), delirium_data::kv!(84)).map(|z| p.extend(z)))
         .filter(|p| p.z > 1.0)
         .filter(|p| world.cast(*p + Vec3::Z * 0.5, Vec3::Z, delirium_data::kv!(27)).is_none())
         .filter(|p| (0..delirium_data::kv!(23 int)).all(|i| {
@@ -913,8 +962,8 @@ pub fn sphere_sweep(tris: &[[Vec3; 3]], from: Vec3, d: Vec3, r: f32, len: f32) -
             let w = from - p0;
             let (w1, d1) = (w - u * w.dot(u), d - u * d.dot(u));
             let (qa, qb, qc) = (d1.dot(d1), 2.0 * w1.dot(d1), w1.dot(w1) - r * r);
-            let disc = qb * qb - delirium_data::kv!(84) * qa * qc;
-            if qa > delirium_data::kv!(76) && disc >= 0.0 && qc >= 0.0 {
+            let disc = qb * qb - delirium_data::kv!(85) * qa * qc;
+            if qa > delirium_data::kv!(77) && disc >= 0.0 && qc >= 0.0 {
                 let t = (-qb - disc.sqrt()) / (2.0 * qa);
                 let s = (w + d * t).dot(u);
                 if (0.0..=e.length()).contains(&s) {
@@ -925,7 +974,7 @@ pub fn sphere_sweep(tris: &[[Vec3; 3]], from: Vec3, d: Vec3, r: f32, len: f32) -
         for p in [a, b, c] {
             let w = from - p;
             let (qb, qc) = (2.0 * w.dot(d), w.dot(w) - r * r);
-            let disc = qb * qb - delirium_data::kv!(84) * qc;
+            let disc = qb * qb - delirium_data::kv!(85) * qc;
             if disc >= 0.0 && qc >= 0.0 {
                 keep((-qb - disc.sqrt()) / 2.0, p);
             }

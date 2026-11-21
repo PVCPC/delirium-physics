@@ -5,7 +5,7 @@ use crate::{Fma, Vd};
 
 #[allow(non_snake_case)]
 #[inline]
-fn BLOCK() -> &'static [f32; 7] { static V: std::sync::OnceLock<[f32; 7]> = std::sync::OnceLock::new(); let f = || -> [f32; 7] { [delirium_data::kv!(176), delirium_data::kv!(31), delirium_data::kv!(177), delirium_data::kv!(178), delirium_data::kv!(179), 0.0, 1.0] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn BLOCK() -> &'static [f32; 7] { static V: std::sync::OnceLock<[f32; 7]> = std::sync::OnceLock::new(); let f = || -> [f32; 7] { [delirium_data::kv!(177), delirium_data::kv!(31), delirium_data::kv!(178), delirium_data::kv!(179), delirium_data::kv!(180), 0.0, 1.0] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 const NAMES: [&str; 7] = ["defaultGrabStrength", "grabBodyStiffness", "grabDistance", "grabReachAngle", "grabOneSideReachAngle",
                           "grabPullUpStrength", "grabPullUpTimer"];
 
@@ -45,7 +45,7 @@ impl GrabHelper {
     }
 
     pub fn grabbing(&self) -> bool {
-        self.flags & delirium_data::kv!(180 int) != 0
+        self.flags & delirium_data::kv!(181 int) != 0
     }
 
     pub fn start(&mut self) -> Option<Msg> {
@@ -54,9 +54,9 @@ impl GrabHelper {
             return None;
         }
         let mut p = vec![];
-        if self.flags & delirium_data::kv!(96 int) == 0 {
+        if self.flags & delirium_data::kv!(97 int) == 0 {
             p.push(("start", B(true)));
-            self.flags |= delirium_data::kv!(96 int);
+            self.flags |= delirium_data::kv!(97 int);
         }
         for (n, v) in [("pos1", self.pos1), ("normalL", self.normal_l), ("pos2", self.pos2), ("normalR", self.normal_r), ("pos3", self.pos3), ("pos4", self.pos4)] {
             if v != Vec3::ZERO {
@@ -108,7 +108,7 @@ impl GrabHelper {
     pub fn feedback(&mut self, success: bool, name: &str) {
         let (left, right) = (name.starts_with("LeftArmGrab"), name.starts_with("RightArmGrab"));
         if left || right {
-            self.flags |= if !success { delirium_data::kv!(181 int) } else if left { delirium_data::kv!(182 int) } else { delirium_data::kv!(183 int) };
+            self.flags |= if !success { delirium_data::kv!(182 int) } else if left { delirium_data::kv!(183 int) } else { delirium_data::kv!(184 int) };
         }
     }
 }
@@ -151,10 +151,10 @@ impl GrabHelper {
         let sum = i.vel[0] + i.vel[1];
         let fast = |t: f32| sum.x.fma(sum.x, sum.y.fma(sum.y, sum.z * sum.z)) > t * t;
         let mut go = false;
-        if self.flags & 2 != 0 && self.flags & delirium_data::kv!(184 int) != 0 {
+        if self.flags & 2 != 0 && self.flags & delirium_data::kv!(185 int) != 0 {
             go |= fast((*SPEED())[0]);
         }
-        if self.flags & delirium_data::kv!(1 int) != 0 && self.flags & delirium_data::kv!(185 int) != 0 {
+        if self.flags & delirium_data::kv!(1 int) != 0 && self.flags & delirium_data::kv!(186 int) != 0 {
             go |= fast((*SPEED())[1]);
         }
         if !go || self.flags & 1 != 0 {

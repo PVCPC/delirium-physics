@@ -23,7 +23,7 @@ impl LocomotionDrive {
         self.weight.is_finite()&&(0.0..=1.0).contains(&self.weight)
             &&self.gain_weight.is_finite()&&(0.0..=self.weight).contains(&self.gain_weight)
             &&self.targets.iter().flatten().all(|x|x.is_finite())
-            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(35)..=delirium_data::kv!(220)).contains(x))
+            &&self.leg_stiffness.iter().all(|x|x.is_finite()&&(delirium_data::kv!(35)..=delirium_data::kv!(221)).contains(x))
             &&self.response.iter().all(|x|x.is_finite()&&(0.5..=2.0).contains(x))
     }
 }
@@ -109,15 +109,15 @@ pub(super) fn support_character(ch:&Character,stance:[bool;2])->Character {
 
 pub(super) fn stabilise_on(body:&crate::nmdbm::Body,k:f32,dt:f32,stance:[bool;2])->Vec<Vec3> {
     let feet:Vec<_>=(0..2).filter(|&i|stance[i]).map(|i|body.ch.joints[(*ANKLE())[i]].child)
-        .filter(|&f|body.doll.touch[f]&delirium_data::kv!(95 int)==delirium_data::kv!(7 int)).collect();
+        .filter(|&f|body.doll.touch[f]&delirium_data::kv!(96 int)==delirium_data::kv!(7 int)).collect();
     if feet.len()==2 {return crate::nmdbm::stabilise(body,k,dt);}
     let mut out=vec![Vec3::ZERO;body.build.parts.len()];
     let Some(&foot)=feet.first() else {return out;};
     let up=body.ch.up;let (com,vel)=body.doll.com();let mid=body.doll.centre(foot);
     let fv=body.doll.motion(foot).0;
     let s=((com-mid).normalize_or_zero().dot(up).max(0.).powi(4)*k).powi(2);
-    let f=(com+vel*delirium_data::kv!(78)-mid)*s+(vel-fv)*(delirium_data::kv!(60)*s);
-    let f=(f-up*f.dot(up))*(dt*delirium_data::kv!(103));
+    let f=(com+vel*delirium_data::kv!(79)-mid)*s+(vel-fv)*(delirium_data::kv!(60)*s);
+    let f=(f-up*f.dot(up))*(dt*delirium_data::kv!(104));
     out[foot]+=f;out[body.ch.joints[(*HIP())[0]].parent]-=f;out
 }
 

@@ -26,7 +26,7 @@ impl Set {
 
 pub fn start(set: &Set) -> Vec<Msg> {
     use Value::{Bool as B, Float as F};
-    let (k, spin) = (set.push[delirium_data::kv!(0 int)], set.roll[delirium_data::kv!(113 int)]);
+    let (k, spin) = (set.push[delirium_data::kv!(0 int)], set.roll[delirium_data::kv!(114 int)]);
     vec![("catchFall", vec![("start", B(true)), ("legsStiffness", F(k)), ("armsStiffness", F(k)), ("torsoStiffness", F(k)),
                             ("zAxisSpinReduction", F(spin))])]
 }
@@ -44,8 +44,8 @@ pub fn roll_up(set: &Set, v0: Vec3) -> Vec<Msg> {
         rds.extend([("useCustomRollDir", B(true)), ("customRollDir", Value::Vec3(d * crate::estimate::vrsqrtefp(d.vd(d))))]);
     }
     vec![("catchFall", vec![("start", B(false))]), ("rollDownStairs", rds),
-         ("pedalLegs", vec![("start", B(true)), ("adaptivePedal4Dragging", B(true)), ("angSpeedMultiplier4Dragging", F(delirium_data::kv!(119))),
-                            ("backPedal", B(false)), ("legStiffness", F(delirium_data::kv!(65))), ("radius", F(delirium_data::kv!(116))), ("pedalOffset", F(delirium_data::kv!(78))),
+         ("pedalLegs", vec![("start", B(true)), ("adaptivePedal4Dragging", B(true)), ("angSpeedMultiplier4Dragging", F(delirium_data::kv!(120))),
+                            ("backPedal", B(false)), ("legStiffness", F(delirium_data::kv!(65))), ("radius", F(delirium_data::kv!(117))), ("pedalOffset", F(delirium_data::kv!(79))),
                             ("speedAsymmetry", F(0.5)), ("angularSpeed", F(delirium_data::kv!(64)))])]
 }
 

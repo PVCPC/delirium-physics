@@ -17,11 +17,11 @@ impl Random {
     }
 
     pub fn next(&mut self) -> f32 {
-        (self.bits() & delirium_data::kv!(196 int)) as f32 / (1 << delirium_data::kv!(106 int)) as f32
+        (self.bits() & delirium_data::kv!(197 int)) as f32 / (1 << delirium_data::kv!(107 int)) as f32
     }
 
     pub fn bits(&mut self) -> u32 {
-        self.0 = (self.0 & delirium_data::kv!(197 int)) * delirium_data::kv!(198 int) + (self.0 >> delirium_data::kv!(7 int));
+        self.0 = (self.0 & delirium_data::kv!(198 int)) * delirium_data::kv!(199 int) + (self.0 >> delirium_data::kv!(7 int));
         self.0 as u32
     }
 }
@@ -36,7 +36,7 @@ pub use locomotion_drive::LocomotionDrive;
 fn G() -> f32 { delirium_data::kv!(34) }
 #[allow(non_snake_case)]
 #[inline]
-fn FOOT() -> f32 { delirium_data::kv!(199) }
+fn FOOT() -> f32 { delirium_data::kv!(200) }
 #[allow(non_snake_case)]
 #[inline]
 fn ANKLE_STIFFNESS() -> f32 { delirium_data::kv!(11) }
@@ -45,19 +45,19 @@ fn ANKLE_STIFFNESS() -> f32 { delirium_data::kv!(11) }
 fn ANKLE_DAMPING() -> f32 { delirium_data::kv!(31) }
 #[allow(non_snake_case)]
 #[inline]
-fn STEP_TIME() -> f32 { delirium_data::kv!(200) }
+fn STEP_TIME() -> f32 { delirium_data::kv!(201) }
 #[allow(non_snake_case)]
 #[inline]
-fn STEP_REACH() -> f32 { delirium_data::kv!(74) }
+fn STEP_REACH() -> f32 { delirium_data::kv!(75) }
 #[allow(non_snake_case)]
 #[inline]
-fn STEP_SLACK() -> f32 { delirium_data::kv!(146) }
+fn STEP_SLACK() -> f32 { delirium_data::kv!(147) }
 #[allow(non_snake_case)]
 #[inline]
-fn ABORT_TILT() -> f32 { delirium_data::kv!(119) }
+fn ABORT_TILT() -> f32 { delirium_data::kv!(120) }
 #[allow(non_snake_case)]
 #[inline]
-fn ABORT_SINK() -> f32 { delirium_data::kv!(119) }
+fn ABORT_SINK() -> f32 { delirium_data::kv!(120) }
 
 #[derive(Clone, Default)]
 struct Roles {
@@ -107,7 +107,7 @@ pub struct ConfigureBalance {
 
 impl Default for ConfigureBalance {
     fn default() -> Self {
-        ConfigureBalance { step_height: delirium_data::kv!(78), leg_stiffness: delirium_data::kv!(21), balance_abort_threshold: ABORT_TILT(), step_clamp_scale: 1.0, taper_knee_strength: true }
+        ConfigureBalance { step_height: delirium_data::kv!(79), leg_stiffness: delirium_data::kv!(21), balance_abort_threshold: ABORT_TILT(), step_clamp_scale: 1.0, taper_knee_strength: true }
     }
 }
 
@@ -172,7 +172,7 @@ pub struct BodyWrithe {
 
 impl Default for BodyWrithe {
     fn default() -> BodyWrithe {
-        BodyWrithe { arm_stiffness: delirium_data::kv!(201), back_stiffness: delirium_data::kv!(201), leg_stiffness: delirium_data::kv!(201), arm_damping: 0.5, back_damping: 0.5, leg_damping: 0.5,
+        BodyWrithe { arm_stiffness: delirium_data::kv!(202), back_stiffness: delirium_data::kv!(202), leg_stiffness: delirium_data::kv!(202), arm_damping: 0.5, back_damping: 0.5, leg_damping: 0.5,
                      arm_period: 1.0, back_period: 1.0, leg_period: 1.0, arm_amplitude: 1.0, back_amplitude: 1.0, leg_amplitude: 1.0,
                      elbow_amplitude: 1.0, knee_amplitude: 1.0, roll_over: false, mask: "fb" }
     }
@@ -220,29 +220,29 @@ pub struct BodyRollUp {
 
 impl Default for UpperBodyFlinch {
     fn default() -> UpperBodyFlinch {
-        UpperBodyFlinch { pos: Vec3::ZERO, body_stiffness: delirium_data::kv!(117), body_damping: 1.0, back_bend_amount: -delirium_data::kv!(132), left_handed: false, right_handed: false,
+        UpperBodyFlinch { pos: Vec3::ZERO, body_stiffness: delirium_data::kv!(118), body_damping: 1.0, back_bend_amount: -delirium_data::kv!(133), left_handed: false, right_handed: false,
                           use_left_arm: true, use_right_arm: true, new_hit: None,
-                          hand_distance_vertical: delirium_data::kv!(78), hand_distance_left_right: delirium_data::kv!(78), hand_distance_front_back: delirium_data::kv!(146), noise_scale: delirium_data::kv!(78), turn_towards: 1 }
+                          hand_distance_vertical: delirium_data::kv!(79), hand_distance_left_right: delirium_data::kv!(79), hand_distance_front_back: delirium_data::kv!(147), noise_scale: delirium_data::kv!(79), turn_towards: 1 }
     }
 }
 
 impl Default for ArmsWindmill {
     fn default() -> ArmsWindmill {
-        ArmsWindmill { arm_stiffness: delirium_data::kv!(202), body_stiffness: delirium_data::kv!(117), period: 1.0, amplitude: delirium_data::kv!(119), phase: 0.0, disable_on_impact: true }
+        ArmsWindmill { arm_stiffness: delirium_data::kv!(203), body_stiffness: delirium_data::kv!(118), period: 1.0, amplitude: delirium_data::kv!(120), phase: 0.0, disable_on_impact: true }
     }
 }
 
 impl Default for PedalLegs {
     fn default() -> PedalLegs {
         PedalLegs { leg_stiffness: delirium_data::kv!(31), radius: delirium_data::kv!(17), angular_speed: delirium_data::kv!(31), pedal_offset: delirium_data::kv!(9), speed_asymmetry: delirium_data::kv!(65), back_pedal: false,
-                    adaptive: false, drag_multiplier: delirium_data::kv!(24), left: true, right: true, radius_variance: delirium_data::kv!(116), random_seed: delirium_data::kv!(203 int),
+                    adaptive: false, drag_multiplier: delirium_data::kv!(24), left: true, right: true, radius_variance: delirium_data::kv!(117), random_seed: delirium_data::kv!(204 int),
                     leg_angle_variance: 0.5, centre_forwards: 0.0, centre_up: 0.0 }
     }
 }
 
 impl Default for BodyRollUp {
     fn default() -> BodyRollUp {
-        BodyRollUp { stiffness: delirium_data::kv!(31), leg_push: 0.0, arm_reach_amount: delirium_data::kv!(179), use_arm_to_slow_down: delirium_data::kv!(80), asymmetrical_legs: 0.0, mask: None,
+        BodyRollUp { stiffness: delirium_data::kv!(31), leg_push: 0.0, arm_reach_amount: delirium_data::kv!(180), use_arm_to_slow_down: delirium_data::kv!(81), asymmetrical_legs: 0.0, mask: None,
                      hips_from_vel: None }
     }
 }
@@ -391,7 +391,7 @@ pub struct Agent {
 pub(crate) fn LEG_PAIRS() -> &'static [(usize, usize); 7] { static V: std::sync::OnceLock<[(usize, usize); 7]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 7] { [(1, delirium_data::kv!(1 int)), (1, delirium_data::kv!(2 int)), (2, delirium_data::kv!(1 int)), (2, delirium_data::kv!(2 int)), (2, delirium_data::kv!(6 int)), (delirium_data::kv!(0 int), delirium_data::kv!(2 int)), (delirium_data::kv!(0 int), delirium_data::kv!(6 int))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub(crate) fn HAND_PAIRS() -> &'static [(usize, usize); 3] { static V: std::sync::OnceLock<[(usize, usize); 3]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 3] { [(delirium_data::kv!(127 int), delirium_data::kv!(54 int)), (delirium_data::kv!(127 int), delirium_data::kv!(189 int)), (delirium_data::kv!(204 int), delirium_data::kv!(54 int))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub(crate) fn HAND_PAIRS() -> &'static [(usize, usize); 3] { static V: std::sync::OnceLock<[(usize, usize); 3]> = std::sync::OnceLock::new(); let f = || -> [(usize, usize); 3] { [(delirium_data::kv!(128 int), delirium_data::kv!(54 int)), (delirium_data::kv!(128 int), delirium_data::kv!(190 int)), (delirium_data::kv!(205 int), delirium_data::kv!(54 int))] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 pub(crate) fn pair_on((a, b): (usize, usize), legs: bool, hands: bool) -> bool {
     !(legs && (*LEG_PAIRS()).contains(&(a.min(b), a.max(b))) || hands && (*HAND_PAIRS()).contains(&(a.max(b), a.min(b))))
 }
@@ -408,7 +408,7 @@ pub(crate) fn game_pairs(pairs: impl Iterator<Item = (usize, usize)>) -> Vec<(us
 
 impl Agent {
     pub fn limp_rage(&self) -> Vec<crate::ragdoll::Rigid> {
-        let mut rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(103), self.strength * self.short, self.most));
+        let mut rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(104), self.strength * self.short, self.most));
         rigid.iter_mut().for_each(|r| (r.max, r.gain) = ([0.0; 2], [0.0; 2]));
         rigid
     }
@@ -424,7 +424,7 @@ impl Agent {
     }
 
     pub fn new(build: &Build, mut doll: Ragdoll, facing: Quat, seed: f32) -> Agent {
-        let heavy = if build.parts.first().is_some_and(|p| p.heft != 1.0 || p.grown != 1.0) { (doll.mass() / delirium_data::kv!(205)).sqrt().max(1.0) } else { 1.0 };
+        let heavy = if build.parts.first().is_some_and(|p| p.heft != 1.0 || p.grown != 1.0) { (doll.mass() / delirium_data::kv!(206)).sqrt().max(1.0) } else { 1.0 };
         doll.fresh = true;
         doll.sleep_tol = [0.0; 3];
         if let Some(pairs) = crate::nmrs::SELF[build.nm].get().filter(|_| build.parts.len() == delirium_data::nm_asset::PARTS.len()) {
@@ -437,10 +437,10 @@ impl Agent {
             .map(|(i, p)| p.parent.map_or(frames[i].rotation, |j| frames[j].rotation.inverse() * frames[i].rotation)).collect();
         let roles = Roles::new(build);
         let pelvis_up = facing.inverse() * frames[roles.pelvis].rotation;
-        let mut a = Agent { locomotion_drive: None, locomotion_tracking: false, locomotion_terms: None, doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * delirium_data::kv!(82)) as u32 + 1), time: 0.0,
+        let mut a = Agent { locomotion_drive: None, locomotion_tracking: false, locomotion_terms: None, doll, msgs: Default::default(), push: vec![], contact_wake: false, roles, zero, pelvis_up, facing, random: Random::new((seed * delirium_data::kv!(83)) as u32 + 1), time: 0.0,
                 stiffness: (delirium_data::kv!(31), 1.0), relax: None, config: ConfigureBalance::default(), feedback: vec![], balance: None, lean: None,
                 shot: None, nm_shot: None, nm_hit: None, nm_hit_next: vec![], nm_hit_hold: false, nm_relax: None, nm_head: Default::default(), nm_cf: None, nm_cf_msg: None, nm_twist: Default::default(), nm_fl: Default::default(), nm_fl_msg: None, nm_bw: None, nm_bw_msg: None, extras: Default::default(), overrides: vec![], nm_aw: Default::default(), nm_aw_msg: None, nm_pd: Default::default(), nm_pd_msg: None, nm_bf: Default::default(), nm_bf_msg: None, incoming: vec![], incoming_prev: vec![], incoming_state: 0, incoming_v_ref: Vec3::ZERO, nm_ru: Default::default(), nm_ru_msg: None, nm_rds: Default::default(), nm_rds_msg: None, rds_on: false, bb_on: false, nm_pa: Default::default(), nm_pa_msg: None, nm_gr: Default::default(), obstacles: vec![], nm_gr_msg: None, nm_br: Default::default(), nm_br_msg: None, nm_br_started: None, nm_hf: Default::default(), nm_hf_msg: None, nm_fow: Default::default(), nm_fow_msg: None, catch_fall: None, flinch: None, writhe: None, windmill: None, pedal: None, roll_up: None,
-                brace: None, head_look: vec![], shot_look: false, eff_override: vec![], hold: vec![], follow: vec![], keyframe: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -delirium_data::kv!(206), hip_yaw: crate::nmdbm::CHAR_YAW(), legs: (crate::nmdbm::CHAR_LEGS().0, crate::nmdbm::CHAR_LEGS().1 * build.parts[0].grown), strength: 1.0, short: heavy / build.parts[0].grown.clamp(delirium_data::kv!(78), 1.0).sqrt(), apart, most: build.parts.first().filter(|p| p.heft != 1.0 || p.grown != 1.0).map_or(1.0, |p| p.heft * p.size.powi(3) * p.grown),
+                brace: None, head_look: vec![], shot_look: false, eff_override: vec![], hold: vec![], follow: vec![], keyframe: vec![], nm_dt: None, held: None, held_eff: vec![], nm_shot_started: None, fallen: false, task_look: None, lean_bias: -delirium_data::kv!(207), hip_yaw: crate::nmdbm::CHAR_YAW(), legs: (crate::nmdbm::CHAR_LEGS().0, crate::nmdbm::CHAR_LEGS().1 * build.parts[0].grown), strength: 1.0, short: heavy / build.parts[0].grown.clamp(delirium_data::kv!(79), 1.0).sqrt(), apart, most: build.parts.first().filter(|p| p.heft != 1.0 || p.grown != 1.0).map_or(1.0, |p| p.heft * p.size.powi(3) * p.grown),
                 ch: crate::nmrs::ASSET[build.nm].get().and_then(|a| crate::nmrs::joints(build, a)).map(|j| {
                     let mut c = crate::nmrs::Character::new(j, &frames);
                     c.mode = if build.nm == crate::nmrs::MARGE { 2 } else { 1 };
@@ -599,7 +599,7 @@ impl Agent {
             if p.use_head_look {
                 let body = crate::nmdbm::Body { ch: &snap, build, doll: &self.doll, frames: &frames };
                 let (h, (pos, vel)) = (&mut self.nm_head, crate::nmbb::look_at(&p, &body, &self.obstacles));
-                (h.pos, h.vel, h.stiffness, h.damping, h.always_look) = (pos, vel, delirium_data::kv!(117), 1.0, true);
+                (h.pos, h.vel, h.stiffness, h.damping, h.always_look) = (pos, vel, delirium_data::kv!(118), 1.0, true);
                 h.activate(ch, &body);
                 self.head_look = vec![(pos, f32::INFINITY)];
             }
@@ -607,9 +607,9 @@ impl Agent {
             let body = crate::nmdbm::Body { ch, build, doll: &self.doll, frames: &frames };
             let dbm = crate::nmdbm::Dbm::new(&body, dbm_config(self.config, &params, self.lean_bias, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1));
             dbm.activate(ch);
-            self.lean_bias = -delirium_data::kv!(206);
+            self.lean_bias = -delirium_data::kv!(207);
             self.balance = Some(Balance { params, dbm: Some(dbm), bb: Some(bb), feet: [Foot::Planted(Transform::IDENTITY); 2], steps: 0,
-                                          stand_height: dbm.p.pelvis_height.max(delirium_data::kv!(74)), stepping: 0, still: 0.0, idle: false });
+                                          stand_height: dbm.p.pelvis_height.max(delirium_data::kv!(75)), stepping: 0, still: 0.0, idle: false });
             return;
         }
         let mut feet = [Foot::Planted(Transform::IDENTITY); 2];
@@ -620,14 +620,14 @@ impl Agent {
             let Some(z) = world.ground(at.translation + Vec3::Z * delirium_data::kv!(24), 1.0) else { self.fallen = true; return };
             let rest = z + build.parts[k].radius;
             ground = ground.min(z);
-            feet[side] = if at.translation.z - rest < delirium_data::kv!(130) {
+            feet[side] = if at.translation.z - rest < delirium_data::kv!(131) {
                 Foot::Planted(at)
             } else {
                 Foot::Stepping(at, Transform::from_translation(at.translation.with_z(rest)).with_rotation(at.rotation), 0.5)
             };
             self.doll.pin(k, at);
         }
-        self.balance = Some(Balance { params, dbm: None, bb: None, feet, steps: 0, stand_height: (frames[self.roles.pelvis].translation.z - ground).max(delirium_data::kv!(74)), stepping: 0, still: 0.0, idle: false });
+        self.balance = Some(Balance { params, dbm: None, bb: None, feet, steps: 0, stand_height: (frames[self.roles.pelvis].translation.z - ground).max(delirium_data::kv!(75)), stepping: 0, still: 0.0, idle: false });
     }
 
     pub fn set_zero(&mut self, build: &Build, frames: &[Transform]) {
@@ -1052,7 +1052,7 @@ impl Agent {
                                         dbm: self.balance.as_mut().and_then(|b| b.dbm.as_mut()), fallen: self.fallen };
         let mut started = self.nm_br.activate(b, &mut c, &mut k, &[]);
         if let (Some(s), false, Some(d)) = (started.leg_stiffness, self.fallen, self.balance.as_mut().and_then(|b| b.dbm.as_mut())) {
-            (self.config.leg_stiffness, d.f.countdown, d.p.leg_stiffness) = (s, delirium_data::kv!(203 int), s);
+            (self.config.leg_stiffness, d.f.countdown, d.p.leg_stiffness) = (s, delirium_data::kv!(204 int), s);
             d.stiffen(ch);
             started.leg_stiffness = None;
         }
@@ -1089,7 +1089,7 @@ impl Agent {
     }
 
     pub fn joints(&self, build: &Build) -> Vec<Option<crate::ragdoll::JointInfo>> {
-        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(103), self.strength * self.short, self.most));
+        let rigid = self.ch.as_ref().map_or(vec![], |ch| ch.rigid(1.0 / delirium_data::kv!(104), self.strength * self.short, self.most));
         (0..build.parts.len()).map(|k| crate::ragdoll::joint_info(build, k, rigid.get(k))).collect()
     }
 
@@ -1098,7 +1098,7 @@ impl Agent {
     }
 
     pub fn settled(&self) -> bool {
-        self.balance.as_ref().is_some_and(|b| b.on() && b.still > delirium_data::kv!(116))
+        self.balance.as_ref().is_some_and(|b| b.on() && b.still > delirium_data::kv!(117))
     }
 
     pub fn balance_steps(&self) -> Option<(u32, u32)> {
@@ -1177,13 +1177,13 @@ impl Agent {
                 let ch = self.ch.as_mut().unwrap();
                 let body = crate::nmdbm::Body { ch: &snap, build, doll: &self.doll, frames };
                 let params = self.balance.as_ref().map_or(BodyBalance { body_stiffness: 0.0, damping: 0.0, elbow: 0.0, shoulder: 0.0,
-                    max_steps: out.dbm_steps.unwrap_or(delirium_data::kv!(203 int)).max(0) as u32, spine_stiffness: 0.0, spine_damping: 0.0 }, |b| b.params);
+                    max_steps: out.dbm_steps.unwrap_or(delirium_data::kv!(204 int)).max(0) as u32, spine_stiffness: 0.0, spine_damping: 0.0 }, |b| b.params);
                 let mut dbm = crate::nmdbm::Dbm::new(&body, dbm_config(self.config, &params, self.lean_bias, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1));
                 if let Some(old) = self.balance.as_ref().and_then(|b| b.dbm.as_ref()) {
                     dbm.restart_over(old);
                 }
                 dbm.activate(ch);
-                let stand_height = dbm.p.pelvis_height.max(delirium_data::kv!(74));
+                let stand_height = dbm.p.pelvis_height.max(delirium_data::kv!(75));
                 match self.balance.as_mut() {
                     Some(b) => (b.dbm, b.idle) = (Some(dbm), false),
                     None => self.balance = Some(Balance { params, dbm: Some(dbm), bb: None, feet: [Foot::Planted(Transform::IDENTITY); 2],
@@ -1294,7 +1294,7 @@ impl Agent {
     }
 
     pub fn step_group(agents: &mut [(&mut Agent, usize, &Build, &[Obstacle], &[Capsule])], world: &Collision, dt: f32, group: &mut crate::ragdoll::Group,
-                      pre: &mut dyn FnMut(usize, &mut Ragdoll, f32)) {
+                      pre: &mut dyn FnMut(usize, &mut Ragdoll, f32), extra: &mut [crate::ragdoll::Member]) {
         agents.iter_mut().for_each(|a| { a.0.feedback.clear(); a.0.doll.ob_hits.clear(); a.0.doll.ob_hit_left.clear(); a.0.doll.ob_push.clear(); a.0.doll.contact.clear(); });
         let n = substeps(dt);
         let h = dt / n as f32;
@@ -1316,7 +1316,7 @@ impl Agent {
             let kept: Vec<Option<crate::ragdoll::Kept>> = agents.iter_mut().map(|(a, _, b, ..)| if a.contact_wake { None } else { a.physics_drive(b, h) }).collect();
             let mut ms: Vec<crate::ragdoll::Member> = agents.iter_mut().zip(&kept).zip(&here).filter_map(|(((a, id, b, _, ot), k), ob)| {
                 k.as_ref().map(|k| crate::ragdoll::Member { doll: &mut a.doll, id: *id, build: b, drive: k.drive(), obstacles: ob, others: ot })
-            }).collect();
+            }).chain(extra.iter_mut().map(|m| crate::ragdoll::Member { doll: &mut *m.doll, ..*m })).collect();
             Ragdoll::step_group(&mut ms, world, h, group);
             drop(ms);
             let left = (n - k) as f32 * h;
@@ -1427,17 +1427,17 @@ impl Agent {
             if let (false, Some(ch)) = (self.fallen, self.ch.as_mut()) {
                 match self.balance.as_mut().and_then(|b| b.dbm.as_mut()) {
                     Some(d) => {
-                        (d.f.countdown, d.p.leg_stiffness) = (delirium_data::kv!(203 int), s);
+                        (d.f.countdown, d.p.leg_stiffness) = (delirium_data::kv!(204 int), s);
                         d.stiffen(ch);
                     }
                     None => {
-                        let params = BodyBalance { max_steps: delirium_data::kv!(203 int), ..BodyBalance::from(Default::default()) };
+                        let params = BodyBalance { max_steps: delirium_data::kv!(204 int), ..BodyBalance::from(Default::default()) };
                         let body = crate::nmdbm::Body { ch, build, doll: &self.doll, frames: &frames };
-                        let d = crate::nmdbm::Dbm::new(&body, crate::nmdbm::Config { lean_bias: -delirium_data::kv!(206), ..dbm_config(self.config, &params, 0.0, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1) });
+                        let d = crate::nmdbm::Dbm::new(&body, crate::nmdbm::Config { lean_bias: -delirium_data::kv!(207), ..dbm_config(self.config, &params, 0.0, self.hip_yaw, self.legs, self.legs.1 / crate::nmdbm::CHAR_LEGS().1) });
                         if d.held {
                             d.activate(ch);
                             self.balance = Some(Balance { params, dbm: Some(d), bb: None, feet: [Foot::Planted(Transform::IDENTITY); 2], steps: 0,
-                                                          stand_height: d.p.pelvis_height.max(delirium_data::kv!(74)), stepping: 0, still: 0.0, idle: false });
+                                                          stand_height: d.p.pelvis_height.max(delirium_data::kv!(75)), stepping: 0, still: 0.0, idle: false });
                         }
                     }
                 }
@@ -1470,7 +1470,7 @@ impl Agent {
                             self.feedback.push(crate::nmshot::Feedback { slot: delirium_data::kv!(55 int), name: "balance", value: 0.0 });
                         }
                         if let Some(v) = dbm.event {
-                            self.feedback.push(crate::nmshot::Feedback { slot: delirium_data::kv!(127 int), name: "balance", value: v });
+                            self.feedback.push(crate::nmshot::Feedback { slot: delirium_data::kv!(128 int), name: "balance", value: v });
                         }
                         let vh = s.hvel.length();
                         b.still = if vh < delirium_data::kv!(17) && dbm.f.stepping == 0 { b.still + dt } else { 0.0 };
@@ -1917,7 +1917,7 @@ impl Agent {
                     Foot::Stepping(from, to, s) => {
                         let s = (s + dt / STEP_TIME()).min(1.0);
                         let mut at = from.translation.lerp(to.translation, s);
-                        at.z += self.config.step_height * delirium_data::kv!(84) * s * (1.0 - s);
+                        at.z += self.config.step_height * delirium_data::kv!(85) * s * (1.0 - s);
                         self.doll.pin(k, Transform::from_translation(at).with_rotation(from.rotation.slerp(to.rotation, s)));
                         *foot = if s >= 1.0 { b.steps += 1; Foot::Planted(to) } else { Foot::Stepping(from, to, s) };
                     }
@@ -1945,7 +1945,7 @@ impl Agent {
                 let stay = at(&b.feet[1 - side]);
                 let going = (cp - flat(com)).normalize_or(fwd);
                 let across = Vec3::Z.cross(going).normalize_or(right);
-                let wide = across * (flat(at(&b.feet[side])) - flat(stay)).dot(across).signum() * delirium_data::kv!(78);
+                let wide = across * (flat(at(&b.feet[side])) - flat(stay)).dot(across).signum() * delirium_data::kv!(79);
                 let reach = STEP_REACH() * self.config.step_clamp_scale;
                 let run = ((G() / h).sqrt() * STEP_TIME()).exp();
                 let mut to = flat(stay) + (cp - flat(stay)) * run + wide;
@@ -1953,7 +1953,7 @@ impl Agent {
                 if d.length() > reach {
                     to = flat(stay) + d.normalize() * reach;
                 }
-                let z = world.ground(to.with_z(ground + 0.5), delirium_data::kv!(136)).unwrap_or(ground);
+                let z = world.ground(to.with_z(ground + 0.5), delirium_data::kv!(137)).unwrap_or(ground);
                 let Foot::Planted(from) = b.feet[side] else { unreachable!() };
                 let dz = from.translation.z - ground;
                 b.feet[side] = Foot::Stepping(from, Transform::from_translation(to.with_z(z + dz)).with_rotation(from.rotation), 0.0);
@@ -1999,7 +1999,7 @@ impl Agent {
                 mm.stiffness *= loose;
             }
             if t < s.spine_pain_time {
-                let k = (1.0 - t / s.spine_pain_time) * delirium_data::kv!(125);
+                let k = (1.0 - t / s.spine_pain_time) * delirium_data::kv!(126);
                 let side = (s.hit_point - frames[r.pelvis].translation).dot(right).signum();
                 for &i in &r.spine {
                     m[i].target = Quat::from_axis_angle(Vec3::X, k * s.spine_pain_multiplier) * Quat::from_axis_angle(Vec3::Y, k * s.spine_pain_twist_multiplier * side) * m[i].target;
@@ -2014,8 +2014,8 @@ impl Agent {
                 if let (Some(u), Some(f)) = (r.upper_arm[side], r.forearm[side]) {
                     let shoulder = frames[u].translation;
                     let to = s.hit_point - s.normal * delirium_data::kv!(68) - shoulder;
-                    m[u] = Muscle { target: aim(u, to + Vec3::Z * delirium_data::kv!(78)), stiffness: s.body_stiffness, damping: 1.0 };
-                    m[f] = Muscle { target: bend(f, -delirium_data::kv!(207) + to.length().min(delirium_data::kv!(119))), stiffness: s.body_stiffness, damping: 1.0 };
+                    m[u] = Muscle { target: aim(u, to + Vec3::Z * delirium_data::kv!(79)), stiffness: s.body_stiffness, damping: 1.0 };
+                    m[f] = Muscle { target: bend(f, -delirium_data::kv!(208) + to.length().min(delirium_data::kv!(120))), stiffness: s.body_stiffness, damping: 1.0 };
                 }
             }
             if t < 1.0 {
@@ -2035,7 +2035,7 @@ impl Agent {
             for side in 0..2 {
                 if let (Some(u), Some(fa)) = (r.upper_arm[side], r.forearm[side]) {
                     let s = if side == 0 { -1.0 } else { 1.0 };
-                    let dir = to * (0.5 + f.hand_distance_front_back) + Vec3::Z * (delirium_data::kv!(140) + f.hand_distance_vertical + noise) + Vec3::Z.cross(to) * -s * delirium_data::kv!(9);
+                    let dir = to * (0.5 + f.hand_distance_front_back) + Vec3::Z * (delirium_data::kv!(141) + f.hand_distance_vertical + noise) + Vec3::Z.cross(to) * -s * delirium_data::kv!(9);
                     m[u] = Muscle { target: aim(u, dir), stiffness: f.body_stiffness, damping: f.body_damping };
                     m[fa] = Muscle { target: bend(fa, -2.0), stiffness: f.body_stiffness, damping: f.body_damping };
                 }
@@ -2052,8 +2052,8 @@ impl Agent {
             let (_, v) = self.doll.com();
             let going = v.with_z(0.0).normalize_or_zero();
             let to = (going + Vec3::NEG_Z).normalize();
-            let down = frames[r.pelvis].translation.z - world.ground(frames[r.pelvis].translation + Vec3::Z * delirium_data::kv!(24), 2.0).unwrap_or(-delirium_data::kv!(82)) < delirium_data::kv!(140);
-            let soft = if down { delirium_data::kv!(116) } else { 1.0 };
+            let down = frames[r.pelvis].translation.z - world.ground(frames[r.pelvis].translation + Vec3::Z * delirium_data::kv!(24), 2.0).unwrap_or(-delirium_data::kv!(83)) < delirium_data::kv!(141);
+            let soft = if down { delirium_data::kv!(117) } else { 1.0 };
             for side in 0..2 {
                 if let Some(u) = r.upper_arm[side] {
                     m[u] = Muscle { target: aim(u, to), stiffness: c.arms_stiffness * soft, damping: 1.0 };
@@ -2076,18 +2076,18 @@ impl Agent {
             for side in 0..2 {
                 if let (Some(u), Some(fa)) = (r.upper_arm[side], r.forearm[side]) {
                     m[u] = Muscle { target: aim(u, b.pos - frames[u].translation), stiffness: b.body_stiffness, damping: 1.0 };
-                    m[fa] = Muscle { target: bend(fa, -delirium_data::kv!(116)), stiffness: b.body_stiffness, damping: 1.0 };
+                    m[fa] = Muscle { target: bend(fa, -delirium_data::kv!(117)), stiffness: b.body_stiffness, damping: 1.0 };
                 }
             }
         }
         if let Some(w) = self.windmill.filter(|_| self.ch.is_none()) {
             for side in 0..2 {
                 if let (Some(u), Some(fa)) = (r.upper_arm[side], r.forearm[side]) {
-                    let a = self.time * std::f32::consts::TAU / w.period.max(delirium_data::kv!(78)) + w.phase * std::f32::consts::TAU * side as f32;
+                    let a = self.time * std::f32::consts::TAU / w.period.max(delirium_data::kv!(79)) + w.phase * std::f32::consts::TAU * side as f32;
                     let s = if side == 0 { -1.0 } else { 1.0 };
-                    let dir = (fwd * a.cos() + Vec3::Z * a.sin()) * w.amplitude + right * s * delirium_data::kv!(119);
-                    m[u] = Muscle { target: aim(u, dir), stiffness: w.arm_stiffness, damping: delirium_data::kv!(74) };
-                    m[fa] = Muscle { target: bend(fa, -delirium_data::kv!(24)), stiffness: w.arm_stiffness, damping: delirium_data::kv!(74) };
+                    let dir = (fwd * a.cos() + Vec3::Z * a.sin()) * w.amplitude + right * s * delirium_data::kv!(120);
+                    m[u] = Muscle { target: aim(u, dir), stiffness: w.arm_stiffness, damping: delirium_data::kv!(75) };
+                    m[fa] = Muscle { target: bend(fa, -delirium_data::kv!(24)), stiffness: w.arm_stiffness, damping: delirium_data::kv!(75) };
                 }
             }
             for &i in &r.spine {
@@ -2097,18 +2097,18 @@ impl Agent {
         if let Some(p) = self.pedal.filter(|_| self.ch.is_none()) {
             for side in 0..2 {
                 if let (Some(th), Some(ca)) = (r.thigh[side], r.calf[side]) {
-                    let speed = p.angular_speed * (1.0 + p.speed_asymmetry * delirium_data::kv!(78) * side as f32);
+                    let speed = p.angular_speed * (1.0 + p.speed_asymmetry * delirium_data::kv!(79) * side as f32);
                     let a = self.time * speed + std::f32::consts::PI * side as f32;
                     let dir = Vec3::NEG_Z + (fwd * a.cos() + Vec3::Z * a.sin()) * p.radius * 2.0 + fwd * p.pedal_offset;
                     m[th] = Muscle { target: aim(th, dir), stiffness: p.leg_stiffness, damping: delirium_data::kv!(20) };
-                    m[ca] = Muscle { target: bend(ca, delirium_data::kv!(28) + delirium_data::kv!(74) * a.sin()), stiffness: p.leg_stiffness, damping: delirium_data::kv!(20) };
+                    m[ca] = Muscle { target: bend(ca, delirium_data::kv!(28) + delirium_data::kv!(75) * a.sin()), stiffness: p.leg_stiffness, damping: delirium_data::kv!(20) };
                 }
             }
         }
         if let Some(ru) = self.roll_up.filter(|_| self.ch.is_none()) {
             let up = frames[r.pelvis].rotation * Vec3::Z;
             for &i in &r.spine {
-                m[i] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(140)) * self.zero[i], stiffness: ru.stiffness, damping: 1.0 };
+                m[i] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(141)) * self.zero[i], stiffness: ru.stiffness, damping: 1.0 };
             }
             for side in 0..2 {
                 if let (Some(th), Some(ca)) = (r.thigh[side], r.calf[side]) {
@@ -2123,20 +2123,20 @@ impl Agent {
             }
         }
         if let Some(w) = self.writhe.filter(|_| self.ch.is_none()) {
-            let wave = |period: f32, k: usize| (self.time * std::f32::consts::TAU / period.max(delirium_data::kv!(78)) + k as f32 * delirium_data::kv!(66)).sin();
+            let wave = |period: f32, k: usize| (self.time * std::f32::consts::TAU / period.max(delirium_data::kv!(79)) + k as f32 * delirium_data::kv!(66)).sin();
             for &i in &r.spine {
-                m[i] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(17) * w.back_amplitude * wave(w.back_period, i)) * Quat::from_rotation_z(delirium_data::kv!(60) * w.back_amplitude * wave(w.back_period * delirium_data::kv!(80), i)) * self.zero[i],
+                m[i] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(17) * w.back_amplitude * wave(w.back_period, i)) * Quat::from_rotation_z(delirium_data::kv!(60) * w.back_amplitude * wave(w.back_period * delirium_data::kv!(81), i)) * self.zero[i],
                                 stiffness: w.back_stiffness, damping: w.arm_damping };
             }
             for side in 0..2 {
                 if let (Some(u), Some(fa)) = (r.upper_arm[side], r.forearm[side]) {
-                    m[u] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(119) * w.arm_amplitude * wave(w.arm_period, u)) * Quat::from_rotation_z(delirium_data::kv!(116) * w.arm_amplitude * wave(w.arm_period * delirium_data::kv!(74), u)) * self.zero[u],
+                    m[u] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(120) * w.arm_amplitude * wave(w.arm_period, u)) * Quat::from_rotation_z(delirium_data::kv!(117) * w.arm_amplitude * wave(w.arm_period * delirium_data::kv!(75), u)) * self.zero[u],
                                     stiffness: w.arm_stiffness, damping: w.arm_damping };
-                    m[fa] = Muscle { target: bend(fa, -delirium_data::kv!(20) - delirium_data::kv!(119) * w.elbow_amplitude * (0.5 + 0.5 * wave(w.arm_period, fa))), stiffness: w.arm_stiffness, damping: w.arm_damping };
+                    m[fa] = Muscle { target: bend(fa, -delirium_data::kv!(20) - delirium_data::kv!(120) * w.elbow_amplitude * (0.5 + 0.5 * wave(w.arm_period, fa))), stiffness: w.arm_stiffness, damping: w.arm_damping };
                 }
                 if let (Some(th), Some(ca)) = (r.thigh[side], r.calf[side]) {
-                    m[th] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(116) * w.leg_amplitude * wave(w.leg_period, th)) * self.zero[th], stiffness: w.leg_stiffness, damping: w.arm_damping };
-                    m[ca] = Muscle { target: bend(ca, delirium_data::kv!(24) + delirium_data::kv!(119) * w.knee_amplitude * (0.5 + 0.5 * wave(w.leg_period, ca))), stiffness: w.leg_stiffness, damping: w.arm_damping };
+                    m[th] = Muscle { target: Quat::from_rotation_x(delirium_data::kv!(117) * w.leg_amplitude * wave(w.leg_period, th)) * self.zero[th], stiffness: w.leg_stiffness, damping: w.arm_damping };
+                    m[ca] = Muscle { target: bend(ca, delirium_data::kv!(24) + delirium_data::kv!(120) * w.knee_amplitude * (0.5 + 0.5 * wave(w.leg_period, ca))), stiffness: w.leg_stiffness, damping: w.arm_damping };
                 }
             }
         }
@@ -2184,8 +2184,8 @@ impl Agent {
 }
 
 fn hold_stiffness(ch: &mut crate::nmrs::Character) {
-    ch.set_stiffness(delirium_data::kv!(35), delirium_data::kv!(78), "ub", Some(0.0));
-    ch.set_stiffness(delirium_data::kv!(35), delirium_data::kv!(78), "lb", None);
+    ch.set_stiffness(delirium_data::kv!(35), delirium_data::kv!(79), "ub", Some(0.0));
+    ch.set_stiffness(delirium_data::kv!(35), delirium_data::kv!(79), "lb", None);
     for j in (*crate::nmrs::ANKLE()) {
         ch.eff[j].set_stiffness(delirium_data::kv!(21), 1.0, None);
     }
@@ -2230,16 +2230,16 @@ fn W_CF() -> u32 { 1 << delirium_data::kv!(6 int) }
 fn W_RU() -> u32 { 1 << delirium_data::kv!(22 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn W_RDS() -> u32 { 1 << delirium_data::kv!(113 int) }
+fn W_RDS() -> u32 { 1 << delirium_data::kv!(114 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn W_PD() -> u32 { 1 << delirium_data::kv!(114 int) }
+fn W_PD() -> u32 { 1 << delirium_data::kv!(115 int) }
 #[allow(non_snake_case)]
 #[inline]
 fn W_AW() -> u32 { 1 << delirium_data::kv!(56 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn W_GR() -> u32 { 1 << delirium_data::kv!(189 int) }
+fn W_GR() -> u32 { 1 << delirium_data::kv!(190 int) }
 #[allow(non_snake_case)]
 #[inline]
 fn W_HEAD() -> u32 { 1 << delirium_data::kv!(54 int) }
@@ -2315,7 +2315,7 @@ pub fn task_shot_msgs(a: &mut Agent, build: &Build, world: &Collision, tp: &Task
     for m in msgs {
         if m.0 == "shot" && a.ch.is_none() {
             let st = |n: &str, or: f32| tp.get("NMShot_Standing", set, n, or);
-            a.body_balance(build, world, BodyBalance { body_stiffness: st("shotBodyStiffness", delirium_data::kv!(208)), damping: delirium_data::kv!(74), elbow: delirium_data::kv!(13), shoulder: 1.0,
+            a.body_balance(build, world, BodyBalance { body_stiffness: st("shotBodyStiffness", delirium_data::kv!(209)), damping: delirium_data::kv!(75), elbow: delirium_data::kv!(13), shoulder: 1.0,
                                                       max_steps: st("shotMaxSteps", delirium_data::kv!(35)) as u32, spine_stiffness: delirium_data::kv!(31), spine_damping: 1.0 });
         }
         crate::shottask::apply(a, build, world, &mut st, std::slice::from_ref(m));
@@ -2325,10 +2325,10 @@ pub fn task_shot_msgs(a: &mut Agent, build: &Build, world: &Collision, tp: &Task
     }
     a.msgs = st;
     if let Some(l) = a.lean.as_mut().filter(|_| t.lean_until != 0) {
-        l.2 = t.lean_until as f32 * delirium_data::kv!(134);
+        l.2 = t.lean_until as f32 * delirium_data::kv!(135);
     }
     a.task_look = t.look.then_some(t.balance);
-    (t.blind_until != 0).then(|| t.blind_until as f32 * delirium_data::kv!(134))
+    (t.blind_until != 0).then(|| t.blind_until as f32 * delirium_data::kv!(135))
 }
 
 pub fn task_balance(a: &mut Agent, build: &Build, world: &Collision, tp: &TaskParams, set: &str, look: Option<Vec3>, few_steps: bool) {
@@ -2377,7 +2377,7 @@ pub fn relax_period(tp: &TaskParams, set: &str, dead: bool) -> f32 {
 }
 
 pub fn task_control(a: &mut Agent, task: Task, attacker: impl Fn(u16) -> Option<Vec3>) {
-    match (task, attacker(delirium_data::kv!(209 int)), attacker(delirium_data::kv!(210 int))) {
+    match (task, attacker(delirium_data::kv!(210 int)), attacker(delirium_data::kv!(211 int))) {
         (Task::Shot | Task::Balance, Some(pos), _) => match a.task_look {
             Some(true) => a.body_balance_look(pos),
             Some(false) => a.shot_look(pos),
@@ -2402,7 +2402,7 @@ pub struct PointGun {
 impl PointGun {
     #[allow(non_snake_case)]
     #[inline]
-    fn BONES() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || -> [u16; 4] { [delirium_data::kv!(211 int), delirium_data::kv!(212 int), delirium_data::kv!(213 int), delirium_data::kv!(209 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn BONES() -> &'static [u16; 4] { static V: std::sync::OnceLock<[u16; 4]> = std::sync::OnceLock::new(); let f = || -> [u16; 4] { [delirium_data::kv!(212 int), delirium_data::kv!(213 int), delirium_data::kv!(214 int), delirium_data::kv!(210 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
     pub fn pointing(&self) -> bool {
         self.started
@@ -2418,8 +2418,8 @@ impl PointGun {
 
     pub fn draw(g: &mut delirium_data::rng::Rand, fire: bool, t: [i32; 4], gang: bool) -> PointGun {
         let bone = g.int_in_range(0, delirium_data::kv!(1 int)) as usize;
-        let start = g.int_in_range(t[0], t[1]) as f32 * delirium_data::kv!(134);
-        let next = g.int_in_range(t[2], t[delirium_data::kv!(0 int)]) as f32 * delirium_data::kv!(134);
+        let start = g.int_in_range(t[0], t[1]) as f32 * delirium_data::kv!(135);
+        let next = g.int_in_range(t[2], t[delirium_data::kv!(0 int)]) as f32 * delirium_data::kv!(135);
         PointGun { fire, bone, start, next, started: false, gang }
     }
 
@@ -2427,7 +2427,7 @@ impl PointGun {
         self.start -= dt;
         self.next -= dt;
         if !self.started && self.start <= 0.0 {
-            let (lo, hi) = if self.gang { (-delirium_data::kv!(116), delirium_data::kv!(60)) } else { (-delirium_data::kv!(214), delirium_data::kv!(215)) };
+            let (lo, hi) = if self.gang { (-delirium_data::kv!(117), delirium_data::kv!(60)) } else { (-delirium_data::kv!(215), delirium_data::kv!(216)) };
             let twist = lo + (hi - lo) * a.random.next();
             let arm_straightness = delirium_data::kv!(18) + delirium_data::kv!(60) * a.random.next();
             let p = crate::nmpa::PointArmParams { target, twist, arm_straightness, instance_index: -1, point_swing_limit: 1.0,
@@ -2454,8 +2454,8 @@ impl PointGun {
 }
 
 pub fn task_catch_fall(a: &mut Agent, tp: &TaskParams, set: &str) {
-    let k = tp.get("NMShot_Standing", set, "shotBodyStiffness", delirium_data::kv!(208));
-    a.catch_fall(CatchFall { torso_stiffness: k * delirium_data::kv!(74), legs_stiffness: k * 0.5, arms_stiffness: k, z_axis_spin_reduction: 0.0 });
+    let k = tp.get("NMShot_Standing", set, "shotBodyStiffness", delirium_data::kv!(209));
+    a.catch_fall(CatchFall { torso_stiffness: k * delirium_data::kv!(75), legs_stiffness: k * 0.5, arms_stiffness: k, z_axis_spin_reduction: 0.0 });
 }
 
 pub fn task_flinch(a: &mut Agent, build: &Build, world: &Collision, tp: &TaskParams, rand: &mut delirium_data::rng::Rand, set: &str, from: Vec3) {
@@ -2466,7 +2466,7 @@ pub fn task_flinch(a: &mut Agent, build: &Build, world: &Collision, tp: &TaskPar
     crate::shottask::apply(a, build, world, &mut st, &msgs);
     a.msgs = st;
     if let (Some(l), crate::meleetask::MeleeTask::Flinch { lean_until: ms @ 1.., .. }) = (a.lean.as_mut(), &t) {
-        l.2 = *ms as f32 * delirium_data::kv!(134);
+        l.2 = *ms as f32 * delirium_data::kv!(135);
     }
 }
 
@@ -2490,7 +2490,7 @@ impl Explosion {
 
     #[allow(clippy::too_many_arguments)]
     pub fn control(&mut self, a: &mut Agent, build: &Build, world: &Collision, rand: &mut delirium_data::rng::Rand, dt: f32, vz: f32, near: bool) {
-        self.ms += dt as f64 * delirium_data::kv!(82);
+        self.ms += dt as f64 * delirium_data::kv!(83);
         let m = self.task.update(&self.set, rand, self.ms as u32, vz, near);
         let mut st = std::mem::take(&mut a.msgs);
         crate::shottask::apply(a, build, world, &mut st, &m);
@@ -2509,7 +2509,7 @@ pub fn task_jump_roll(a: &mut Agent, build: &Build, world: &Collision, tp: &Task
 }
 
 pub fn jump_roll_up_time(tp: &TaskParams) -> f32 {
-    crate::jumproll::Set::read(tp).roll_after as f32 * delirium_data::kv!(134)
+    crate::jumproll::Set::read(tp).roll_after as f32 * delirium_data::kv!(135)
 }
 
 pub fn task_jump_roll_up(a: &mut Agent, build: &Build, world: &Collision, tp: &TaskParams, vel: Vec3) {
@@ -2532,7 +2532,7 @@ pub struct OnFire {
 
 impl OnFire {
     pub fn new(set: &'static str) -> OnFire {
-        OnFire { set, task: crate::onfire::OnFire::new(delirium_data::kv!(41 int), delirium_data::kv!(216 int), delirium_data::kv!(24), None), params: Default::default(), ms: delirium_data::kv!(82) }
+        OnFire { set, task: crate::onfire::OnFire::new(delirium_data::kv!(41 int), delirium_data::kv!(217 int), delirium_data::kv!(24), None), params: Default::default(), ms: delirium_data::kv!(83) }
     }
 
     pub fn start(&mut self, a: &mut Agent, build: &Build, world: &Collision, tp: &TaskParams, rand: &mut delirium_data::rng::Rand) {
@@ -2551,7 +2551,7 @@ impl OnFire {
     #[allow(clippy::too_many_arguments)]
     pub fn update(&mut self, a: &mut Agent, build: &Build, world: &Collision, rand: &mut delirium_data::rng::Rand, dt: f32, burning: bool,
                   health: f32, dead: bool) -> Option<bool> {
-        self.ms += dt as f64 * delirium_data::kv!(82);
+        self.ms += dt as f64 * delirium_data::kv!(83);
         self.step(a, build, world, rand, burning, health, dead)
     }
 
@@ -2593,7 +2593,7 @@ impl RollUpAndRelax {
     }
 
     pub fn control(&mut self, a: &mut Agent, build: &Build, world: &Collision, rand: &mut delirium_data::rng::Rand, dt: f32) {
-        self.ms += dt as f64 * delirium_data::kv!(82);
+        self.ms += dt as f64 * delirium_data::kv!(83);
         self.send(a, build, world, rand);
     }
 
@@ -2677,7 +2677,7 @@ impl Task {
 }
 
 pub fn task_failed(a: &mut Agent, world: &Collision, task: Task) -> bool {
-    let from = a.doll.frames().nth(delirium_data::kv!(81 int)).map(|t| t.translation).filter(|_| matches!(task, Task::Shot | Task::Balance | Task::Flinch | Task::Brace));
+    let from = a.doll.frames().nth(delirium_data::kv!(82 int)).map(|t| t.translation).filter(|_| matches!(task, Task::Shot | Task::Balance | Task::Flinch | Task::Brace));
     if let Some(from) = from {
         if world.ground_stairs(from, delirium_data::kv!(33)).is_some_and(|(_, stairs)| stairs) {
             a.roll_down_stairs(a.msgs.roll_down_stairs.clone());
@@ -2750,17 +2750,17 @@ fn finish_82617140(task: Task, since: f32, [min, max]: [f32; 2], v: f32, z: f32,
     let (flags, row) = match task {
         Balance => (delirium_data::kv!(54 int) | (failed || player && since > delirium_data::kv!(64)) as u32, 1),
         Brace => (delirium_data::kv!(23 int) | (failed || player && since > delirium_data::kv!(64)) as u32, 1),
-        Flinch => (delirium_data::kv!(104 int), 1),
-        FallDown => (if matches!(fall, 4 | 5) { delirium_data::kv!(104 int) } else { delirium_data::kv!(23 int) }, 1),
-        HighFall => (if failed && !(g.hands[0] || g.hands[1]) { delirium_data::kv!(104 int) } else { 0 } | (player && since > delirium_data::kv!(31)) as u32, 1),
-        Shot => (delirium_data::kv!(217 int) | failed as u32, 1),
+        Flinch => (delirium_data::kv!(105 int), 1),
+        FallDown => (if matches!(fall, 4 | 5) { delirium_data::kv!(105 int) } else { delirium_data::kv!(23 int) }, 1),
+        HighFall => (if failed && !(g.hands[0] || g.hands[1]) { delirium_data::kv!(105 int) } else { 0 } | (player && since > delirium_data::kv!(31)) as u32, 1),
+        Shot => (delirium_data::kv!(218 int) | failed as u32, 1),
         Relax => (delirium_data::kv!(0 int), 0),
         OnFire => return Finish::default(),
         ScriptControl(end) => return fin((end > 0.0 && since > end).then_some(Next::Blend)),
-        Sit(d2) if d2 > delirium_data::kv!(84) => return fin(Some(Next::Relax)),
-        Sit(_) => (delirium_data::kv!(104 int), 1),
+        Sit(d2) if d2 > delirium_data::kv!(85) => return fin(Some(Next::Relax)),
+        Sit(_) => (delirium_data::kv!(105 int), 1),
     };
-    let slow = [[delirium_data::kv!(78 f32), delirium_data::kv!(60)], [delirium_data::kv!(60), delirium_data::kv!(24)]][player as usize][row];
+    let slow = [[delirium_data::kv!(79 f32), delirium_data::kv!(60)], [delirium_data::kv!(60), delirium_data::kv!(24)]][player as usize][row];
     let speed2 = if let Some(Stand::Boat(Some(rel))) = g.stand { rel.length_squared() } else { v * v };
     let mut push = None;
     if flags & 1 != 0 && since > min {
@@ -2771,7 +2771,7 @@ fn finish_82617140(task: Task, since: f32, [min, max]: [f32; 2], v: f32, z: f32,
             push = Some(axis * mass * delirium_data::kv!(25));
         }
     }
-    let limit = if max != 0.0 && (speed2 < delirium_data::kv!(84) || z < 0.0) { max } else { delirium_data::kv!(26) };
+    let limit = if max != 0.0 && (speed2 < delirium_data::kv!(85) || z < 0.0) { max } else { delirium_data::kv!(26) };
     if since > limit {
         return Finish { done: true, next: Some(Next::Blend), push, health_one: false };
     }
@@ -2786,11 +2786,11 @@ pub fn task_fails(task: Task, name: &str) -> bool {
 }
 
 pub fn gun_threat_failed(task: Task, name: &str, pointing: bool, rand: &mut delirium_data::rng::Rand) -> Option<u32> {
-    (matches!(task, Task::Shot | Task::Brace) && pointing && task_fails(task, name)).then(|| rand.int_in_range(delirium_data::kv!(40 int), delirium_data::kv!(218 int)) as u32)
+    (matches!(task, Task::Shot | Task::Brace) && pointing && task_fails(task, name)).then(|| rand.int_in_range(delirium_data::kv!(40 int), delirium_data::kv!(219 int)) as u32)
 }
 
 pub fn balance_bar(player: bool, kind: u8, health: f32) -> Option<f32> {
-    match (player, kind >= delirium_data::kv!(0 int), health > delirium_data::kv!(219)) {
+    match (player, kind >= delirium_data::kv!(0 int), health > delirium_data::kv!(220)) {
         (true, ..) | (false, true, true) => Some(1.0),
         (false, true, false) | (false, false, true) => Some(delirium_data::kv!(24)),
         (false, false, false) => None,
@@ -2829,8 +2829,8 @@ pub fn fall_down_try(world: &Collision, root: Vec3, r: f32) -> Option<(u32, Vec3
         return None;
     }
     let end = from + d * 2.0;
-    let (ground, stairs) = world.ground_stairs(end, delirium_data::kv!(84)).map_or((None, false), |(g, s)| (Some(g), s));
-    let low = world.cast(from - Vec3::Z * delirium_data::kv!(116), d, 2.0).is_some();
+    let (ground, stairs) = world.ground_stairs(end, delirium_data::kv!(85)).map_or((None, false), |(g, s)| (Some(g), s));
+    let low = world.cast(from - Vec3::Z * delirium_data::kv!(117), d, 2.0).is_some();
     let z = root.z;
     let state = match ground {
         _ if low && ground.is_none_or(|g| g < z - 1.0 - 0.5) => delirium_data::kv!(2 int),
@@ -2840,14 +2840,14 @@ pub fn fall_down_try(world: &Collision, root: Vec3, r: f32) -> Option<(u32, Vec3
     };
     let height = match ground {
         Some(g) if state != 6 => g,
-        _ => end.z - delirium_data::kv!(84),
+        _ => end.z - delirium_data::kv!(85),
     };
     Some((state, d, height))
 }
 
 impl FallDown {
     pub fn start(a: &mut Agent, build: &Build, world: &Collision, state: u32, dir: Vec3, height: f32) -> FallDown {
-        let mut f = FallDown { state, task: crate::falldown::FallDown::new(state, dir, height), ms: delirium_data::kv!(82), health_one: false };
+        let mut f = FallDown { state, task: crate::falldown::FallDown::new(state, dir, height), ms: delirium_data::kv!(83), health_one: false };
         f.step(a, build, world, 0.0);
         f
     }
@@ -2857,7 +2857,7 @@ impl FallDown {
     }
 
     pub fn control(&mut self, a: &mut Agent, build: &Build, world: &Collision, dt: f32) {
-        self.ms += dt as f64 * delirium_data::kv!(82);
+        self.ms += dt as f64 * delirium_data::kv!(83);
         self.step(a, build, world, dt);
     }
 
@@ -2866,7 +2866,7 @@ impl FallDown {
         let at = |k: usize| fr.get(k).map_or(Vec3::ZERO, |t| t.translation);
         let r = fr.get(delirium_data::kv!(22 int)).map_or(Quat::IDENTITY, |t| t.rotation);
         let pos = a.doll.root();
-        let p = crate::falldown::Ped { spine: [r * Vec3::X, r * Vec3::Y, r * Vec3::Z, at(delirium_data::kv!(22 int))], b6: at(delirium_data::kv!(6 int)), b10: at(delirium_data::kv!(81 int)), b12: at(delirium_data::kv!(55 int)), pos,
+        let p = crate::falldown::Ped { spine: [r * Vec3::X, r * Vec3::Y, r * Vec3::Z, at(delirium_data::kv!(22 int))], b6: at(delirium_data::kv!(6 int)), b10: at(delirium_data::kv!(82 int)), b12: at(delirium_data::kv!(55 int)), pos,
                                        mass: a.doll.mass(), vel: a.doll.com().1, health: delirium_data::kv!(15), ..Default::default() };
         let s = self.task.update(&p, self.ms as u32);
         self.health_one |= s.health_one;

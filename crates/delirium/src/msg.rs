@@ -425,7 +425,7 @@ pub struct Impulse {
 }
 impl Default for Impulse {
     fn default() -> Impulse {
-        Impulse { part_index: 0, hit_point: None, impulse: Vec3::new(0.0, -delirium_data::kv!(79), 0.0), equalize_amount: 0.0 }
+        Impulse { part_index: 0, hit_point: None, impulse: Vec3::new(0.0, -delirium_data::kv!(80), 0.0), equalize_amount: 0.0 }
     }
 }
 
@@ -438,7 +438,7 @@ pub struct BodyRelax {
 }
 impl Default for BodyRelax {
     fn default() -> BodyRelax {
-        BodyRelax { mask: None, hold_pose: false, relaxation: delirium_data::kv!(79), damping: None }
+        BodyRelax { mask: None, hold_pose: false, relaxation: delirium_data::kv!(80), damping: None }
     }
 }
 
@@ -1109,7 +1109,7 @@ pub fn get(st: &State, msg: &str, name: &str) -> Option<Value> {
         ("defineAttachedObject", "partIndex") => { let p = &st.define_attached_object; Value::Int(p.part_index) }
         ("defineAttachedObject", "worldPos") => { let p = &st.define_attached_object; Value::Vec3(p.world_pos) }
         ("defineAttachedObject", "objectMass") => { let p = &st.define_attached_object; Value::Float(p.object_mass) }
-        ("fallOverWall", "bodyTwist") => { let p = &st.fall_over_wall; Value::Float(p.twist_max / delirium_data::kv!(195)) }
+        ("fallOverWall", "bodyTwist") => { let p = &st.fall_over_wall; Value::Float(p.twist_max / delirium_data::kv!(196)) }
         ("fallOverWall", "useSpecifiedPoint") => { let p = &st.fall_over_wall; Value::Bool(p.use_specified_point) }
         ("fallOverWall", "maxDistanceFromPelToHitPoint") => { let p = &st.fall_over_wall; Value::Float(p.max_distance_from_pel_to_hit_point) }
         ("fallOverWall", "fallOverEdge") => { let p = &st.fall_over_wall; Value::Vec3(p.fall_over_edge) }

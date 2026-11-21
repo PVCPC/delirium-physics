@@ -61,38 +61,38 @@ fn bef(d: &[u8], at: usize) -> Result<f32, String> {
     be32(d, at).map(f32::from_bits)
 }
 fn sys(p: u32) -> Result<usize, String> {
-    if p >> crate::kv!(85 int) == crate::kv!(2 int) { Ok((p & crate::kv!(86 int)) as usize) } else { Err(format!("Bad animation pointer {p:08X}")) }
+    if p >> crate::kv!(86 int) == crate::kv!(2 int) { Ok((p & crate::kv!(87 int)) as usize) } else { Err(format!("Bad animation pointer {p:08X}")) }
 }
 
 pub fn read_dictionary(r: &Resource) -> Result<Vec<Animation>, String> {
     let d = &r.data;
-    let count = be16(d, crate::kv!(85 int))? as usize;
-    let (hashes, list) = (sys(be32(d, crate::kv!(54 int))?)?, sys(be32(d, crate::kv!(107 int))?)?);
+    let count = be16(d, crate::kv!(86 int))? as usize;
+    let (hashes, list) = (sys(be32(d, crate::kv!(54 int))?)?, sys(be32(d, crate::kv!(108 int))?)?);
     (0..count).map(|i| read_animation(d, sys(be32(d, list + i * crate::kv!(1 int))?)?, be32(d, hashes + i * crate::kv!(1 int))?, None)).collect()
 }
 
 pub fn read_dictionary_kinds(r: &Resource, kinds: &[u8]) -> Result<Vec<Animation>, String> {
     let d = &r.data;
-    let count = be16(d, crate::kv!(85 int))? as usize;
-    let (hashes, list) = (sys(be32(d, crate::kv!(54 int))?)?, sys(be32(d, crate::kv!(107 int))?)?);
+    let count = be16(d, crate::kv!(86 int))? as usize;
+    let (hashes, list) = (sys(be32(d, crate::kv!(54 int))?)?, sys(be32(d, crate::kv!(108 int))?)?);
     (0..count).map(|i| read_animation(d, sys(be32(d, list + i * crate::kv!(1 int))?)?, be32(d, hashes + i * crate::kv!(1 int))?, Some(kinds))).collect()
 }
 
 pub fn read_sound_tracks(r: &Resource) -> Result<Vec<(String, Vec<u32>)>, String> {
-    read_int_tracks(r, crate::kv!(288 int))
+    read_int_tracks(r, crate::kv!(289 int))
 }
 
 pub fn read_int_tracks(r: &Resource, kind: u8) -> Result<Vec<(String, Vec<u32>)>, String> {
     let d = &r.data;
-    let count = be16(d, crate::kv!(85 int))? as usize;
-    let list = sys(be32(d, crate::kv!(107 int))?)?;
+    let count = be16(d, crate::kv!(86 int))? as usize;
+    let list = sys(be32(d, crate::kv!(108 int))?)?;
     let mut out = vec![];
     for i in 0..count {
         let a = sys(be32(d, list + i * crate::kv!(1 int))?)?;
         let frames = be16(d, a + crate::kv!(23 int))? as usize;
-        let name = sys(be32(d, a + crate::kv!(85 int))?).map(|at| d[at..].split(|&c| c == 0).next().unwrap_or_default()).unwrap_or_default();
+        let name = sys(be32(d, a + crate::kv!(86 int))?).map(|at| d[at..].split(|&c| c == 0).next().unwrap_or_default()).unwrap_or_default();
         let name = String::from_utf8_lossy(name).trim_start_matches("pack:/").trim_end_matches(".anim").to_string();
-        let (tracks, n) = (sys(be32(d, a + crate::kv!(7 int))?)?, be16(d, a + crate::kv!(94 int))? as usize);
+        let (tracks, n) = (sys(be32(d, a + crate::kv!(7 int))?)?, be16(d, a + crate::kv!(95 int))? as usize);
         for k in 0..n {
             let t = sys(be32(d, tracks + k * crate::kv!(1 int))?)?;
             if d[t] != kind || be16(d, t + 2)? != 0 {
@@ -122,16 +122,16 @@ pub fn sound_between(track: &[u32], duration: f32, from: f32, to: f32) -> u32 {
 }
 
 fn read_animation(d: &[u8], a: usize, hash: u32, kinds: Option<&[u8]>) -> Result<Animation, String> {
-    let (frames, per_block) = (be16(d, a + crate::kv!(23 int))? as usize, be16(d, a + crate::kv!(81 int))?.max(1) as usize);
-    let name = sys(be32(d, a + crate::kv!(85 int))?).map(|at| d[at..].split(|&c| c == 0).next().unwrap_or_default()).unwrap_or_default();
+    let (frames, per_block) = (be16(d, a + crate::kv!(23 int))? as usize, be16(d, a + crate::kv!(82 int))?.max(1) as usize);
+    let name = sys(be32(d, a + crate::kv!(86 int))?).map(|at| d[at..].split(|&c| c == 0).next().unwrap_or_default()).unwrap_or_default();
     let name = String::from_utf8_lossy(name).trim_start_matches("pack:/").trim_end_matches(".anim").to_string();
-    let (tracks, count) = (sys(be32(d, a + crate::kv!(7 int))?)?, be16(d, a + crate::kv!(94 int))? as usize);
+    let (tracks, count) = (sys(be32(d, a + crate::kv!(7 int))?)?, be16(d, a + crate::kv!(95 int))? as usize);
     let (mut out, mut events, mut mover_rotation) = (vec![], vec![], None);
     for k in 0..count {
         let t = sys(be32(d, tracks + k * crate::kv!(1 int))?)?;
         let blocks = sys(be32(d, t + crate::kv!(23 int))?)?;
         let block_count = be16(d, t + crate::kv!(55 int))? as usize;
-        if d[t] == crate::kv!(257 int) && be16(d, t + 2)? == 0 {
+        if d[t] == crate::kv!(258 int) && be16(d, t + 2)? == 0 {
             let per = be16(d, t + crate::kv!(1 int))?.max(1) as usize;
             let chans = (0..block_count).map(|j| sys(be32(d, sys(be32(d, blocks + j * crate::kv!(1 int))?)? + crate::kv!(1 int))?)).collect::<Result<Vec<_>, _>>()?;
             events = (0..frames).map(|f| { let j = (f / per).min(chans.len() - 1); int_at(d, chans[j], f - j * per) }).collect::<Result<_, _>>()?;
@@ -168,7 +168,7 @@ fn track_values(d: &[u8], t: usize, frames: usize, per_block: usize) -> Result<V
     for j in 0..block_count {
         let block = sys(be32(d, blocks + j * crate::kv!(1 int))?)?;
         let mut values = vec![];
-        for c in 0..be32(d, block + crate::kv!(127 int))? as usize {
+        for c in 0..be32(d, block + crate::kv!(128 int))? as usize {
             match channel(d, sys(be32(d, block + crate::kv!(1 int) + c * crate::kv!(1 int))?)?)? {
                 Some(v) => values.extend(v),
                 None => break,
@@ -200,7 +200,7 @@ fn int_at(d: &[u8], ch: usize, frame: usize) -> Result<u32, String> {
         11 => be32(d, ch + crate::kv!(23 int)),
         12 => {
             let (values, n) = (sys(be32(d, ch + crate::kv!(23 int))?)?, be16(d, ch + crate::kv!(55 int))? as usize);
-            let (bits, k, mut pos, mut left) = (sys(be32(d, ch + crate::kv!(54 int))?)?, d[ch + crate::kv!(107 int)] as u32, 0usize, frame as i64);
+            let (bits, k, mut pos, mut left) = (sys(be32(d, ch + crate::kv!(54 int))?)?, d[ch + crate::kv!(108 int)] as u32, 0usize, frame as i64);
             for i in 0..n {
                 left -= rle(d, bits, k, &mut pos)? as i64;
                 if left < 0 {
@@ -251,7 +251,7 @@ impl Animation {
             out.events |= v;
             if f + 1.0 < end && v & crate::kv!(54 int) != 0 {
                 let span = d / (d.mul_add(crate::kv!(27), 1.0) - 1.0);
-                let phase = unit((fctiwz(f) as f32).mul_add(span, span * crate::kv!(78)) / d);
+                let phase = unit((fctiwz(f) as f32).mul_add(span, span * crate::kv!(79)) / d);
                 (end, out.phase) = (f, Some(phase));
             }
             f += 1.0;
@@ -332,7 +332,7 @@ fn channel(d: &[u8], ch: usize) -> Result<Option<Vec<Vec<f32>>>, String> {
         4 => vec![vec![bef(d, ch + crate::kv!(23 int))?]],
         6 => {
             let (data, bits, n) = (sys(be32(d, ch + crate::kv!(23 int))?)?, be32(d, ch + crate::kv!(55 int))? as usize, be32(d, ch + crate::kv!(54 int))? as usize);
-            let (scale, offset) = (bef(d, ch + crate::kv!(127 int))?, bef(d, ch + crate::kv!(107 int))?);
+            let (scale, offset) = (bef(d, ch + crate::kv!(128 int))?, bef(d, ch + crate::kv!(108 int))?);
             if bits == 0 || bits > crate::kv!(7 int) {
                 return Err(format!("Quantized channel with {bits} bits"));
             }

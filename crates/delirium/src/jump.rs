@@ -6,13 +6,13 @@ use crate::prelude::*;
 fn SOFT() -> f32 { delirium_data::kv!(5) }
 #[allow(non_snake_case)]
 #[inline]
-fn CROUCH_LEGS() -> f32 { delirium_data::kv!(84) }
+fn CROUCH_LEGS() -> f32 { delirium_data::kv!(85) }
 #[allow(non_snake_case)]
 #[inline]
 fn SINK() -> f32 { delirium_data::kv!(12) }
 #[allow(non_snake_case)]
 #[inline]
-fn SINK_TIME() -> f32 { delirium_data::kv!(130) }
+fn SINK_TIME() -> f32 { delirium_data::kv!(131) }
 #[allow(non_snake_case)]
 #[inline]
 fn CROUCH_DEPTH() -> f32 { delirium_data::kv!(9) }
@@ -21,25 +21,25 @@ fn CROUCH_DEPTH() -> f32 { delirium_data::kv!(9) }
 fn CROUCH_TIME() -> f32 { delirium_data::kv!(24) }
 #[allow(non_snake_case)]
 #[inline]
-fn PUSH_TIME() -> f32 { delirium_data::kv!(78) }
+fn PUSH_TIME() -> f32 { delirium_data::kv!(79) }
 #[allow(non_snake_case)]
 #[inline]
-fn STIFF() -> f32 { delirium_data::kv!(139) }
+fn STIFF() -> f32 { delirium_data::kv!(140) }
 #[allow(non_snake_case)]
 #[inline]
 fn PUSH_LEGS() -> f32 { delirium_data::kv!(25) }
 #[allow(non_snake_case)]
 #[inline]
-fn APEX() -> f32 { delirium_data::kv!(140) }
+fn APEX() -> f32 { delirium_data::kv!(141) }
 #[allow(non_snake_case)]
 #[inline]
 fn DIVE_APEX() -> f32 { delirium_data::kv!(9) }
 #[allow(non_snake_case)]
 #[inline]
-fn DIVE_SPEED() -> f32 { delirium_data::kv!(186) }
+fn DIVE_SPEED() -> f32 { delirium_data::kv!(187) }
 #[allow(non_snake_case)]
 #[inline]
-fn DIVE_SPIN() -> f32 { delirium_data::kv!(84) }
+fn DIVE_SPIN() -> f32 { delirium_data::kv!(85) }
 #[allow(non_snake_case)]
 #[inline]
 fn NO_TAKEOFF() -> f32 { delirium_data::kv!(24) }
@@ -54,7 +54,7 @@ fn DOWN() -> f32 { delirium_data::kv!(24) }
 fn FLIGHT() -> f32 { delirium_data::kv!(12) }
 #[allow(non_snake_case)]
 #[inline]
-fn OFF() -> f32 { delirium_data::kv!(131) }
+fn OFF() -> f32 { delirium_data::kv!(132) }
 #[allow(non_snake_case)]
 #[inline]
 fn FEET() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [delirium_data::kv!(0 int), delirium_data::kv!(6 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }

@@ -123,7 +123,7 @@ fn img_open(path: &Path, key: &ArchiveKey) -> Result<(Vec<img::Entry>, std::fs::
     let name = path.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
     let mut f = std::fs::File::open(path).map_err(|e| format!("{name}: {e}"))?;
     let mut head = vec![];
-    (&mut f).take(delirium_data::kv!(1 int) << delirium_data::kv!(127 int)).read_to_end(&mut head).map_err(|e| e.to_string())?;
+    (&mut f).take(delirium_data::kv!(1 int) << delirium_data::kv!(128 int)).read_to_end(&mut head).map_err(|e| e.to_string())?;
     Ok((img::read_table(&head, Some(key))?, f))
 }
 
@@ -138,7 +138,7 @@ fn img_read(table: &[img::Entry], f: &mut std::fs::File, name: &str) -> Result<r
     let e = table.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or(format!("{name} not found"))?;
     let mut raw = vec![];
     f.seek(SeekFrom::Start(e.offset)).map_err(|e| e.to_string())?;
-    f.take(e.used_blocks as u64 * delirium_data::kv!(722 int)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
+    f.take(e.used_blocks as u64 * delirium_data::kv!(728 int)).read_to_end(&mut raw).map_err(|e| e.to_string())?;
     resource::parse(&raw)
 }
 
@@ -297,7 +297,7 @@ impl Clips {
         let q = |v: &[f32]| Quat::from_xyzw(v[0], v[1], v[2], v[delirium_data::kv!(0 int)]).normalize();
         let roots: Vec<&anim::Track> = a.tracks.iter().filter(|t| t.bone == 0).collect();
         let identity = |t: &anim::Track| t.kind == anim::BONE_ROTATION
-            && (0..a.frames).all(|k| { let v = t.sample(k); v[0].abs() < delirium_data::kv!(134) && v[1].abs() < delirium_data::kv!(134) && v[2].abs() < delirium_data::kv!(134) });
+            && (0..a.frames).all(|k| { let v = t.sample(k); v[0].abs() < delirium_data::kv!(135) && v[1].abs() < delirium_data::kv!(135) && v[2].abs() < delirium_data::kv!(135) });
         out[0] = self.bind[0];
         if !roots.iter().any(|t| identity(t)) {
             for t in roots {
@@ -328,7 +328,7 @@ impl Clips {
         let start = a.tracks.iter().find(|t| t.kind == anim::MOVER_TRANSLATION).map_or(Vec3::ZERO, |t| Vec3::from_slice(&t.sample(0)));
         let start_turn = a.mover_rotation.as_ref().map_or(Quat::IDENTITY, |t| q(&t.sample(0)));
         let turn = start_turn * turn;
-        out[0] = if turn.xyz().length() > delirium_data::kv!(134) { (start + start_turn * at, turn) } else { self.bind[0] };
+        out[0] = if turn.xyz().length() > delirium_data::kv!(135) { (start + start_turn * at, turn) } else { self.bind[0] };
         out
     }
 
@@ -375,7 +375,7 @@ impl Clips {
         let (s, e, hd) = (w[u].0, w[f].0, w[h].0);
         let (a, b) = (s.distance(e), e.distance(hd));
         let to = target - s;
-        let d = to.length().clamp((a - b).abs() + delirium_data::kv!(51), (a + b) * delirium_data::kv!(268));
+        let d = to.length().clamp((a - b).abs() + delirium_data::kv!(51), (a + b) * delirium_data::kv!(269));
         let dir = to.normalize_or(Vec3::Z);
         let x = (a * a - b * b + d * d) / (2.0 * d);
         let bend = (pole - dir * pole.dot(dir)).normalize_or(Vec3::NEG_Z);
@@ -473,11 +473,11 @@ impl Clips {
         let turn = Quat::from_rotation_z(yaw(lay[0].rotation) - yaw(first[0].rotation));
         let mut body = Transform::from_translation(lay[0].translation - turn * first[0].translation).with_rotation(turn);
         let at = lay[0].translation;
-        if let Some((h, _)) = world.segment(at, at - Vec3::Z * delirium_data::kv!(136)) {
+        if let Some((h, _)) = world.segment(at, at - Vec3::Z * delirium_data::kv!(137)) {
             let up = Vec3::new(h.x, h.y, h.z + 1.0);
-            let r = Vec3::splat(delirium_data::kv!(78));
-            let tris: Vec<[Vec3; 3]> = world.tris_near(up - Vec3::Z * delirium_data::kv!(80) - r, up + r).into_iter().map(|t| t.0).collect();
-            body.translation.z = delirium::collision::sphere_down(&tris, up, delirium_data::kv!(78), delirium_data::kv!(80)).map_or(h.z, |s| s.1.z) + 1.0;
+            let r = Vec3::splat(delirium_data::kv!(79));
+            let tris: Vec<[Vec3; 3]> = world.tris_near(up - Vec3::Z * delirium_data::kv!(81) - r, up + r).into_iter().map(|t| t.0).collect();
+            body.translation.z = delirium::collision::sphere_down(&tris, up, delirium_data::kv!(79), delirium_data::kv!(81)).map_or(h.z, |s| s.1.z) + 1.0;
         }
         Rise { clip: IDLE, hold: true, t: 0.0, body, lay }
     }

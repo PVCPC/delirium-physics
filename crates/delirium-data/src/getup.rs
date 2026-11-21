@@ -17,33 +17,33 @@ pub const GET_UP_BACK: i32 = 6;
 pub mod id {
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INJ_FRONT_TO_DEFAULT() -> i32 { crate::kv!(353 int) }
+    pub fn INJ_FRONT_TO_DEFAULT() -> i32 { crate::kv!(354 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INJ_LSIDE_TO_DEFAULT() -> i32 { crate::kv!(477 int) }
+    pub fn INJ_LSIDE_TO_DEFAULT() -> i32 { crate::kv!(478 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INJ_RSIDE_TO_DEFAULT() -> i32 { crate::kv!(311 int) }
+    pub fn INJ_RSIDE_TO_DEFAULT() -> i32 { crate::kv!(312 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn PREACHER_TRANS() -> i32 { crate::kv!(290 int) }
+    pub fn PREACHER_TRANS() -> i32 { crate::kv!(291 int) }
     #[allow(non_snake_case)]
     #[inline]
-    pub fn SEATED_TRANS() -> i32 { crate::kv!(291 int) }
+    pub fn SEATED_TRANS() -> i32 { crate::kv!(292 int) }
     pub const RECOVER_ABDOMEN: i32 = 0x61;
     pub const RECOVER_BALANCE: i32 = 0x62;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn INJ_BACK_TO_DEFAULT() -> i32 { crate::kv!(300 int) }
+    pub fn INJ_BACK_TO_DEFAULT() -> i32 { crate::kv!(301 int) }
     pub const GET_UP_FAST: i32 = 0x64;
     pub const GET_UP_INJURED: i32 = 0x65;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn GET_UP_NORMAL() -> i32 { crate::kv!(359 int) }
+    pub fn GET_UP_NORMAL() -> i32 { crate::kv!(360 int) }
     pub const GET_UP_SLOW: i32 = 0x67;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn MOVE_IDLE() -> i32 { crate::kv!(189 int) }
+    pub fn MOVE_IDLE() -> i32 { crate::kv!(190 int) }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -57,13 +57,13 @@ pub struct ClipDef {
 
 #[allow(non_snake_case)]
 #[inline]
-fn TRANS() -> u32 { crate::kv!(790 int) }
+fn TRANS() -> u32 { crate::kv!(796 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn UP() -> u32 { crate::kv!(791 int) }
+fn UP() -> u32 { crate::kv!(797 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn IDLE_FLAGS() -> u32 { crate::kv!(792 int) }
+pub fn IDLE_FLAGS() -> u32 { crate::kv!(798 int) }
 
 #[allow(non_snake_case)]
 #[inline]
@@ -75,7 +75,7 @@ pub fn CLIPS() -> &'static [ClipDef; 19] { static V: std::sync::OnceLock<[ClipDe
     ClipDef { group: RAGDOLL_TRANS(), id: id::SEATED_TRANS(), dict: "ragdoll_trans", clip: "seated_trans", flags: TRANS() },
     ClipDef { group: RAGDOLL_TRANS(), id: id::RECOVER_ABDOMEN, dict: "ragdoll_trans", clip: "recover_abdomen", flags: TRANS() },
     ClipDef { group: RAGDOLL_TRANS(), id: id::RECOVER_BALANCE, dict: "ragdoll_trans", clip: "recover_balance", flags: TRANS() },
-    ClipDef { group: RAGDOLL_TRANS_BACK(), id: id::INJ_BACK_TO_DEFAULT(), dict: "ragdoll_trans_back", clip: "inj_back_to_default", flags: crate::kv!(793 int) },
+    ClipDef { group: RAGDOLL_TRANS_BACK(), id: id::INJ_BACK_TO_DEFAULT(), dict: "ragdoll_trans_back", clip: "inj_back_to_default", flags: crate::kv!(799 int) },
     ClipDef { group: GET_UP, id: id::GET_UP_FAST, dict: "get_up", clip: "get_up_fast", flags: UP() },
     ClipDef { group: GET_UP, id: id::GET_UP_INJURED, dict: "get_up", clip: "get_up_injured", flags: UP() },
     ClipDef { group: GET_UP, id: id::GET_UP_NORMAL(), dict: "get_up", clip: "get_up_normal", flags: UP() },
@@ -83,10 +83,10 @@ pub fn CLIPS() -> &'static [ClipDef; 19] { static V: std::sync::OnceLock<[ClipDe
     ClipDef { group: GET_UP_BACK, id: id::GET_UP_FAST, dict: "get_up_back", clip: "get_up_fast", flags: UP() },
     ClipDef { group: GET_UP_BACK, id: id::GET_UP_NORMAL(), dict: "get_up_back", clip: "get_up_normal", flags: UP() },
     ClipDef { group: GET_UP_BACK, id: id::GET_UP_SLOW, dict: "get_up_back", clip: "get_up_slow", flags: UP() },
-    ClipDef { group: crate::kv!(424 int), id: crate::kv!(423 int), dict: "injured", clip: "inj_default_to_rside", flags: crate::kv!(794 int) },
-    ClipDef { group: crate::kv!(424 int), id: crate::kv!(329 int), dict: "injured", clip: "inj_rside_idle", flags: crate::kv!(795 int) },
-    ClipDef { group: crate::kv!(424 int), id: crate::kv!(372 int), dict: "injured", clip: "inj_default_to_back", flags: crate::kv!(794 int) },
-    ClipDef { group: crate::kv!(424 int), id: crate::kv!(410 int), dict: "injured", clip: "inj_back_idle", flags: crate::kv!(795 int) },
+    ClipDef { group: crate::kv!(425 int), id: crate::kv!(424 int), dict: "injured", clip: "inj_default_to_rside", flags: crate::kv!(800 int) },
+    ClipDef { group: crate::kv!(425 int), id: crate::kv!(330 int), dict: "injured", clip: "inj_rside_idle", flags: crate::kv!(801 int) },
+    ClipDef { group: crate::kv!(425 int), id: crate::kv!(373 int), dict: "injured", clip: "inj_default_to_back", flags: crate::kv!(800 int) },
+    ClipDef { group: crate::kv!(425 int), id: crate::kv!(411 int), dict: "injured", clip: "inj_back_idle", flags: crate::kv!(801 int) },
 ] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn clip_def(group: i32, id: i32) -> Option<&'static ClipDef> {
@@ -96,20 +96,20 @@ pub fn clip_def(group: i32, id: i32) -> Option<&'static ClipDef> {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SKELETON_BONES() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [crate::kv!(364 int), crate::kv!(287 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SKELETON_BONES() -> &'static [usize; 2] { static V: std::sync::OnceLock<[usize; 2]> = std::sync::OnceLock::new(); let f = || -> [usize; 2] { [crate::kv!(365 int), crate::kv!(288 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 #[allow(non_snake_case)]
 #[inline]
-fn PI() -> f32 { crate::kv!(774 f32) }
+fn PI() -> f32 { crate::kv!(780 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn QUARTER_PI() -> f32 { crate::kv!(773 f32) }
+fn QUARTER_PI() -> f32 { crate::kv!(779 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn TWO_PI() -> f32 { crate::kv!(619 f32) }
+fn TWO_PI() -> f32 { crate::kv!(625 f32) }
 #[allow(non_snake_case)]
 #[inline]
-fn HALF_PI() -> f32 { crate::kv!(796 f32) }
+fn HALF_PI() -> f32 { crate::kv!(802 f32) }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PointSet {
@@ -233,7 +233,7 @@ pub mod after {
     pub const HIGH_FALL: u32 = 0x83C;
     #[allow(non_snake_case)]
     #[inline]
-    pub fn BALANCE() -> u32 { crate::kv!(797 int) }
+    pub fn BALANCE() -> u32 { crate::kv!(803 int) }
     pub const EXPLOSION: u32 = 0x83E;
 }
 
@@ -255,7 +255,7 @@ impl Made {
     }
 
     pub fn scripted(dictionary: u32, clip: u32, vehicle: bool, offset: [f32; 3]) -> Made {
-        Made { named_clip: Some((dictionary, clip)), vehicle, offset, ..Made::plain(crate::kv!(104 int), -1) }
+        Made { named_clip: Some((dictionary, clip)), vehicle, offset, ..Made::plain(crate::kv!(105 int), -1) }
     }
 }
 
@@ -271,13 +271,13 @@ pub fn made(a: &After, rand: &mut Rand) -> Made {
     let mut want = id::GET_UP_NORMAL();
     if a.player {
         want = id::GET_UP_FAST;
-        if a.wanted && !a.network && a.health < crate::kv!(587) && matches!(a.prev, after::EXPLOSION | after::HIGH_FALL) {
+        if a.wanted && !a.network && a.health < crate::kv!(593) && matches!(a.prev, after::EXPLOSION | after::HIGH_FALL) {
             want = id::GET_UP_NORMAL();
         }
     } else if a.prev != 0 {
         if a.health < crate::kv!(26) {
             want = id::GET_UP_INJURED;
-        } else if matches!(a.prev, after::SHOT | after::EXPLOSION) || a.health < crate::kv!(249) || a.severity > crate::kv!(25) {
+        } else if matches!(a.prev, after::SHOT | after::EXPLOSION) || a.health < crate::kv!(250) || a.severity > crate::kv!(25) {
             want = id::GET_UP_SLOW;
         } else if a.agility > crate::kv!(0 int) && a.prev == after::BALANCE() && rand.float_in_range(0.0, 1.0) > 0.5 {
             want = id::GET_UP_FAST;
@@ -285,7 +285,7 @@ pub fn made(a: &After, rand: &mut Rand) -> Made {
     }
     let mut delay = 0;
     if a.severity > crate::kv!(25) && !a.player {
-        delay = if a.agility < crate::kv!(0 int) { rand.int_in_range(crate::kv!(798 int), crate::kv!(799 int)) } else { rand.int_in_range(crate::kv!(43 int), crate::kv!(798 int)) };
+        delay = if a.agility < crate::kv!(0 int) { rand.int_in_range(crate::kv!(804 int), crate::kv!(805 int)) } else { rand.int_in_range(crate::kv!(43 int), crate::kv!(804 int)) };
     }
     Made { state, group, id, want, delay, named_clip: None, vehicle: false, offset: [0.0; 3] }
 }
@@ -420,7 +420,7 @@ impl Frame {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NM_FADE() -> f32 { -crate::kv!(84) }
+pub fn NM_FADE() -> f32 { -crate::kv!(85) }
 
 #[derive(Clone, Debug)]
 pub struct Blender {
@@ -476,8 +476,8 @@ impl Blender {
         p.active = true;
         p.playing = true;
         p.loops = info.flags & crate::kv!(7 int) != 0;
-        p.blend_out_at_end = info.flags & crate::kv!(712 int) != 0;
-        p.remove_blended_out = info.flags & crate::kv!(676 int) != 0;
+        p.blend_out_at_end = info.flags & crate::kv!(718 int) != 0;
+        p.remove_blended_out = info.flags & crate::kv!(682 int) != 0;
         p.set_blend(speed);
         self.players.push(Playing { group, id, player: p, mine: true });
         true
@@ -542,7 +542,7 @@ pub fn response_gives_way(kind: u32) -> bool {
 }
 
 pub fn urgent(event: u32, response8: u32, response12: u32) -> bool {
-    event == crate::kv!(306 int) || response_gives_way(if response8 != 0 { response8 } else { response12 })
+    event == crate::kv!(307 int) || response_gives_way(if response8 != 0 { response8 } else { response12 })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -611,9 +611,9 @@ impl BlendFromNm {
     }
 
     fn play_named(&mut self, ped: &dyn Ped) -> bool {
-        let flags = if self.vehicle { crate::kv!(676 int) } else { crate::kv!(800 int) };
+        let flags = if self.vehicle { crate::kv!(682 int) } else { crate::kv!(806 int) };
         self.named_clip.and_then(|(d, c)| ped.named_clip(d, c))
-            .is_some_and(|info| self.blender.play_info(ClipInfo { flags, ..info }, crate::kv!(82), -1, -1))
+            .is_some_and(|info| self.blender.play_info(ClipInfo { flags, ..info }, crate::kv!(83), -1, -1))
     }
 
     pub fn player(&self) -> Option<&Playing> {
@@ -646,7 +646,7 @@ impl BlendFromNm {
             return true;
         }
         if self.delay != 0 && player {
-            let ms = (ped.dt() * crate::kv!(82)) as i32;
+            let ms = (ped.dt() * crate::kv!(83)) as i32;
             if self.delay > ms {
                 self.delay -= ms;
             } else {
@@ -715,7 +715,7 @@ impl BlendFromNm {
         self.blend_out_at = duration - if ped.is_player() { crate::kv!(10) } else { crate::kv!(24) };
         if ped.is_player() && self.id == id::GET_UP_FAST && ped.network() {
             if let Some(p) = self.player_mut() {
-                p.player.rate = crate::kv!(138);
+                p.player.rate = crate::kv!(139);
             }
         }
     }
@@ -742,8 +742,8 @@ impl BlendFromNm {
     }
 
     fn look(&mut self, ped: &mut dyn Ped) {
-        self.timer += (ped.dt() * crate::kv!(82)) as i32;
-        let limit = if ped.is_player() { crate::kv!(43 int) - crate::kv!(801 int) } else { crate::kv!(43 int) };
+        self.timer += (ped.dt() * crate::kv!(83)) as i32;
+        let limit = if ped.is_player() { crate::kv!(43 int) - crate::kv!(807 int) } else { crate::kv!(43 int) };
         if self.timer <= limit {
             return;
         }
@@ -763,7 +763,7 @@ impl BlendFromNm {
         }
         if !self.vehicle && ped.blocked(&at) {
             let radius = if ped.near_player() {
-                if self.waited > 0 { crate::kv!(140) } else { crate::kv!(17) }
+                if self.waited > 0 { crate::kv!(141) } else { crate::kv!(17) }
             } else if self.id == id::SEATED_TRANS() {
                 if self.waited > 0 { crate::kv!(20) } else { 0.5 }
             } else {
@@ -784,7 +784,7 @@ impl BlendFromNm {
             }
             if !found {
                 self.waited += crate::kv!(43 int);
-                let limit = if ped.network() { crate::kv!(42 int) } else { crate::kv!(799 int) };
+                let limit = if ped.network() { crate::kv!(42 int) } else { crate::kv!(805 int) };
                 if !(ped.near_player() && self.waited > limit) {
                     if !self.relaxed {
                         ped.relax();
@@ -793,7 +793,7 @@ impl BlendFromNm {
                     return;
                 }
                 let flags = stand_flags(ped);
-                if let Some(spot) = ped.stand_where_he_can(at.at, flags).or_else(|| ped.node_place(at.at, crate::kv!(79))) {
+                if let Some(spot) = ped.stand_where_he_can(at.at, flags).or_else(|| ped.node_place(at.at, crate::kv!(80))) {
                     at.at = spot;
                 }
                 ped.gave_up();
@@ -806,7 +806,7 @@ impl BlendFromNm {
         self.blender.frame = Frame { weight: 1.0, rate: NM_FADE(), vel: [0.0; 2] };
         self.placed = Some(at);
         if self.id != -1 && self.group != -1 {
-            if self.blender.play(ped, crate::kv!(82), self.group, self.id) {
+            if self.blender.play(ped, crate::kv!(83), self.group, self.id) {
                 if (self.group == RAGDOLL_TRANS() && self.id != id::RECOVER_ABDOMEN && self.id != id::SEATED_TRANS()) || self.group == RAGDOLL_TRANS_BACK() {
                     self.follow_up = true;
                 }
@@ -814,7 +814,7 @@ impl BlendFromNm {
                 let network_player = want == id::GET_UP_FAST && ped.network() && ped.is_player();
                 if let Some(p) = self.player_mut() {
                     match want {
-                        id::GET_UP_FAST => p.player.rate = if network_player { crate::kv!(136) } else { crate::kv!(138) },
+                        id::GET_UP_FAST => p.player.rate = if network_player { crate::kv!(137) } else { crate::kv!(139) },
                         id::GET_UP_INJURED => p.player.rate = 0.5,
                         id::GET_UP_SLOW => p.player.rate = crate::kv!(18),
                         _ => {}
@@ -853,7 +853,7 @@ impl BlendFromNm {
         let list: Vec<(i32, i32)> = if self.named {
             vec![(self.group, self.id)]
         } else if self.state == crate::kv!(2 int) {
-            vec![(crate::kv!(424 int), crate::kv!(329 int)), (crate::kv!(424 int), crate::kv!(410 int)), (RAGDOLL_TRANS(), id::INJ_LSIDE_TO_DEFAULT())]
+            vec![(crate::kv!(425 int), crate::kv!(330 int)), (crate::kv!(425 int), crate::kv!(411 int)), (RAGDOLL_TRANS(), id::INJ_LSIDE_TO_DEFAULT())]
         } else {
             let mut l = vec![];
             if !ped.ground_under_root() {
@@ -880,9 +880,9 @@ impl BlendFromNm {
 }
 
 pub fn stand_flags(ped: &dyn Ped) -> u32 {
-    let mut f = if !ped.held() && !ped.stand_helper() { crate::kv!(802 int) } else { crate::kv!(803 int) };
+    let mut f = if !ped.held() && !ped.stand_helper() { crate::kv!(808 int) } else { crate::kv!(809 int) };
     if !ped.on_mover() {
-        f |= crate::kv!(188 int);
+        f |= crate::kv!(189 int);
     }
     f
 }
@@ -900,7 +900,7 @@ pub trait NodeSearch {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NODE_STEP() -> &'static [f32; 3] { static V: std::sync::OnceLock<[f32; 3]> = std::sync::OnceLock::new(); let f = || -> [f32; 3] { [crate::kv!(193), crate::kv!(193), crate::kv!(804)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn NODE_STEP() -> &'static [f32; 3] { static V: std::sync::OnceLock<[f32; 3]> = std::sync::OnceLock::new(); let f = || -> [f32; 3] { [crate::kv!(194), crate::kv!(194), crate::kv!(810)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn node_place(w: &dyn NodeSearch, at: [f32; 3], radius: f32) -> Option<[f32; 3]> {
     (0..crate::kv!(36 int)).find_map(|n| {
@@ -926,12 +926,12 @@ pub fn stick_length(up: f32, side: f32) -> f32 {
 }
 
 pub fn get_up_rate(draw: u32) -> f32 {
-    (draw as i32 as f32 * crate::kv!(100 f32)).mul_add(crate::kv!(805 f32), crate::kv!(745 f32))
+    (draw as i32 as f32 * crate::kv!(101 f32)).mul_add(crate::kv!(811 f32), crate::kv!(751 f32))
 }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SIMPLE_TASK() -> u32 { crate::kv!(476 int) }
+pub fn SIMPLE_TASK() -> u32 { crate::kv!(477 int) }
 
 #[allow(non_snake_case)]
 #[inline]
@@ -1067,8 +1067,8 @@ impl SimpleGetUp {
 
     pub fn make_abortable(&mut self, urgency: u8, event: Option<Event205>) -> bool {
         let rate = match urgency {
-            2 => -crate::kv!(82),
-            1 if event.is_none_or(|e| e.priority > crate::kv!(468 int) || e.kind == crate::kv!(306 int) || e.ends_tasks || (e.kind == crate::kv!(104 int) && e.age_ms <= crate::kv!(5) * e.frame_ms)) => -crate::kv!(65),
+            2 => -crate::kv!(83),
+            1 if event.is_none_or(|e| e.priority > crate::kv!(469 int) || e.kind == crate::kv!(307 int) || e.ends_tasks || (e.kind == crate::kv!(105 int) && e.age_ms <= crate::kv!(5) * e.frame_ms)) => -crate::kv!(65),
             _ => return false,
         };
         self.release(rate);

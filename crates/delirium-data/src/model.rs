@@ -39,8 +39,8 @@ fn be16(d: &[u8], at: usize) -> Result<u16, String> {
 }
 
 pub(crate) fn ptr(r: &Resource, p: u32) -> Result<usize, String> {
-    let off = (p & crate::kv!(86 int)) as usize;
-    match p >> crate::kv!(85 int) {
+    let off = (p & crate::kv!(87 int)) as usize;
+    match p >> crate::kv!(86 int) {
         5 => Ok(off),
         6 => Ok(system_size(r.flags) + off),
         _ => Err(format!("Bad resource pointer {p:08X}")),
@@ -146,7 +146,7 @@ fn params_of(shaders: &[Shader]) -> Vec<ShaderParams> {
 }
 
 pub fn drawables(r: &Resource) -> Result<Vec<usize>, String> {
-    if be32(&r.data, 0)? & crate::kv!(749 int) == crate::kv!(932 int) { array(r, crate::kv!(107 int)) } else { Ok(vec![0]) }
+    if be32(&r.data, 0)? & crate::kv!(755 int) == crate::kv!(938 int) { array(r, crate::kv!(108 int)) } else { Ok(vec![0]) }
 }
 
 pub fn declarations(r: &Resource) -> Result<Vec<VertexFormat>, String> {
@@ -183,7 +183,7 @@ pub fn format_from_record(b: &[u8; 16]) -> VertexFormat {
 
 fn geometries(r: &Resource, drawable: usize) -> Result<Vec<(usize, usize)>, String> {
     let d = &r.data;
-    let lod = be32(d, drawable + crate::kv!(188 int))?;
+    let lod = be32(d, drawable + crate::kv!(189 int))?;
     if lod == 0 {
         return Ok(vec![]);
     }
@@ -198,22 +198,22 @@ fn geometries(r: &Resource, drawable: usize) -> Result<Vec<(usize, usize)>, Stri
 }
 
 fn half(h: u16) -> f32 {
-    let (sign, exp, mant) = ((h >> crate::kv!(189 int)) as u32, ((h >> crate::kv!(81 int)) & crate::kv!(462 int)) as i32, (h & crate::kv!(933 int)) as f32);
+    let (sign, exp, mant) = ((h >> crate::kv!(190 int)) as u32, ((h >> crate::kv!(82 int)) & crate::kv!(463 int)) as i32, (h & crate::kv!(939 int)) as f32);
     let v = match exp {
-        0 => mant * 2f32.powi(-crate::kv!(107 int)),
+        0 => mant * 2f32.powi(-crate::kv!(108 int)),
         31 => if mant == 0.0 { f32::INFINITY } else { f32::NAN },
-        e => (1.0 + mant / crate::kv!(789)) * 2f32.powi(e - crate::kv!(189 int)),
+        e => (1.0 + mant / crate::kv!(795)) * 2f32.powi(e - crate::kv!(190 int)),
     };
     if sign == 1 { -v } else { v }
 }
 
 fn dec3n(v: u32) -> [f32; 3] {
-    let s = |x: u32| { let x = (x & crate::kv!(933 int)) as i32; (if x & crate::kv!(182 int) != 0 { x - crate::kv!(183 int) } else { x }) as f32 / crate::kv!(934) };
-    [s(v), s(v >> crate::kv!(81 int)), s(v >> crate::kv!(127 int))]
+    let s = |x: u32| { let x = (x & crate::kv!(939 int)) as i32; (if x & crate::kv!(183 int) != 0 { x - crate::kv!(184 int) } else { x }) as f32 / crate::kv!(940) };
+    [s(v), s(v >> crate::kv!(82 int)), s(v >> crate::kv!(128 int))]
 }
 
 pub fn dictionary(r: &Resource) -> Result<Vec<(u32, usize)>, String> {
-    let entries = array(r, crate::kv!(107 int))?;
+    let entries = array(r, crate::kv!(108 int))?;
     if entries.is_empty() {
         return Ok(vec![]);
     }
@@ -226,37 +226,37 @@ pub fn embedded_texture_dictionary(r: &Resource, at: usize) -> Vec<Texture> {
 }
 
 pub fn fragment_root(r: &Resource) -> Result<usize, String> {
-    ptr(r, be32(&r.data, crate::kv!(97 int))?)
+    ptr(r, be32(&r.data, crate::kv!(98 int))?)
 }
 
 pub fn fragment_inertia(r: &Resource) -> Result<[f32; 3], String> {
     let f = |at: usize| be32(&r.data, at).map(f32::from_bits);
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(398 int))?)?, *r.data.get(crate::kv!(935 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(399 int))?)?, *r.data.get(crate::kv!(941 int)).ok_or("Truncated fragment")? as usize);
     let mut total = 0.0;
     for i in 0..count {
         total += f(ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)? + crate::kv!(1 int))?;
     }
-    let arch = ptr(r, be32(&r.data, crate::kv!(92 int))?)?;
-    Ok([f(arch + crate::kv!(93 int))? / total, f(arch + crate::kv!(385 int))? / total, f(arch + crate::kv!(323 int))? / total])
+    let arch = ptr(r, be32(&r.data, crate::kv!(93 int))?)?;
+    Ok([f(arch + crate::kv!(94 int))? / total, f(arch + crate::kv!(386 int))? / total, f(arch + crate::kv!(324 int))? / total])
 }
 
 pub fn fragment_damping(r: &Resource) -> Result<[f32; 6], String> {
     let mut out = [0.0; 6];
     for (i, d) in out.iter_mut().enumerate() {
-        *d = f32::from_bits(be32(&r.data, crate::kv!(364 int) + i * crate::kv!(54 int))?);
+        *d = f32::from_bits(be32(&r.data, crate::kv!(365 int) + i * crate::kv!(54 int))?);
     }
     Ok(out)
 }
 
 pub fn read_drawable(r: &Resource, drawable: usize) -> Result<Vec<Mesh>, String> {
-    if r.kind != crate::kv!(437 int) {
+    if r.kind != crate::kv!(438 int) {
         return meshes(r, drawable, drawable);
     }
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(398 int))?)?, *r.data.get(crate::kv!(654 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(399 int))?)?, *r.data.get(crate::kv!(660 int)).ok_or("Truncated fragment")? as usize);
     let mut out = meshes(r, drawable, drawable)?;
     for i in 0..count {
         let child = ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)?;
-        match be32(&r.data, child + crate::kv!(304 int))? {
+        match be32(&r.data, child + crate::kv!(305 int))? {
             0 => {}
             p => out.extend(meshes(r, ptr(r, p)?, drawable)?),
         }
@@ -265,11 +265,11 @@ pub fn read_drawable(r: &Resource, drawable: usize) -> Result<Vec<Mesh>, String>
 }
 
 pub fn fragment_children(r: &Resource) -> Result<Vec<(usize, usize)>, String> {
-    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(398 int))?)?, *r.data.get(crate::kv!(654 int)).ok_or("Truncated fragment")? as usize);
+    let (list, count) = (ptr(r, be32(&r.data, crate::kv!(399 int))?)?, *r.data.get(crate::kv!(660 int)).ok_or("Truncated fragment")? as usize);
     let mut out = vec![];
     for i in 0..count {
         let child = ptr(r, be32(&r.data, list + i * crate::kv!(1 int))?)?;
-        match be32(&r.data, child + crate::kv!(87 int))? {
+        match be32(&r.data, child + crate::kv!(88 int))? {
             0 => {}
             p => out.push((be16(&r.data, child + crate::kv!(56 int))? as usize, ptr(r, p)?)),
         }
@@ -302,7 +302,7 @@ pub struct LightAttr {
 }
 
 pub fn lights(r: &Resource, drawable: usize) -> Result<Vec<LightAttr>, String> {
-    let at = if r.kind == crate::kv!(437 int) { crate::kv!(638 int) } else { drawable + crate::kv!(257 int) };
+    let at = if r.kind == crate::kv!(438 int) { crate::kv!(644 int) } else { drawable + crate::kv!(258 int) };
     let d = &r.data;
     let count = be16(d, at + crate::kv!(1 int))? as usize;
     if count == 0 {
@@ -312,29 +312,29 @@ pub fn lights(r: &Resource, drawable: usize) -> Result<Vec<LightAttr>, String> {
     let f = |a: usize| be32(d, a).map(f32::from_bits);
     let v3 = |a: usize| -> Result<[f32; 3], String> { Ok([f(a)?, f(a + crate::kv!(1 int))?, f(a + crate::kv!(23 int))?]) };
     (0..count).map(|i| {
-        let s = list + i * crate::kv!(430 int);
-        let b = d.get(s..s + crate::kv!(430 int)).ok_or("Truncated light")?;
+        let s = list + i * crate::kv!(431 int);
+        let b = d.get(s..s + crate::kv!(431 int)).ok_or("Truncated light")?;
         Ok(LightAttr {
             position: v3(s + crate::kv!(1 int))?,
             direction: v3(s + crate::kv!(54 int))?,
-            tangent: v3(s + crate::kv!(85 int))?,
-            colour: [b[crate::kv!(95 int)], b[crate::kv!(354 int)], b[crate::kv!(407 int)]],
-            corona_intensity: f(s + crate::kv!(415 int))?,
-            volume_intensity: f(s + crate::kv!(93 int))?,
-            volume_size: f(s + crate::kv!(385 int))?,
-            falloff: f(s + crate::kv!(323 int))?,
-            intensity: f(s + crate::kv!(347 int))?,
-            corona_size: f(s + crate::kv!(188 int))?,
-            inner_cone: f(s + crate::kv!(330 int))?,
-            outer_cone: f(s + crate::kv!(482 int))?,
-            flags: be32(d, s + crate::kv!(367 int))?,
-            texture: be32(d, s + crate::kv!(468 int))?,
-            flashiness: b[crate::kv!(320 int)],
-            kind: b[crate::kv!(286 int)],
-            corona_scale: f(s + crate::kv!(353 int))?,
-            light_fade: f(s + crate::kv!(291 int))?,
-            volume_fade: f(s + crate::kv!(203 int))?,
-            bone: be32(d, s + crate::kv!(438 int))? as i32,
+            tangent: v3(s + crate::kv!(86 int))?,
+            colour: [b[crate::kv!(96 int)], b[crate::kv!(355 int)], b[crate::kv!(408 int)]],
+            corona_intensity: f(s + crate::kv!(416 int))?,
+            volume_intensity: f(s + crate::kv!(94 int))?,
+            volume_size: f(s + crate::kv!(386 int))?,
+            falloff: f(s + crate::kv!(324 int))?,
+            intensity: f(s + crate::kv!(348 int))?,
+            corona_size: f(s + crate::kv!(189 int))?,
+            inner_cone: f(s + crate::kv!(331 int))?,
+            outer_cone: f(s + crate::kv!(483 int))?,
+            flags: be32(d, s + crate::kv!(368 int))?,
+            texture: be32(d, s + crate::kv!(469 int))?,
+            flashiness: b[crate::kv!(321 int)],
+            kind: b[crate::kv!(287 int)],
+            corona_scale: f(s + crate::kv!(354 int))?,
+            light_fade: f(s + crate::kv!(292 int))?,
+            volume_fade: f(s + crate::kv!(204 int))?,
+            bone: be32(d, s + crate::kv!(439 int))? as i32,
         })
     }).collect()
 }

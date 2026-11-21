@@ -3,7 +3,7 @@ use crate::mathrt;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn COUNT() -> usize { crate::kv!(93 int) }
+pub fn COUNT() -> usize { crate::kv!(94 int) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn LEADER() -> usize { crate::kv!(22 int) }
@@ -170,9 +170,9 @@ impl<P: Copy + PartialEq> Groups<P> {
 
     pub fn create(&mut self, kind: u8) -> Option<usize> {
         let range = match kind {
-            0 => crate::kv!(7 int)..crate::kv!(93 int),
+            0 => crate::kv!(7 int)..crate::kv!(94 int),
             1 | 2 => 0..crate::kv!(7 int),
-            _ => 0..crate::kv!(93 int),
+            _ => 0..crate::kv!(94 int),
         };
         let i = range.into_iter().find(|&i| !self.0[i].in_use)?;
         let g = &mut self.0[i];
@@ -226,7 +226,7 @@ impl<P: Copy + PartialEq> Groups<P> {
 
     pub fn handle(&mut self, i: usize) -> i32 {
         let g = &mut self.0[i];
-        g.generation = if g.generation >= crate::kv!(941 int) { 1 } else { g.generation + 1 };
+        g.generation = if g.generation >= crate::kv!(947 int) { 1 } else { g.generation + 1 };
         (i32::from(g.generation) << crate::kv!(54 int)) | (i as i32 & crate::kv!(53 int))
     }
 
@@ -322,19 +322,19 @@ pub fn script_formation(n: i32) -> Option<u8> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn TURNS() -> u32 { crate::kv!(942 int) }
+fn TURNS() -> u32 { crate::kv!(948 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_LEADER() -> u32 { crate::kv!(943 int) }
+fn FACE_LEADER() -> u32 { crate::kv!(949 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn FACE_AWAY() -> u32 { crate::kv!(824 int) }
+fn FACE_AWAY() -> u32 { crate::kv!(830 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn LEAD() -> u32 { crate::kv!(817 int) }
+pub fn LEAD() -> u32 { crate::kv!(823 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CROWD() -> u32 { crate::kv!(819 int) }
+pub fn CROWD() -> u32 { crate::kv!(825 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Place {
@@ -361,15 +361,15 @@ pub struct Formation {
 impl Formation {
     pub fn new(kind: u8) -> Formation {
         let (spacing, flags) = match kind {
-            LOOSE => (crate::kv!(33), crate::kv!(944 int)),
-            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(945 int)),
-            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(946 int)),
-            FOLLOW_IN_LINE => (2.0, crate::kv!(947 int)),
-            _ => (2.0, crate::kv!(948 int)),
+            LOOSE => (crate::kv!(33), crate::kv!(950 int)),
+            SURROUND_FACING_INWARDS => (crate::kv!(5), crate::kv!(951 int)),
+            SURROUND_FACING_AHEAD => (crate::kv!(5), crate::kv!(952 int)),
+            FOLLOW_IN_LINE => (2.0, crate::kv!(953 int)),
+            _ => (2.0, crate::kv!(954 int)),
         };
-        let catch_up = if kind == FOLLOW_IN_LINE { [1.0, crate::kv!(64)] } else { [crate::kv!(5), crate::kv!(139)] };
+        let catch_up = if kind == FOLLOW_IN_LINE { [1.0, crate::kv!(64)] } else { [crate::kv!(5), crate::kv!(140)] };
         Formation { kind, spacing, catch_up, flags, places: Default::default(), leader: Place::default(), count: 0,
-            last: [crate::kv!(949 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
+            last: [crate::kv!(955 f32); 3], trail: Default::default(), trail_heading: [0.0; 8],
             trail_near: [0.0; 8] }
     }
 
@@ -393,7 +393,7 @@ impl Formation {
     }
 
     fn surround(&mut self, l: &Member, followers: &[Option<Member>; 7]) {
-        let step = crate::kv!(619 f32) / followers.iter().flatten().count() as f32;
+        let step = crate::kv!(625 f32) / followers.iter().flatten().count() as f32;
         let mut a = 0.0f32;
         for (place, _) in self.places.iter_mut().zip(followers).filter(|(_, m)| m.is_some()) {
             let at = if self.flags & TURNS() != 0 { wrap(l.facing + a) } else { a };
@@ -477,7 +477,7 @@ impl Formation {
         if gone > crate::kv!(26) {
             (self.trail, self.trail_heading, self.trail_near) = ([l.pos; 8], [l.heading; 8], [crate::kv!(35); 8]);
             self.last = l.pos;
-            (d, gone) = ([0.0; 3], crate::kv!(134));
+            (d, gone) = ([0.0; 3], crate::kv!(135));
         }
         if gone > s2 {
             self.trail.copy_within(0..crate::kv!(22 int), 1);
@@ -489,7 +489,7 @@ impl Formation {
             self.trail_heading[0] =
                 if v[0].mul_add(v[0], v[1] * v[1]) > crate::kv!(68) { heading_between(v[0], v[1], 0.0, 0.0) } else { l.heading };
             self.last = l.pos;
-            (d, gone) = ([0.0; 3], crate::kv!(134));
+            (d, gone) = ([0.0; 3], crate::kv!(135));
         }
         let speed = l.vel[2].mul_add(l.vel[2], l.vel[0].mul_add(l.vel[0], l.vel[1] * l.vel[1])).sqrt();
         if gone != 0.0 || n != self.count {
@@ -501,7 +501,7 @@ impl Formation {
                     let (a, b) = (self.trail[m], self.trail[m + 1]);
                     let seg = sub(a, b);
                     let mut p: [f32; 3] = std::array::from_fn(|k| seg[k].mul_add(frac, b[k]));
-                    if speed > crate::kv!(78) {
+                    if speed > crate::kv!(79) {
                         p = std::array::from_fn(|k| seg[k].mul_add(0.5, p[k]));
                     }
                     self.places[i] = Place { pos: p, heading: heading_between(seg[0], seg[1], 0.0, 0.0),
@@ -518,7 +518,7 @@ pub fn heading_between(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     const H: f32 = std::f32::consts::FRAC_PI_2;
     let (dx, mut dy) = (x2 - x1, y2 - y1);
     if dy == 0.0 {
-        dy = crate::kv!(72);
+        dy = crate::kv!(73);
     }
     let a = mathrt::atan2((dx / dy) as f64, 1.0) as f32;
     match (dx > 0.0, dy > 0.0) {

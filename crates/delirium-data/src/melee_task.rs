@@ -3,7 +3,7 @@ use crate::rng::Rand;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KIND() -> u32 { crate::kv!(928 int) }
+pub fn KIND() -> u32 { crate::kv!(934 int) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -15,10 +15,10 @@ pub enum Step {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_BEYOND() -> f32 { crate::kv!(504) }
+pub fn SEEK_BEYOND() -> f32 { crate::kv!(505) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_NEAR() -> f32 { crate::kv!(929) }
+pub fn SEEK_NEAR() -> f32 { crate::kv!(935) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn ROUTE_WITHIN() -> f32 { crate::kv!(12) }
@@ -28,7 +28,7 @@ pub fn ROUTE_PAST() -> f32 { crate::kv!(64) }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn SEEK_STAGES() -> &'static [(f32, f32); 3] { static V: std::sync::OnceLock<[(f32, f32); 3]> = std::sync::OnceLock::new(); let f = || -> [(f32, f32); 3] { [(SEEK_NEAR(), crate::kv!(128)), (crate::kv!(9), crate::kv!(140)), (crate::kv!(28), crate::kv!(80))] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn SEEK_STAGES() -> &'static [(f32, f32); 3] { static V: std::sync::OnceLock<[(f32, f32); 3]> = std::sync::OnceLock::new(); let f = || -> [(f32, f32); 3] { [(SEEK_NEAR(), crate::kv!(129)), (crate::kv!(9), crate::kv!(141)), (crate::kv!(28), crate::kv!(81))] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn SEEK_LOOK_MS() -> u32 { crate::kv!(43 int) }
@@ -40,7 +40,7 @@ pub fn SEEK_FIRST_LOOK_MS() -> u32 { crate::kv!(40 int) }
 fn AWAY_BEYOND() -> f32 { crate::kv!(33) }
 #[allow(non_snake_case)]
 #[inline]
-fn AWAY_WITHIN() -> f32 { crate::kv!(80) }
+fn AWAY_WITHIN() -> f32 { crate::kv!(81) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SeekStage {
@@ -104,7 +104,7 @@ pub fn step(target_in_vehicle: bool, target_boarding: bool, ped: [f32; 3], targe
 
 #[allow(non_snake_case)]
 #[inline]
-fn NEAR() -> f32 { crate::kv!(124) }
+fn NEAR() -> f32 { crate::kv!(125) }
 #[allow(non_snake_case)]
 #[inline]
 fn FAR() -> f32 { crate::kv!(5) }
@@ -119,10 +119,10 @@ fn FLOOR() -> f32 { crate::kv!(51) }
 fn TOP() -> f32 { crate::kv!(18) }
 #[allow(non_snake_case)]
 #[inline]
-fn PLAYING() -> f32 { crate::kv!(200) }
+fn PLAYING() -> f32 { crate::kv!(201) }
 #[allow(non_snake_case)]
 #[inline]
-fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(930 int)) }
+fn WAIT_MS() -> (i32, i32) { (crate::kv!(43 int), crate::kv!(936 int)) }
 
 pub fn chance(dist: f32, playing: bool) -> f32 {
     if playing {
@@ -137,12 +137,12 @@ pub fn wants_move(left: Option<f32>, dist: f32, playing: bool, roll: f32, dt: f3
 }
 
 pub fn wait(rng: &mut Rand) -> f32 {
-    rng.int_in_range(WAIT_MS().0, WAIT_MS().1) as f32 / crate::kv!(82)
+    rng.int_in_range(WAIT_MS().0, WAIT_MS().1) as f32 / crate::kv!(83)
 }
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn TURN_SPEED() -> f32 { crate::kv!(931) }
+pub fn TURN_SPEED() -> f32 { crate::kv!(937) }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Keep {
@@ -156,13 +156,13 @@ pub struct Keep {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP_WAITING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: crate::kv!(33), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KEEP_WAITING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: crate::kv!(33), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(79) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 pub fn KEEP_FIGHTING() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: 1.0, dead: crate::kv!(60), far: crate::kv!(12), ..(*KEEP_WAITING()) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-pub fn KEEP_OFF() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: crate::kv!(491), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(78) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn KEEP_OFF() -> &'static Keep { static V: std::sync::OnceLock<Keep> = std::sync::OnceLock::new(); let f = || -> Keep { Keep { keep: crate::kv!(492), dead: crate::kv!(60), far: crate::kv!(5), far_pow: 2.0, close_pow: 1.0, least: crate::kv!(79) } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn CIRCLE() -> f32 { crate::kv!(17) }
@@ -281,7 +281,7 @@ pub struct Drift {
 
 #[allow(non_snake_case)]
 #[inline]
-fn DRIFT_LEAST() -> f32 { crate::kv!(78) }
+fn DRIFT_LEAST() -> f32 { crate::kv!(79) }
 const DRIFT_RATIO: f32 = 2.0;
 const DRIFT_FALL: f32 = 1.0;
 

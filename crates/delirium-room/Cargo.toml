@@ -7,9 +7,13 @@ publish.workspace = true
 
 [dependencies]
 mimalloc = { version = "0.1", default-features = false }
+# The level editor's .fbx import.
+ufbx = "0.11"
 delirium = { path = "../delirium", features = ["bevy"] }
 delirium-data = { path = "../delirium-data" }
 delirium-sdk = { path = "../delirium-sdk" }
+# The player's RDR2 install read as it is (the horse's files).
+rdr2-data = { path = "../rdr2-data" }
 # Only the engine parts the room uses (no animation, sprites, UI, picking or text): a smaller, quicker build.
 bevy = { version = "=0.20.0", default-features = false, features = [
     "default_app", "std", "bevy_sprite", "bevy_sprite_render", "multi_threaded", "bevy_winit", "x11", "wayland", "bevy_gilrs",
@@ -31,6 +35,10 @@ skate-hud = { path = "../skate-hud" }
 skate-data = { path = "../skate-data" }
 skate-core = { path = "../skate-core" }
 serde_json = "1"
+# The level editor's .usdz/.usdc/.usda import (MIT; pure Rust).
+openusd = "0.8"
+# Gaussian splats drawn (a level editor's .ply); sh0: colour only, no view-dependent shine (2M splats' worth of VRAM).
+bevy_gaussian_splatting = { version = "9", default-features = false, features = ["io_flexbuffers", "planar", "buffer_storage", "sh0", "sort_radix", "sort_rayon", "sort_std"] }
 miniz_oxide = "0.8"
 # The release's number table locked to the player's game (kv_lock.rs; the public data crate's kv.rs).
 blake3 = "1"
@@ -42,6 +50,8 @@ ash = "0.38"
 libloading = "0.8"
 # The window's icon from the exe's own (bevy's winit, its version).
 winit = { version = "0.30", default-features = false }
+# Windows' own Open dialog for a model file (IFileOpenDialog, the Explorer one; ui::pick_model). MIT.
+rfd = { version = "0.15", default-features = false }
 
 [features]
 # Portal mode: Portal 2's portal gun, with your own Portal 2 install (none of its files are included). On by default.

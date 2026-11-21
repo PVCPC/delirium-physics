@@ -221,7 +221,7 @@ impl<P: Moves> Movement<P> {
             if s.chain.len() < 2 {
                 return finish(s);
             }
-            if rounds > crate::kv!(81 int) {
+            if rounds > crate::kv!(82 int) {
                 return;
             }
         }
@@ -264,7 +264,7 @@ impl<P: Moves> Task<P> for MoveDoNothing {
 
     fn process(&mut self, ped: &mut P) -> bool {
         if self.ms > 0 {
-            self.ms -= (ped.dt() * crate::kv!(82)) as i32;
+            self.ms -= (ped.dt() * crate::kv!(83)) as i32;
             if self.ms <= 0 {
                 return true;
             }

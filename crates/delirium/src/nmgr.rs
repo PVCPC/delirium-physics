@@ -13,7 +13,7 @@ use crate::Fma;
 
 #[allow(non_snake_case)]
 #[inline]
-fn SPINE3() -> usize { delirium_data::kv!(81 int) }
+fn SPINE3() -> usize { delirium_data::kv!(82 int) }
 
 #[derive(Clone, Copy, Debug)]
 pub struct GrabParams {
@@ -45,9 +45,9 @@ impl Default for GrabParams {
     fn default() -> GrabParams {
         GrabParams { justbrace: false, linegrab: false, surface_grab: false, use_right: false, use_left: false,
                      dont_let_go: false, pos: [Vec3::ZERO; 4], normal_r: Vec3::ZERO, normal_l: Vec3::ZERO, grab_strength: -1.0,
-                     arm_stiffness: delirium_data::kv!(126), grab_dist: 1.0, reach_angle: delirium_data::kv!(178), one_side_reach_angle: delirium_data::kv!(179), body_stiffness: delirium_data::kv!(117),
-                     pull_up_time: 1.0, pull_up_strength: [0.0; 2], grab_hold_max_timer: delirium_data::kv!(26), max_reach: delirium_data::kv!(74),
-                     hold_stiffness: delirium_data::kv!(84), instance: -1, part: 0 }
+                     arm_stiffness: delirium_data::kv!(127), grab_dist: 1.0, reach_angle: delirium_data::kv!(179), one_side_reach_angle: delirium_data::kv!(180), body_stiffness: delirium_data::kv!(118),
+                     pull_up_time: 1.0, pull_up_strength: [0.0; 2], grab_hold_max_timer: delirium_data::kv!(26), max_reach: delirium_data::kv!(75),
+                     hold_stiffness: delirium_data::kv!(85), instance: -1, part: 0 }
     }
 }
 
@@ -253,13 +253,13 @@ impl Grab {
                 _ => w[1].0,
             };
             let t = self.held[0].max(self.held[1]);
-            if t > delirium_data::kv!(491) {
+            if t > delirium_data::kv!(492) {
                 self.look_off(c, head);
             } else if t < delirium_data::kv!(68) || head.active {
                 if !head.active {
                     head.activate(c.ch, c.b);
                 }
-                (head.pos, head.local, head.always_look, head.stiffness, head.damping) = (mid, None, true, p.body_stiffness, delirium_data::kv!(136));
+                (head.pos, head.local, head.always_look, head.stiffness, head.damping) = (mid, None, true, p.body_stiffness, delirium_data::kv!(137));
                 head.vel = Vec3::ZERO;
             }
             if !st.active {
@@ -275,7 +275,7 @@ impl Grab {
         } else {
             self.look_off(c, head);
             st.deactivate();
-            c.out.send(delirium_data::kv!(127 int), "GrabNotGrabbing", 0.0);
+            c.out.send(delirium_data::kv!(128 int), "GrabNotGrabbing", 0.0);
             if let Some(d) = dbm {
                 (d.pv.fixed_vel, d.pv.vel) = (false, self.target[1]);
             }
@@ -300,7 +300,7 @@ impl Grab {
         if self.look_ahead {
             self.look_ahead = false;
             let m = c.b.pmat(SPINE3()).m;
-            head.local = Some(crate::nmbb::to_own((m.b * delirium_data::kv!(116) - m.c) + c.b.at(SPINE3()), c.b));
+            head.local = Some(crate::nmbb::to_own((m.b * delirium_data::kv!(117) - m.c) + c.b.at(SPINE3()), c.b));
         }
     }
 
@@ -322,7 +322,7 @@ impl Grab {
             }
         };
         let (g, at) = (self.to_world(g), s3.d);
-        let k = if p.justbrace { delirium_data::kv!(510) } else { delirium_data::kv!(10) };
+        let k = if p.justbrace { delirium_data::kv!(511) } else { delirium_data::kv!(10) };
         let d = g - at;
         let len = d.length();
         let closing = (c.vel.vd(d.normalize_or_zero()) * k).max(0.0).min(len);
@@ -386,22 +386,22 @@ impl Grab {
             t = c.up.mul_add(Vec3::splat(k), t);
         }
         let a = speed.clamp(0.0, 1.0);
-        let reach = crate::nmdbm::slen(t - at, b"xzy").fma(1.0 - (1.0 - a), p.max_reach.clamp(delirium_data::kv!(78), delirium_data::kv!(5)) * (1.0 - a));
+        let reach = crate::nmdbm::slen(t - at, b"xzy").fma(1.0 - (1.0 - a), p.max_reach.clamp(delirium_data::kv!(79), delirium_data::kv!(5)) * (1.0 - a));
         let t = crate::rigid::nrm(t - at).mul_add(Vec3::splat(reach), at);
-        let yaw = reach.clamp(0.0, delirium_data::kv!(511));
+        let yaw = reach.clamp(0.0, delirium_data::kv!(512));
         let ik_side = if i == 0 { 1.0 } else { -1.0 };
         if self.grip[i].is_none() {
             c.ch.set_stiffness(p.arm_stiffness, 1.0, mask, Some(1.0));
             crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t, yaw, delirium_data::kv!(18), ik_side, 1.0, Vec3::ZERO, None);
             crate::nmpa::share(c.ch, c.b.frames, l.e[0], l.e[1]);
             let hand = c.b.at(l.p[delirium_data::kv!(0 int)]);
-            if crate::nmdbm::sdot(n, crate::rigid::nrm(hand - at), b"zyx") > delirium_data::kv!(124) {
+            if crate::nmdbm::sdot(n, crate::rigid::nrm(hand - at), b"zyx") > delirium_data::kv!(125) {
                 c.ch.eff[l.e[delirium_data::kv!(0 int)]].desired[2] = 0.0;
                 c.ch.eff[l.e[delirium_data::kv!(0 int)]].desired[0] = 0.0;
             } else {
                 crate::nmshot::Shot::wrist(c, l, t, n, ik_side);
             }
-            let strength = if p.justbrace { 0.0 } else { delirium_data::kv!(84) };
+            let strength = if p.justbrace { 0.0 } else { delirium_data::kv!(85) };
             c.ch.set_relative(l.e[delirium_data::kv!(0 int)], 1, -1.0);
             self.pull(c, i, l, w, side, strength, !p.justbrace, dt);
             return;
@@ -409,9 +409,9 @@ impl Grab {
         self.held[i] += dt;
         let mut arm_k = p.hold_stiffness;
         if touching {
-            arm_k *= delirium_data::kv!(260);
+            arm_k *= delirium_data::kv!(261);
         }
-        let top = p.pull_up_strength[i] * delirium_data::kv!(137);
+        let top = p.pull_up_strength[i] * delirium_data::kv!(138);
         let s = (top / (p.pull_up_time + delirium_data::kv!(51)) * self.held[i] + delirium_data::kv!(64)).max(delirium_data::kv!(64)).min(top);
         if !self.told[i] {
             self.told[i] = true;
@@ -419,7 +419,7 @@ impl Grab {
         }
         c.ch.set_stiffness(s, 0.5, mask, Some(delirium_data::kv!(32)));
         let wr = &mut c.ch.eff[l.e[delirium_data::kv!(0 int)]];
-        (wr.muscle_stiffness, wr.strength, wr.damping) = (delirium_data::kv!(25), delirium_data::kv!(512), delirium_data::kv!(136));
+        (wr.muscle_stiffness, wr.strength, wr.damping) = (delirium_data::kv!(25), delirium_data::kv!(513), delirium_data::kv!(137));
         self.pull(c, i, l, w, side, arm_k, !p.justbrace, dt);
         for j in [l.e[delirium_data::kv!(0 int)], l.e[1]] {
             c.ch.eff[j].desired = c.ch.actual(j, c.b.frames);
@@ -427,12 +427,12 @@ impl Grab {
         self.turn_hand(c, l, n, side, dt);
         if pull > 0.0 {
             c.ch.eff[l.e[2]].desired[0] = pull;
-            c.ch.eff[l.e[1]].desired[0] = (pull * delirium_data::kv!(74)).clamp(0.0, 2.0);
+            c.ch.eff[l.e[1]].desired[0] = (pull * delirium_data::kv!(75)).clamp(0.0, 2.0);
             c.ch.eff[l.e[0]].desired[0] = pull * delirium_data::kv!(60);
         }
         let legs = |k: usize| c.b.doll.collided(&limb(k).p[1..]);
         let trunk = if !legs(2) && !legs(delirium_data::kv!(0 int)) {
-            c.ch.set_stiffness(delirium_data::kv!(84), 1.0, "us", Some(1.0));
+            c.ch.set_stiffness(delirium_data::kv!(85), 1.0, "us", Some(1.0));
             delirium_data::kv!(32)
         } else {
             c.ch.set_stiffness(delirium_data::kv!(31), 1.0, "us", Some(1.0));
@@ -447,14 +447,14 @@ impl Grab {
         #[inline]
         fn DIST() -> f32 { delirium_data::kv!(60) }
         let hand = c.b.part(l.p[delirium_data::kv!(0 int)]);
-        let at = hand.m.d - hand.m.a * (side * delirium_data::kv!(118));
+        let at = hand.m.d - hand.m.a * (side * delirium_data::kv!(119));
         let g = w - at;
         let d = g.y.mul_add(g.y, g.z.mul_add(g.z, g.x * g.x)).sqrt();
         if d < delirium_data::kv!(5) * DIST() && self.grip[i].is_none() {
             let k = ((delirium_data::kv!(5) * DIST() - d) / (2.0 * DIST())).clamp(0.0, 1.0) * strength;
             let mut imp = (Vec3::ZERO - hand.v).mul_add(Vec3::splat(k * delirium_data::kv!(60)), (w - at) * (k * k));
-            if dt < 1.0 / delirium_data::kv!(103) {
-                imp *= dt * delirium_data::kv!(103);
+            if dt < 1.0 / delirium_data::kv!(104) {
+                imp *= dt * delirium_data::kv!(104);
             }
             c.out.impulse.push((l.p[delirium_data::kv!(0 int)], c.b.joint_pos(l.e[delirium_data::kv!(0 int)]), imp));
         }
@@ -465,7 +465,7 @@ impl Grab {
             }
             self.grip[i] = Some(Grip { broken: false, local: Vec3::ZERO, at: Some(at), to: w, len: d, on: crate::rigid::grip_local(self.frame, None, w) });
         } else if let Some(g) = self.grip[i].as_mut() {
-            self.len[i] = (self.len[i] - dt * delirium_data::kv!(119)).max(0.0).min(d);
+            self.len[i] = (self.len[i] - dt * delirium_data::kv!(120)).max(0.0).min(d);
             g.len = self.len[i];
         }
     }
@@ -475,7 +475,7 @@ impl Grab {
         let cos = n.x.mul_add(a.x, n.y.mul_add(a.y, n.z * a.z));
         let ang = if cos <= -1.0 { std::f32::consts::PI } else if cos >= 1.0 { 0.0 } else { delirium_data::mathrt::acos(cos as f64) as f32 };
         if let Some(axis) = unit_axis(a.vx(n)).filter(|_| dt > 0.0) {
-            c.out.torque(l.p[delirium_data::kv!(0 int)], axis * (ang / (dt * delirium_data::kv!(103))));
+            c.out.torque(l.p[delirium_data::kv!(0 int)], axis * (ang / (dt * delirium_data::kv!(104))));
         }
     }
 }

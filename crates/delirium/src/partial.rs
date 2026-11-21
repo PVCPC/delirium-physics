@@ -3,13 +3,13 @@ use crate::prelude::*;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn STUMBLE_HOLD() -> f32 { delirium_data::kv!(126) }
+pub fn STUMBLE_HOLD() -> f32 { delirium_data::kv!(127) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn STUMBLE_DIE() -> f32 { delirium_data::kv!(20) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn HARD_HIT() -> f32 { delirium_data::kv!(79) }
+pub fn HARD_HIT() -> f32 { delirium_data::kv!(80) }
 const PELVIS: usize = 0;
 #[allow(non_snake_case)]
 #[inline]
@@ -69,7 +69,7 @@ impl Partial {
         if self.mode == Mode::Legs {
             a.keyframe = (0..=delirium_data::kv!(6 int)).filter(|&k| k < n).collect();
         }
-        a.hold.push(("ub".into(), if self.mode == Mode::Upper { delirium_data::kv!(27) } else { delirium_data::kv!(126) }, 1.0, 1.0));
+        a.hold.push(("ub".into(), if self.mode == Mode::Upper { delirium_data::kv!(27) } else { delirium_data::kv!(127) }, 1.0, 1.0));
         a.follow.push(("ub".into(), 1.0));
         (self.state, self.t, self.last) = (State::On, 0.0, None);
     }
@@ -166,7 +166,7 @@ impl Partial {
                 }
             }
             State::Stumble { dying: false } => {
-                if pz < delirium_data::kv!(18) || hz - pz < delirium_data::kv!(140) || t > delirium_data::kv!(5) {
+                if pz < delirium_data::kv!(18) || hz - pz < delirium_data::kv!(141) || t > delirium_data::kv!(5) {
                     return Some(self.down(a, Event::Fell));
                 }
                 if t > delirium_data::kv!(20) && up && a.balancing() {

@@ -2,16 +2,16 @@ use crate::route::Point;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MAX() -> i32 { crate::kv!(282 int) }
+pub fn MAX() -> i32 { crate::kv!(283 int) }
 #[allow(non_snake_case)]
 #[inline]
 pub fn FRAME() -> f32 { 1.0 / crate::kv!(27) }
 #[allow(non_snake_case)]
 #[inline]
-fn NEAR() -> f32 { crate::kv!(77) }
+fn NEAR() -> f32 { crate::kv!(78) }
 #[allow(non_snake_case)]
 #[inline]
-fn NEAR_WIDE() -> f32 { crate::kv!(193) }
+fn NEAR_WIDE() -> f32 { crate::kv!(194) }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Look {
@@ -28,10 +28,10 @@ pub struct Look {
 pub fn FULL() -> f32 { crate::kv!(28) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(826 int) }
+pub fn NO_MOVER_TRACK() -> u32 { crate::kv!(832 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn MOVER_BITS() -> u32 { crate::kv!(978 int) }
+pub fn MOVER_BITS() -> u32 { crate::kv!(984 int) }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Anim {
@@ -48,7 +48,7 @@ pub fn anim_moves(anims: &[Anim]) -> bool {
             return false;
         }
         if a.flags & NO_MOVER_TRACK() == 0 && a.mover_track {
-            let mask = (a.flags & crate::kv!(189 int)) as u8;
+            let mask = (a.flags & crate::kv!(190 int)) as u8;
             if mask == 0 || crate::animblend::mask_passes(mask, 0) {
                 return true;
             }

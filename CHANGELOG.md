@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.0
+
+- New playroom interface: six tabs (Cast, Play, Scene, Reactions, Lab, Settings) with pages, pop-out windows and a
+  Quick play bar that is always on screen. The side panel hides itself: a thin strip on the left edge shows where it
+  is, a tab peeks out as the mouse comes near, holding the mouse there slides it out, and it stays a couple of
+  seconds after the mouse leaves. Pin it (or Settings > Camera & interface > Sidebar: Always open, or M) to keep it
+  open. Drag its right edge to make it wider or narrower (saved). Interface size slider (0.75-2x, Ctrl +/-).
+
+- Cast: body thumbnails drawn from the real builds at one shared scale, so heights compare at a glance, with each
+  body's height under its name. Reroll a random Homer in place, and set how much a random one varies.
+
+- Animals: a horse, cow, zebra, llama, pig, sheep and pug (Character tab), balancing on RDR2's quadruped brain
+  ported to Delirium's engine. Link your own RDR2 install (Interact tab) and the horse uses RDR2's own horse body.
+  Ropes, leashes, pokes, cars and thrown objects all reach them.
+
+- Level editor (work in progress): build a level from shapes, stage pieces, objects and taxis; import .glb, .gltf,
+  .obj, .fbx, .usd(z) models and Gaussian splats (.ply); pieces are fixed, loose (weight, friction, bounce, float)
+  or Homer's body. Save a level as a folder to share.
+
+- Model bodies (work in progress): the Cast's Model tile opens a file picker; the model you pick becomes Homer's
+  body, rigged or not (an unrigged one has its joints fitted automatically). Tails, hair and capes swing.
+
+- Fixed: switching renderers quickly with MSAA on could crash (MSAA is now off while ray tracing).
+
+- Fixed: a crash some DirectX 12 cards hit when changing water quality quickly ("Invalid surface") is now skipped
+  for a frame instead of closing the room (#47).
+
 ## 0.8.1
 
 - The room and SDK now open the game's PC GTAIV.exe however it was packed (another shop's or country's copy, an unwrapped one), not only the exact files of Steam's and the downgraded builds: each number is read where the game keeps it, and the copy is taken only if every number comes out exactly as from those builds, so the physics are the same bit for bit. A copy reported by a player that was turned away now opens.

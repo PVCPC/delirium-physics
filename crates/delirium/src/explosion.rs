@@ -7,7 +7,7 @@ use delirium_data::damage::Explosion as Blast;
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn MASS() -> f32 { delirium_data::kv!(102) }
+pub fn MASS() -> f32 { delirium_data::kv!(103) }
 
 pub fn ped_bound_radius() -> f32 {
     static R: std::sync::LazyLock<f32> = std::sync::LazyLock::new(|| {
@@ -39,7 +39,7 @@ pub fn push(b: &Blast, c: Vec3, spine2: Vec3, clavicle: Vec3, vel: Vec3, speed: 
     }
     let j = dir * strength;
     let (shove, test) = if directed.is_some() { (delirium_data::kv!(31), delirium_data::kv!(31)) } else { (delirium_data::kv!(64), 1.0) };
-    Some((j / delirium_data::kv!(103), clavicle, (clavicle - c).normalize_or_zero() * j.length() * shove, strength * test))
+    Some((j / delirium_data::kv!(104), clavicle, (clavicle - c).normalize_or_zero() * j.length() * shove, strength * test))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -82,7 +82,7 @@ fn pedal_legs(set: &Set, back: bool) -> Msg {
     let f = &set.f;
     ("pedalLegs", vec![("start", B(true)), ("backPedal", B(back)), ("legStiffness", F(f[delirium_data::kv!(2 int)])), ("pedalLeftLeg", B(true)),
                        ("pedalRightLeg", B(true)), ("radius", F(f[delirium_data::kv!(6 int)])), ("angularSpeed", F(f[delirium_data::kv!(22 int)])), ("pedalOffset", F(f[delirium_data::kv!(23 int)])),
-                       ("speedAsymmetry", F(f[delirium_data::kv!(104 int)])), ("adaptivePedal4Dragging", B(false))])
+                       ("speedAsymmetry", F(f[delirium_data::kv!(105 int)])), ("adaptivePedal4Dragging", B(false))])
 }
 
 impl Explosion {
@@ -108,14 +108,14 @@ impl Explosion {
         let fb = || Value::Str("fb".into());
         if roll {
             m.push(pedal_legs(set, coin(rand)));
-            m.push(("bodyRollUp", vec![("start", B(true)), ("mask", fb()), ("stiffness", F(f[delirium_data::kv!(105 int)])), ("legPush", F(f[delirium_data::kv!(106 int)])),
-                                       ("armReachAmount", F(f[delirium_data::kv!(107 int)])), ("useArmToSlowDown", F(f[delirium_data::kv!(108 int)])), ("asymmetricalLegs", F(f[delirium_data::kv!(109 int)]))]));
+            m.push(("bodyRollUp", vec![("start", B(true)), ("mask", fb()), ("stiffness", F(f[delirium_data::kv!(106 int)])), ("legPush", F(f[delirium_data::kv!(107 int)])),
+                                       ("armReachAmount", F(f[delirium_data::kv!(108 int)])), ("useArmToSlowDown", F(f[delirium_data::kv!(109 int)])), ("asymmetricalLegs", F(f[delirium_data::kv!(110 int)]))]));
             self.state = 2;
         } else if writhe {
             let mut w = vec![("start", B(true))];
-            w.extend(["armStiffness", "legStiffness", "backStiffness", "legPeriod", "armPeriod", "backPeriod"].into_iter().zip(&f[delirium_data::kv!(81 int)..delirium_data::kv!(54 int)]).map(|(k, x)| (k, F(*x))));
+            w.extend(["armStiffness", "legStiffness", "backStiffness", "legPeriod", "armPeriod", "backPeriod"].into_iter().zip(&f[delirium_data::kv!(82 int)..delirium_data::kv!(54 int)]).map(|(k, x)| (k, F(*x))));
             w.extend(["legDamping", "armDamping", "backDamping"].map(|k| (k, F(f[delirium_data::kv!(54 int)]))));
-            w.extend(["legAmplitude", "armAmplitude", "backAmplitude", "kneeAmplitude", "elbowAmplitude"].into_iter().zip(&f[delirium_data::kv!(110 int)..delirium_data::kv!(105 int)]).map(|(k, x)| (k, F(*x))));
+            w.extend(["legAmplitude", "armAmplitude", "backAmplitude", "kneeAmplitude", "elbowAmplitude"].into_iter().zip(&f[delirium_data::kv!(111 int)..delirium_data::kv!(106 int)]).map(|(k, x)| (k, F(*x))));
             w.extend([("mask", fb()), ("rollOverFlag", B(false))]);
             m.push(("bodyWrithe", w));
             self.state = 1;

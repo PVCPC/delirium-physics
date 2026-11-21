@@ -2,7 +2,7 @@ use crate::actiontable::{Action, ActionTable, Impulse, ResultDef};
 use crate::controls::{index, pick as pair_pick, Controls, IoValue, AXIS_PAIRS};
 
 fn back(at: u8, i: u8) -> usize {
-    (if i <= at { at - i } else { at.wrapping_sub(i.min(crate::kv!(258 int))).wrapping_add(crate::kv!(188 int)) }) as usize
+    (if i <= at { at - i } else { at.wrapping_sub(i.min(crate::kv!(259 int))).wrapping_add(crate::kv!(189 int)) }) as usize
 }
 
 fn since(v: &IoValue, h: &[(u8, u32)], ms: u32) -> u32 {
@@ -29,7 +29,7 @@ pub fn held_up(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
 fn all_since(v: &IoValue, ms: u32, ok: impl Fn(u8) -> bool) -> bool {
     let h = hist(v);
     let t = since(v, h, ms);
-    for i in 0..crate::kv!(188 int) {
+    for i in 0..crate::kv!(189 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
             return true;
@@ -54,7 +54,7 @@ pub fn released_and_held(v: &IoValue, ms: u32, lo: u8, hi: u8) -> bool {
 fn first_since(v: &IoValue, ms: u32, hit: impl Fn(u8) -> bool) -> bool {
     let h = hist(v);
     let t = since(v, h, ms);
-    for i in 1..crate::kv!(188 int) {
+    for i in 1..crate::kv!(189 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
             return false;
@@ -85,7 +85,7 @@ pub fn released_at(v: &IoValue, ms: u32, lo: u8, hi: u8) -> Option<u32> {
 fn edge_since(v: &IoValue, ms: u32, edge: impl Fn(u8, u8) -> bool) -> Option<u32> {
     let h = hist(v);
     let t = since(v, h, ms);
-    for i in 1..crate::kv!(188 int) {
+    for i in 1..crate::kv!(189 int) {
         let e = h[back(v.history_at, i)];
         if e.1 < t {
             return None;
@@ -109,24 +109,24 @@ impl Impulse {
         let v = |off: u32| &c.values[index(off)];
         let axis = |n: usize| v(pair_pick((*AXIS_PAIRS())[n], v((*AXIS_PAIRS())[n].0)));
         let (a, b) = match self.impulse {
-            1 => (v(crate::kv!(690 int)), None),
-            2 => (v(crate::kv!(691 int)), None),
-            3 => (v(crate::kv!(692 int)), None),
-            4 => (v(crate::kv!(693 int)), None),
-            5 => (v(crate::kv!(694 int)), None),
-            6 => (v(crate::kv!(695 int)), None),
+            1 => (v(crate::kv!(696 int)), None),
+            2 => (v(crate::kv!(697 int)), None),
+            3 => (v(crate::kv!(698 int)), None),
+            4 => (v(crate::kv!(699 int)), None),
+            5 => (v(crate::kv!(700 int)), None),
+            6 => (v(crate::kv!(701 int)), None),
             7 => (axis(0), None),
             8 => (axis(1), None),
             9 => (axis(0), Some(axis(1))),
             _ => return false,
         };
-        let ms = (self.interval * crate::kv!(82)) as i64 as u32;
+        let ms = (self.interval * crate::kv!(83)) as i64 as u32;
         let [r0, r1] = self.range;
         let (lo, hi) = match self.impulse {
-            7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(746)), byte((r1 + 1.0) * 0.5 * crate::kv!(746))),
-            9 => (byte(r0.abs() * crate::kv!(925)), byte(r1.abs() * crate::kv!(925))),
-            3 if setting == 0 => (byte(r0 * crate::kv!(746)), byte(r1 * crate::kv!(746))),
-            _ => (crate::kv!(257 int), crate::kv!(395 int)),
+            7 | 8 => (byte((r0 + 1.0) * 0.5 * crate::kv!(752)), byte((r1 + 1.0) * 0.5 * crate::kv!(752))),
+            9 => (byte(r0.abs() * crate::kv!(931)), byte(r1.abs() * crate::kv!(931))),
+            3 if setting == 0 => (byte(r0 * crate::kv!(752)), byte(r1 * crate::kv!(752))),
+            _ => (crate::kv!(258 int), crate::kv!(396 int)),
         };
         let q: fn(&IoValue, u32, u8, u8) -> bool = match self.state {
             0 => return true,
@@ -141,7 +141,7 @@ impl Impulse {
         match b {
             None => q(a, ms, lo, hi),
             Some(b) => {
-                let (p, n) = ((lo.wrapping_add(crate::kv!(257 int)), hi.wrapping_add(crate::kv!(257 int))), (0x7Fu8.wrapping_sub(hi), 0x7Fu8.wrapping_sub(lo)));
+                let (p, n) = ((lo.wrapping_add(crate::kv!(258 int)), hi.wrapping_add(crate::kv!(258 int))), (0x7Fu8.wrapping_sub(hi), 0x7Fu8.wrapping_sub(lo)));
                 q(a, ms, p.0, p.1) || q(a, ms, n.0, n.1) || q(b, ms, p.0, p.1) || q(b, ms, n.0, n.1)
             }
         }
@@ -221,16 +221,16 @@ pub fn ped_takes(a: &Action, f: &Fighter, receiving_hit: bool, blocking: bool, j
     let Some(w) = f.weapon else { return false };
     let bit = |n: u32| w.flags >> n & 1 != 0;
     let one_handed = bit(crate::kv!(2 int)) && !bit(crate::kv!(55 int));
-    let mg = bit(crate::kv!(2 int)) && w.between_shots < crate::kv!(89 int);
+    let mg = bit(crate::kv!(2 int)) && w.between_shots < crate::kv!(90 int);
     match class {
-        c if c == h("object") => w.kind == crate::kv!(356 int),
-        c if c == h("knife") => bit(crate::kv!(81 int)),
-        c if c == h("club") => bit(crate::kv!(104 int)),
+        c if c == h("object") => w.kind == crate::kv!(357 int),
+        c if c == h("knife") => bit(crate::kv!(82 int)),
+        c if c == h("club") => bit(crate::kv!(105 int)),
         c if c == h("oneHandedGun") => one_handed,
         c if c == h("oneHandedMG") => one_handed && mg,
         c if c == h("pistol") => one_handed && !mg,
         c if c == h("rifle") => bit(crate::kv!(2 int)) && bit(crate::kv!(55 int)),
-        c => w.kind == WEAPON_TYPES.iter().position(|t| h(t) == c).map_or(crate::kv!(355 int), |i| i as u32),
+        c => w.kind == WEAPON_TYPES.iter().position(|t| h(t) == c).map_or(crate::kv!(356 int), |i| i as u32),
     }
 }
 
@@ -268,10 +268,10 @@ fn MOVING() -> f32 { crate::kv!(51) }
 const MOVING_FAST: f32 = 0.5;
 #[allow(non_snake_case)]
 #[inline]
-fn AWAY() -> f32 { crate::kv!(229) }
+fn AWAY() -> f32 { crate::kv!(230) }
 #[allow(non_snake_case)]
 #[inline]
-fn AWAY_SPEED() -> f32 { crate::kv!(119) }
+fn AWAY_SPEED() -> f32 { crate::kv!(120) }
 
 pub(crate) fn vunit(d: [f32; 3]) -> [f32; 3] {
     let n = d.iter().fold(0.0f64, |s, &v| s + v as f64 * v as f64) as f32;
@@ -318,18 +318,18 @@ pub fn special_test(hash: u32, me: &Special, from: [f32; 3], target: Option<(u32
         7 => target.is_some() && !away(false),
         8 => away(true),
         9 => target.is_some() && !away(true),
-        10 => bit(me, crate::kv!(819 int)),
-        11 => on(crate::kv!(819 int)),
-        12 => bit(me, crate::kv!(817 int)),
-        13 => on(crate::kv!(817 int)),
-        14 => bit(me, crate::kv!(926 int)),
-        15 => !bit(me, crate::kv!(926 int)),
-        16 => on(crate::kv!(926 int)),
-        17 => off(crate::kv!(926 int)),
-        18 => bit(me, crate::kv!(816 int)),
-        19 => !bit(me, crate::kv!(816 int)),
-        20 => on(crate::kv!(816 int)),
-        21 => off(crate::kv!(816 int)),
+        10 => bit(me, crate::kv!(825 int)),
+        11 => on(crate::kv!(825 int)),
+        12 => bit(me, crate::kv!(823 int)),
+        13 => on(crate::kv!(823 int)),
+        14 => bit(me, crate::kv!(932 int)),
+        15 => !bit(me, crate::kv!(932 int)),
+        16 => on(crate::kv!(932 int)),
+        17 => off(crate::kv!(932 int)),
+        18 => bit(me, crate::kv!(822 int)),
+        19 => !bit(me, crate::kv!(822 int)),
+        20 => on(crate::kv!(822 int)),
+        21 => off(crate::kv!(822 int)),
         22 => me.move_from_idle,
         23 => !me.move_from_idle,
         24 => opp.is_some_and(|o| o.move_from_idle),
@@ -374,11 +374,11 @@ pub fn special_result(hash: u32) -> SpecialEffect {
     let Some(i) = SPECIAL_RESULTS.iter().position(|n| crate::map::hash_bytes(n.as_bytes(), 0) == hash) else { return e };
     #[allow(non_snake_case)]
     #[inline]
-    fn BITS() -> &'static [u32; 5] { static V: std::sync::OnceLock<[u32; 5]> = std::sync::OnceLock::new(); let f = || -> [u32; 5] { [crate::kv!(819 int), crate::kv!(817 int), crate::kv!(926 int), crate::kv!(816 int), crate::kv!(823 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+    fn BITS() -> &'static [u32; 5] { static V: std::sync::OnceLock<[u32; 5]> = std::sync::OnceLock::new(); let f = || -> [u32; 5] { [crate::kv!(825 int), crate::kv!(823 int), crate::kv!(932 int), crate::kv!(822 int), crate::kv!(829 int)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
     match i {
-        0 => (e.me, e.opponent) = ((crate::kv!(926 int), 0), (0, crate::kv!(817 int))),
-        1 => e.me = (crate::kv!(926 int), crate::kv!(927 int)),
-        2 => e.opponent = (crate::kv!(926 int), crate::kv!(927 int)),
+        0 => (e.me, e.opponent) = ((crate::kv!(932 int), 0), (0, crate::kv!(823 int))),
+        1 => e.me = (crate::kv!(932 int), crate::kv!(933 int)),
+        2 => e.opponent = (crate::kv!(932 int), crate::kv!(933 int)),
         3..=22 => {
             let (bit, k) = ((*BITS())[(i - crate::kv!(0 int)) / crate::kv!(1 int)], (i - crate::kv!(0 int)) % crate::kv!(1 int));
             let (set, clear) = if k % 2 == 0 { (bit, 0) } else { (0, bit) };
@@ -745,7 +745,7 @@ pub fn pick<'t>(mut hits: Vec<&'t Action>, rand: impl FnOnce() -> u32) -> Option
         return Some(hits[0]);
     }
     let sum = hits.iter().fold(0.0f32, |s, a| a.bias + s);
-    let r = rand() as f32 * crate::kv!(100 f32) * sum;
+    let r = rand() as f32 * crate::kv!(101 f32) * sum;
     let mut i = 0;
     if r > 0.0 {
         let mut acc = 0.0f32;
@@ -781,7 +781,7 @@ pub fn hit_reaction<'t>(t: &'t ActionTable, ask: &Ask, gate: bool, tasks: [bool;
     let action = choose(t, &ask, rand);
     let result = action.filter(|a| a.move_ != 0).and_then(|a| t.results.iter().rfind(|r| r.name == a.move_));
     let special = result.is_some_and(|r| r.special_result != crate::actiontable::none());
-    let low = ask.fighter.health < crate::kv!(587);
+    let low = ask.fighter.health < crate::kv!(593);
     let ragdoll = gate
         && (action.is_some_and(|a| a.prefer_ragdoll) || if tasks[0] && !tasks[1] { low } else { !special || low });
     Reaction { action, result, ragdoll }

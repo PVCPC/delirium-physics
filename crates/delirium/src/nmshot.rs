@@ -9,10 +9,10 @@ use crate::nmrs::{Character, ANKLE, CLAVICLE, ELBOW, HIP, KNEE, SHOULDER, SPINE,
 
 #[allow(non_snake_case)]
 #[inline]
-fn SP() -> &'static [usize; 7] { static V: std::sync::OnceLock<[usize; 7]> = std::sync::OnceLock::new(); let f = || -> [usize; 7] { [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int), delirium_data::kv!(113 int), delirium_data::kv!(55 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SP() -> &'static [usize; 7] { static V: std::sync::OnceLock<[usize; 7]> = std::sync::OnceLock::new(); let f = || -> [usize; 7] { [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(105 int), delirium_data::kv!(82 int), delirium_data::kv!(114 int), delirium_data::kv!(55 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
-fn SE() -> &'static [usize; 6] { static V: std::sync::OnceLock<[usize; 6]> = std::sync::OnceLock::new(); let f = || -> [usize; 6] { [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int), delirium_data::kv!(113 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn SE() -> &'static [usize; 6] { static V: std::sync::OnceLock<[usize; 6]> = std::sync::OnceLock::new(); let f = || -> [usize; 6] { [delirium_data::kv!(6 int), delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(105 int), delirium_data::kv!(82 int), delirium_data::kv!(114 int)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 #[allow(non_snake_case)]
 #[inline]
 fn HEAD() -> usize { delirium_data::kv!(55 int) }
@@ -79,10 +79,10 @@ impl Default for Params {
         Params {
             normal: Vec3::new(0.0, 0.0, -1.0), head_look: Vec3::ZERO, hit_point: Vec3::ZERO, bullet_vel: Vec3::new(0.0, 0.0, delirium_data::kv!(25)),
             spine_pain_twist_multiplier: 0.5, fling_width: 0.5, time_before_collapse_wound_leg: delirium_data::kv!(24), grab_hold_time: 2.0,
-            spine_pain_time: delirium_data::kv!(12), body_stiffness: delirium_data::kv!(117), looseness_amount: 1.0, spine_pain_multiplier: 1.0,
+            spine_pain_time: delirium_data::kv!(12), body_stiffness: delirium_data::kv!(118), looseness_amount: 1.0, spine_pain_multiplier: 1.0,
             time_before_reach_for_wound: delirium_data::kv!(60), p84: 1.0, head_look_at_wound_min_timer: delirium_data::kv!(17), head_look_at_wound_max_timer: delirium_data::kv!(20),
-            head_look_at_head_pos_max_timer: delirium_data::kv!(66), head_look_at_head_pos_min_timer: delirium_data::kv!(119), body_part: 0, max_steps: delirium_data::kv!(203 int),
-            shock_spin_min: delirium_data::kv!(79), shock_spin_max: delirium_data::kv!(544), shock_spin_lift_force_mult: 0.0, shock_spin_decay_mult: delirium_data::kv!(84),
+            head_look_at_head_pos_max_timer: delirium_data::kv!(66), head_look_at_head_pos_min_timer: delirium_data::kv!(120), body_part: 0, max_steps: delirium_data::kv!(204 int),
+            shock_spin_min: delirium_data::kv!(80), shock_spin_max: delirium_data::kv!(545), shock_spin_lift_force_mult: 0.0, shock_spin_decay_mult: delirium_data::kv!(85),
             shock_spin_scale_per_component: 0.5, chicken_arms: false, always_add_shock_spin: false,
             randomize_shock_spin_direction: false, add_shock_spin: false, use_head_look: false, crouching: false, fling: false,
             melee: false, no_reach: [false; 2], stable_hands_and_neck: false, use_catch_fall_on_fall: false, reach_for_wound: true,
@@ -236,17 +236,17 @@ fn REACH_R() -> usize { delirium_data::kv!(22 int) }
 fn STIFF() -> usize { delirium_data::kv!(23 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn LOOK() -> usize { delirium_data::kv!(104 int) }
+fn LOOK() -> usize { delirium_data::kv!(105 int) }
 const FALL: usize = 10;
 #[allow(non_snake_case)]
 #[inline]
-fn CHICKEN() -> usize { delirium_data::kv!(113 int) }
+fn CHICKEN() -> usize { delirium_data::kv!(114 int) }
 #[allow(non_snake_case)]
 #[inline]
 fn FLING() -> usize { delirium_data::kv!(55 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn MELEE() -> usize { delirium_data::kv!(114 int) }
+fn MELEE() -> usize { delirium_data::kv!(115 int) }
 #[allow(non_snake_case)]
 #[inline]
 fn CROUCH() -> usize { delirium_data::kv!(56 int) }
@@ -340,14 +340,14 @@ impl Shot {
         let bs = p.body_stiffness;
         let mut s = Shot {
             p, new_hit: false, no_balance: false, since_hit: 0.0, reach_t: [0.0; 2], time: 0.0,
-            s150: delirium_data::kv!(117), s154: bs, s158: 1.0, s15c: bs * delirium_data::kv!(545), s160: 1.0, s164: bs / delirium_data::kv!(117) * delirium_data::kv!(25), s168: delirium_data::kv!(27) * dt,
-            s16c: bs * delirium_data::kv!(546), s170: delirium_data::kv!(27) * dt, t174: if p.fling { delirium_data::kv!(207) } else { delirium_data::kv!(547) }, head_t: p.head_look_at_wound_max_timer,
+            s150: delirium_data::kv!(118), s154: bs, s158: 1.0, s15c: bs * delirium_data::kv!(546), s160: 1.0, s164: bs / delirium_data::kv!(118) * delirium_data::kv!(25), s168: delirium_data::kv!(27) * dt,
+            s16c: bs * delirium_data::kv!(547), s170: delirium_data::kv!(27) * dt, t174: if p.fling { delirium_data::kv!(208) } else { delirium_data::kv!(548) }, head_t: p.head_look_at_wound_max_timer,
             fall: [1.0; 2], spin: INIT_SPIN[0], spin_blend: INIT_SPIN[1], t190: 0.0, t194: 0.0, behind: 0.0, side: 0.0, reach_part: [None; 2],
             loose: delirium_data::kv!(51), wound: Vec3::ZERO, hit_local: Vec3::ZERO, normal_local: Vec3::ZERO, reach_pos: [Vec3::ZERO; 2],
             reach_normal: [Vec3::ZERO; 2], chicken_t: 0.0, react_t: 0.0, react_elbow: 0.0, react_phase: 0.0,
             reach: [Reach::default(); 2], cur_reach: 0, cur_arm: 0, m228: 0.0, m248: 0.0, m24c: 0.0, m250: 0.0, m254: 0.0,
             f258: 0.0, f25c: 0.0, f260: 0.0, f264: 0.0, f268: 0.0, f26c: 0, f270: 0.0, f274: 0.0, f278: [false; 2],
-            flags: delirium_data::kv!(257 int), grab_front: false, sub: [false; 15],
+            flags: delirium_data::kv!(258 int), grab_front: false, sub: [false; 15],
         };
         for j in 0..c.ch.eff.len() {
             let jd = c.ch.joints[j].clone();
@@ -358,7 +358,7 @@ impl Shot {
         if !s.no_balance {
             c.out.dbm = Some(true);
             if !p.chicken_arms {
-                c.out.dbm_leg_offset = Some(-delirium_data::kv!(131));
+                c.out.dbm_leg_offset = Some(-delirium_data::kv!(132));
             }
             c.out.dbm_steps = Some(p.max_steps + 1);
             if p.crouching {
@@ -396,7 +396,7 @@ impl Shot {
     }
 
     fn look_check(&self, _: &Ctx) -> bool {
-        (self.grab_front && self.since_hit > delirium_data::kv!(548)) || self.p.use_head_look
+        (self.grab_front && self.since_hit > delirium_data::kv!(549)) || self.p.use_head_look
     }
 
     fn look_done(&self, _: &Ctx) -> bool {
@@ -429,7 +429,7 @@ impl Shot {
         let p = self.p;
         self.t190 = (self.t190 + dt).min(self.t194);
         self.fall[0] = 1.0 - self.t190 / (self.t194 + delirium_data::kv!(4));
-        self.fall[1] = if self.t190 <= delirium_data::kv!(78) * self.t194 { 1.0 } else { 0.0 };
+        self.fall[1] = if self.t190 <= delirium_data::kv!(79) * self.t194 { 1.0 } else { 0.0 };
         (self.s170, self.s168) = (delirium_data::kv!(27) * dt, delirium_data::kv!(27) * dt);
         self.time += dt;
         self.since_hit += dt;
@@ -450,7 +450,7 @@ impl Shot {
                     lean *= delirium_data::kv!(18);
                 }
                 if [(*HIP())[0] + 1, (*KNEE())[0] + 1, (*HIP())[1] + 1, (*KNEE())[1] + 1].contains(&p.body_part) {
-                    lean *= delirium_data::kv!(237);
+                    lean *= delirium_data::kv!(238);
                 }
                 let tw = self.side * p.spine_pain_twist_multiplier * k * -delirium_data::kv!(31);
                 c.spine_all(lean, tw, tw);
@@ -476,7 +476,7 @@ impl Shot {
             c.out.head_look_target = Some(self.wound);
             if self.head_t < 0.0 {
                 self.head_t = -c.rand(p.head_look_at_head_pos_max_timer, p.head_look_at_head_pos_min_timer);
-                c.out.send(delirium_data::kv!(127 int), "shot", 0.0);
+                c.out.send(delirium_data::kv!(128 int), "shot", 0.0);
             }
         }
         self.run(c, CROUCH(), Some(Shot::crouch_check), None, Some(Shot::crouch_tick), Some(|s, _| s.failed()), None, dt);
@@ -513,7 +513,7 @@ impl Shot {
     }
 
     pub fn deactivate(&mut self, c: &mut Ctx) {
-        if self.flags & delirium_data::kv!(257 int) == 0 {
+        if self.flags & delirium_data::kv!(258 int) == 0 {
             return;
         }
         let exits: [(usize, Act); 7] = [
@@ -527,7 +527,7 @@ impl Shot {
                 f(self, c);
             }
         }
-        self.flags &= delirium_data::kv!(191 int);
+        self.flags &= delirium_data::kv!(192 int);
     }
 
     fn shock_spin(&mut self, c: &mut Ctx, dt: f32) {
@@ -539,7 +539,7 @@ impl Shot {
         if self.new_hit && self.spin_blend < 0.0 {
             if p.randomize_shock_spin_direction {
                 self.spin = c.rand(p.shock_spin_min, p.shock_spin_max);
-                if (c.ch.random() * delirium_data::kv!(531)) as u32 & 1 != 0 {
+                if (c.ch.random() * delirium_data::kv!(532)) as u32 & 1 != 0 {
                     self.spin = -self.spin;
                 }
             } else {
@@ -580,7 +580,7 @@ impl Shot {
         self.behind = fneg(sdot(self.p.bullet_vel, c.m.c, b"yzx"));
         let (mut at, mut normal) = (self.p.hit_point, self.p.normal);
         if self.behind >= 0.0 {
-            let far = at + self.p.bullet_vel.normalize_or_zero() * delirium_data::kv!(116);
+            let far = at + self.p.bullet_vel.normalize_or_zero() * delirium_data::kv!(117);
             if let Some((k, x, n)) = c.b.doll.probe(c.b.build, far, at) {
                 (self.p.body_part, at, normal) = (k, x, n);
             }
@@ -631,17 +631,17 @@ impl Shot {
         if (rhit || thigh || r7) && self.flags & delirium_data::kv!(54 int) == 0 {
             self.reach_part[0] = Some(part);
             (self.reach_pos[0], self.reach_normal[0], self.reach_t[0]) = (self.hit_local, self.normal_local, 0.0);
-            self.flags |= delirium_data::kv!(188 int);
+            self.flags |= delirium_data::kv!(189 int);
         }
         if (lhit || thigh || r8) && self.flags & delirium_data::kv!(23 int) == 0 {
             self.reach_part[1] = Some(part);
-            (self.reach_pos[1], self.reach_normal[1], self.reach_t[1]) = (self.hit_local, self.normal_local, -delirium_data::kv!(78));
+            (self.reach_pos[1], self.reach_normal[1], self.reach_t[1]) = (self.hit_local, self.normal_local, -delirium_data::kv!(79));
             self.flags |= delirium_data::kv!(7 int);
         }
     }
 
     fn crouch_tick(&mut self, c: &mut Ctx, _dt: f32) {
-        if slen(c.vel, b"zyx") < delirium_data::kv!(68) && self.time > delirium_data::kv!(116) {
+        if slen(c.vel, b"zyx") < delirium_data::kv!(68) && self.time > delirium_data::kv!(117) {
             c.out.send(delirium_data::kv!(55 int), "shot", 0.0);
         }
     }
@@ -679,9 +679,9 @@ impl Shot {
         c.ch.set_stiffness(self.fall[1].fma(delirium_data::kv!(32), delirium_data::kv!(64)), (self.fall[1] + 1.0) * 0.5, "lb", None);
         for j in (*ANKLE()) {
             c.ch.eff[j].muscle_stiffness = delirium_data::kv!(31);
-            c.ch.eff[j].set_stiffness(self.fall[1].fma(delirium_data::kv!(137), delirium_data::kv!(5)), 1.0, None);
+            c.ch.eff[j].set_stiffness(self.fall[1].fma(delirium_data::kv!(138), delirium_data::kv!(5)), 1.0, None);
         }
-        let f27 = delirium_data::kv!(31) / (delirium_data::kv!(103) * dt) + delirium_data::kv!(31);
+        let f27 = delirium_data::kv!(31) / (delirium_data::kv!(104) * dt) + delirium_data::kv!(31);
         let f29 = p.looseness_amount.fma(self.loose, 1.0 - p.looseness_amount);
         c.ch.set_stiffness(self.s154 * og, self.s158 * f29, "us", Some(f29));
         c.ch.set_stiffness(self.s15c * og, self.s160 * f29, "ua", Some(f29 * 0.5));
@@ -717,10 +717,10 @@ impl Shot {
 
     fn react_enter(&mut self, c: &mut Ctx) {
         self.react_t = 0.0;
-        self.react_elbow = ((c.ch.random_bits() & delirium_data::kv!(196 int)) as f32).fma(delirium_data::kv!(549 f32), delirium_data::kv!(116));
+        self.react_elbow = ((c.ch.random_bits() & delirium_data::kv!(197 int)) as f32).fma(delirium_data::kv!(550 f32), delirium_data::kv!(117));
         self.react_phase = c.ch.random() - 0.5;
         if self.behind > 0.0 {
-            self.react_phase = c.ch.random() * delirium_data::kv!(84) - 2.0;
+            self.react_phase = c.ch.random() * delirium_data::kv!(85) - 2.0;
         }
     }
 
@@ -728,7 +728,7 @@ impl Shot {
         let p = self.p;
         self.react_t += dt;
         let v = c.b.part((*SP())[delirium_data::kv!(1 int)]).v;
-        let ratio = (self.t190 + delirium_data::kv!(72)) / (self.t194 + delirium_data::kv!(72));
+        let ratio = (self.t190 + delirium_data::kv!(73)) / (self.t194 + delirium_data::kv!(73));
         let f10 = ((1.0 - ratio) + 1.0) * 0.5;
         let h = c.up * -sdot(c.m.b, c.up, b"yzx") + c.m.b;
         let f13 = (1.0 - slen(h, b"yzx")) * p.p84 * f10;
@@ -738,21 +738,21 @@ impl Shot {
         let mut f25 = (f28.abs() * f13 * 0.5).min(1.0);
         let mut f23 = (f27.abs() * f13 * 0.5).min(1.0);
         let mut ph = self.react_t.fma(delirium_data::kv!(64), self.react_phase);
-        ph += if self.behind < 0.0 { delirium_data::kv!(550) } else { -delirium_data::kv!(551 f32) };
-        let f24 = -((ph as f64).sin() as f32) * delirium_data::kv!(80);
-        let s = -delirium_data::kv!(80) * ((ph as f64).cos() as f32);
+        ph += if self.behind < 0.0 { delirium_data::kv!(551) } else { -delirium_data::kv!(552 f32) };
+        let f24 = -((ph as f64).sin() as f32) * delirium_data::kv!(81);
+        let s = -delirium_data::kv!(81) * ((ph as f64).cos() as f32);
         let f22 = if f28 < 0.0 { -s } else { s };
         let f12 = if f27 < 0.0 { -s } else { s };
         if p.melee {
-            f25 *= delirium_data::kv!(74);
+            f25 *= delirium_data::kv!(75);
             f23 *= delirium_data::kv!(20);
         }
         for (i, (f, k)) in [(f22, f25), (f12, f23)].into_iter().enumerate() {
             let l = limb(i);
-            let tw = if i == 0 { f24.fma(delirium_data::kv!(119), -delirium_data::kv!(119)) * k } else { f24.fma(0.5, -delirium_data::kv!(74)) * k };
+            let tw = if i == 0 { f24.fma(delirium_data::kv!(120), -delirium_data::kv!(120)) * k } else { f24.fma(0.5, -delirium_data::kv!(75)) * k };
             c.ch.eff[l.e[0]].desired[0] = f * k * 0.5;
-            c.ch.eff[l.e[0]].desired[1] = f24.fma(k, -delirium_data::kv!(179)) * delirium_data::kv!(116);
-            c.ch.eff[l.e[1]].desired = [f * k * delirium_data::kv!(136), (f24 - 2.0).fma(k, delirium_data::kv!(136)) * delirium_data::kv!(119), tw];
+            c.ch.eff[l.e[0]].desired[1] = f24.fma(k, -delirium_data::kv!(180)) * delirium_data::kv!(117);
+            c.ch.eff[l.e[1]].desired = [f * k * delirium_data::kv!(137), (f24 - 2.0).fma(k, delirium_data::kv!(137)) * delirium_data::kv!(120), tw];
             c.ch.eff[l.e[2]].desired[0] = ((f + 2.0) * k).fma(0.5, self.react_elbow);
             for &j in &l.e[..delirium_data::kv!(0 int)] {
                 c.og(j, 0.0);
@@ -776,7 +776,7 @@ impl Shot {
         let l = limb(self.cur_arm);
         let lim = c.limits(l.e[0]);
         c.ch.eff[l.e[0]].desired[1] = lim[2] * 0.5;
-        c.ch.eff[l.e[1]].desired = [1.0, delirium_data::kv!(74), 0.5];
+        c.ch.eff[l.e[1]].desired = [1.0, delirium_data::kv!(75), 0.5];
         c.ch.eff[l.e[2]].desired[0] = 1.0;
     }
 
@@ -785,7 +785,7 @@ impl Shot {
             c.ch.eff[j].reset(&c.ch.joints[j]);
         }
         c.ch.set_stiffness(delirium_data::kv!(64), delirium_data::kv!(18), "lb", None);
-        c.ch.set_stiffness(delirium_data::kv!(137), delirium_data::kv!(18), "ub", None);
+        c.ch.set_stiffness(delirium_data::kv!(138), delirium_data::kv!(18), "ub", None);
         for j in 0..c.ch.eff.len() {
             c.ch.eff[j].desired = c.actual(j);
         }
@@ -799,7 +799,7 @@ impl Shot {
                 c.ch.eff[j].reset(&c.ch.joints[j]);
             }
             c.ch.set_stiffness(k * delirium_data::kv!(64), delirium_data::kv!(18), "lb", None);
-            c.ch.set_stiffness(k * delirium_data::kv!(137), delirium_data::kv!(18), "ub", None);
+            c.ch.set_stiffness(k * delirium_data::kv!(138), delirium_data::kv!(18), "ub", None);
         }
         for j in (*SE()) {
             c.og(j, 2.0);
@@ -808,10 +808,10 @@ impl Shot {
             c.og(j, 2.0);
         }
         if !p.use_catch_fall_on_fall {
-            c.out.roll_up = Some(k * delirium_data::kv!(137));
+            c.out.roll_up = Some(k * delirium_data::kv!(138));
         } else {
             let bs = p.body_stiffness;
-            let (mut legs, mut torso, mut arms) = (bs * delirium_data::kv!(24), bs * delirium_data::kv!(74), bs * delirium_data::kv!(28));
+            let (mut legs, mut torso, mut arms) = (bs * delirium_data::kv!(24), bs * delirium_data::kv!(75), bs * delirium_data::kv!(28));
             if !p.melee {
                 let a = (self.fall[0] + 1.0) * 0.5;
                 arms *= a;
@@ -833,21 +833,21 @@ impl Shot {
         let k = (1.0 / self.s150) * self.p.body_stiffness;
         self.chicken_t = 0.0;
         (self.s158, self.s160) = (1.0, 1.0);
-        (self.s154, self.s15c) = (k * delirium_data::kv!(126), k * delirium_data::kv!(126));
+        (self.s154, self.s15c) = (k * delirium_data::kv!(127), k * delirium_data::kv!(127));
         (self.s16c, self.s164) = (k * delirium_data::kv!(25), k * delirium_data::kv!(25));
     }
 
     fn chicken_tick(&mut self, c: &mut Ctx, dt: f32) {
         let (l, r) = (limb(0), limb(1));
         let e = &mut c.ch.eff;
-        e[l.e[0]].desired = [-delirium_data::kv!(116), -delirium_data::kv!(9), 0.0];
-        e[l.e[1]].desired = [0.0, delirium_data::kv!(552), -delirium_data::kv!(140)];
+        e[l.e[0]].desired = [-delirium_data::kv!(117), -delirium_data::kv!(9), 0.0];
+        e[l.e[1]].desired = [0.0, delirium_data::kv!(553), -delirium_data::kv!(141)];
         e[l.e[2]].desired[0] = 1.0;
-        e[l.e[delirium_data::kv!(0 int)]].desired = [-delirium_data::kv!(116), delirium_data::kv!(9), delirium_data::kv!(116)];
+        e[l.e[delirium_data::kv!(0 int)]].desired = [-delirium_data::kv!(117), delirium_data::kv!(9), delirium_data::kv!(117)];
         e[r.e[0]].desired = [-0.5, -delirium_data::kv!(9), 0.0];
-        e[r.e[1]].desired = [delirium_data::kv!(68), delirium_data::kv!(552), -delirium_data::kv!(116)];
+        e[r.e[1]].desired = [delirium_data::kv!(68), delirium_data::kv!(553), -delirium_data::kv!(117)];
         e[r.e[2]].desired[0] = delirium_data::kv!(12);
-        e[r.e[delirium_data::kv!(0 int)]].desired = [-delirium_data::kv!(17), delirium_data::kv!(17), delirium_data::kv!(116)];
+        e[r.e[delirium_data::kv!(0 int)]].desired = [-delirium_data::kv!(17), delirium_data::kv!(17), delirium_data::kv!(117)];
         for j in &(*SE())[..delirium_data::kv!(0 int)] {
             e[*j].desired[0] = delirium_data::kv!(68);
         }
@@ -859,7 +859,7 @@ impl Shot {
         let t = self.chicken_t;
         let k = 1.0 - (t / self.t174).min(1.0);
         let cos = |x: f32| (x as f64).cos() as f32;
-        e[l.e[1]].desired[2] = cos(delirium_data::kv!(201) * t).fma(k, e[l.e[1]].desired[2]);
+        e[l.e[1]].desired[2] = cos(delirium_data::kv!(202) * t).fma(k, e[l.e[1]].desired[2]);
         e[r.e[1]].desired[2] = cos(t.fma(delirium_data::kv!(31), 0.5)).fma(k, e[r.e[1]].desired[2]);
         self.s15c = ((2.0 * t).min(1.0) + 1.0) * delirium_data::kv!(32);
         for j in (*ELBOW()) {
@@ -896,10 +896,10 @@ impl Shot {
         let v = p.bullet_vel.normalize_or_zero();
         let m = c.b.part((*SP())[delirium_data::kv!(0 int)]).m;
         let k = (1.0 / self.s150) * p.body_stiffness;
-        self.f268 = self.t174 * delirium_data::kv!(553 f32);
+        self.f268 = self.t174 * delirium_data::kv!(554 f32);
         (self.s164, self.s16c) = (k * delirium_data::kv!(31), k * delirium_data::kv!(31));
         self.s154 = k * delirium_data::kv!(21);
-        self.s15c = k * delirium_data::kv!(126);
+        self.s15c = k * delirium_data::kv!(127);
         self.f270 = sdot(v, m.b, b"zyx");
         self.f274 = sdot(v, m.c, b"zyx");
         for i in 0..2 {
@@ -914,7 +914,7 @@ impl Shot {
         let p = self.p;
         self.f258 += dt;
         if self.failed() {
-            c.ch.set_stiffness(delirium_data::kv!(139), 0.5, "uk", Some(0.5));
+            c.ch.set_stiffness(delirium_data::kv!(140), 0.5, "uk", Some(0.5));
             c.ch.set_stiffness(delirium_data::kv!(21), 0.5, "ua", Some(0.5));
             c.spine_lean(self.f274 * delirium_data::kv!(32), -self.f270);
             return;
@@ -924,45 +924,45 @@ impl Shot {
         let f27 = (-(a.x * d.x)).fma(delirium_data::kv!(17), (a.z * d.z).fma(-delirium_data::kv!(17), -((a.y * d.y) * delirium_data::kv!(17))));
         let cos = |x: f32| (x as f64).cos() as f32;
         let sin = |x: f32| (x as f64).sin() as f32;
-        c.ch.set_stiffness(delirium_data::kv!(126), 0.5, "ua", Some(delirium_data::kv!(17)));
+        c.ch.set_stiffness(delirium_data::kv!(127), 0.5, "ua", Some(delirium_data::kv!(17)));
         c.ch.set_stiffness(delirium_data::kv!(21), 0.5, "uw", None);
         let mut f30 = 0.0;
         let pi = std::f32::consts::PI;
         if self.f278[0] {
-            let mut x = (self.f25c.abs() * ((self.f258 / self.f268).fma(pi, fneg(f27)) + delirium_data::kv!(74))).min(delirium_data::kv!(64));
+            let mut x = (self.f25c.abs() * ((self.f258 / self.f268).fma(pi, fneg(f27)) + delirium_data::kv!(75))).min(delirium_data::kv!(64));
             if x == delirium_data::kv!(64) {
                 self.f278[0] = false;
             }
-            x = x.clamp(0.0, delirium_data::kv!(554));
+            x = x.clamp(0.0, delirium_data::kv!(555));
             f30 = x;
             let l = limb(0);
             let e = &mut c.ch.eff;
-            e[l.e[2]].desired[0] = self.f25c.abs() * (delirium_data::kv!(84) - x).min(delirium_data::kv!(555)) * delirium_data::kv!(128);
-            e[l.e[0]].desired[0] = sin(x).fma(delirium_data::kv!(119), p.fling_width.fma(delirium_data::kv!(556), -delirium_data::kv!(60)));
+            e[l.e[2]].desired[0] = self.f25c.abs() * (delirium_data::kv!(85) - x).min(delirium_data::kv!(556)) * delirium_data::kv!(129);
+            e[l.e[0]].desired[0] = sin(x).fma(delirium_data::kv!(120), p.fling_width.fma(delirium_data::kv!(557), -delirium_data::kv!(60)));
             e[l.e[0]].desired[1] = cos(x) - 0.5;
             e[l.e[1]].desired[0] = sin(x) * 0.5;
             e[l.e[1]].desired[1] = (delirium_data::kv!(12) - p.fling_width) * cos(x);
             e[l.e[1]].desired[2] = sin(x).fma(-delirium_data::kv!(33), -1.0);
         } else {
-            c.ch.set_stiffness(delirium_data::kv!(137), 0.5, "ul", None);
+            c.ch.set_stiffness(delirium_data::kv!(138), 0.5, "ul", None);
         }
         if self.f278[1] {
-            let mut x = (self.f260.abs() * ((self.f258 / self.f268).fma(pi, f27) + delirium_data::kv!(74))).min(delirium_data::kv!(186));
-            if x == delirium_data::kv!(186) {
+            let mut x = (self.f260.abs() * ((self.f258 / self.f268).fma(pi, f27) + delirium_data::kv!(75))).min(delirium_data::kv!(187));
+            if x == delirium_data::kv!(187) {
                 self.f278[1] = false;
             }
-            x = x.clamp(0.0, delirium_data::kv!(557));
+            x = x.clamp(0.0, delirium_data::kv!(558));
             f30 = x;
             let r = limb(1);
             let e = &mut c.ch.eff;
-            e[r.e[2]].desired[0] = self.f260.abs() * (delirium_data::kv!(84) - x).min(delirium_data::kv!(555)) * delirium_data::kv!(33);
-            e[r.e[0]].desired[0] = sin(x).fma(delirium_data::kv!(119), p.fling_width.fma(delirium_data::kv!(10), -delirium_data::kv!(17)));
+            e[r.e[2]].desired[0] = self.f260.abs() * (delirium_data::kv!(85) - x).min(delirium_data::kv!(556)) * delirium_data::kv!(33);
+            e[r.e[0]].desired[0] = sin(x).fma(delirium_data::kv!(120), p.fling_width.fma(delirium_data::kv!(10), -delirium_data::kv!(17)));
             e[r.e[0]].desired[1] = cos(x) - 0.5;
             e[r.e[1]].desired[0] = sin(x) * 0.5;
-            e[r.e[1]].desired[1] = (delirium_data::kv!(519) - p.fling_width) * cos(x);
+            e[r.e[1]].desired[1] = (delirium_data::kv!(520) - p.fling_width) * cos(x);
             e[r.e[1]].desired[2] = sin(x).fma(-delirium_data::kv!(33), -1.0);
         } else {
-            c.ch.set_stiffness(delirium_data::kv!(137), 0.5, "ur", None);
+            c.ch.set_stiffness(delirium_data::kv!(138), 0.5, "ur", None);
         }
         c.ch.eff[(*SE())[delirium_data::kv!(1 int)]].desired[2] = sin(f30) * -delirium_data::kv!(24);
         c.spine_lean(self.f274 * self.f264 * -delirium_data::kv!(24), self.f270 * delirium_data::kv!(9));
@@ -973,7 +973,7 @@ impl Shot {
         for (n, i) in [(1, 0), (2, 1)] {
             if self.f26c == n && self.f278[i] {
                 let l = limb(2 + i);
-                let t = c.up.mul_add(Vec3::splat(delirium_data::kv!(119)), c.b.part(l.p[delirium_data::kv!(0 int)]).m.d);
+                let t = c.up.mul_add(Vec3::splat(delirium_data::kv!(120)), c.b.part(l.p[delirium_data::kv!(0 int)]).m.d);
                 let side = [1.0, -1.0][i];
                 crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t, 0.0, 1.0, side, -1.0, Vec3::ZERO, None);
             }
@@ -989,23 +989,23 @@ impl Shot {
         }
         c.spine_lean(0.0, 0.0);
         (self.s154, self.s15c) = (delirium_data::kv!(21), delirium_data::kv!(21));
-        (self.s164, self.s16c) = (delirium_data::kv!(558), delirium_data::kv!(558));
+        (self.s164, self.s16c) = (delirium_data::kv!(559), delirium_data::kv!(559));
     }
 
     fn reach_check(&self, c: &Ctx, i: usize) -> bool {
         let p = &self.p;
         c.ch.busy != [true; 2] && p.reach_for_wound && self.since_hit > p.time_before_reach_for_wound
-            && self.flags & [delirium_data::kv!(188 int), delirium_data::kv!(7 int)][i] != 0 && self.reach_t[i] < p.grab_hold_time && !c.ch.busy[i]
+            && self.flags & [delirium_data::kv!(189 int), delirium_data::kv!(7 int)][i] != 0 && self.reach_t[i] < p.grab_hold_time && !c.ch.busy[i]
     }
 
     fn reach_enter(&mut self, i: usize) {
         self.reach[i] = Reach { pos: self.reach_pos[i], normal: self.reach_normal[i], arm: i, part: self.reach_part[i].unwrap_or(0),
                                 off: [delirium_data::kv!(60), -delirium_data::kv!(60)][i], sign: 1.0 };
-        self.flags &= ![delirium_data::kv!(188 int), delirium_data::kv!(7 int)][i];
+        self.flags &= ![delirium_data::kv!(189 int), delirium_data::kv!(7 int)][i];
     }
 
     fn reach_done(&self, c: &Ctx, i: usize) -> bool {
-        self.flags & [delirium_data::kv!(188 int), delirium_data::kv!(7 int)][i] != 0 || self.reach_t[i] > self.p.grab_hold_time || c.ch.busy[i] || !self.p.reach_for_wound
+        self.flags & [delirium_data::kv!(189 int), delirium_data::kv!(7 int)][i] != 0 || self.reach_t[i] > self.p.grab_hold_time || c.ch.busy[i] || !self.p.reach_for_wound
     }
 
     fn reach_exit(&mut self, _c: &mut Ctx) {
@@ -1025,7 +1025,7 @@ impl Shot {
             c.ch.eff[l.e[0]].desired[1] = lim[delirium_data::kv!(0 int)] * 0.5;
         } else {
             c.ch.eff[l.e[0]].desired[0] = lim[1] * 0.5;
-            c.ch.eff[l.e[0]].desired[1] = lim[2] * delirium_data::kv!(119);
+            c.ch.eff[l.e[0]].desired[1] = lim[2] * delirium_data::kv!(120);
         }
         for j in [l.e[1], l.e[0], l.e[2]] {
             c.og(j, 1.0);
@@ -1050,13 +1050,13 @@ impl Shot {
             yaw = 1.0;
         }
         let side = if i == 0 { 1.0 } else { -1.0 };
-        crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t2, yaw + delirium_data::kv!(78) * side, 0.0, side, 1.0, Vec3::ZERO, None);
+        crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t2, yaw + delirium_data::kv!(79) * side, 0.0, side, 1.0, Vec3::ZERO, None);
         let ret = Self::wrist(c, l, t, n, side);
         if ret < 0.0 && r.part != HEAD() {
             self.reach[i].sign = -self.reach[i].sign;
         }
-        let strength = if self.t190 >= self.t194 && self.t194 != 0.0 { 0.5 } else { delirium_data::kv!(84) };
-        self.pull(c, l, t, self.reach[i].sign, strength, delirium_data::kv!(78), r.part, dt);
+        let strength = if self.t190 >= self.t194 && self.t194 != 0.0 { 0.5 } else { delirium_data::kv!(85) };
+        self.pull(c, l, t, self.reach[i].sign, strength, delirium_data::kv!(79), r.part, dt);
         c.ch.eff[l.e[0]].blend_to_zero(0.5);
     }
 
@@ -1077,7 +1077,7 @@ impl Shot {
         let b2 = pb * side;
         let (na, nb, npc) = (sdot(n, pa, b"yzx"), -sdot(n, b2, b"yxz"), sdot(n, pc, b"yzx"));
         let len = nb.fma(nb, na * na).sqrt() + delirium_data::kv!(50);
-        let (inv, max) = (1.0 / len, len * delirium_data::kv!(559));
+        let (inv, max) = (1.0 / len, len * delirium_data::kv!(560));
         let tw = ((inv * na) as f64).atan2((inv * nb) as f64) as f32;
         let tw = tw.clamp(-max, max);
         let (s, co) = ((tw as f64).sin() as f32, (tw as f64).cos() as f32);
@@ -1091,7 +1091,7 @@ impl Shot {
     #[allow(clippy::too_many_arguments)]
     fn pull(&self, c: &mut Ctx, l: Limb, t: Vec3, sign: f32, strength: f32, dist: f32, part: usize, dt: f32) {
         let hand = c.b.part(l.p[delirium_data::kv!(0 int)]);
-        let at = hand.m.d - hand.m.a * (sign * delirium_data::kv!(118));
+        let at = hand.m.d - hand.m.a * (sign * delirium_data::kv!(119));
         let d = slen(t - at, b"xzy");
         let wrist = c.b.joint_pos(l.e[delirium_data::kv!(0 int)]);
         if d >= delirium_data::kv!(5) * dist {
@@ -1101,8 +1101,8 @@ impl Shot {
         let wound = c.b.part(part);
         let wv = wound.v;
         let mut imp = (wv - hand.v).mul_add(Vec3::splat(k * delirium_data::kv!(60)), (t - at) * (k * k));
-        if dt < 1.0 / delirium_data::kv!(103) {
-            imp *= dt * delirium_data::kv!(103);
+        if dt < 1.0 / delirium_data::kv!(104) {
+            imp *= dt * delirium_data::kv!(104);
         }
         c.out.impulse.push((l.p[delirium_data::kv!(0 int)], wrist, imp));
         c.out.impulse.push((part, t, -imp));
@@ -1110,7 +1110,7 @@ impl Shot {
 
     fn collapse(c: &mut Ctx, mask: &str) {
         c.ch.set_stiffness(delirium_data::kv!(64), 1.0, mask, None);
-        c.out.dbm_knee_scale = Some(delirium_data::kv!(560));
+        c.out.dbm_knee_scale = Some(delirium_data::kv!(561));
         c.out.dbm_acc = Some(-0.5);
     }
 
@@ -1120,7 +1120,7 @@ impl Shot {
 
     fn melee_enter(&mut self, c: &mut Ctx) {
         let (a, b) = c.ch.stance_yaw;
-        (self.m228, self.m250, self.m254) = (0.0, b, delirium_data::kv!(116));
+        (self.m228, self.m250, self.m254) = (0.0, b, delirium_data::kv!(117));
         (self.m248, self.m24c) = (a * 2.0, a * 2.0);
         c.spine_all(0.0, 0.0, 0.0);
     }
@@ -1149,14 +1149,14 @@ impl Shot {
         c.out.dbm_turn = Some(turn(self.m248 - self.m250));
         (c.out.dbm_leg_offset, c.out.dbm_acc) = (Some(0.0), Some(0.0));
         c.out.spine_twist = Some((turn(self.m24c - self.m250) + c.com, p.body_stiffness));
-        self.m228 = ((-self.m228).mul_add(delirium_data::kv!(78), slen(c.vel, b"yxz")) * (dt * delirium_data::kv!(561))).min(1.0);
-        if self.m228 < delirium_data::kv!(78) {
-            self.m228 = delirium_data::kv!(134);
+        self.m228 = ((-self.m228).mul_add(delirium_data::kv!(79), slen(c.vel, b"yxz")) * (dt * delirium_data::kv!(562))).min(1.0);
+        if self.m228 < delirium_data::kv!(79) {
+            self.m228 = delirium_data::kv!(135);
         }
         c.spine_lean(0.0, 0.0);
         c.relax((-self.m228).fma(0.5, 1.0), "us");
-        let x = (((self.since_hit.clamp(0.0, delirium_data::kv!(252)) * delirium_data::kv!(562)) as f64).sin()) as f32;
-        if self.since_hit < delirium_data::kv!(74) {
+        let x = (((self.since_hit.clamp(0.0, delirium_data::kv!(253)) * delirium_data::kv!(563)) as f64).sin()) as f32;
+        if self.since_hit < delirium_data::kv!(75) {
             c.relax(x.clamp(0.0, 1.0), "ua");
         } else {
             c.relax((-self.m228).fma(delirium_data::kv!(8), 1.0), "ua");

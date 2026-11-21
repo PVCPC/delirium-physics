@@ -38,7 +38,7 @@ pub struct Handling {
 }
 
 fn split(bias: f32) -> [f32; 2] {
-    if bias < crate::kv!(78) {
+    if bias < crate::kv!(79) {
         [0.0, 1.0]
     } else if bias > crate::kv!(28) {
         [1.0, 0.0]
@@ -73,44 +73,44 @@ pub fn read_handling(text: &str) -> HashMap<String, Handling> {
             let f = |i: usize| t.get(i)?.parse::<f32>().ok();
             let n = |i: usize| t.get(i)?.parse::<f32>().ok().map(|v| v as i32);
             let hex = |i: usize| u32::from_str_radix(t.get(i)?, crate::kv!(54 int)).ok();
-            let handling_flags = hex(crate::kv!(316 int))?;
-            let damp = if handling_flags & crate::kv!(824 int) != 0 { crate::kv!(24) } else { crate::kv!(78) };
+            let handling_flags = hex(crate::kv!(317 int))?;
+            let damp = if handling_flags & crate::kv!(830 int) != 0 { crate::kv!(24) } else { crate::kv!(79) };
             let gears = n(crate::kv!(23 int))?.clamp(1, crate::kv!(22 int)) as u8;
             let percent_submerged = n(crate::kv!(0 int))?;
-            let top = f(crate::kv!(113 int))? / crate::kv!(547);
+            let top = f(crate::kv!(114 int))? / crate::kv!(548);
             let h = Handling {
                 mass: f(1)?,
-                drag: f(2)? * crate::kv!(72),
+                drag: f(2)? * crate::kv!(73),
                 percent_submerged,
                 buoyancy: crate::kv!(26) / percent_submerged.max(1) as f32,
                 centre_of_mass: [f(crate::kv!(1 int))?, f(crate::kv!(2 int))?, f(crate::kv!(6 int))?],
                 drive_bias: split(f(crate::kv!(22 int))?),
                 gears,
-                drive_force: f(crate::kv!(104 int))?,
-                drive_inertia: f(crate::kv!(81 int))?,
+                drive_force: f(crate::kv!(105 int))?,
+                drive_inertia: f(crate::kv!(82 int))?,
                 drive_max_velocity: top,
-                max_flat_velocity: top * crate::kv!(136),
+                max_flat_velocity: top * crate::kv!(137),
                 gear_ratios: gear_ratios(gears),
                 brake_force: f(crate::kv!(55 int))?,
-                brake_bias: split(f(crate::kv!(114 int))?),
+                brake_bias: split(f(crate::kv!(115 int))?),
                 handbrake: f(crate::kv!(56 int))?,
-                steering_lock: f(crate::kv!(189 int))?.to_radians(),
+                steering_lock: f(crate::kv!(190 int))?.to_radians(),
                 traction_max: f(crate::kv!(54 int))?,
-                traction_min: f(crate::kv!(110 int))?,
-                traction_lateral: f(crate::kv!(217 int))?.to_radians(),
-                traction_spring_delta_max: f(crate::kv!(204 int))?,
-                traction_bias: split(f(crate::kv!(127 int))?),
-                suspension_force: f(crate::kv!(111 int))?,
-                suspension_comp_damp: f(crate::kv!(105 int))? * damp,
-                suspension_rebound_damp: f(crate::kv!(106 int))? * damp,
-                suspension_upper: f(crate::kv!(107 int))?,
-                suspension_lower: f(crate::kv!(108 int))?,
-                suspension_raise: f(crate::kv!(109 int))?,
-                suspension_bias: split(f(crate::kv!(337 int))?),
-                damage: [f(crate::kv!(85 int))?, f(crate::kv!(481 int))?, f(crate::kv!(282 int))?, f(crate::kv!(462 int))?],
+                traction_min: f(crate::kv!(111 int))?,
+                traction_lateral: f(crate::kv!(218 int))?.to_radians(),
+                traction_spring_delta_max: f(crate::kv!(205 int))?,
+                traction_bias: split(f(crate::kv!(128 int))?),
+                suspension_force: f(crate::kv!(112 int))?,
+                suspension_comp_damp: f(crate::kv!(106 int))? * damp,
+                suspension_rebound_damp: f(crate::kv!(107 int))? * damp,
+                suspension_upper: f(crate::kv!(108 int))?,
+                suspension_lower: f(crate::kv!(109 int))?,
+                suspension_raise: f(crate::kv!(110 int))?,
+                suspension_bias: split(f(crate::kv!(338 int))?),
+                damage: [f(crate::kv!(86 int))?, f(crate::kv!(482 int))?, f(crate::kv!(283 int))?, f(crate::kv!(463 int))?],
                 seat_offset: f(crate::kv!(7 int))?,
-                value: n(crate::kv!(319 int))?,
-                model_flags: hex(crate::kv!(443 int))?,
+                value: n(crate::kv!(320 int))?,
+                model_flags: hex(crate::kv!(444 int))?,
                 handling_flags,
             };
             Some((t[0].to_ascii_uppercase(), h))
@@ -133,7 +133,7 @@ pub fn read_boat(text: &str) -> HashMap<String, [f32; 19]> {
         .filter_map(|l| {
             let mut t = l.strip_prefix('%')?.split_whitespace();
             let id = t.next()?.to_ascii_uppercase();
-            Some((id, t.filter_map(|v| v.parse().ok()).take(crate::kv!(204 int)).collect::<Vec<f32>>().try_into().ok()?))
+            Some((id, t.filter_map(|v| v.parse().ok()).take(crate::kv!(205 int)).collect::<Vec<f32>>().try_into().ok()?))
         })
         .collect()
 }
@@ -144,7 +144,7 @@ pub fn read_bike(text: &str) -> HashMap<String, [f32; 15]> {
             let mut t = l.strip_prefix('!')?.split_whitespace();
             let id = t.next()?.to_ascii_uppercase();
             let mut b: [f32; 15] = t.filter_map(|v| v.parse().ok()).collect::<Vec<f32>>().try_into().ok()?;
-            for i in [crate::kv!(1 int), crate::kv!(2 int), crate::kv!(81 int), crate::kv!(113 int)] {
+            for i in [crate::kv!(1 int), crate::kv!(2 int), crate::kv!(82 int), crate::kv!(114 int)] {
                 b[i] = b[i].to_radians();
             }
             Some((id, b))
@@ -160,8 +160,8 @@ pub fn read_ide_dirt(text: &str) -> HashMap<String, u32> {
             "end" => cars = false,
             _ if cars => {
                 let t: Vec<&str> = l.split(',').map(str::trim).collect();
-                let f: f32 = t.get(crate::kv!(113 int))?.parse().ok()?;
-                return Some((t.first()?.to_ascii_lowercase(), ((f as f64 * crate::kv!(126)) as i64 as u32).min(crate::kv!(56 int))));
+                let f: f32 = t.get(crate::kv!(114 int))?.parse().ok()?;
+                return Some((t.first()?.to_ascii_lowercase(), ((f as f64 * crate::kv!(127)) as i64 as u32).min(crate::kv!(56 int))));
             }
             _ => {}
         }
@@ -224,28 +224,28 @@ pub fn MODEL_FLAGS() -> &'static [(&'static [u8], u32); 28] { static V: std::syn
     (b"onlyduringofficehours", crate::kv!(23 int)),
     (b"bootinfront", crate::kv!(54 int)),
     (b"isvan", crate::kv!(7 int)),
-    (b"avoidturns", crate::kv!(188 int)),
-    (b"livery", crate::kv!(257 int)),
-    (b"liveryextra", crate::kv!(808 int)),
-    (b"sports", crate::kv!(182 int)),
-    (b"delivery", crate::kv!(183 int)),
-    (b"noambocc", crate::kv!(722 int)),
-    (b"onlyonhighways", crate::kv!(181 int)),
-    (b"ext_gang", crate::kv!(184 int)),
-    (b"ext_conv", crate::kv!(648 int)),
-    (b"ext_taxi", crate::kv!(818 int)),
-    (b"ext_rare", crate::kv!(820 int)),
-    (b"ext_requi", crate::kv!(825 int)),
-    (b"ext_strong", crate::kv!(826 int)),
-    (b"ext_script", crate::kv!(822 int)),
-    (b"ext_all", crate::kv!(823 int)),
-    (b"ext_sunroof", crate::kv!(816 int)),
+    (b"avoidturns", crate::kv!(189 int)),
+    (b"livery", crate::kv!(258 int)),
+    (b"liveryextra", crate::kv!(814 int)),
+    (b"sports", crate::kv!(183 int)),
+    (b"delivery", crate::kv!(184 int)),
+    (b"noambocc", crate::kv!(728 int)),
+    (b"onlyonhighways", crate::kv!(182 int)),
+    (b"ext_gang", crate::kv!(185 int)),
+    (b"ext_conv", crate::kv!(654 int)),
+    (b"ext_taxi", crate::kv!(824 int)),
+    (b"ext_rare", crate::kv!(826 int)),
+    (b"ext_requi", crate::kv!(831 int)),
+    (b"ext_strong", crate::kv!(832 int)),
+    (b"ext_script", crate::kv!(828 int)),
+    (b"ext_all", crate::kv!(829 int)),
+    (b"ext_sunroof", crate::kv!(822 int)),
     (b"tallship", crate::kv!(52 int)),
-    (b"truckfx", crate::kv!(676 int)),
-    (b"truckenginefx", crate::kv!(676 int)),
-    (b"truckexhaustfx", crate::kv!(712 int)),
-    (b"truckfirefx", crate::kv!(926 int)),
-    (b"bangerexhaustfx", crate::kv!(817 int)),
+    (b"truckfx", crate::kv!(682 int)),
+    (b"truckenginefx", crate::kv!(682 int)),
+    (b"truckexhaustfx", crate::kv!(718 int)),
+    (b"truckfirefx", crate::kv!(932 int)),
+    (b"bangerexhaustfx", crate::kv!(823 int)),
 ] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn flag_words(s: &[u8]) -> Vec<&[u8]> {
@@ -293,41 +293,41 @@ pub fn read_ide_flags(text: &str) -> HashMap<String, u32> {
 pub fn start_extras(bike: bool, flags: u32, create: u32, present: impl Fn(u32) -> bool, rand: &mut impl FnMut(i32, i32) -> i32) -> u32 {
     let (mut never, mut a, mut b, mut c, mut d) = (0u32, 0u32, 0u32, 0u32, u32::MAX);
     if bike {
-        (a, b, c, d) = (crate::kv!(56 int), crate::kv!(93 int), crate::kv!(1068 int), crate::kv!(180 int));
-    } else if flags & crate::kv!(184 int) == 0 {
-        if flags & crate::kv!(648 int) == 0 && flags & crate::kv!(816 int) == 0 {
-            if flags & crate::kv!(818 int) == 0 {
-                if flags & crate::kv!(825 int) == 0 {
-                    if flags & crate::kv!(823 int) != 0 {
+        (a, b, c, d) = (crate::kv!(56 int), crate::kv!(94 int), crate::kv!(1074 int), crate::kv!(181 int));
+    } else if flags & crate::kv!(185 int) == 0 {
+        if flags & crate::kv!(654 int) == 0 && flags & crate::kv!(822 int) == 0 {
+            if flags & crate::kv!(824 int) == 0 {
+                if flags & crate::kv!(831 int) == 0 {
+                    if flags & crate::kv!(829 int) != 0 {
                         (never, d) = (u32::MAX, 0);
                     }
                 } else {
                     (a, d) = (u32::MAX, 0);
                 }
             } else {
-                a = crate::kv!(187 int);
-                if flags & crate::kv!(823 int) == 0 { d = !crate::kv!(187 int) } else { (d, never) = (0, crate::kv!(187 int)) }
+                a = crate::kv!(188 int);
+                if flags & crate::kv!(829 int) == 0 { d = !crate::kv!(188 int) } else { (d, never) = (0, crate::kv!(188 int)) }
             }
         } else {
-            a = if create & crate::kv!(96 int) != 0 { crate::kv!(85 int) } else if create & crate::kv!(183 int) != 0 { 0x2 } else { crate::kv!(282 int) };
-            if flags & crate::kv!(823 int) == 0 { d = !crate::kv!(282 int) } else { (never, d) = (!a, 0) }
+            a = if create & crate::kv!(97 int) != 0 { crate::kv!(86 int) } else if create & crate::kv!(184 int) != 0 { 0x2 } else { crate::kv!(283 int) };
+            if flags & crate::kv!(829 int) == 0 { d = !crate::kv!(283 int) } else { (never, d) = (!a, 0) }
         }
-    } else if create & crate::kv!(182 int) == 0 {
-        if flags & crate::kv!(823 int) == 0 {
-            if flags & crate::kv!(825 int) == 0 { d = crate::kv!(282 int) } else { (d, a) = (0, crate::kv!(282 int)) }
+    } else if create & crate::kv!(183 int) == 0 {
+        if flags & crate::kv!(829 int) == 0 {
+            if flags & crate::kv!(831 int) == 0 { d = crate::kv!(283 int) } else { (d, a) = (0, crate::kv!(283 int)) }
         } else {
-            (d, never) = (0, !crate::kv!(187 int));
+            (d, never) = (0, !crate::kv!(188 int));
         }
     } else {
-        (a, d, never) = (0, 0, crate::kv!(187 int));
+        (a, d, never) = (0, 0, crate::kv!(188 int));
     }
-    if flags & crate::kv!(822 int) != 0 {
-        (a, d) = (a & !crate::kv!(187 int), d & !crate::kv!(187 int));
+    if flags & crate::kv!(828 int) != 0 {
+        (a, d) = (a & !crate::kv!(188 int), d & !crate::kv!(188 int));
     }
     if !bike {
-        (never, a, d) = (never & !crate::kv!(182 int), a & !crate::kv!(182 int), d & !crate::kv!(182 int));
+        (never, a, d) = (never & !crate::kv!(183 int), a & !crate::kv!(183 int), d & !crate::kv!(183 int));
     }
-    let extras: Vec<u32> = (1..=crate::kv!(81 int)).filter(|&n| present(n)).collect();
+    let extras: Vec<u32> = (1..=crate::kv!(82 int)).filter(|&n| present(n)).collect();
     if extras.is_empty() {
         return 0;
     }
@@ -338,7 +338,7 @@ pub fn start_extras(bike: bool, flags: u32, create: u32, present: impl Fn(u32) -
     let mut pc = if cc > 0 { rand(1, cc + 1) } else { -1 };
     let mut pd = -1;
     if cd > 0 {
-        let m = if flags & crate::kv!(820 int) != 0 { (cd & crate::kv!(1069 int)) << 2 } else { cd };
+        let m = if flags & crate::kv!(826 int) != 0 { (cd & crate::kv!(1075 int)) << 2 } else { cd };
         pd = rand(0, m + 1);
         if cd < pd {
             pd = 0;
@@ -388,17 +388,17 @@ pub fn livery_textures(sign_1: &str, has: impl Fn(&str) -> bool) -> Vec<String> 
 }
 
 pub fn rand_range(a: i32, b: i32, rand: u32) -> i32 {
-    ((rand as u16 as f32 * crate::kv!(969 f32)) * (b - a) as f32) as i32 + a
+    ((rand as u16 as f32 * crate::kv!(975 f32)) * (b - a) as f32) as i32 + a
 }
 
 pub fn new_dirt(min: u32, rand: u32) -> f32 {
-    let span = crate::kv!(54 int) - min.min(crate::kv!(189 int));
+    let span = crate::kv!(54 int) - min.min(crate::kv!(190 int));
     (rand % span + min) as f32
 }
 
 pub fn dirt_step(dirt: f32, velocity: [f32; 3], step: f32) -> f32 {
     let speed = velocity[0].mul_add(velocity[0], velocity[1] * velocity[1]).sqrt();
-    let k = crate::kv!(1070 f32);
+    let k = crate::kv!(1076 f32);
     let d = ((speed * k) as f64 * step as f64 + dirt as f64) as f32;
     if d - crate::kv!(30) >= 0.0 { crate::kv!(30) } else { d }
 }
@@ -430,7 +430,7 @@ pub fn read_ide_handling(text: &str) -> HashMap<String, (String, [f32; 2])> {
                 let t: Vec<&str> = l.split(',').map(str::trim).collect();
                 if let [model, _, _, handling, ..] = t.as_slice() {
                     let rim = |i: usize| t.get(i).and_then(|v| v.parse().ok()).unwrap_or(0.0);
-                    out.insert(model.to_ascii_lowercase(), (handling.to_ascii_uppercase(), [rim(crate::kv!(104 int)), rim(crate::kv!(81 int))]));
+                    out.insert(model.to_ascii_lowercase(), (handling.to_ascii_uppercase(), [rim(crate::kv!(105 int)), rim(crate::kv!(82 int))]));
                 }
             }
             _ => {}
@@ -503,7 +503,7 @@ pub fn read_friction(text: &str) -> Vec<[f32; 2]> {
     text_rows(text)
         .map(|l| {
             let f: Vec<f32> = l.split_whitespace().skip(crate::kv!(0 int)).take(2).filter_map(|v| v.parse().ok()).collect();
-            if f.len() == 2 { [f[0], f[1]] } else { [1.0, crate::kv!(78)] }
+            if f.len() == 2 { [f[0], f[1]] } else { [1.0, crate::kv!(79)] }
         })
         .collect()
 }
@@ -515,7 +515,7 @@ pub fn read_density(text: &str) -> Vec<f32> {
 pub fn read_burn(text: &str) -> Vec<[f32; 3]> {
     text_rows(text)
         .map(|l| {
-            let f: Vec<f32> = l.split_whitespace().skip(crate::kv!(81 int)).take(crate::kv!(0 int)).filter_map(|v| v.parse().ok()).collect();
+            let f: Vec<f32> = l.split_whitespace().skip(crate::kv!(82 int)).take(crate::kv!(0 int)).filter_map(|v| v.parse().ok()).collect();
             if f.len() == crate::kv!(0 int) { [f[0], f[1], f[2]] } else { [0.0; 3] }
         })
         .collect()
@@ -540,8 +540,8 @@ pub struct WheelFx {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn NO_FX() -> &'static WheelFx { static V: std::sync::OnceLock<WheelFx> = std::sync::OnceLock::new(); let f = || -> WheelFx { WheelFx { skid: crate::kv!(1071), friction: [crate::kv!(1071); 2], group: 0, friction_scale: 0.0, friction_fx: "",
-                                     disp: [crate::kv!(1071); 2], disp_scale: 0.0, disp_fx: "", collide: 0 } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+pub fn NO_FX() -> &'static WheelFx { static V: std::sync::OnceLock<WheelFx> = std::sync::OnceLock::new(); let f = || -> WheelFx { WheelFx { skid: crate::kv!(1077), friction: [crate::kv!(1077); 2], group: 0, friction_scale: 0.0, friction_fx: "",
+                                     disp: [crate::kv!(1077); 2], disp_scale: 0.0, disp_fx: "", collide: 0 } }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn read_wheel_fx(materials: &str, vehiclefx: &str) -> Vec<[WheelFx; 4]> {
     let mut groups = HashMap::<String, [WheelFx; 4]>::new();
@@ -554,7 +554,7 @@ pub fn read_wheel_fx(materials: &str, vehiclefx: &str) -> Vec<[WheelFx; 4]> {
             section = None;
         } else if let (Some(k), true) = (section, l.starts_with(|c: char| c.is_ascii_alphabetic())) {
             let f: Vec<&str> = l.split_whitespace().collect();
-            let num = |i: usize| f.get(i).and_then(|v| v.parse().ok()).unwrap_or(crate::kv!(1071));
+            let num = |i: usize| f.get(i).and_then(|v| v.parse().ok()).unwrap_or(crate::kv!(1077));
             let range = |a: usize| {
                 let r = if num(a) < 0.0 { [f32::MAX; 2] } else { [num(a), num(a + 1)] };
                 (r, 1.0 / (r[1] - r[0]))
@@ -562,9 +562,9 @@ pub fn read_wheel_fx(materials: &str, vehiclefx: &str) -> Vec<[WheelFx; 4]> {
             let name = |i: usize| -> &'static str {
                 f.get(i).filter(|n| **n != "-").map_or("", |n| Box::leak(n.to_ascii_lowercase().into_boxed_str()))
             };
-            let ((friction, friction_scale), (disp, disp_scale)) = (range(crate::kv!(113 int)), range(crate::kv!(56 int)));
-            let fx = WheelFx { skid: num(1), friction, group: row, friction_scale, friction_fx: name(crate::kv!(114 int)), disp, disp_scale,
-                               disp_fx: name(crate::kv!(54 int)), collide: f.get(crate::kv!(110 int)).and_then(|v| v.parse().ok()).unwrap_or(0) };
+            let ((friction, friction_scale), (disp, disp_scale)) = (range(crate::kv!(114 int)), range(crate::kv!(56 int)));
+            let fx = WheelFx { skid: num(1), friction, group: row, friction_scale, friction_fx: name(crate::kv!(115 int)), disp, disp_scale,
+                               disp_fx: name(crate::kv!(54 int)), collide: f.get(crate::kv!(111 int)).and_then(|v| v.parse().ok()).unwrap_or(0) };
             groups.entry(f[0].to_ascii_uppercase()).or_insert([(*NO_FX()); 4])[k] = fx;
             row += 1;
         }

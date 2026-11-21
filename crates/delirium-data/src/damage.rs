@@ -14,7 +14,7 @@ pub struct Health {
 
 impl Default for Health {
     fn default() -> Self {
-        Health { body: crate::kv!(82), engine: crate::kv!(82), petrol: crate::kv!(82), stalled: false, wrecked: false, blow: false, no_damage: false, tyres_proof: false }
+        Health { body: crate::kv!(83), engine: crate::kv!(83), petrol: crate::kv!(83), stalled: false, wrecked: false, blow: false, no_damage: false, tyres_proof: false }
     }
 }
 
@@ -24,11 +24,11 @@ pub fn crash_amount(j: f32, mass: f32, mult: f32) -> f32 {
 
 pub fn crash_shocks(j: f32, mass: f32, player_driving: bool, by_ped: bool) -> bool {
     let scale = if player_driving { crate::kv!(5) } else { crate::kv!(12) } * if by_ped { crate::kv!(31) } else { 1.0 };
-    j / mass * scale > crate::kv!(31) || j * scale > crate::kv!(750)
+    j / mass * scale > crate::kv!(31) || j * scale > crate::kv!(756)
 }
 
 pub fn crash_shake(d: f32) -> Option<(f32, f32)> {
-    (d >= crate::kv!(84)).then(|| ((d * crate::kv!(64)).clamp(crate::kv!(63), crate::kv!(15)), d * crate::kv!(570)))
+    (d >= crate::kv!(85)).then(|| ((d * crate::kv!(64)).clamp(crate::kv!(63), crate::kv!(15)), d * crate::kv!(571)))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,9 +44,9 @@ pub fn PANEL_MIN() -> f32 { crate::kv!(38) }
 
 pub fn panel_box(panel: Panel, lo: [f32; 3], hi: [f32; 3]) -> ([f32; 3], [f32; 3]) {
     let by = match panel {
-        Panel::Door => [-crate::kv!(60), -crate::kv!(60), crate::kv!(78)],
-        Panel::Bonnet => [-crate::kv!(60), -crate::kv!(60), -crate::kv!(116)],
-        Panel::Boot => [-crate::kv!(60), -crate::kv!(24), -crate::kv!(116)],
+        Panel::Door => [-crate::kv!(60), -crate::kv!(60), crate::kv!(79)],
+        Panel::Bonnet => [-crate::kv!(60), -crate::kv!(60), -crate::kv!(117)],
+        Panel::Boot => [-crate::kv!(60), -crate::kv!(24), -crate::kv!(117)],
     };
     (std::array::from_fn(|k| lo[k] + by[k]), hi.map(|v| v + crate::kv!(60)))
 }
@@ -56,7 +56,7 @@ pub fn panel_frees(panel: Panel, amount: f32, normal_x: f32, side_x: f32, random
         return false;
     }
     let side = if side_x > 0.5 { 1.0 } else if side_x < -0.5 { -1.0 } else { 0.0 };
-    if normal_x * side * amount < -crate::kv!(751) {
+    if normal_x * side * amount < -crate::kv!(757) {
         return random() < 0.5;
     }
     random() < if panel == Panel::Door { 0.5 } else { crate::kv!(24) } && inside()
@@ -67,7 +67,7 @@ pub struct Lamps(pub [bool; 14]);
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn LAMP_REACH2() -> f32 { crate::kv!(752 f32) }
+pub fn LAMP_REACH2() -> f32 { crate::kv!(758 f32) }
 
 impl Lamps {
     pub fn smash(&mut self, amount: f32, mut dist2: impl FnMut(usize) -> Option<f32>) -> Vec<usize> {
@@ -76,7 +76,7 @@ impl Lamps {
             return out;
         }
         for n in 0..crate::kv!(54 int) {
-            let slot = n.min(crate::kv!(114 int));
+            let slot = n.min(crate::kv!(115 int));
             if !self.0[slot] && dist2(n).is_some_and(|d| d < LAMP_REACH2()) {
                 self.0[slot] = true;
                 out.push(n);
@@ -88,12 +88,12 @@ impl Lamps {
 
 #[allow(non_snake_case)]
 #[inline]
-fn FIRE_STEPS() -> &'static [f32; 8] { static V: std::sync::OnceLock<[f32; 8]> = std::sync::OnceLock::new(); let f = || -> [f32; 8] { [-crate::kv!(753), -crate::kv!(754), -crate::kv!(755), -crate::kv!(82), -crate::kv!(756), -crate::kv!(757), -crate::kv!(73), -crate::kv!(758)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
+fn FIRE_STEPS() -> &'static [f32; 8] { static V: std::sync::OnceLock<[f32; 8]> = std::sync::OnceLock::new(); let f = || -> [f32; 8] { [-crate::kv!(759), -crate::kv!(760), -crate::kv!(761), -crate::kv!(83), -crate::kv!(762), -crate::kv!(763), -crate::kv!(74), -crate::kv!(764)] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 impl Health {
     pub fn collision(&mut self, j: f32, mass: f32, mult: [f32; 4], up: f32, engine_end: bool, random: &mut impl FnMut() -> f32) -> Option<f32> {
         let d = crash_amount(j, mass, mult[0]);
-        if up > crate::kv!(119) || d < crate::kv!(31) || self.wrecked || self.no_damage {
+        if up > crate::kv!(120) || d < crate::kv!(31) || self.wrecked || self.no_damage {
             return None;
         }
         let d = d - crate::kv!(31);
@@ -131,8 +131,8 @@ impl Health {
             return;
         }
         self.engine = crate::kv!(51);
-        let chance = if (kind.wrapping_sub(2) as u32) < crate::kv!(0 int) { 0.5 } else { crate::kv!(74) };
-        if !(chance < random() || force & crate::kv!(395 int) != 0) {
+        let chance = if (kind.wrapping_sub(2) as u32) < crate::kv!(0 int) { 0.5 } else { crate::kv!(75) };
+        if !(chance < random() || force & crate::kv!(396 int) != 0) {
             return;
         }
         if kind != crate::kv!(2 int) || 0.5 <= random() {
@@ -149,7 +149,7 @@ impl Health {
         let d = amount * crate::kv!(5) * mult[1];
         self.body = (self.body - d).max(0.0);
         self.engine_damage(d, crate::kv!(0 int), 0, random);
-        if self.petrol > -crate::kv!(82) {
+        if self.petrol > -crate::kv!(83) {
             let p = self.petrol - if by_player { d * 2.0 } else { d };
             if p < 0.0 { self.light_petrol() } else { self.petrol = p }
         }
@@ -162,9 +162,9 @@ impl Health {
     }
 
     pub fn put_out(&mut self) {
-        self.body = self.body.max(crate::kv!(590));
-        if (self.engine < 0.0 && self.engine > -crate::kv!(244)) || self.petrol_fire() {
-            (self.engine, self.petrol) = (-crate::kv!(244), 1.0);
+        self.body = self.body.max(crate::kv!(596));
+        if (self.engine < 0.0 && self.engine > -crate::kv!(245)) || self.petrol_fire() {
+            (self.engine, self.petrol) = (-crate::kv!(245), 1.0);
         }
     }
 
@@ -173,27 +173,27 @@ impl Health {
             return false;
         }
         if std::mem::take(&mut self.blow) && !self.no_damage {
-            (self.petrol, self.wrecked, self.stalled, self.body) = (-crate::kv!(82), true, true, 0.0);
+            (self.petrol, self.wrecked, self.stalled, self.body) = (-crate::kv!(83), true, true, 0.0);
             return true;
         }
-        if self.engine < 0.0 && self.engine > -crate::kv!(244) {
+        if self.engine < 0.0 && self.engine > -crate::kv!(245) {
             let rate = range(crate::kv!(27), crate::kv!(26));
             let was = self.engine;
             let e = fneg(dt.mul_add(rate, -was));
-            self.engine = if e < -crate::kv!(244) { -crate::kv!(244) } else { e };
+            self.engine = if e < -crate::kv!(245) { -crate::kv!(245) } else { e };
             for (k, &t) in (*FIRE_STEPS()).iter().enumerate() {
-                if self.engine < t && t <= was && (fneg(forward.mul_add(crate::kv!(5), -crate::kv!(233))) < rate || k == crate::kv!(22 int)) {
+                if self.engine < t && t <= was && (fneg(forward.mul_add(crate::kv!(5), -crate::kv!(234))) < rate || k == crate::kv!(22 int)) {
                     self.light_petrol();
                 }
             }
         }
-        if self.engine <= -crate::kv!(244) {
+        if self.engine <= -crate::kv!(245) {
             self.stalled = true;
         }
-        if self.petrol < 0.0 && self.petrol > -crate::kv!(82) {
-            self.petrol -= (crate::kv!(103) + crate::kv!(544) * burn) * dt;
-            if self.petrol <= -crate::kv!(82) {
-                (self.petrol, self.wrecked, self.stalled, self.body) = (-crate::kv!(82), true, true, 0.0);
+        if self.petrol < 0.0 && self.petrol > -crate::kv!(83) {
+            self.petrol -= (crate::kv!(104) + crate::kv!(545) * burn) * dt;
+            if self.petrol <= -crate::kv!(83) {
+                (self.petrol, self.wrecked, self.stalled, self.body) = (-crate::kv!(83), true, true, 0.0);
                 return true;
             }
         }
@@ -201,7 +201,7 @@ impl Health {
     }
 
     pub fn smoke(&self) -> f32 {
-        if 0.0 < self.engine { fneg(self.engine.mul_add(crate::kv!(759), -1.0)) } else { 1.0 }
+        if 0.0 < self.engine { fneg(self.engine.mul_add(crate::kv!(765), -1.0)) } else { 1.0 }
     }
 
     pub fn fire(&self) -> f32 {
@@ -209,11 +209,11 @@ impl Health {
         if !(e < 0.0) {
             0.0
         } else if -crate::kv!(16) < e {
-            e * crate::kv!(760 f32)
-        } else if e < -crate::kv!(761) {
+            e * crate::kv!(766 f32)
+        } else if e < -crate::kv!(767) {
             0.0
-        } else if e < -crate::kv!(762) {
-            fneg((e - -crate::kv!(761)).mul_add(crate::kv!(763), -1.0))
+        } else if e < -crate::kv!(768) {
+            fneg((e - -crate::kv!(767)).mul_add(crate::kv!(769), -1.0))
         } else {
             1.0
         }
@@ -223,23 +223,23 @@ impl Health {
         if self.tyres_proof {
             return false;
         }
-        let burst = *tyre == crate::kv!(82);
+        let burst = *tyre == crate::kv!(83);
         let t = *tyre;
         if t <= amount + crate::kv!(15) {
             if 0.0 < t {
-                *tyre = crate::kv!(764 f32);
+                *tyre = crate::kv!(770 f32);
             }
         } else {
             *tyre = t - amount;
         }
-        if crate::kv!(82) <= self.body {
+        if crate::kv!(83) <= self.body {
             self.body += -1.0;
         }
         burst
     }
 
     pub fn engine_fire(&self) -> bool {
-        self.engine < 0.0 && self.engine > -crate::kv!(244)
+        self.engine < 0.0 && self.engine > -crate::kv!(245)
     }
 
     pub fn on_fire(&self) -> bool {
@@ -247,11 +247,11 @@ impl Health {
     }
 
     pub fn fix(&mut self) {
-        (self.body, self.engine, self.petrol) = (crate::kv!(82), crate::kv!(82), crate::kv!(82));
+        (self.body, self.engine, self.petrol) = (crate::kv!(83), crate::kv!(83), crate::kv!(83));
     }
 
     pub fn petrol_fire(&self) -> bool {
-        self.petrol < 0.0 && self.petrol > -crate::kv!(82)
+        self.petrol < 0.0 && self.petrol > -crate::kv!(83)
     }
 }
 
@@ -263,8 +263,8 @@ pub fn part_hit(health: &mut f32, amount: f32) {
 }
 
 pub fn wreck_keep_chance(dist: f32) -> f32 {
-    if dist <= crate::kv!(147) {
-        if crate::kv!(751) < dist { crate::kv!(116) } else { 0.0 }
+    if dist <= crate::kv!(148) {
+        if crate::kv!(757) < dist { crate::kv!(117) } else { 0.0 }
     } else {
         crate::kv!(20)
     }
@@ -286,7 +286,7 @@ pub enum WreckPart {
 }
 
 pub fn wreck_part(consider: f32, keep: f32, rand: &mut impl FnMut() -> i32) -> WreckPart {
-    let unit = |r: i32| (r as f64 * crate::kv!(765)) as f32;
+    let unit = |r: i32| (r as f64 * crate::kv!(771)) as f32;
     if !(unit(rand()) < consider) {
         return WreckPart::Stays;
     }
@@ -294,7 +294,7 @@ pub fn wreck_part(consider: f32, keep: f32, rand: &mut impl FnMut() -> i32) -> W
 }
 
 pub fn wreck_part_fire(bits: u32, chance: f32) -> bool {
-    ((((bits & crate::kv!(196 int)) as f64) * crate::kv!(766)) as f32) < chance
+    ((((bits & crate::kv!(197 int)) as f64) * crate::kv!(772)) as f32) < chance
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -321,7 +321,7 @@ pub struct Explosion {
 
 impl Explosion {
     pub fn push(&self, area: f32, closing: f32, mass: f32) -> f32 {
-        if closing <= 0.0 { 0.0 } else { (self.force * area * closing * closing * crate::kv!(60)).min(mass * crate::kv!(79)) }
+        if closing <= 0.0 { 0.0 } else { (self.force * area * closing * closing * crate::kv!(60)).min(mass * crate::kv!(80)) }
     }
 
     pub fn ragdoll_push(&self, area: f32, closing: f32, mass: f32) -> f32 {
@@ -343,7 +343,7 @@ impl Explosion {
 
 pub fn blast_area(radius: f32, size: [f32; 3], n: [f32; 3]) -> f32 {
     let [x, y, z] = size;
-    if !(radius * radius * radius * crate::kv!(767) > z * y * x) {
+    if !(radius * radius * radius * crate::kv!(773) > z * y * x) {
         return radius * radius * std::f32::consts::TAU;
     }
     (n[0] * z * y).abs() + (n[1] * z * x).abs() + (n[2] * y * x).abs()
@@ -361,11 +361,11 @@ pub fn read_explosions(text: &str) -> std::collections::HashMap<String, Explosio
                 let f: Vec<&str> = line.split_whitespace().collect();
                 let n = |i: usize| f.get(i).and_then(|s| s.parse::<f32>().ok());
                 if let (Some(c), Some(e), Some(r), Some(force)) = (n(1), n(2), n(crate::kv!(2 int)), n(crate::kv!(23 int))) {
-                    let fires = [crate::kv!(189 int), crate::kv!(54 int), crate::kv!(110 int), crate::kv!(217 int)].map(|i| n(i).unwrap_or(0.0));
-                    let light = [crate::kv!(105 int), crate::kv!(106 int), crate::kv!(107 int), crate::kv!(108 int), crate::kv!(109 int), crate::kv!(337 int)].map(|i| n(i).unwrap_or(0.0));
-                    out.insert(f[0].to_string(), Explosion { damage: [c, e], radius: r, speed: n(crate::kv!(6 int)).unwrap_or(crate::kv!(79)), decay: n(crate::kv!(22 int)).unwrap_or(-1.0), force, ragdoll: n(crate::kv!(104 int)).unwrap_or(0.0), fires, fx: f.get(crate::kv!(55 int)).map(|s| s.to_string()), fx_air: f.get(crate::kv!(114 int)).map(|s| s.to_string()),
-                                                             fx_scale: n(crate::kv!(56 int)).unwrap_or(1.0), light, shake: n(crate::kv!(204 int)).unwrap_or(0.0), weapon: f.get(crate::kv!(127 int)).map(|s| s.to_string()).unwrap_or_default(),
-                                                             directed: [n(crate::kv!(81 int)).unwrap_or(0.0), n(crate::kv!(113 int)).unwrap_or(0.0)], infinite: n(crate::kv!(111 int)).is_some_and(|v| v != 0.0), dir: None, held: 0.0, row });
+                    let fires = [crate::kv!(190 int), crate::kv!(54 int), crate::kv!(111 int), crate::kv!(218 int)].map(|i| n(i).unwrap_or(0.0));
+                    let light = [crate::kv!(106 int), crate::kv!(107 int), crate::kv!(108 int), crate::kv!(109 int), crate::kv!(110 int), crate::kv!(338 int)].map(|i| n(i).unwrap_or(0.0));
+                    out.insert(f[0].to_string(), Explosion { damage: [c, e], radius: r, speed: n(crate::kv!(6 int)).unwrap_or(crate::kv!(80)), decay: n(crate::kv!(22 int)).unwrap_or(-1.0), force, ragdoll: n(crate::kv!(105 int)).unwrap_or(0.0), fires, fx: f.get(crate::kv!(55 int)).map(|s| s.to_string()), fx_air: f.get(crate::kv!(115 int)).map(|s| s.to_string()),
+                                                             fx_scale: n(crate::kv!(56 int)).unwrap_or(1.0), light, shake: n(crate::kv!(205 int)).unwrap_or(0.0), weapon: f.get(crate::kv!(128 int)).map(|s| s.to_string()).unwrap_or_default(),
+                                                             directed: [n(crate::kv!(82 int)).unwrap_or(0.0), n(crate::kv!(114 int)).unwrap_or(0.0)], infinite: n(crate::kv!(112 int)).is_some_and(|v| v != 0.0), dir: None, held: 0.0, row });
                     row += 1;
                 }
             }

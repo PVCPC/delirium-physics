@@ -240,7 +240,7 @@ impl HardConstraint {
         };
         let parts = list(p.s("partIndex", "")?)?;
         let (o, t, b) = (list(p.s("constrainOrientation", "")?)?, list(p.s("constrainTranslation", "")?)?, list(p.s("blendWithPreviousFrame", "")?)?);
-        if parts.iter().any(|&k| !(0..delirium_data::kv!(111 int)).contains(&k)) {
+        if parts.iter().any(|&k| !(0..delirium_data::kv!(112 int)).contains(&k)) {
             return Err(Error::Param);
         }
         let slots = parts.iter().enumerate().map(|(i, &k)| Slot { part: k as usize, orient: o.get(i).is_none_or(|&x| x != 0),
@@ -311,11 +311,11 @@ impl Electrocute {
         let (mag, initial) = (p.f("stunMag", delirium_data::kv!(17))?, p.f("initialMult", 1.0)?);
         let large = (p.f("largeMult", 1.0)?, p.f("largeMinTime", 1.0)?, p.f("largeMaxTime", 2.0)?);
         let mult = [p.f("movingMult", 1.0)?, p.f("balancingMult", 1.0)?, p.f("airborneMult", 1.0)?];
-        let (moving, interval, random) = (p.f("movingThresh", 1.0)?, p.f("stunInterval", delirium_data::kv!(112))?, p.f("directionRandomness", 0.5)?);
+        let (moving, interval, random) = (p.f("movingThresh", 1.0)?, p.f("stunInterval", delirium_data::kv!(113))?, p.f("directionRandomness", 0.5)?);
         let mut parts = vec![];
         for (on, ks) in [(p.i("hipType", 0)? != 0, 0..1), (p.b("leftLeg", true)?, 1..delirium_data::kv!(1 int)), (p.b("rightLeg", true)?, delirium_data::kv!(1 int)..delirium_data::kv!(22 int)),
-                         (p.b("spine", true)?, delirium_data::kv!(22 int)..delirium_data::kv!(113 int)), (p.b("neck", true)?, delirium_data::kv!(113 int)..delirium_data::kv!(114 int)), (p.b("leftArm", true)?, delirium_data::kv!(114 int)..delirium_data::kv!(110 int)),
-                         (p.b("rightArm", true)?, delirium_data::kv!(110 int)..delirium_data::kv!(111 int))] {
+                         (p.b("spine", true)?, delirium_data::kv!(22 int)..delirium_data::kv!(114 int)), (p.b("neck", true)?, delirium_data::kv!(114 int)..delirium_data::kv!(115 int)), (p.b("leftArm", true)?, delirium_data::kv!(115 int)..delirium_data::kv!(111 int)),
+                         (p.b("rightArm", true)?, delirium_data::kv!(111 int)..delirium_data::kv!(112 int))] {
             if on {
                 parts.extend(ks);
             }
@@ -357,7 +357,7 @@ impl Extra for Electrocute {
             let mass = c.b.doll.part_mass(k);
             match self.torques {
                 true => c.out.torque(k, d * (mass * delirium_data::kv!(51) * m * delirium_data::kv!(63) / dt)),
-                false => c.out.force(k, d * (mass * m * delirium_data::kv!(84) / dt)),
+                false => c.out.force(k, d * (mass * m * delirium_data::kv!(85) / dt)),
             }
         }
     }

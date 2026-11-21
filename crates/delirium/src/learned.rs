@@ -9,13 +9,13 @@ use crate::ragdoll::{Build, Ragdoll};
 pub fn HEAD() -> usize { delirium_data::kv!(55 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn CHEST() -> usize { delirium_data::kv!(104 int) }
+pub fn CHEST() -> usize { delirium_data::kv!(105 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn STEPS() -> usize { delirium_data::kv!(187 int) }
+pub fn STEPS() -> usize { delirium_data::kv!(188 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn HIDDEN() -> usize { delirium_data::kv!(188 int) }
+pub fn HIDDEN() -> usize { delirium_data::kv!(189 int) }
 
 pub struct Net {
     pub sizes: [usize; 4],
@@ -124,13 +124,13 @@ pub fn drive(a: &mut Agent, act: &[f32], zero: &[Quat], build: &Build) {
     for (i, p) in build.parts.iter().enumerate() {
         let r = match p.parent {
             None => root.rotation,
-            Some(j) => rot[j] * zero[i] * Quat::from_scaled_axis(Vec3::new(act[delirium_data::kv!(0 int) * (i - 1)], act[delirium_data::kv!(0 int) * (i - 1) + 1], act[delirium_data::kv!(0 int) * (i - 1) + 2]) * delirium_data::kv!(136)),
+            Some(j) => rot[j] * zero[i] * Quat::from_scaled_axis(Vec3::new(act[delirium_data::kv!(0 int) * (i - 1)], act[delirium_data::kv!(0 int) * (i - 1) + 1], act[delirium_data::kv!(0 int) * (i - 1) + 2]) * delirium_data::kv!(137)),
         };
         rot.push(r);
     }
     let n = delirium_data::kv!(0 int) * (build.parts.len() - 1);
-    a.set_stiffness(delirium_data::kv!(65) + delirium_data::kv!(84) * act[n], 1.0);
-    a.muscle_stiffness_x(act.get(n + 1).map_or(1.0, |&m| delirium_data::kv!(84 f32).powf(m)));
+    a.set_stiffness(delirium_data::kv!(65) + delirium_data::kv!(85) * act[n], 1.0);
+    a.muscle_stiffness_x(act.get(n + 1).map_or(1.0, |&m| delirium_data::kv!(85 f32).powf(m)));
     crate::nm::task_pose_control(a, rot.into_iter().map(|r| Transform::from_rotation(r)).collect());
 }
 
@@ -153,7 +153,7 @@ pub const MENU: [(&str, bool); 40] = [
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn PICK_EVERY() -> usize { delirium_data::kv!(189 int) }
+pub fn PICK_EVERY() -> usize { delirium_data::kv!(190 int) }
 
 #[derive(Clone, Copy, Default)]
 pub struct Pick {
@@ -168,7 +168,7 @@ pub fn menu(slot: usize, a: &Agent, dir: Vec3, amt: f32) -> Vec<(&'static str, V
     let left = Vec3::Z.cross(dir);
     match MENU[slot].0 {
         "balance" => vec![("bodyBalance", vec![on()])],
-        "drunk" => vec![("bodyBalance", vec![on(), ("armsOutOnPushTimeout", Value::Float(delirium_data::kv!(190)))]),
+        "drunk" => vec![("bodyBalance", vec![on(), ("armsOutOnPushTimeout", Value::Float(delirium_data::kv!(191)))]),
                         ("leanInDirection", vec![on(), ("leanAmount", Value::Float(delirium_data::kv!(60))), ("dir", Value::Vec3(dir))])],
         "windmill" => vec![("bodyBalance", vec![on()]), ("armsWindmillAdaptive", vec![on()])],
         "pedal" => vec![("pedalLegs", vec![on()])],
@@ -181,7 +181,7 @@ pub fn menu(slot: usize, a: &Agent, dir: Vec3, amt: f32) -> Vec<(&'static str, V
         "brace" => vec![("braceForImpact", vec![on(), ("pos", Value::Vec3(chest + dir)), ("look", Value::Vec3(chest + dir))])],
         "look" => vec![("headLook", vec![on(), ("alwaysLook", Value::Bool(true)), ("pos", Value::Vec3(head + dir * 2.0))])],
         "point" => vec![("pointArm", vec![on(), ("target", Value::Vec3(chest + dir * 2.0))])],
-        "lean" => vec![("bodyBalance", vec![on()]), ("leanInDirection", vec![on(), ("leanAmount", Value::Float(delirium_data::kv!(116) * amt)), ("dir", Value::Vec3(dir))])],
+        "lean" => vec![("bodyBalance", vec![on()]), ("leanInDirection", vec![on(), ("leanAmount", Value::Float(delirium_data::kv!(117) * amt)), ("dir", Value::Vec3(dir))])],
         "relax" => vec![("bodyRelax", vec![on()])],
         "stayup" => vec![("stayUpright", vec![on(), ("stiffness", Value::Float(delirium_data::kv!(5)))])],
         "foetal" => vec![("bodyFoetal", vec![on()])],
@@ -222,7 +222,7 @@ pub fn step(net: &Net, w: &[f32], a: &mut Agent, build: &Build, world: &Collisio
         drive(a, &act, zero, build);
     }
     a.doll.kick(Vec3::ZERO);
-    a.step(build, world, 1.0 / delirium_data::kv!(103), &[], &[]);
+    a.step(build, world, 1.0 / delirium_data::kv!(104), &[], &[]);
 }
 
 pub fn send_line(a: &mut Agent, build: &Build, world: &Collision, line: &str) {
@@ -240,7 +240,7 @@ pub fn send_line(a: &mut Agent, build: &Build, world: &Collision, line: &str) {
 
 pub fn standing(d: &Ragdoll) -> bool {
     let fr: Vec<Transform> = d.frames().collect();
-    fr[HEAD()].translation.z > delirium_data::kv!(179) && fr[0].translation.z > delirium_data::kv!(20)
+    fr[HEAD()].translation.z > delirium_data::kv!(180) && fr[0].translation.z > delirium_data::kv!(20)
 }
 
 pub fn walk_obs(d: &Ragdoll, phase: f32) -> Vec<f32> {
@@ -274,12 +274,12 @@ pub fn start_walk_balance(a:&mut Agent,build:&Build,world:&Collision)->Result<()
 pub fn walk_input(a: &mut Agent, build: &Build, world: &Collision, st: &mut msg::State, dir: Vec3,
                   wander: &mut crate::playerctl::Wander, rand: &mut delirium_data::rng::Rand) {
     let ped = a.doll.frames().next().map_or(Vec3::ZERO, |f| f.translation);
-    let m = crate::playerctl::control(a, (0, -delirium_data::kv!(191 int)), (-dir.x).atan2(dir.y), ped, wander, rand);
+    let m = crate::playerctl::control(a, (0, -delirium_data::kv!(192 int)), (-dir.x).atan2(dir.y), ped, wander, rand);
     crate::shottask::apply(a, build, world, st, &m);
 }
 
 pub fn walk_config(act: &[f32]) -> crate::nm::ConfigureBalance {
-    crate::nm::ConfigureBalance { leg_stiffness: delirium_data::kv!(21) + delirium_data::kv!(84) * act[0], step_height: delirium_data::kv!(78) * delirium_data::kv!(84 f32).powf(act[1]),
+    crate::nm::ConfigureBalance { leg_stiffness: delirium_data::kv!(21) + delirium_data::kv!(85) * act[0], step_height: delirium_data::kv!(79) * delirium_data::kv!(85 f32).powf(act[1]),
         step_clamp_scale: 2f32.powf(act[2]), ..Default::default() }
 }
 
@@ -287,7 +287,7 @@ pub fn drive_walk(net: &Net, w: &[f32], a: &mut Agent, phase: &mut f32, duration
     let act = net.forward(w, &walk_obs(&a.doll, *phase));
     tune_walk(a, &act);
     a.doll.kick(Vec3::ZERO);
-    *phase = (*phase + 1.0 / (delirium_data::kv!(103) * duration)).rem_euclid(1.0);
+    *phase = (*phase + 1.0 / (delirium_data::kv!(104) * duration)).rem_euclid(1.0);
 }
 
 pub fn tune_walk(a: &mut Agent, act: &[f32]) {

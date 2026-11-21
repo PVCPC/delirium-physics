@@ -26,7 +26,7 @@ pub(crate) fn cast(world: &Collision, obstacles: &[Obstacle], from: Vec3, dir: V
 fn ray_box(o: Vec3, d: Vec3, half: Vec3) -> Option<(f32, Vec3)> {
     let (mut near, mut far, mut n) = (0.0f32, f32::MAX, Vec3::ZERO);
     for k in 0..delirium_data::kv!(0 int) {
-        if d[k].abs() < delirium_data::kv!(250) {
+        if d[k].abs() < delirium_data::kv!(251) {
             if o[k].abs() > half[k] {
                 return None;
             }
@@ -49,19 +49,19 @@ fn ray_box(o: Vec3, d: Vec3, half: Vec3) -> Option<(f32, Vec3)> {
 
 #[allow(non_snake_case)]
 #[inline]
-fn SPINE3() -> usize { delirium_data::kv!(81 int) }
+fn SPINE3() -> usize { delirium_data::kv!(82 int) }
 #[allow(non_snake_case)]
 #[inline]
-fn NECK_PART() -> usize { delirium_data::kv!(113 int) }
+fn NECK_PART() -> usize { delirium_data::kv!(114 int) }
 #[allow(non_snake_case)]
 #[inline]
 fn HEAD() -> usize { delirium_data::kv!(55 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub(crate) fn REACH() -> f32 { delirium_data::kv!(119) }
+pub(crate) fn REACH() -> f32 { delirium_data::kv!(120) }
 #[allow(non_snake_case)]
 #[inline]
-pub(crate) fn PROBE() -> f32 { delirium_data::kv!(251 f32) }
+pub(crate) fn PROBE() -> f32 { delirium_data::kv!(252 f32) }
 pub(crate) const FALL_G: f32 = 1.0;
 pub(crate) const SOFTEN: f32 = 0.5;
 
@@ -78,7 +78,7 @@ pub struct Params {
 
 impl Default for Params {
     fn default() -> Params {
-        Params { legs_stiffness: delirium_data::kv!(35), torso_stiffness: delirium_data::kv!(137), arms_stiffness: delirium_data::kv!(30), forward_max_arm_offset: delirium_data::kv!(140),
+        Params { legs_stiffness: delirium_data::kv!(35), torso_stiffness: delirium_data::kv!(138), arms_stiffness: delirium_data::kv!(30), forward_max_arm_offset: delirium_data::kv!(141),
                  backwards_min_arm_offset: -delirium_data::kv!(17), z_axis_spin_reduction: 0.0, use_head_look: true }
     }
 }
@@ -128,7 +128,7 @@ impl CatchFall {
             e.oppose_gravity = 1.0;
         }
         let leg = [0.5 + 0.5 * ch.random(), 0.5 + 0.5 * ch.random()];
-        let lean2 = ch.random().fma(delirium_data::kv!(60), -delirium_data::kv!(78));
+        let lean2 = ch.random().fma(delirium_data::kv!(60), -delirium_data::kv!(79));
         for i in 0..2 {
             ch.eff[(*ANKLE())[i]].desired[0] = -leg[i];
             ch.eff[(*HIP())[i]].desired[0] = leg[i];
@@ -183,14 +183,14 @@ impl CatchFall {
         ch.set_stiffness(fr * p.arms_stiffness, 1.0, "ur", None);
         ch.set_stiffness(p.legs_stiffness * k, 0.5, "lb", None);
         for (i, f) in [fl, fr].into_iter().enumerate() {
-            ch.eff[limb(i).e[delirium_data::kv!(0 int)]].set_stiffness((p.arms_stiffness + delirium_data::kv!(201)) * f * 0.5, 1.0, None);
+            ch.eff[limb(i).e[delirium_data::kv!(0 int)]].set_stiffness((p.arms_stiffness + delirium_data::kv!(202)) * f * 0.5, 1.0, None);
             ch.eff[(*ANKLE())[i]].set_stiffness(delirium_data::kv!(31), 1.0, None);
         }
         let under = (self.arm[0].vel + self.arm[1].vel) * 0.5;
         let s3 = c.b.part(SPINE3());
         let (d, up) = (s3.v - under, c.up);
         let du = sdot(up, d, b"yzx");
-        self.dir = nrm(up * ((-FALL_G).fma(delirium_data::kv!(252), du) - du) + d);
+        self.dir = nrm(up * ((-FALL_G).fma(delirium_data::kv!(253), du) - du) + d);
         let m = c.m;
         self.forward = -sdot(m.c, self.dir, b"yzx");
         let back = -sdot(m.c, c.vel - under, b"yzx");
@@ -249,7 +249,7 @@ impl CatchFall {
 
 pub(crate) fn spin_reduction(c: &mut Ctx, k: f32) {
     let t = spin_torque(c.up, c.angvel, c.b.doll.mass(), k);
-    for k in [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(104 int), delirium_data::kv!(81 int)] {
+    for k in [0, delirium_data::kv!(22 int), delirium_data::kv!(23 int), delirium_data::kv!(105 int), delirium_data::kv!(82 int)] {
         c.out.torque(k, t);
     }
 }
@@ -261,10 +261,10 @@ fn spin_torque(up: Vec3, w: Vec3, mass: f32, k: f32) -> Vec3 {
 
 impl Arm {
     fn init(ch: &mut Character, left: bool) -> Arm {
-        let mut r = || (ch.random_bits() & delirium_data::kv!(196 int)) as f32;
-        let clav_lean1 = r().fma(delirium_data::kv!(253 f32), -delirium_data::kv!(116));
-        let clav_lean2 = r() * delirium_data::kv!(254 f32);
-        let elbow = r().fma(delirium_data::kv!(255 f32), delirium_data::kv!(74));
+        let mut r = || (ch.random_bits() & delirium_data::kv!(197 int)) as f32;
+        let clav_lean1 = r().fma(delirium_data::kv!(254 f32), -delirium_data::kv!(117));
+        let clav_lean2 = r() * delirium_data::kv!(255 f32);
+        let elbow = r().fma(delirium_data::kv!(256 f32), delirium_data::kv!(75));
         Arm { vel: Vec3::ZERO, k: 1.0, clav_lean1, clav_lean2, elbow, left }
     }
 
@@ -272,11 +272,11 @@ impl Arm {
         let l: Limb = limb(i);
         let m = c.m;
         let mut s = m.b.vx(c.up);
-        if sdot(s, s, b"zxy") > delirium_data::kv!(256) {
+        if sdot(s, s, b"zxy") > delirium_data::kv!(257) {
             s = nrm(s);
         }
         let out = if cf.forward > 0.0 {
-            nrm(m.b + m.b.vx(s)) * cf.upright.max(0.0).min(1.0).fma(delirium_data::kv!(119), delirium_data::kv!(116))
+            nrm(m.b + m.b.vx(s)) * cf.upright.max(0.0).min(1.0).fma(delirium_data::kv!(120), delirium_data::kv!(117))
         } else {
             m.b
         };
@@ -300,8 +300,8 @@ impl Arm {
         let len = slen(d, b"zyx");
         if len > REACH() {
             d *= REACH() / len;
-        } else if len < delirium_data::kv!(116) {
-            d *= delirium_data::kv!(116) / (len + delirium_data::kv!(72));
+        } else if len < delirium_data::kv!(117) {
+            d *= delirium_data::kv!(117) / (len + delirium_data::kv!(73));
         }
         let target = shoulder + d;
         let side = if self.left { 1.0 } else { -1.0 };
@@ -311,7 +311,7 @@ impl Arm {
             (true, false) => (hand, 0.0, Vec3::ZERO),
             (false, _) => (target, 0.5, c.b.part(l.p[0]).v),
         };
-        crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t, yaw, lead, side, 1.0, vel, Some((delirium_data::kv!(15), delirium_data::kv!(116))));
+        crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t, yaw, lead, side, 1.0, vel, Some((delirium_data::kv!(15), delirium_data::kv!(117))));
         let ch = &mut *c.ch;
         if cf.forward < -delirium_data::kv!(24) {
             let e = &mut ch.eff[l.e[2]].desired[0];

@@ -52,24 +52,24 @@ pub fn balance_start(tp: &TaskParams, set: &str, hit: &Hit) -> Vec<Msg> {
     use Value::{Bool as B, Float as F, Int as I, Vec3 as V};
     let nb = |n: &str, or: f32| tp.get("NMBalance", set, n, or);
     let v3 = |n: &str, or: Vec3| tp_vec3(tp, set, n, or);
-    let mut p = vec![("start", B(true)), ("bodyStiffness", F(nb("balanceStiffness", delirium_data::kv!(137)))), ("damping", F(nb("balanceDamping", delirium_data::kv!(74)))),
+    let mut p = vec![("start", B(true)), ("bodyStiffness", F(nb("balanceStiffness", delirium_data::kv!(138)))), ("damping", F(nb("balanceDamping", delirium_data::kv!(75)))),
                      ("elbow", F(nb("balanceElbow", delirium_data::kv!(13)))), ("shoulder", F(nb("balanceShoulder", 1.0))),
                      ("somersaultAngle", F(nb("balanceSomersaultAngle", 1.0))), ("somersaultAngleThreshold", F(nb("balanceSomersaultAngleThreshold", delirium_data::kv!(17)))),
                      ("sideSomersaultAngle", F(nb("balanceSideSomersaultAngle", 1.0))),
                      ("sideSomersaultAngleThreshold", F(nb("balanceSideSomersaultAngleThreshold", delirium_data::kv!(17)))),
                      ("returningToBalanceArmsOut", F(nb("balanceReturningToBalanceArmsOut", 0.0))),
-                     ("angVelMultiplier", V(v3("balanceAngVelMultiplier", Vec3::new(delirium_data::kv!(84), 1.0, delirium_data::kv!(84))))),
-                     ("angVelThreshold", V(v3("balanceAngVelThreshold", Vec3::new(delirium_data::kv!(136), delirium_data::kv!(5), delirium_data::kv!(136))))),
-                     ("elbowAngleOnContact", F(nb("balanceElbowAngleOnContact", delirium_data::kv!(192)))), ("bendElbowsTime", F(nb("balanceBendElbowsTime", delirium_data::kv!(24)))),
-                     ("bendElbowsGait", F(nb("balanceBendElbowsGait", delirium_data::kv!(74)))), ("headLookAtVelProb", F(nb("balanceHeadLookAtVelProb", -1.0))),
-                     ("turnOffProb", F(nb("balanceTurnOffProb", delirium_data::kv!(78)))), ("turn2VelProb", F(nb("balanceTurn2VelProb", delirium_data::kv!(24)))),
-                     ("turnAwayProb", F(nb("balanceTurnAwayProb", delirium_data::kv!(9)))), ("turnLeftProb", F(nb("balanceTurnLeftProb", delirium_data::kv!(193)))),
-                     ("turnRightProb", F(nb("balanceTurnRightProb", delirium_data::kv!(193)))), ("turn2TargetProb", F(nb("balanceTurn2TargetProb", delirium_data::kv!(60))))];
+                     ("angVelMultiplier", V(v3("balanceAngVelMultiplier", Vec3::new(delirium_data::kv!(85), 1.0, delirium_data::kv!(85))))),
+                     ("angVelThreshold", V(v3("balanceAngVelThreshold", Vec3::new(delirium_data::kv!(137), delirium_data::kv!(5), delirium_data::kv!(137))))),
+                     ("elbowAngleOnContact", F(nb("balanceElbowAngleOnContact", delirium_data::kv!(193)))), ("bendElbowsTime", F(nb("balanceBendElbowsTime", delirium_data::kv!(24)))),
+                     ("bendElbowsGait", F(nb("balanceBendElbowsGait", delirium_data::kv!(75)))), ("headLookAtVelProb", F(nb("balanceHeadLookAtVelProb", -1.0))),
+                     ("turnOffProb", F(nb("balanceTurnOffProb", delirium_data::kv!(79)))), ("turn2VelProb", F(nb("balanceTurn2VelProb", delirium_data::kv!(24)))),
+                     ("turnAwayProb", F(nb("balanceTurnAwayProb", delirium_data::kv!(9)))), ("turnLeftProb", F(nb("balanceTurnLeftProb", delirium_data::kv!(194)))),
+                     ("turnRightProb", F(nb("balanceTurnRightProb", delirium_data::kv!(194)))), ("turn2TargetProb", F(nb("balanceTurn2TargetProb", delirium_data::kv!(60))))];
     if let Some(head) = hit.attacker_head {
         if nb("balanceArmsOutOnPush", 1.0) != 0.0 {
             p.extend([("armsOutOnPush", B(true)), ("armsOutStraightenElbows", F(nb("balanceArmsOutStraightenElbows", 0.0))),
-                      ("armsOutMinLean2", F(nb("balanceArmsOutMinLean2", -delirium_data::kv!(194)))), ("armsOutOnPushMultiplier", F(nb("balanceArmsOutOnPushMultiplier", 1.0))),
-                      ("armsOutOnPushTimeout", F(nb("balanceArmsOutOnPushTimeout", delirium_data::kv!(138))))]);
+                      ("armsOutMinLean2", F(nb("balanceArmsOutMinLean2", -delirium_data::kv!(195)))), ("armsOutOnPushMultiplier", F(nb("balanceArmsOutOnPushMultiplier", 1.0))),
+                      ("armsOutOnPushTimeout", F(nb("balanceArmsOutOnPushTimeout", delirium_data::kv!(139))))]);
         }
         p.extend([("useHeadLook", B(true)), ("headLookPos", V(head)), ("headLookAlwaysTimeout", F(nb("balanceHeadLookTimeout", delirium_data::kv!(31))))]);
     }
@@ -140,11 +140,11 @@ pub fn flinch_start(rand: &mut Rand, tp: &TaskParams, set: &str, hit: &Hit, now:
     let at = hit.attacker_neck.unwrap_or(hit.pos);
     let left = rand.next() < delirium_data::kv!(49 int);
     let mut out = vec![("upperBodyFlinch", vec![("start", B(true)), ("pos", V(at)), ("bodyStiffness", F(f("bodyStiffness", delirium_data::kv!(21)))),
-                                                  ("bodyDamping", F(f("damping", 1.0))), ("backBendAmount", F(f("backBendAmount", -delirium_data::kv!(132)))),
+                                                  ("bodyDamping", F(f("damping", 1.0))), ("backBendAmount", F(f("backBendAmount", -delirium_data::kv!(133)))),
                                                   ("leftHanded", B(left)), ("rightHanded", B(!left)),
                                                   ("handDistanceVertical", F(f("handDistanceVertical", delirium_data::kv!(9)))),
                                                   ("handDistanceLeftRight", F(f("handDistanceLeftRight", delirium_data::kv!(68)))),
-                                                  ("handDistanceFrontBack", F(f("handDistanceFrontBack", delirium_data::kv!(9)))), ("noiseScale", F(f("noiseScale", delirium_data::kv!(78)))),
+                                                  ("handDistanceFrontBack", F(f("handDistanceFrontBack", delirium_data::kv!(9)))), ("noiseScale", F(f("noiseScale", delirium_data::kv!(79)))),
                                                   ("turnTowards", I(f("turnTowards", 1.0) as i32))])];
     let mut bb = vec![("start", B(true))];
     if set == "EXPLOSION" {
@@ -155,7 +155,7 @@ pub fn flinch_start(rand: &mut Rand, tp: &TaskParams, set: &str, hit: &Hit, now:
     if f("leanAwayFromPos", 0.0) != 0.0 {
         out.push(("leanInDirection", vec![("start", B(true)), ("applyAsForce", B(false)), ("dir", V(crate::shottask::flat(hit.pos - at, hit.fwd))),
                                           ("leanAmount", F(f("leanAwayAmount", delirium_data::kv!(60))))]));
-        until = (rand.int_in_range(f("leanMaxTimeL", delirium_data::kv!(82)) as i32, f("leanMaxTimeH", delirium_data::kv!(73)) as i32) as u32).wrapping_add(now);
+        until = (rand.int_in_range(f("leanMaxTimeL", delirium_data::kv!(83)) as i32, f("leanMaxTimeH", delirium_data::kv!(74)) as i32) as u32).wrapping_add(now);
     }
     (out, until)
 }

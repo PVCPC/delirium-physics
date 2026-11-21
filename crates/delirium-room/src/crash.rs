@@ -84,6 +84,16 @@ pub fn render_error(e: &bevy::render::error_handler::RenderError, main: &mut bev
         eprintln!("graphics: the card was busy redoing the window; carried on");
         return bevy::render::error_handler::RenderErrorPolicy::Ignore;
     }
+    if e.description.contains("Surface::configure") && e.description.contains("Invalid surface") {
+        static SEEN: std::sync::Mutex<Vec<std::time::Instant>> = std::sync::Mutex::new(Vec::new());
+        let mut s = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        s.retain(|t| t.elapsed().as_secs_f32() < 10.0);
+        s.push(std::time::Instant::now());
+        if s.len() <= 5 {
+            eprintln!("graphics: the window's surface was refused while being redone; carried on");
+            return bevy::render::error_handler::RenderErrorPolicy::Ignore;
+        }
+    }
     save(&format!("The room crashed: graphics error ({:?}): {}\n\n{}", e.ty, e.description, system()));
     main.write_message(bevy::app::AppExit::error());
     bevy::render::error_handler::RenderErrorPolicy::StopRendering

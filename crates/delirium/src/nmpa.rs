@@ -34,7 +34,7 @@ impl Default for PointArmParams {
 
 impl Default for PointArm {
     fn default() -> PointArm {
-        PointArm { p: PointArmParams::default(), reach: delirium_data::kv!(74), active: false, pointing: false }
+        PointArm { p: PointArmParams::default(), reach: delirium_data::kv!(75), active: false, pointing: false }
     }
 }
 
@@ -84,10 +84,10 @@ impl PointArm {
         crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], t, p.twist, 1.0, side, 1.0, Vec3::ZERO, None);
         share(c.ch, c.b.frames, l.e[0], l.e[1]);
         let s = swing(c.ch, l.e[0]);
-        if !self.pointing && s < p.point_swing_limit - delirium_data::kv!(78) {
+        if !self.pointing && s < p.point_swing_limit - delirium_data::kv!(79) {
             self.pointing = true;
         }
-        if self.pointing && s > p.point_swing_limit + delirium_data::kv!(78) {
+        if self.pointing && s > p.point_swing_limit + delirium_data::kv!(79) {
             self.pointing = false;
         }
         let ch = &mut *c.ch;

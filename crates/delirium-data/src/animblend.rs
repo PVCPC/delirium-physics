@@ -48,7 +48,7 @@ impl Player {
     pub fn new(duration: f32) -> Self {
         Player {
             duration: Some(duration), phase: 0.0, prev_phase: 0.0, rate: 1.0, weight: 1.0, goal: 0.0, blend_rate: 0.0,
-            weight_step: UNSET, phase_step: UNSET, blend_out: -crate::kv!(84), priority: 0, mask: 0,
+            weight_step: UNSET, phase_step: UNSET, blend_out: -crate::kv!(85), priority: 0, mask: 0,
             playing: false, paused: false, finished: false, looped: false, hold: false, blending: false,
             active: false, loops: false, synced: false, remove_blended_out: false, blend_out_at_end: false,
             own_channel: false, skip_weight: false, loop_a: false, loop_b: false, events: 0,
@@ -76,14 +76,14 @@ impl Player {
                 return;
             }
             (self.goal, self.blending) = (1.0, true);
-            self.blend_rate = if delta - crate::kv!(134) >= 0.0 { delta } else { crate::kv!(134) };
+            self.blend_rate = if delta - crate::kv!(135) >= 0.0 { delta } else { crate::kv!(135) };
         } else if delta < 0.0 {
             if self.weight <= 0.0 && delta >= self.signed_blend_rate() {
                 return;
             }
             let d = -delta;
             (self.goal, self.blending) = (0.0, true);
-            self.blend_rate = if d - crate::kv!(134) >= 0.0 { d } else { crate::kv!(134) };
+            self.blend_rate = if d - crate::kv!(135) >= 0.0 { d } else { crate::kv!(135) };
         } else {
             self.blending = false;
         }
@@ -248,7 +248,7 @@ pub fn sync_phases(players: &mut [Player], clips: &[Option<&Animation>], dt: f32
 pub fn priority_weights(players: &[Player]) -> Vec<f32> {
     let mut out = vec![0.0; players.len()];
     let (mut count0, mut only0) = (0, 0);
-    for layer in (0..=crate::kv!(104 u8)).rev() {
+    for layer in (0..=crate::kv!(105 u8)).rev() {
         let mut sum = 0.0f32;
         for (i, p) in players.iter().enumerate() {
             if p.duration.is_some() && !p.own_channel && p.priority == layer {
@@ -305,19 +305,19 @@ pub struct Dof {
 pub fn blend_n(dest: &mut [Dof], sources: &[&[Dof]], weights: &[f32], priority: Option<&[u8]>) {
     let total = weights.iter().fold(0.0f32, |s, &w| s + w);
     let total = if total - 1.0 >= 0.0 { 1.0 } else { total };
-    let rest = if total > crate::kv!(268) { 0.0 } else { 1.0 - total };
+    let rest = if total > crate::kv!(269) { 0.0 } else { 1.0 - total };
     let mut w = vec![0.0f32; weights.len()];
     for (d, dof) in dest.iter_mut().enumerate() {
         for (i, s) in sources.iter().enumerate() {
             w[i] = if s[d].invalid { 0.0 } else { weights[i] };
         }
-        if let Some(p) = priority.filter(|_| dof.track < 2 || dof.track == crate::kv!(111 int)) {
+        if let Some(p) = priority.filter(|_| dof.track < 2 || dof.track == crate::kv!(112 int)) {
             layer_weights(&mut w, p, crate::kv!(23 int));
         }
         let mut acc = rest;
         for w in w.iter_mut() {
             acc = *w + acc;
-            if acc >= crate::kv!(134) {
+            if acc >= crate::kv!(135) {
                 let q = *w / acc;
                 *w = if !(q >= 0.0) { 0.0 } else if q >= 1.0 { 1.0 } else { q };
             } else {
@@ -349,8 +349,8 @@ fn blend_dof(d: &mut Dof, s: &Dof, t: f32) {
             d.value = [r * x, r * y, r * z, r * w];
         }
         1 => (d.value, d.invalid) = (s.value, false),
-        0 if t > crate::kv!(134) => {
-            if t < crate::kv!(268) && !d.invalid {
+        0 if t > crate::kv!(135) => {
+            if t < crate::kv!(269) && !d.invalid {
                 for (a, &b) in d.value.iter_mut().zip(&s.value) {
                     *a = (b - *a).mul_add(t, *a);
                 }
@@ -360,8 +360,8 @@ fn blend_dof(d: &mut Dof, s: &Dof, t: f32) {
             d.invalid = false;
         }
         0 => {}
-        2 if t < crate::kv!(268) && !d.invalid => (d.value[0], d.invalid) = ((s.value[0] - d.value[0]).mul_add(t, d.value[0]), s.invalid),
-        2 if t > crate::kv!(134) => (d.value[0], d.invalid) = (s.value[0], s.invalid),
+        2 if t < crate::kv!(269) && !d.invalid => (d.value[0], d.invalid) = ((s.value[0] - d.value[0]).mul_add(t, d.value[0]), s.invalid),
+        2 if t > crate::kv!(135) => (d.value[0], d.invalid) = (s.value[0], s.invalid),
         2 => {}
         _ if t >= 0.5 => (d.value[0], d.invalid) = (s.value[0], false),
         _ => {}
@@ -379,10 +379,10 @@ pub struct MoverPlayer {
 
 #[allow(non_snake_case)]
 #[inline]
-pub fn FULL_MOVER_WEIGHT() -> u32 { crate::kv!(184 int) }
+pub fn FULL_MOVER_WEIGHT() -> u32 { crate::kv!(185 int) }
 #[allow(non_snake_case)]
 #[inline]
-pub fn OWN_CHANNEL() -> u32 { crate::kv!(648 int) }
+pub fn OWN_CHANNEL() -> u32 { crate::kv!(654 int) }
 
 pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     use crate::staticcount::{MOVER_BITS, NO_MOVER_TRACK};
@@ -390,7 +390,7 @@ pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     let (mut count0, mut lowest) = (0, 0);
     for (k, p) in players.iter().enumerate().filter(|(_, p)| p.clip) {
         let root = |mask: u32| mask == 0 || mask_passes(mask as u8, 0);
-        let counts = p.flags & NO_MOVER_TRACK() == 0 && p.mover_track && p.flags & OWN_CHANNEL() == 0 && root(p.flags & crate::kv!(189 int))
+        let counts = p.flags & NO_MOVER_TRACK() == 0 && p.mover_track && p.flags & OWN_CHANNEL() == 0 && root(p.flags & crate::kv!(190 int))
             || p.flags & MOVER_BITS() != 0;
         if counts && p.layer == 0 {
             (count0, lowest) = (count0 + 1, w.len());
@@ -422,7 +422,7 @@ pub fn mover_weights(players: &[MoverPlayer], frozen: f32) -> Vec<f32> {
     if count0 == 1 {
         w[lowest] = 1.0;
     }
-    layer_weights(&mut w, &layer.iter().map(|&l| u8::try_from(l).unwrap_or(crate::kv!(395 int))).collect::<Vec<_>>(), crate::kv!(104 int));
+    layer_weights(&mut w, &layer.iter().map(|&l| u8::try_from(l).unwrap_or(crate::kv!(396 int))).collect::<Vec<_>>(), crate::kv!(105 int));
     let mut out = vec![0.0; players.len() + 1];
     for (&k, &x) in from.iter().zip(&w) {
         out[k] = x;
@@ -435,18 +435,18 @@ pub const MASK_BONES: [u16; 1] = [0];
 #[allow(non_snake_case)]
 #[inline]
 pub fn MASKS() -> &'static [&'static [(u8, u8)]; 12] { static V: std::sync::OnceLock<[&'static [(u8, u8)]; 12]> = std::sync::OnceLock::new(); let f = || -> [&'static [(u8, u8)]; 12] { [
-    Box::leak(Box::new([(0, crate::kv!(368 int))])).as_slice(),
-    Box::leak(Box::new([(2, crate::kv!(37 int)), (crate::kv!(401 int), crate::kv!(401 int)), (crate::kv!(188 int), crate::kv!(368 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(369 int))])).as_slice(),
+    Box::leak(Box::new([(2, crate::kv!(37 int)), (crate::kv!(402 int), crate::kv!(402 int)), (crate::kv!(189 int), crate::kv!(369 int))])).as_slice(),
     Box::leak(Box::new([(2, crate::kv!(22 int))])).as_slice(),
     Box::leak(Box::new([(crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(104 int), crate::kv!(337 int))])).as_slice(),
-    Box::leak(Box::new([(0, crate::kv!(188 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(361 int), crate::kv!(379 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(324 int), crate::kv!(203 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(337 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(105 int), crate::kv!(338 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(189 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(362 int), crate::kv!(380 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(325 int), crate::kv!(204 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(105 int), crate::kv!(338 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
     Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(7 int), crate::kv!(36 int))])).as_slice(),
-    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(337 int))])).as_slice(),
-    Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(104 int), crate::kv!(55 int)), (crate::kv!(7 int), crate::kv!(316 int)), (crate::kv!(355 int), crate::kv!(404 int)), (crate::kv!(347 int), crate::kv!(258 int))])).as_slice(),
+    Box::leak(Box::new([(crate::kv!(6 int), crate::kv!(22 int)), (crate::kv!(105 int), crate::kv!(338 int))])).as_slice(),
+    Box::leak(Box::new([(0, crate::kv!(22 int)), (crate::kv!(105 int), crate::kv!(55 int)), (crate::kv!(7 int), crate::kv!(317 int)), (crate::kv!(356 int), crate::kv!(405 int)), (crate::kv!(348 int), crate::kv!(259 int))])).as_slice(),
 ] }; if crate::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 
 pub fn mask_passes(mask: u8, bone: u16) -> bool {
@@ -455,7 +455,7 @@ pub fn mask_passes(mask: u8, bone: u16) -> bool {
 }
 
 pub fn ease_ratio(ratio: f32, wanted: f32, dt: f32, player: bool, top: f32) -> f32 {
-    let (up, down) = if player { (crate::kv!(84), 2.0) } else { (2.0, crate::kv!(65)) };
+    let (up, down) = if player { (crate::kv!(85), 2.0) } else { (2.0, crate::kv!(65)) };
     if wanted > ratio {
         let r = dt.mul_add(up, ratio);
         let r = if r > wanted { wanted } else { r };
@@ -482,7 +482,7 @@ pub fn split_ratio(ratio: f32) -> [(i32, f32); 2] {
 
 #[allow(non_snake_case)]
 #[inline]
-fn LIST_SLACK() -> f32 { crate::kv!(649) }
+fn LIST_SLACK() -> f32 { crate::kv!(655) }
 
 pub fn normalize_list(w: &mut [f32]) {
     let Some(last) = w.len().checked_sub(1) else { return };
@@ -508,8 +508,8 @@ pub fn normalize_list(w: &mut [f32]) {
 }
 
 pub fn old_set_rate(old: i32, new: i32, own: i32) -> f32 {
-    let slow = (old == crate::kv!(37 int) && new == own) || (old == own && new == crate::kv!(37 int)) || (old == crate::kv!(355 int) && new == crate::kv!(36 int))
-        || (old == crate::kv!(36 int) && new == crate::kv!(355 int));
+    let slow = (old == crate::kv!(37 int) && new == own) || (old == own && new == crate::kv!(37 int)) || (old == crate::kv!(356 int) && new == crate::kv!(36 int))
+        || (old == crate::kv!(36 int) && new == crate::kv!(356 int));
     if slow { 1.0 } else { 2.0 }
 }
 

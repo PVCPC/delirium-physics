@@ -104,7 +104,7 @@ fn rsqrt2(x: f32, alt: f32) -> f32 {
 pub(crate) fn arc(a: Vec3, b: Vec3) -> [Vec3; 3] {
     let c = a.vx(b);
     let n2 = c.y.fma(c.y, c.z.fma(c.z, c.x * c.x));
-    if !(n2 >= delirium_data::kv!(70)) {
+    if !(n2 >= delirium_data::kv!(71)) {
         return [Vec3::X, Vec3::Y, Vec3::Z];
     }
     let sl = n2.sqrt();
@@ -164,7 +164,7 @@ pub(crate) fn swing3(j: &JointConst, p: &Link, c: &Link) -> Swing {
     let s = pz.vx(t);
     let n2 = sdot(s, s, b"yxz");
     let u = ldot(&c.r, col(&j.cm, 0));
-    if n2 < delirium_data::kv!(70) {
+    if n2 < delirium_data::kv!(71) {
         let s = perp(pz);
         let twist = atan2(sdot(u, col(&pr, 1), b"yzx"), sdot(u, col(&pr, 0), b"yzx"));
         return Swing { pr, s, theta: 0.0, bis: pz, across: s.vx(pz), k: 1.0, twist };
@@ -174,7 +174,7 @@ pub(crate) fn swing3(j: &JointConst, p: &Link, c: &Link) -> Swing {
     let theta = atan2(len, sdot(pz, t, b"zxy"));
     let b = pz + t;
     let h = slen(b, b"yzx");
-    if h.abs() < delirium_data::kv!(70) {
+    if h.abs() < delirium_data::kv!(71) {
         return Swing { pr, s, theta, bis: pz, across: s.vx(pz), k: 1.0, twist: 0.0 };
     }
     let k = 2.0 / h;
@@ -194,7 +194,7 @@ fn swing(j: &JointConst, p: &Link, c: &Link, cos: impl Fn(Vec3, Vec3) -> f32) ->
     let pz = col(&pr, 2);
     let s = pz.vx(t);
     let n2 = sdot(s, s, b"yxz");
-    if n2 < delirium_data::kv!(70) {
+    if n2 < delirium_data::kv!(71) {
         return (pr, pz, t, perp(pz), None);
     }
     let len = n2.sqrt();
@@ -263,7 +263,7 @@ pub(crate) fn inv3([a, b, c]: [Vec3; 3]) -> [Vec3; 3] {
 }
 
 fn singular([a, b, c]: [Vec3; 3], det: f32) -> bool {
-    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(602)
+    det.abs() <= a.abs().max(b.abs()).max(c.abs()).max_element() * delirium_data::kv!(608)
 }
 
 pub(crate) fn inv34([a, b, c, d]: [Vec3; 4]) -> Option<[Vec3; 4]> {
@@ -315,24 +315,24 @@ pub fn part_set_other(kind: u32, m: [Vec3; 4], centroid: Option<Vec3>, commit: b
                 let t = Vec3::new(col(&r, 0).vd(c), col(&r, 1).vd(c), col(&r, 2).vd(c));
                 i[delirium_data::kv!(0 int)] = m[delirium_data::kv!(0 int)] + (Vec3::ZERO - t);
             }
-            PartSetOther { obj: vec![(delirium_data::kv!(370 int), m), (delirium_data::kv!(7 int), m), (delirium_data::kv!(291 int), m)], inst: Some(i), part: commit.then_some(m) }
+            PartSetOther { obj: vec![(delirium_data::kv!(371 int), m), (delirium_data::kv!(7 int), m), (delirium_data::kv!(292 int), m)], inst: Some(i), part: commit.then_some(m) }
         }
         _ => PartSetOther::default(),
     }
 }
 
 pub fn part_bound(part: u32, rd: impl Fn(u32) -> u32) -> u32 {
-    let obj = rd(part + delirium_data::kv!(603 int));
+    let obj = rd(part + delirium_data::kv!(609 int));
     if obj == 0 {
         return 0;
     }
     let bound = |inst: u32| rd(rd(inst + delirium_data::kv!(1 int)) + delirium_data::kv!(55 int));
-    match rd(part + delirium_data::kv!(302 int)) {
+    match rd(part + delirium_data::kv!(303 int)) {
         1 => bound(rd(obj + delirium_data::kv!(54 int))),
         2 => bound(obj),
         3 => {
-            let comp = bound(rd(rd(rd(part + delirium_data::kv!(604 int)) + delirium_data::kv!(203 int)) + delirium_data::kv!(54 int)));
-            rd(rd(comp + delirium_data::kv!(257 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(358 int)))
+            let comp = bound(rd(rd(rd(part + delirium_data::kv!(610 int)) + delirium_data::kv!(204 int)) + delirium_data::kv!(54 int)));
+            rd(rd(comp + delirium_data::kv!(258 int)) + delirium_data::kv!(1 int) * rd(part + delirium_data::kv!(359 int)))
         }
         _ => 0,
     }
@@ -344,7 +344,7 @@ pub fn grip_local(inst: [Vec3; 4], comp: Option<[Vec3; 4]>, p: Vec3) -> Vec3 {
 }
 
 pub fn contact_pass(b165: u8, b164: u8, on: bool) -> u8 {
-    if b164 == 0 && !on { b165 & delirium_data::kv!(191 int) } else { b165 }
+    if b164 == 0 && !on { b165 & delirium_data::kv!(192 int) } else { b165 }
 }
 
 pub type GripSide = (u16, [Vec3; 4], Option<[Vec3; 4]>, Vec3);

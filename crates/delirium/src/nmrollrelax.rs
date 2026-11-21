@@ -13,7 +13,7 @@ pub struct RollUpAndRelax {
 }
 
 fn unit(rand: &mut Rand) -> f32 {
-    rand.next() as f32 * delirium_data::kv!(100 f32)
+    rand.next() as f32 * delirium_data::kv!(101 f32)
 }
 
 impl RollUpAndRelax {
@@ -32,9 +32,9 @@ impl RollUpAndRelax {
     fn start(&mut self, set: &Set, rand: &mut Rand) -> Msg {
         use Value::{Bool as B, Float as F};
         let stiffness = unit(rand).mul_add(2.0, delirium_data::kv!(31));
-        ("bodyRollUp", vec![("start", B(true)), ("mask", Value::Str("fb".into())), ("stiffness", F(stiffness)), ("legPush", F(set.f[delirium_data::kv!(106 int)])),
-                            ("armReachAmount", F(set.f[delirium_data::kv!(107 int)])), ("useArmToSlowDown", F(set.f[delirium_data::kv!(108 int)])),
-                            ("asymmetricalLegs", F(unit(rand).mul_add(delirium_data::kv!(24), delirium_data::kv!(78))))])
+        ("bodyRollUp", vec![("start", B(true)), ("mask", Value::Str("fb".into())), ("stiffness", F(stiffness)), ("legPush", F(set.f[delirium_data::kv!(107 int)])),
+                            ("armReachAmount", F(set.f[delirium_data::kv!(108 int)])), ("useArmToSlowDown", F(set.f[delirium_data::kv!(109 int)])),
+                            ("asymmetricalLegs", F(unit(rand).mul_add(delirium_data::kv!(24), delirium_data::kv!(79))))])
     }
 
     fn control(&mut self, now: u32, t0: u32) -> Vec<Msg> {

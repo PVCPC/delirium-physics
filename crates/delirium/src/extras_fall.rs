@@ -202,7 +202,7 @@ fn CHEST() -> usize { (*SPINE())[delirium_data::kv!(0 int)] + 1 }
 const TAU: f32 = std::f32::consts::TAU;
 
 fn weight(c: &Ctx) -> f32 {
-    c.b.doll.mass() * delirium_data::kv!(115)
+    c.b.doll.mass() * delirium_data::kv!(116)
 }
 
 fn flat(v: Vec3) -> Vec3 {
@@ -210,7 +210,7 @@ fn flat(v: Vec3) -> Vec3 {
 }
 
 fn travel(c: &Ctx, d: Vec3) -> Vec3 {
-    if c.vel.truncate().length() > delirium_data::kv!(116) { flat(c.vel) } else { flat(d) }
+    if c.vel.truncate().length() > delirium_data::kv!(117) { flat(c.vel) } else { flat(d) }
 }
 
 fn windmill(c: &mut Ctx, t: f32, amp: f32) {
@@ -250,7 +250,7 @@ impl Teeter {
         Ok(Teeter { ends: (p.v("edgeLeft", Vec3::ZERO)?, p.v("edgeRight", Vec3::ZERO)?), react: p.f("reactDistance", 0.5)?,
                     restart: p.f("restartDistance", delirium_data::kv!(20))?, head: p.b("useHeadLook", true)?, high_fall: p.b("callHighFall", true)?,
                     lean: p.b("leanAway", true)?, pre: p.f("preTeeterTime", delirium_data::kv!(60))?, lean_time: p.f("leanAwayTime", delirium_data::kv!(20))?,
-                    teeter_time: p.f("teeterTime", 2.0)?, lean_scale: p.f("leanAwayScale", delirium_data::kv!(78))?, normal: Vec3::ZERO, state: PRE,
+                    teeter_time: p.f("teeterTime", 2.0)?, lean_scale: p.f("leanAwayScale", delirium_data::kv!(79))?, normal: Vec3::ZERO, state: PRE,
                     t: 0.0, out: vec![] })
     }
 
@@ -261,7 +261,7 @@ impl Teeter {
 
     fn look(&mut self, p: Vec3) {
         if self.head {
-            self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping=1", p.x, p.y, p.z, delirium_data::kv!(117)));
+            self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping=1", p.x, p.y, p.z, delirium_data::kv!(118)));
         }
     }
 }
@@ -345,10 +345,10 @@ impl Stumble {
         Ok(Stumble { legs: p.f("legsStiffness", delirium_data::kv!(21))?, torso: p.f("torsoStiffness", delirium_data::kv!(31))?, arms_k: p.f("armsStiffness", delirium_data::kv!(31))?,
                      twist: p.f("armTwist", delirium_data::kv!(24))?, fwd_off: p.f("forwardMaxArmOffset", delirium_data::kv!(28))?,
                      back_off: p.f("backwardsMinArmOffset", delirium_data::kv!(60))?, brace: p.b("useArmsBrace", true)?,
-                     rate: p.f("leanRate", 0.5)?, max_back: p.f("maxLeanBack", delirium_data::kv!(78))?, max_fwd: p.f("maxLeanForward", delirium_data::kv!(24))?,
+                     rate: p.f("leanRate", 0.5)?, max_back: p.f("maxLeanBack", delirium_data::kv!(79))?, max_fwd: p.f("maxLeanForward", delirium_data::kv!(24))?,
                      towards: p.f("leanTowards", delirium_data::kv!(60))?, z_spin: p.f("zAxisSpinReduction", 0.5)?,
                      damp_pelvis: p.f("dampPelvis", 0.0)?, twist_spine: p.b("twistSpine", true)?,
-                     head: p.b("useHeadLook", true)?, stagger: p.f("staggerTime", delirium_data::kv!(12))?, drop: p.f("dropVal", delirium_data::kv!(116))?,
+                     head: p.b("useHeadLook", true)?, stagger: p.f("staggerTime", delirium_data::kv!(12))?, drop: p.f("dropVal", delirium_data::kv!(117))?,
                      different: p.b("different", false)?, lean: 0.0, sent: 0.0, z0: f32::NAN, state: 0, t: 0.0, out: vec![] })
     }
 
@@ -377,7 +377,7 @@ impl Extra for Stumble {
             self.out.push(format!("bodyBalance start=true bodyStiffness={} useHeadLook=false", self.torso));
             if self.head {
                 let p = c.com + d * 2.0;
-                self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping=1", p.x, p.y, p.z, delirium_data::kv!(117)));
+                self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping=1", p.x, p.y, p.z, delirium_data::kv!(118)));
             }
         }
         self.t += dt;
@@ -395,20 +395,20 @@ impl Extra for Stumble {
         c.ch.set_stiffness(self.legs, 0.5, "lb", None);
         let goal = self.towards.clamp(-self.max_back, self.max_fwd);
         self.lean += (goal - self.lean).clamp(-self.rate * dt, self.rate * dt);
-        if (self.lean - self.sent).abs() > delirium_data::kv!(118) {
+        if (self.lean - self.sent).abs() > delirium_data::kv!(119) {
             self.sent = self.lean;
             self.out.push(format!("leanInDirection dir={},{},0 leanAmount={}", d.x, d.y, self.lean));
         }
-        c.out.torque(0, -Vec3::Z * (c.angvel.z * self.z_spin * w * delirium_data::kv!(78)));
+        c.out.torque(0, -Vec3::Z * (c.angvel.z * self.z_spin * w * delirium_data::kv!(79)));
         if self.damp_pelvis > 0.0 {
-            c.out.torque(0, -c.angvel * (self.damp_pelvis * w * delirium_data::kv!(78)));
+            c.out.torque(0, -c.angvel * (self.damp_pelvis * w * delirium_data::kv!(79)));
         }
         if self.brace {
             let u = (self.lean / self.max_fwd.max(delirium_data::kv!(51))).clamp(0.0, 1.0);
             let reach = self.back_off + (self.fwd_off - self.back_off) * u;
             for i in 0..2 {
                 let s = if i == 0 { 1.0 } else { -1.0 };
-                let r = if self.different && i == 1 { reach * delirium_data::kv!(119) } else { reach };
+                let r = if self.different && i == 1 { reach * delirium_data::kv!(120) } else { reach };
                 c.ch.set_relative((*SHOULDER())[i], 0, r);
                 c.ch.set_relative((*SHOULDER())[i], 1, delirium_data::kv!(24));
                 c.ch.set_relative((*SHOULDER())[i], 2, s * self.twist);
@@ -417,7 +417,7 @@ impl Extra for Stumble {
         }
         if self.twist_spine {
             for &j in &(*SPINE()) {
-                c.ch.set_relative(j, 2, delirium_data::kv!(60) * (self.t * delirium_data::kv!(84)).sin());
+                c.ch.set_relative(j, 2, delirium_data::kv!(60) * (self.t * delirium_data::kv!(85)).sin());
             }
         }
     }
@@ -480,10 +480,10 @@ impl StaggerFall {
         let (time_end, ramp_end) = (p.f("timeStartEnd", delirium_data::kv!(35))?, p.f("rampTimeToEndValues", 2.0)?);
         p.f("predictionTime", delirium_data::kv!(24))?;
         let reduce = p.f("perStepReduction1", delirium_data::kv!(19))?;
-        let (push_dist, push_vel) = (p.f("pushOffDist", delirium_data::kv!(78))?, p.f("maxPushoffVel", 1.0)?);
+        let (push_dist, push_vel) = (p.f("pushOffDist", delirium_data::kv!(79))?, p.f("maxPushoffVel", 1.0)?);
         let lean_rate = p.f("leanInDirRate", 1.0)?;
         let lean_max = [p.f("leanInDirMaxF", delirium_data::kv!(24))?, p.f("leanInDirMaxB", delirium_data::kv!(9))?];
-        let hips_max = [p.f("leanHipsMaxF", delirium_data::kv!(24))?, p.f("leanHipsMaxB", delirium_data::kv!(78))?];
+        let hips_max = [p.f("leanHipsMaxF", delirium_data::kv!(24))?, p.f("leanHipsMaxB", delirium_data::kv!(79))?];
         let lean2 = [p.f("lean2multF", 1.0)?, p.f("lean2multB", 1.0)?];
         let (hip_bend, spine_bend) = (p.f("hipBendMult", 1.0)?, p.f("spineBendMult", 1.0)?);
         let always_fwd = p.b("alwaysBendForwards", false)?;
@@ -491,21 +491,21 @@ impl StaggerFall {
         p.i("headLookInstanceIndex", -1)?;
         let head_vel_prob = p.f("headLookAtVelProb", 0.5)?;
         let turn_off = p.f("turnOffProb", delirium_data::kv!(24))?;
-        let (t2t, t2v) = (p.f("turn2TargetProb", delirium_data::kv!(78))?, p.f("turn2VelProb", delirium_data::kv!(24))?);
-        let (away, left, right) = (p.f("turnAwayProb", delirium_data::kv!(78))?, p.f("turnLeftProb", delirium_data::kv!(78))?, p.f("turnRightProb", delirium_data::kv!(78))?);
+        let (t2t, t2v) = (p.f("turn2TargetProb", delirium_data::kv!(79))?, p.f("turn2VelProb", delirium_data::kv!(24))?);
+        let (away, left, right) = (p.f("turnAwayProb", delirium_data::kv!(79))?, p.f("turnLeftProb", delirium_data::kv!(79))?, p.f("turnRightProb", delirium_data::kv!(79))?);
         let body_turn = p.b("useBodyTurn", true)?;
         let head = p.b("useHeadLook", true)?;
         let turn = format!("turnOffProb={turn_off} turn2TargetProb={t2t} turn2VelProb={t2v} turnAwayProb={away} turnLeftProb={left} \
                             turnRightProb={right} useBodyTurn={body_turn}");
         Ok(StaggerFall { arm, arm_start, spine, spine_start, hold, ramp, legs, legs_end, prob, steps_end, time_end, ramp_end, reduce,
                          push_dist, push_vel, lean_rate, lean_max, hips_max, lean2, hip_bend, spine_bend, always_fwd, head_pos,
-                         head_vel_prob, head, turn, t: 0.0, t_end: 0.0, steps: 0, side: 0.0, push: 0.0, state: 0, seed: delirium_data::kv!(120 int),
+                         head_vel_prob, head, turn, t: 0.0, t_end: 0.0, steps: 0, side: 0.0, push: 0.0, state: 0, seed: delirium_data::kv!(121 int),
                          out: vec![] })
     }
 
     fn rand(&mut self) -> f32 {
-        self.seed = self.seed.wrapping_mul(delirium_data::kv!(121 int)).wrapping_add(delirium_data::kv!(122 int));
-        (self.seed >> delirium_data::kv!(23 int)) as f32 / (1u32 << delirium_data::kv!(107 int)) as f32
+        self.seed = self.seed.wrapping_mul(delirium_data::kv!(122 int)).wrapping_add(delirium_data::kv!(123 int));
+        (self.seed >> delirium_data::kv!(23 int)) as f32 / (1u32 << delirium_data::kv!(108 int)) as f32
     }
 }
 impl Extra for StaggerFall {
@@ -537,9 +537,9 @@ impl Extra for StaggerFall {
                 let at_vel = v > 1.0 || (v < 0.0 && self.rand() < 0.5) || (v > 0.0 && self.rand() < v);
                 let at = if self.head_pos == Vec3::ZERO { c.com + dir * 2.0 } else { self.head_pos };
                 self.out.push(if at_vel {
-                    format!("headLook start=true vel={},{},{} stiffness={} damping=1", c.vel.x, c.vel.y, c.vel.z, delirium_data::kv!(117))
+                    format!("headLook start=true vel={},{},{} stiffness={} damping=1", c.vel.x, c.vel.y, c.vel.z, delirium_data::kv!(118))
                 } else {
-                    format!("headLook start=true pos={},{},{} stiffness={} damping=1", at.x, at.y, at.z, delirium_data::kv!(117))
+                    format!("headLook start=true pos={},{},{} stiffness={} damping=1", at.x, at.y, at.z, delirium_data::kv!(118))
                 });
             }
         }
@@ -574,7 +574,7 @@ impl Extra for StaggerFall {
             let v = (self.push_dist / delirium_data::kv!(9)).min(self.push_vel);
             c.out.force(0, dir * (c.b.doll.mass() * v / delirium_data::kv!(9)));
         }
-        if (c.dbm_failed && self.t > 0.5) || self.t_end > self.ramp_end + delirium_data::kv!(84) {
+        if (c.dbm_failed && self.t > 0.5) || self.t_end > self.ramp_end + delirium_data::kv!(85) {
             self.state = 2;
             self.out.push("#say staggerFall fallen".into());
             for j in (*NECK()).into_iter().chain((*SPINE())[..delirium_data::kv!(0 int)].iter().copied()).chain(cl).chain((*ANKLE())).chain((*KNEE())).chain((*HIP())) {
@@ -631,15 +631,15 @@ fn SF_CRASH() -> u8 { delirium_data::kv!(0 int) }
 fn SF_DONE() -> u8 { delirium_data::kv!(1 int) }
 impl SmartFall {
     fn new(p: &mut P) -> Result<SmartFall, Error> {
-        let stiff = (p.f("bodyStiffness", delirium_data::kv!(31))?, p.f("bodydamping", delirium_data::kv!(119))?);
-        let (catch_time, cutoff, end_time) = (p.f("catchfalltime", delirium_data::kv!(12))?, p.f("catchFallCutOff", delirium_data::kv!(24))?, p.f("crashOrLandCutOff", delirium_data::kv!(84))?);
-        let arms = (p.f("armsUp", delirium_data::kv!(119))?, p.f("armAngSpeed", delirium_data::kv!(65))?, p.f("armAmplitude", delirium_data::kv!(74))?, p.f("armPhase", delirium_data::kv!(123))?,
+        let stiff = (p.f("bodyStiffness", delirium_data::kv!(31))?, p.f("bodydamping", delirium_data::kv!(120))?);
+        let (catch_time, cutoff, end_time) = (p.f("catchfalltime", delirium_data::kv!(12))?, p.f("catchFallCutOff", delirium_data::kv!(24))?, p.f("crashOrLandCutOff", delirium_data::kv!(85))?);
+        let arms = (p.f("armsUp", delirium_data::kv!(120))?, p.f("armAngSpeed", delirium_data::kv!(65))?, p.f("armAmplitude", delirium_data::kv!(75))?, p.f("armPhase", delirium_data::kv!(124))?,
                     p.f("armBendElbows", delirium_data::kv!(24))?);
         let legs = format!("pedalLegs start=true radius={} angularSpeed={} speedAsymmetry={} pedalLeftLeg={} pedalRightLeg=true \
                             centreForwards={} legStiffness={}", p.f("legRadius", delirium_data::kv!(9))?, p.f("legAngSpeed", delirium_data::kv!(65))?,
                            p.f("legAsymmetry", 0.0)?, p.b("legL", true)?, p.f("forwardOffsetOfLegIK", 0.0)?, p.f("legStrength", delirium_data::kv!(65))?);
         let orient = (p.b("orientateBodyToFallDirection", true)?, p.f("orientateTwist", delirium_data::kv!(24))?, p.f("orientateMax", delirium_data::kv!(20))?);
-        let (brace, max) = (p.f("minSpeedForBrace", delirium_data::kv!(84))?, p.f("maxSpeedForRecoverableFall", delirium_data::kv!(21))?);
+        let (brace, max) = (p.f("minSpeedForBrace", delirium_data::kv!(85))?, p.f("maxSpeedForRecoverableFall", delirium_data::kv!(21))?);
         let normal = p.v("landingNormal", Vec3::Z)?.normalize_or(Vec3::Z);
         let (balance, fwd_roll, limp) = (p.b("balance", true)?, p.b("forwardRoll", false)?, p.b("alanRickman", false)?);
         let (rds, tumble) = (p.f("rdsForceMag", 2.0)?, p.f("tumble", 0.0)?);
@@ -710,20 +710,20 @@ impl Extra for SmartFall {
                     let fwd = flat((c.b.part(cl[0] + 1).m.d - c.b.part(cl[1] + 1).m.d).cross(Vec3::Z));
                     let d = flat(c.vel);
                     let a = (fwd.cross(d).z.atan2(fwd.dot(d)) / max.max(delirium_data::kv!(51))).clamp(-1.0, 1.0);
-                    c.out.torque(0, Vec3::Z * (w * (delirium_data::kv!(9) * a - delirium_data::kv!(118) * c.angvel.z)));
+                    c.out.torque(0, Vec3::Z * (w * (delirium_data::kv!(9) * a - delirium_data::kv!(119) * c.angvel.z)));
                     for &j in &(*SPINE()) {
                         c.ch.set_relative(j, 2, twist * a);
                     }
                 }
             }
             if self.tumble != 0.0 && self.axis != Vec3::ZERO {
-                c.out.torque(0, self.axis * (w * delirium_data::kv!(78) * (self.tumble - c.angvel.dot(self.axis))));
+                c.out.torque(0, self.axis * (w * delirium_data::kv!(79) * (self.tumble - c.angvel.dot(self.axis))));
             }
             let all: Vec<usize> = (0..c.b.build.parts.len()).collect();
-            if self.t > delirium_data::kv!(9) && c.b.doll.collided(&all) && (self.tumble == 0.0 || c.com.z < self.z0 - 1.0 && c.vel.z > -delirium_data::kv!(119) * self.peak) {
+            if self.t > delirium_data::kv!(9) && c.b.doll.collided(&all) && (self.tumble == 0.0 || c.com.z < self.z0 - 1.0 && c.vel.z > -delirium_data::kv!(120) * self.peak) {
                 self.out.push(format!("#say smartFall landing speed={:.1}", self.peak));
                 let d = flat(-self.normal);
-                let slope = self.normal.z < delirium_data::kv!(124);
+                let slope = self.normal.z < delirium_data::kv!(125);
                 if self.limp || self.peak > self.max {
                     self.to(SF_CRASH(), "crash");
                     if slope {
@@ -825,7 +825,7 @@ impl Extra for Collide {
             self.given = self.pos != Vec3::ZERO;
             self.virt = !self.given;
             if self.virt {
-                self.pos = com - facing * delirium_data::kv!(116);
+                self.pos = com - facing * delirium_data::kv!(117);
                 self.normal = facing;
             } else if self.normal == Vec3::ZERO {
                 self.normal = flat(com - self.pos);
@@ -851,7 +851,7 @@ impl Extra for Collide {
         } else if self.virt {
             for &k in &lower {
                 let p = c.b.frames[k].translation;
-                let pen = delirium_data::kv!(125) - (p - self.pos).dot(n_obj);
+                let pen = delirium_data::kv!(126) - (p - self.pos).dot(n_obj);
                 if pen > 0.0 && p.z < top {
                     lb = true;
                     n = n_obj;
@@ -868,7 +868,7 @@ impl Extra for Collide {
                 self.normal = if n == Vec3::ZERO { n_obj } else { n };
                 let vt = vel - self.normal * vel.dot(self.normal);
                 let side = self.normal.cross(vt).z;
-                self.glance = if vt.truncate().length() > delirium_data::kv!(78) { side.signum() * self.spin_mag } else { 0.0 };
+                self.glance = if vt.truncate().length() > delirium_data::kv!(79) { side.signum() * self.spin_mag } else { 0.0 };
             }
             if self.state == BAL_IMPACT {
                 self.ub |= ub;
@@ -880,11 +880,11 @@ impl Extra for Collide {
         let f_exag = if self.state == BAL_IMPACT { (1.0 - self.t / self.exag.max(dt)).clamp(0.0, 1.0) } else { 0.0 };
         let still = vel.truncate().length() < delirium_data::kv!(24);
         self.calm = if still { self.calm + dt } else { 0.0 };
-        let leg = |c: &mut Ctx, k: f32| c.ch.set_stiffness(delirium_data::kv!(126) * k.max(delirium_data::kv!(68)), delirium_data::kv!(119), "lb", None);
+        let leg = |c: &mut Ctx, k: f32| c.ch.set_stiffness(delirium_data::kv!(127) * k.max(delirium_data::kv!(68)), delirium_data::kv!(120), "lb", None);
         match self.state {
             BAL_NORMAL => {
                 if self.virt && self.t < delirium_data::kv!(17) {
-                    c.out.force(CHEST(), -self.normal * (w * delirium_data::kv!(119)));
+                    c.out.force(CHEST(), -self.normal * (w * delirium_data::kv!(120)));
                 }
                 if self.t > 2.0 && self.t - dt <= 2.0 {
                     self.to(BAL_END);
@@ -918,7 +918,7 @@ impl Extra for Collide {
             }
             BAL_REBOUND => {
                 leg(c, 1.0 - self.leg_red * 0.5);
-                if self.t > delirium_data::kv!(116) && still {
+                if self.t > delirium_data::kv!(117) && still {
                     self.to(BAL_END);
                     self.out.push("catchFall start=false".into());
                 } else if self.hit_t > self.steps as f32 * BCR_STEP() {
@@ -928,7 +928,7 @@ impl Extra for Collide {
             BAL_DRAPE | BAL_DRAPE_FWD => {
                 let dir = if self.state == BAL_DRAPE { 1.0 } else { -1.0 };
                 leg(c, 1.0 - self.leg_red);
-                c.ch.set_stiffness(delirium_data::kv!(5), delirium_data::kv!(119), "ub", None);
+                c.ch.set_stiffness(delirium_data::kv!(5), delirium_data::kv!(120), "ub", None);
                 c.out.force(CHEST(), -self.normal * (w * delirium_data::kv!(17) * dir));
                 for &j in &(*SPINE()) {
                     c.ch.set_relative(j, 0, -delirium_data::kv!(24) * dir);
@@ -940,7 +940,7 @@ impl Extra for Collide {
             }
             BAL_SLUMP => {
                 leg(c, 1.0 - self.slump_red * (self.slump_rate * self.t).min(1.0));
-                if (self.t > delirium_data::kv!(78) && c.dbm_failed) || self.t > delirium_data::kv!(12) {
+                if (self.t > delirium_data::kv!(79) && c.dbm_failed) || self.t > delirium_data::kv!(12) {
                     self.to(BAL_END);
                 }
             }
@@ -982,7 +982,7 @@ impl Injured {
         for (i, w) in w.iter_mut().enumerate() {
             let k = i + 1;
             *w = (p.v(&format!("injury{k}LocalPosition"), Vec3::ZERO)?, p.v(&format!("injury{k}LocalNormal"), Vec3::ZERO)?,
-                  p.i(&format!("injury{k}Component"), (*SPINE())[0] as i32 + 1)?.clamp(0, delirium_data::kv!(127 int)) as usize);
+                  p.i(&format!("injury{k}Component"), (*SPINE())[0] as i32 + 1)?.clamp(0, delirium_data::kv!(128 int)) as usize);
         }
         Ok(Injured { n: p.i("numInjuries", 0)?.clamp(0, 2), wounds: w, attacker: p.v("attackerPos", Vec3::ZERO)?,
                      no_reach: [p.b("dontReachWithLeft", false)?, p.b("dontReachWithRight", false)?],
@@ -1002,8 +1002,8 @@ impl Extra for Injured {
         let spine = (c.b.part((*NECK())[0] + 1).m.d - pelvis).normalize_or_zero();
         let side = (c.b.part((*CLAVICLE())[0] + 1).m.d - c.b.part((*CLAVICLE())[1] + 1).m.d).normalize_or_zero();
         let front = side.cross(spine);
-        let state = if spine.dot(up) > delirium_data::kv!(74) { 0 }
-            else if front.dot(up).abs() > delirium_data::kv!(119) { if front.dot(up) < 0.0 { 1 } else { 2 } }
+        let state = if spine.dot(up) > delirium_data::kv!(75) { 0 }
+            else if front.dot(up).abs() > delirium_data::kv!(120) { if front.dot(up) < 0.0 { 1 } else { 2 } }
             else if side.dot(up) > 0.0 { delirium_data::kv!(1 int) } else { delirium_data::kv!(0 int) };
         let w = weight(c);
         let g = 1.0 - 0.5 * (t / delirium_data::kv!(65)).min(1.0);
@@ -1014,18 +1014,18 @@ impl Extra for Injured {
                 let a = if self.attacker != Vec3::ZERO { self.attacker } else {
                     pelvis + (spine - up * spine.dot(up)).normalize_or_zero() * 2.0
                 };
-                self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping=1 alwaysLook=true", a.x, a.y, a.z, delirium_data::kv!(117)));
+                self.out.push(format!("headLook start=true pos={},{},{} stiffness={} damping=1 alwaysLook=true", a.x, a.y, a.z, delirium_data::kv!(118)));
             }
         }
-        c.ch.set_stiffness(delirium_data::kv!(5), delirium_data::kv!(119), "fb", None);
+        c.ch.set_stiffness(delirium_data::kv!(5), delirium_data::kv!(120), "fb", None);
         for i in 0..2 {
             if !self.pedalling {
-                c.ch.set_relative((*HIP())[i], 0, -delirium_data::kv!(119) * g);
-                c.ch.set_relative((*KNEE())[i], 0, delirium_data::kv!(74) * g);
+                c.ch.set_relative((*HIP())[i], 0, -delirium_data::kv!(120) * g);
+                c.ch.set_relative((*KNEE())[i], 0, delirium_data::kv!(75) * g);
             }
         }
         for &j in &(*SPINE()) {
-            c.ch.set_relative(j, 0, delirium_data::kv!(116) * g);
+            c.ch.set_relative(j, 0, delirium_data::kv!(117) * g);
         }
         if state == 0 {
             return;
@@ -1036,20 +1036,20 @@ impl Extra for Injured {
             self.pedal_cd = if self.pedalling { 2.0 } else { delirium_data::kv!(12) };
             self.out.push(if self.pedalling { format!("pedalLegs start=true legStiffness={}", delirium_data::kv!(32)) } else { "pedalLegs start=false".into() });
         }
-        let (cyc, u) = (((t - 1.0) / delirium_data::kv!(128)).floor(), ((t - 1.0) % delirium_data::kv!(128)) / delirium_data::kv!(74));
+        let (cyc, u) = (((t - 1.0) / delirium_data::kv!(129)).floor(), ((t - 1.0) % delirium_data::kv!(129)) / delirium_data::kv!(75));
         if t > 1.0 && u < 1.0 {
             let s = if cyc as i32 % 2 == 0 { 1.0 } else { -1.0 };
-            let torque = spine * (s * w * (if self.strong { delirium_data::kv!(129) } else { delirium_data::kv!(130) }) * g * (u * std::f32::consts::PI).sin());
+            let torque = spine * (s * w * (if self.strong { delirium_data::kv!(130) } else { delirium_data::kv!(131) }) * g * (u * std::f32::consts::PI).sin());
             c.out.torque(0, torque);
             c.out.torque(CHEST(), torque);
         }
-        let brace = (t > 2.0 && (t - 2.0) % delirium_data::kv!(84) < delirium_data::kv!(119)).then(|| ((t - 2.0) / delirium_data::kv!(84)) as usize % 2);
+        let brace = (t > 2.0 && (t - 2.0) % delirium_data::kv!(85) < delirium_data::kv!(120)).then(|| ((t - 2.0) / delirium_data::kv!(85)) as usize % 2);
         let wounds: Vec<Vec3> = if self.n == 0 {
-            vec![c.b.part((*SPINE())[0] + 1).m.d + side * delirium_data::kv!(125)]
+            vec![c.b.part((*SPINE())[0] + 1).m.d + side * delirium_data::kv!(126)]
         } else {
             self.wounds[..self.n as usize].iter().map(|&(p, n, k)| {
                 let m = c.b.part(k).m;
-                crate::vm4(m.a, m.b, m.c, m.d, p) + crate::vm4(m.a, m.b, m.c, Vec3::ZERO, n).normalize_or_zero() * delirium_data::kv!(131)
+                crate::vm4(m.a, m.b, m.c, m.d, p) + crate::vm4(m.a, m.b, m.c, Vec3::ZERO, n).normalize_or_zero() * delirium_data::kv!(132)
             }).collect()
         };
         let mut target: [Option<Vec3>; 2] = [None, None];
@@ -1070,9 +1070,9 @@ impl Extra for Injured {
             let braced = brace == Some(i);
             let Some(at) = (if braced { Some(c.b.part((*SHOULDER())[i] + 1).m.d - up * 0.5) } else { target[i] }) else { continue };
             let l = crate::nmshot::limb(i);
-            let k = if braced { delirium_data::kv!(126) } else { delirium_data::kv!(21) * g };
-            c.ch.eff[l.e[1]].set_stiffness(k, delirium_data::kv!(119), None);
-            c.ch.eff[l.e[2]].set_stiffness(k, delirium_data::kv!(119), None);
+            let k = if braced { delirium_data::kv!(127) } else { delirium_data::kv!(21) * g };
+            c.ch.eff[l.e[1]].set_stiffness(k, delirium_data::kv!(120), None);
+            c.ch.eff[l.e[2]].set_stiffness(k, delirium_data::kv!(120), None);
             crate::nmdbm::limb_ik(c.b, c.ch, l.e[1], l.e[2], l.p[0], l.p[delirium_data::kv!(0 int)], at, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0,
                                   Vec3::ZERO, None);
         }
@@ -1101,7 +1101,7 @@ impl Crawl {
     fn new(p: &mut P) -> Result<Crawl, Error> {
         let _ = (p.b("bLearn", false)?, p.i("numFrames2Learn", 0)?, p.i("animIndex", 0)?, p.b("learnFromAnimPlayback", false)?,
                  p.i("inputSequenceSize", 0)?, p.b("useSpine3Thing", false)?, p.b("useRollBoneCompensation", false)?);
-        Ok(Crawl { k: (p.f("stiffness", delirium_data::kv!(31))?, p.f("damping", delirium_data::kv!(119))?), speed: p.f("speed", delirium_data::kv!(20))?, target: p.v("targetPosition", Vec3::ZERO)?,
+        Ok(Crawl { k: (p.f("stiffness", delirium_data::kv!(31))?, p.f("damping", delirium_data::kv!(120))?), speed: p.f("speed", delirium_data::kv!(20))?, target: p.v("targetPosition", Vec3::ZERO)?,
                    yaw: p.f("yawOffset", 0.0)?, twister: p.b("useTwister", true)?, t: 0.0, best: (f32::MAX, 0.0), out: vec![],
                    over: false })
     }
@@ -1119,13 +1119,13 @@ impl Extra for Crawl {
         c.ch.set_stiffness(self.k.0, self.k.1, "fb", None);
         for (k, h) in [(0, 0.5), (CHEST(), delirium_data::kv!(10))] {
             let p = c.b.part(k);
-            c.out.force(k, Vec3::Z * ((h - p.m.d.z) * w * delirium_data::kv!(84) - p.v.z * w * delirium_data::kv!(116)).clamp(0.0, w * 0.5));
+            c.out.force(k, Vec3::Z * ((h - p.m.d.z) * w * delirium_data::kv!(85) - p.v.z * w * delirium_data::kv!(117)).clamp(0.0, w * 0.5));
         }
         if self.t < DOWN {
             for i in 0..2 {
                 c.ch.set_relative((*HIP())[i], 0, -0.5);
-                c.ch.set_relative((*KNEE())[i], 0, delirium_data::kv!(74));
-                c.ch.set_relative((*SHOULDER())[i], 0, -delirium_data::kv!(119));
+                c.ch.set_relative((*KNEE())[i], 0, delirium_data::kv!(75));
+                c.ch.set_relative((*SHOULDER())[i], 0, -delirium_data::kv!(120));
             }
             return;
         }
@@ -1144,7 +1144,7 @@ impl Extra for Crawl {
         }
         if dist < self.best.0 - delirium_data::kv!(60) {
             self.best = (dist, self.t);
-        } else if self.t - self.best.1 > delirium_data::kv!(84) {
+        } else if self.t - self.best.1 > delirium_data::kv!(85) {
             self.out.push("#say learnedCrawl failure".into());
             self.over = true;
             return;
@@ -1157,11 +1157,11 @@ impl Extra for Crawl {
             let a = ph + i as f32 * TAU * 0.5;
             let l = ph + (1 - i) as f32 * TAU * 0.5;
             let arm = crate::nmshot::limb(i);
-            let reach = c.b.part(arm.p[0]).m.d + heading * (delirium_data::kv!(24) * a.sin()) - Vec3::Z * (delirium_data::kv!(132) - delirium_data::kv!(125) * a.cos().max(0.0));
+            let reach = c.b.part(arm.p[0]).m.d + heading * (delirium_data::kv!(24) * a.sin()) - Vec3::Z * (delirium_data::kv!(133) - delirium_data::kv!(126) * a.cos().max(0.0));
             crate::nmdbm::limb_ik(c.b, c.ch, arm.e[1], arm.e[2], arm.p[0], arm.p[delirium_data::kv!(0 int)], reach, 0.0, 0.0, 1.0 - 2.0 * i as f32, 1.0,
                                   Vec3::ZERO, None);
-            c.ch.set_relative((*HIP())[i], 0, -0.5 + delirium_data::kv!(116) * l.sin());
-            c.ch.set_relative((*KNEE())[i], 0, delirium_data::kv!(119) + delirium_data::kv!(24) * l.cos());
+            c.ch.set_relative((*HIP())[i], 0, -0.5 + delirium_data::kv!(117) * l.sin());
+            c.ch.set_relative((*KNEE())[i], 0, delirium_data::kv!(120) + delirium_data::kv!(24) * l.cos());
         }
         let turn = front.cross(heading).z.clamp(-1.0, 1.0);
         if self.twister {
@@ -1170,8 +1170,8 @@ impl Extra for Crawl {
             }
         }
         c.out.torque(0, Vec3::Z * (turn * w * delirium_data::kv!(9)));
-        c.out.force(0, heading * (w * delirium_data::kv!(130)));
-        c.out.force(CHEST(), heading * (w * delirium_data::kv!(133)));
+        c.out.force(0, heading * (w * delirium_data::kv!(131)));
+        c.out.force(CHEST(), heading * (w * delirium_data::kv!(134)));
     }
 
     fn lines(&mut self) -> Vec<String> {
