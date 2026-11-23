@@ -97,6 +97,9 @@ pub struct Portals {
     homer_last: [f32; 2],
     obj_last: Vec<[f32; 2]>,
     hero_last: [f32; 2],
+    hop: f32,
+    busy: f32,
+    frame_w: f32,
     placed: [f32; 2],
     stat: f32,
     was_linked: bool,
@@ -120,6 +123,14 @@ impl Portals {
             Transform { translation: map(prev.translation), rotation: (turn * prev.rotation).normalize(), scale: prev.scale }
         }).min_by(|x, y| x.translation.distance(cur.translation).total_cmp(&y.translation.distance(cur.translation)))
             .filter(|m| m.translation.distance(cur.translation) < d * 0.5).unwrap_or(prev)
+    }
+
+    pub fn framing(&mut self, dt: f32) -> Option<(Vec3, Vec3, f32)> {
+        (self.hop, self.busy) = ((self.hop - dt).max(0.0), (self.busy - dt).max(0.0));
+        let want = (self.busy > 0.0 && self.ends.iter().all(Option::is_some)) as u8 as f32;
+        self.frame_w += (want - self.frame_w).clamp(-dt * 1.5, dt * 1.5);
+        let [Some(a), Some(b)] = self.ends else { return None };
+        (self.frame_w > 0.0).then(|| (a.at, b.at, self.frame_w * self.frame_w * (3.0 - 2.0 * self.frame_w)))
     }
 
     pub fn new() -> Portals {
@@ -221,6 +232,10 @@ impl Sim {
         let [Some(a), Some(b)] = self.portal.ends else { return };
         if !self.riding() && let Some((i, speed)) = transit(&mut self.agent, a, b, &mut self.portal.homer_last) {
             self.say(format!("portal  homer through {} -> {} at {speed:.1} m/s", ["blue", "orange"][i], ["orange", "blue"][i]));
+            if self.portal.hop > 0.0 {
+                self.portal.busy = 2.5;
+            }
+            self.portal.hop = 1.5;
         }
         if let Some(h) = self.hero_doll.as_mut().filter(|h| h.rise.is_none())
             && let Some((i, speed)) = transit(&mut h.agent, a, b, &mut self.portal.hero_last) {
@@ -933,7 +948,7 @@ fn ghosts(sim: NonSend<Sim>, mut commands: Commands, standard: Res<Assets<Standa
                     None => {
                         let Some(base) = standard.get(&mat.0).cloned() else { continue };
                         let material = clipped.add(clip::GhostMaterial { base, extension: clip::ClipExt { clip: planes } });
-                        let g = commands.spawn((mesh.clone(), MeshMaterial3d(material), at, Visibility::Visible, Ghost(e, i))).id();
+                        let g = commands.spawn((mesh.clone(), MeshMaterial3d(material), at, Visibility::Visible, Ghost(e, i), bevy::light::NotShadowCaster)).id();
                         if let Some(l) = layers {
                             commands.entity(g).insert(l.clone());
                         }

@@ -29,8 +29,9 @@ const THUMB_LAYER: usize = 29;
 fn bake_key(sim: &Sim) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    format!("{} {:?} {:?} {:?} {:?} {}", sim.ped_color, sim.part_colors, *CUSTOM_SIZE.lock().unwrap(), *CUSTOM_HEIGHT.lock().unwrap(), *CUSTOM_NECK.lock().unwrap(),
-            FIGURE_BODY.lock().unwrap().is_some()).hash(&mut h);
+    format!("{} {:?} {:?} {:?} {:?} {:?}", sim.ped_color, sim.part_colors, *CUSTOM_SIZE.lock().unwrap(), *CUSTOM_HEIGHT.lock().unwrap(), *CUSTOM_NECK.lock().unwrap(),
+            *FIGURES.lock().unwrap()).hash(&mut h);
+    crate::animal_fit::count().hash(&mut h);
     h.finish()
 }
 
@@ -79,11 +80,12 @@ pub fn bake(mut commands: Commands, sim: NonSend<Sim>, mut images: ResMut<Assets
         None => part_color(sim.ped_color, delirium_data::nm_asset::PARTS.get(k).copied().unwrap_or(""), 1.0),
     };
     let top = |caps: &Caps| caps.iter().map(|c| c.0.z.max(c.1.z) + c.2).fold(0.0, f32::max);
-    let people: Vec<_> = (0..BODIES().len()).map(|i| person_fig(&sim.base, i)).collect();
+    let n = FIGURE + FIGURES.lock().unwrap().len().max(1);
+    let people: Vec<_> = (0..n).map(|i| person_fig(&sim.base, i)).collect();
     *HEIGHTS.lock().unwrap() = people.iter().map(|p| p.1).collect();
     let tallest = people.iter().enumerate().filter(|(i, p)| *i != RANDOM && p.1 <= TALL).map(|(_, p)| top(&p.0)).fold(1.0, f32::max);
     let cell = tallest / FILL;
-    let animals: Vec<_> = (0..rdr2frag::ANIMALS.len()).map(animal_fig).collect();
+    let animals: Vec<_> = (0..crate::animal_fit::count()).map(animal_fig).collect();
     let k = cell * FILL / animals.iter().map(top).fold(0.5, f32::max);
     let figs = people.into_iter().enumerate().map(|(i, p)| (i, 0, p.0, true))
         .chain(animals.into_iter().enumerate().map(|(i, a)| (i, 1, a.into_iter().map(|c| (c.0 * k, c.1 * k, c.2 * k, c.3, c.4)).collect(), false)));
@@ -163,7 +165,7 @@ fn person_fig(base: &(Build, Vec<Transform>), i: usize) -> (Caps, f32) {
             let (len, girth) = roll_body(&base.0);
             base.0.rolled(&base.1, &len, &girth)
         }
-        FIGURE if FIGURE_BODY.lock().unwrap().is_none() => (base.0.clone(), base.1.clone()),
+        _ if i >= FIGURE && figure_of(i).is_none() => (base.0.clone(), base.1.clone()),
         _ => {
             let (b, f, _) = body_of(&base.0, &base.1, i);
             (b, f)
@@ -189,41 +191,72 @@ fn feet_at_0(caps: Caps) -> Caps {
 }
 
 fn animal_fig(i: usize) -> Caps {
-    let Some(&(_, text)) = rdr2frag::ANIMALS.get(i) else { return vec![] };
-    let Ok(h) = rdr2frag::Frag::from_text(text).and_then(|f| horse::Horse::new(rdr2frag::BUILT_IN_XML, f, Vec3::ZERO, -0.5)) else { return vec![] };
+    let Some(text) = crate::animal_fit::text(i) else { return vec![] };
+    let Ok(h) = rdr2frag::Frag::from_text(&text).and_then(|f| horse::Horse::new(rdr2frag::BUILT_IN_XML, f, Vec3::ZERO, -0.5)) else { return vec![] };
     let caps = h.capsules();
     let at = |n: &str| h.build.parts.iter().position(|p| p.name.to_lowercase().contains(n)).map(|k| (caps[k].0 + caps[k].1) / 2.0);
     let fwd = at("head").zip(at("pelvis")).map_or(Vec3::Y, |(a, b)| (a - b).with_z(0.0).normalize_or(Vec3::Y));
     let turn = Quat::from_rotation_arc(fwd, Vec3::new(1.0, 0.45, 0.0).normalize());
-    feet_at_0(caps.iter().zip(&h.build.parts).enumerate().filter(|(_, (_, p))| !((3..=6).contains(&i) && p.name.starts_with("Tail")))
+    feet_at_0(caps.iter().zip(&h.build.parts).enumerate().filter(|(_, (_, p))| !(crate::animal_fit::tailless(i) && p.name.starts_with("Tail")))
         .map(|(k, (c, p))| (turn * c.0, turn * c.1, c.2, k, horse::coat(i, k, &p.name))).collect())
 }
 
 fn people(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
     head(ui, "People");
-    info(ui, "Pick a body, then Spawn: another Homer 2 m in front of the one you control.");
+    let room = sim.bench.len() + 1 < HOMERS;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        for (i, (_, n, h, m, _)) in BODIES().iter().enumerate() {
-            let model = FIGURE_BODY.lock().unwrap().is_some();
-            let tip = if i == FIGURE && !model {
-                "Work in progress: pick a 3D model to be Homer's body (rigged or not: an unrigged one is auto-fitted)".to_string()
-            } else if i == FIGURE {
-                "Work in progress: Homer's body from a 3D model (picked: click again for another file)".to_string()
-            } else if *h > 0.0 {
+        let models: Vec<usize> = FIGURES.lock().unwrap().iter().enumerate().filter(|f| f.1.is_some()).map(|f| FIGURE + f.0).collect();
+        for (i, model) in (0..BODIES().len()).map(|i| (i, false)).chain(models.into_iter().map(|i| (i, true))) {
+            let n = name_of(i);
+            let (_, _, h, m, _) = BODIES()[i.min(FIGURE)];
+            if i == FIGURE && !model {
+                let tile = tile_sized(ui, "Model", false, PERSON_H, |p, r| {
+                    p.text(r.center(), egui::Align2::CENTER_CENTER, "+", egui::FontId::proportional(40.0), HI);
+                });
+                wip_on(ui, tile.rect);
+                if tile.on_hover_text("Work in progress: pick a 3D model file to be a body (Biped: fitted onto Homer; rigged or not: an unrigged one is auto-fitted). For a four-legged one (Quadruped), use Animals' Model").clicked() {
+                    pick_model(PICK_BODY);
+                }
+                continue;
+            }
+            let tip = if model {
+                format!("{n}: a 3D model's body")
+            } else if h > 0.0 {
                 format!("{n}: {h:.2} m, {m:.0} kg")
             } else {
                 format!("{n} body")
             };
-            let tile = figure_tile(ui, n, sim.spawn_body == i, (i, 0));
-            if i == FIGURE {
-                wip_on(ui, tile.rect);
-            }
-            if holo_on_hover(tile, i).on_hover_text(tip).clicked() {
-                if i == FIGURE && (!model || sim.spawn_body == FIGURE) {
-                    pick_model(PICK_BODY);
+            let tile = figure_tile(ui, &n, sim.body == i, (i, 0));
+            let plus = egui::Rect::from_center_size(tile.rect.right_top() + egui::vec2(-13.0, 13.0), egui::vec2(20.0, 20.0));
+            let cross = if model { egui::Rect::from_center_size(tile.rect.left_top() + egui::vec2(13.0, 13.0), egui::vec2(20.0, 20.0)) } else { egui::Rect::NOTHING };
+            if tile.hovered() {
+                let at = tile.hover_pos();
+                for (r, c, _) in [(plus, "+", room), (cross, "x", model)].into_iter().filter(|b| b.2) {
+                    let over = at.is_some_and(|p| r.contains(p));
+                    ui.painter().circle_filled(r.center(), 10.0, if over { HI } else { egui::Color32::from_rgba_unmultiplied(20, 26, 36, 220) });
+                    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, c, egui::FontId::proportional(17.0), if over { BLACK } else { HI });
                 }
+            }
+            let tile = holo_on_hover(tile, i).on_hover_text(format!("{tip}
+Click: the Homer you control becomes this
+Right click or +: spawn another{}", if model { "\nx: remove this model" } else { "" }));
+            let on = |r: egui::Rect| tile.interact_pointer_pos().is_some_and(|p| r.contains(p));
+            if tile.clicked() && on(cross) {
+                *pressed = Some(format!("unmodel {}", i - FIGURE + 1));
+            } else if (tile.secondary_clicked() || tile.clicked() && on(plus)) && room {
                 sim.spawn_body = i;
+                *pressed = Some(format!("spawn {}", key_of(i)));
+            } else if tile.clicked() {
+                sim.spawn_body = i;
+                if sim.body != i || i == RANDOM {
+                    if sim.bench.is_empty() {
+                        sim.body = i;
+                        sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
+                    } else {
+                        *pressed = Some(format!("body {}", key_of(i)));
+                    }
+                }
             }
         }
     });
@@ -237,32 +270,13 @@ fn people(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
         });
     }
     ui.add_space(6.0);
-    let room = sim.bench.len() + 1 < HOMERS;
-    if ui.add_enabled(room, egui::Button::new(egui::RichText::new(format!("+  Spawn {}", BODIES()[sim.spawn_body].1)).strong().size(16.0).color(BLACK)).fill(HI)
+    if ui.add_enabled(room, egui::Button::new(egui::RichText::new(format!("+  Spawn {}", name_of(sim.spawn_body))).strong().size(16.0).color(BLACK)).fill(HI)
             .min_size(egui::vec2(ui.available_width(), 46.0)).corner_radius(10.0))
         .on_hover_text(format!("Another Homer of this body, 2 m in front of the one you control, balancing (Shift+N); up to {HOMERS}")).clicked() {
-        *pressed = Some(format!("spawn {}", BODIES()[sim.spawn_body].0));
+        *pressed = Some(format!("spawn {}", key_of(sim.spawn_body)));
     }
     sub(ui, "The one you control");
     card(ui, |ui| {
-        row(ui, "Body", |ui| {
-            egui::ComboBox::from_id_salt("controlled body").width(170.0).height(420.0).selected_text(BODIES()[sim.body].1).show_ui(ui, |ui| {
-                for (i, (_, n, h, m, _)) in BODIES().iter().enumerate() {
-                    let tip = if sim.bench.is_empty() { format!("{h:.2} m, {m:.0} kg (restarts the scene)") } else { format!("{h:.2} m, {m:.0} kg: the Homer you control, where he stands") };
-                    if ui.selectable_label(sim.body == i, *n).on_hover_text(tip).clicked() && sim.body != i {
-                        if sim.bench.is_empty() {
-                            sim.body = i;
-                            sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
-                        } else {
-                            *pressed = Some(format!("body {}", BODIES()[i].0));
-                        }
-                    }
-                }
-            }).response.on_hover_text("The controlled Homer's body. Alone in the room it restarts the scene; with others he changes where he stands.");
-        });
-        if ui.add(egui::Button::new("New random body").min_size(egui::vec2(0.0, PILL_H))).on_hover_text("Reroll: the Homer you control gets a fresh random body in place (Random, drawn anew)").clicked() {
-            *pressed = Some(format!("body {}", BODIES()[RANDOM].0));
-        }
         if sim.body == RANDOM {
             randomness(ui);
         }
@@ -282,7 +296,7 @@ fn people(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
         all.sort();
         for (id, body, on) in all {
             ui.horizontal(|ui| {
-                ui.label(format!("Homer {} · {}", id + 1, BODIES()[body].1));
+                ui.label(format!("Homer {} · {}", id + 1, name_of(body)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if on {
                         ui.label(egui::RichText::new("controlled").color(HI));
@@ -316,24 +330,43 @@ fn animals(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>, st: &
     let b = sim.horse_body;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        for (i, a) in rdr2frag::ANIMALS.iter().enumerate() {
-            let name = if i == 0 && linked { "Horse (RDR2)".to_string() } else { a.0.to_string() };
-            if holo_on_hover(figure_tile(ui, &name, b as usize == i + 2, (i, 1)), HOLO_ANIMAL + i).on_hover_text(format!("{name}: the next animal's body")).clicked() {
+        for i in 0..crate::animal_fit::count() {
+            let name = if i == 0 && linked { "Horse (RDR2)".to_string() } else { crate::animal_fit::name(i) };
+            let tip = if i >= rdr2frag::ANIMALS.len() { format!("{name}: an imported model's body (its capsules here; its own mesh in the room)") } else { format!("{name}: the next animal's body") };
+            if holo_on_hover(figure_tile(ui, &name, b as usize == i + 2, (i, 1)), HOLO_ANIMAL + i).on_hover_text(tip).clicked() {
                 *pressed = Some(format!("horse_body {}", i + 2));
             }
         }
+        let tile = tile(ui, "Model", false, |p, r| {
+            p.text(r.center(), egui::Align2::CENTER_CENTER, "+", egui::FontId::proportional(40.0), HI);
+        });
+        wip_on(ui, tile.rect);
+        if tile.on_hover_text("Work in progress: pick a four-legged 3D model (.fbx or .obj, rigged or not) to be an animal, fitted onto the animals' body (Quadruped). For a two-legged one (Biped), use People's Model").clicked() {
+            pick_model(PICK_ANIMAL);
+        }
     });
     ui.add_space(6.0);
-    let next = rdr2frag::ANIMALS[(b as usize).saturating_sub(2).min(rdr2frag::ANIMALS.len() - 1)].0;
+    let next = crate::animal_fit::name((b as usize).saturating_sub(2).min(crate::animal_fit::count() - 1));
     if ui.add(egui::Button::new(egui::RichText::new(format!("+  Spawn {next}")).strong().size(16.0).color(BLACK)).fill(HI)
             .min_size(egui::vec2(ui.available_width(), 46.0)).corner_radius(10.0))
         .on_hover_text("Another animal of the picked body beside Homer, clear of the others; the ones out stay").clicked() {
         *pressed = Some("animal add".into());
     }
+    let a = (b as usize).saturating_sub(2);
+    if a >= rdr2frag::ANIMALS.len() && a < crate::animal_fit::count() {
+        sub(ui, "Leg joints");
+        let (mut stiff, mut lock) = crate::animal_fit::legs(a);
+        let tip = "Bendy: its knees and ankles bend as the horse's. Stiff: held straight, only the hips and shoulders swing, each leg one straight stick (a chair's wooden legs). It may stand differently with stiff legs";
+        let s = ui.add_enabled(!lock, egui::Slider::new(&mut stiff, 0.0..=1.0).custom_formatter(|v, _| match v { v if v <= 0.0 => "Bendy".into(), v if v >= 1.0 => "Stiff".into(), v => format!("{:.0}% stiff", v * 100.0) }))
+            .on_hover_text(tip).changed();
+        if switch(ui, &mut lock, "Lock knees", "On: no bend below the hips and shoulders at all, each leg one rigid stick that swings only at the top (a chair's legs). It may stand differently").changed() || s {
+            crate::animal_fit::set_legs(a, stiff, lock);
+        }
+    }
     if sim.horse.is_some() {
         sub(ui, "In the room");
-        let name = |h: &horse::Horse| rdr2frag::ANIMALS[h.animal.min(rdr2frag::ANIMALS.len() - 1)].0;
-        let mut all: Vec<(u32, &str, bool)> = sim.horse.iter().map(|h| (sim.horse_id, name(h), true)).chain(sim.herd.iter().map(|(i, h)| (*i, name(h), false))).collect();
+        let name = |h: &horse::Horse| crate::animal_fit::name(h.animal);
+        let mut all: Vec<(u32, String, bool)> = sim.horse.iter().map(|h| (sim.horse_id, name(h), true)).chain(sim.herd.iter().map(|(i, h)| (*i, name(h), false))).collect();
         all.sort();
         for (id, n, on) in all {
             ui.horizontal(|ui| {
@@ -353,7 +386,20 @@ fn animals(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>, st: &
     }
     sub(ui, "Brain");
     let l = sim.horse_loalco;
-    *pressed = pressed.take().or(tiles(ui, "hbrain", &[("horse_brain 0", !l, "Balances (RDR2 core)".into()), ("horse_brain 1", l, "Held pose".into())]));
+    let a = (sim.horse_body as usize).saturating_sub(2);
+    let obj = crate::animal_fit::object(a);
+    let mut brains = vec![("horse_brain 0", !l && !obj, "Balances (RDR2 core)".to_string()), ("horse_brain 1", l && !obj, "Held pose".into())];
+    if a >= rdr2frag::ANIMALS.len() && a < crate::animal_fit::count() {
+        brains.push(("horse_brain 2", obj, "Object (furniture)".into()));
+    }
+    *pressed = pressed.take().or(tiles(ui, "hbrain", &brains));
+    if obj {
+        info(ui, "Object (furniture): it stands as furniture, holding its own shape (no stepping); pushed it wobbles or tips; walking (WASD) it waddles on its diagonal legs. The picked imported model's (unrigged and non-animal models start with it).");
+    }
+    sub(ui, "Stepping");
+    let m = horse::balance();
+    *pressed = pressed.take().or(tiles(ui, "hbalance", &[("horse_balance 0", m == 0, "RDR2's own".into()), ("horse_balance 1", m == 1, "Delirium balancer".into()), ("horse_balance 2", m == 2, "Balancer, wider stance".into())]));
+    info(ui, "Delirium balancer: the standing legs carry a lifted leg's weight and it steps where a shove carries it. Wider stance: hooves set further apart (the next animal spawned).");
     let mut freeze = horse::FREEZE.load(std::sync::atomic::Ordering::Relaxed);
     if switch(ui, &mut freeze, "Freeze when standing still", "On: after it spawns, after Reset pose and after a second standing still, the animal holds its pose until touched. Off: it balances on its own the whole time.").changed() {
         horse::FREEZE.store(freeze, std::sync::atomic::Ordering::Relaxed);

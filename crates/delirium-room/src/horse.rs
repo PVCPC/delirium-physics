@@ -4,6 +4,8 @@ pub(super) mod rdr2;
 pub use rdr2::TABLE;
 #[path = "horse_ours.rs"]
 pub mod ours;
+#[path = "horse_object.rs"]
+mod object;
 use bevy::prelude::*;
 use delirium::collision::Collision;
 use delirium::ragdoll::{Build, Capsule, Drive, Limit, Muscle, Obstacle, PartDef, Ragdoll, GRAVITY};
@@ -123,8 +125,18 @@ const WALK_LEAN: f32 = 0.0;
 pub struct Horse {
     pub build: Build,
     pub doll: Ragdoll,
+    knee_lock: bool,
+    knee_free: Vec<(usize, Limit)>,
+    pub rest_shift: Vec<Mat4>,
+    waddle: f32,
+    obj_free: Vec<(Quat, Limit)>,
+    obj_tilt: f32,
+    obj_amp: f32,
+    obj_way: f32,
     pub animal: usize,
+    pub body: u8,
     pub leg_cap: f32,
+    pub wide: f32,
     targets: Vec<Quat>,
     muscles: Vec<(f32, f32)>,
     pub health: f32,
@@ -140,7 +152,8 @@ pub struct Horse {
     pub fell: bool,
     since_hit: f32,
     pub down: f32,
-    pose: Vec<Transform>,
+    pub(crate) pose: Vec<Transform>,
+    pub(crate) rest: Option<Vec<Transform>>,
     held: bool,
     pushes: Vec<(usize, Vec3, Vec3)>,
     pub rdr2: bool,
@@ -324,6 +337,7 @@ impl Horse {
                                  anchor: f.rotation.inverse() * (joint - f.translation), limit, lower: group(k) == 1, reach: false,
                                  name: PARTS[k].1.to_string(), bind: f.rotation, boxed: None, inertia: cap.inertia, length: 0.0 });
         }
+        let raw = frames.clone();
         let frames = in_limits(&mut parts, &frames, at.z);
         let build = Build { parts, nm: delirium::nmrs::HOMER, links: vec![] };
         let targets = (0..part_of.len()).map(|k| build.parts[k].parent.map_or(Quat::IDENTITY, |p| frames[p].rotation.inverse() * frames[k].rotation)).collect();
@@ -349,9 +363,10 @@ impl Horse {
         let stand0: Vec<Transform> = frames.iter().map(|f| Transform::from_translation(un * (f.translation - o)).with_rotation(un * f.rotation)).collect();
         let side = Vec3::Z.cross((stand0[SHOULDERS].translation - stand0[PELVIS].translation).with_z(0.0)).normalize_or(Vec3::Y);
         let lefts = frames.iter().map(|f| f.rotation.inverse() * (turn * Vec3::Y)).collect();
-        Ok(Horse { build, doll, animal: 0, targets, muscles, health: HEALTH, legs: [0.0; 4], dead: false, sunk: 0.0, kept: Default::default(),
+        let rest_shift = frames.iter().zip(&raw).map(|(f, r)| f.to_matrix().inverse() * r.to_matrix()).collect();
+        Ok(Horse { build, doll, knee_lock: false, knee_free: vec![], rest_shift, waddle: 0.0, obj_free: vec![], obj_tilt: f32::NAN, obj_amp: 0.0, obj_way: 1.0, animal: 0, body: 2, targets, muscles, health: HEALTH, legs: [0.0; 4], dead: false, sunk: 0.0, kept: Default::default(),
                    stand, fwd, ups, lefts, q: Quadruped::default(), fell: false, since_hit: f32::MAX, down: 0.0,
-                   pose: frames.clone(), held: true, pushes: vec![], rdr2: false, hold: !live(), calm: 0.0, stand0, side, rise: None, ours: None, ours_down: false, leg_cap: 1.0, anchor: [None; 4], walk: Vec3::ZERO, hyb_h: None, lain: 0.0, r: Default::default(), core: None, rdr2_hits: vec![], rider: None, task_asked: false,
+                   pose: frames.clone(), rest: None, held: true, pushes: vec![], rdr2: false, hold: !live(), calm: 0.0, stand0, side, rise: None, ours: None, ours_down: false, leg_cap: 1.0, wide: 1.0, anchor: [None; 4], walk: Vec3::ZERO, hyb_h: None, lain: 0.0, r: Default::default(), core: None, rdr2_hits: vec![], rider: None, task_asked: false,
                    centres, rig_ms, rig_caps, spine_axis, spine_cg })
     }
 
@@ -361,12 +376,43 @@ impl Horse {
         self.doll.step(&self.build, world, dt, drive, obstacles, others);
     }
 
+    fn lock_knees(&mut self, on: bool) {
+        if self.knee_free.is_empty() {
+            self.knee_free = LEGS.iter().flat_map(|l| l[1..].iter().map(|&k| (k, self.build.parts[k].limit))).collect();
+        }
+        for &(k, l) in &self.knee_free {
+            self.build.parts[k].limit = if on { Limit::Cone { swing: WELD_PLAY, twist: WELD_PLAY } } else { l };
+        }
+        self.remake();
+        self.knee_lock = on;
+    }
+
+    fn remake(&mut self) {
+        let frames: Vec<Transform> = self.doll.frames().collect();
+        let pairs = std::mem::take(&mut self.doll.pairs);
+        self.doll = Ragdoll::new(&self.build, &frames, Vec3::ZERO);
+        self.doll.pairs = pairs;
+    }
+
     pub fn member<'a>(&'a mut self, id: usize, obstacles: &'a [Obstacle]) -> delirium::ragdoll::Member<'a> {
         delirium::ragdoll::Member { doll: &mut self.doll, id, build: &self.build, drive: self.kept.drive(), obstacles, others: &[] }
     }
 
     pub fn think(&mut self, world: &Collision, dt: f32, obstacles: &[Obstacle], others: &[Capsule]) {
         self.think_brain(world, dt, obstacles, others);
+        let (stiff, lock) = if crate::animal_fit::object(self.animal) { (0.0, self.knee_lock) } else { crate::animal_fit::legs(self.animal) };
+        if lock != self.knee_lock {
+            self.lock_knees(lock);
+        }
+        let s = if lock { 1.0 } else { stiff };
+        if s > 0.0 {
+            for &k in LEGS.iter().flat_map(|l| &l[1..]) {
+                if let Some(m) = self.kept.muscles.get_mut(k) {
+                    m.target = m.target.slerp(self.targets[k], s);
+                    m.stiffness += (WELD - m.stiffness) * s;
+                }
+            }
+        }
         if std::env::var_os("HORSE_NONET").is_some() && self.kept.torque.len() > MID {
             let t: Vec3 = self.kept.torque.iter().sum();
             self.kept.torque[MID] -= t;
@@ -379,7 +425,7 @@ impl Horse {
             let (_, v) = self.doll.com();
             eprintln!("hoof {} || ext f {:.1} {:.1} {:.1} t {:.1} {:.1} {:.1} v {:.3} {:.3}", s.join(" | "), f.x, f.y, f.z, t.x, t.y, t.z, v.x, v.y);
         }
-        if self.walk != Vec3::ZERO && !self.dead && self.kept.force.len() > MID {
+        if self.walk != Vec3::ZERO && !self.dead && self.kept.force.len() > MID && !crate::animal_fit::object(self.animal) {
             let lean = std::env::var("HORSE_WALKLEAN").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(WALK_LEAN);
             self.kept.force[MID] += self.walk.with_z(0.0) * self.doll.mass() * delirium::ragdoll::GRAVITY() * lean;
         }
@@ -408,6 +454,13 @@ impl Horse {
     }
 
     fn think_brain(&mut self, world: &Collision, dt: f32, obstacles: &[Obstacle], others: &[Capsule]) {
+        if crate::animal_fit::object(self.animal) {
+            return self.step_object(dt);
+        }
+        if !self.obj_free.is_empty() {
+            self.end_object();
+            self.kept.rigid.clear();
+        }
         if self.ours_down && self.hold { self.ours_down = false; }
         if self.rdr2 && ours::on() && !self.dead && !self.ours_down && self.rise.is_none() && !self.down_rdr2() {
             if self.step_ours(dt) { return; }
@@ -744,6 +797,10 @@ impl Horse {
     }
 
     pub fn state(&self) -> String {
+        if crate::animal_fit::object(self.animal) {
+            let up = self.doll.frames().nth(MID).map_or(1.0, |f| (f.rotation * self.stand).z);
+            return format!("Object (furniture): {}", if self.dead { "dead" } else if up < 0.5 { "tipped over" } else if self.waddle > 0.0 { "waddling" } else { "standing" });
+        }
         if self.rdr2 && !self.dead {
             return self.state_rdr2();
         }
@@ -816,6 +873,9 @@ pub(crate) fn coat(animal: usize, k: usize, name: &str) -> Color {
     let foot = name.ends_with("Foot");
     let is = |n: &[&str]| n.iter().any(|x| name.starts_with(x));
     let lower = is(&["R_Calf", "L_Calf", "R_Forearm", "L_Forearm"]);
+    if let Some(c) = crate::animal_fit::colour(animal) {
+        return c;
+    }
     match animal {
         1 if foot => c(0.25, 0.24, 0.23),
         1 if is(&["Spine1", "Spine3", "Neck3", "L_Thigh", "R_UpperArm", "Tail4"]) => c(0.08, 0.08, 0.08),
@@ -841,6 +901,9 @@ fn touches(animal: usize) -> Vec<Touch> {
     const BLACK: [f32; 3] = [0.06, 0.06, 0.06];
     const CREAM: [f32; 3] = [0.9, 0.85, 0.7];
     let mut t: Vec<Touch> = vec![];
+    if animal >= crate::rdr2frag::ANIMALS.len() {
+        return t;
+    }
     let curl = |t: &mut Vec<Touch>, col: [f32; 3]| for i in 0..9 {
         let a = i as f32 * 0.8;
         t.push(("Pelvis", -1, [0.0, -1.0 - 0.06 * i as f32 - 0.25 * a.cos(), 0.5 + 0.25 * a.sin()], 0, [0.09, 0.0, 0.0], col));
@@ -895,7 +958,8 @@ fn touches(animal: usize) -> Vec<Touch> {
 }
 
 pub fn view(mut commands: Commands, sim: NonSend<crate::Sim>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
-            mut parts: Query<(Entity, &HorsePart, &mut Transform)>, mut looks: Local<Vec<(Handle<StandardMaterial>, Color)>>) {
+            mut parts: Query<(Entity, &HorsePart, &mut Transform)>, mut looks: Local<Vec<(Handle<StandardMaterial>, Color)>>,
+            (mut images, mut binds): (ResMut<Assets<Image>>, ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>)) {
     let all: Vec<(u32, &Horse)> = sim.horse.iter().map(|h| (sim.horse_id, h)).chain(sim.herd.iter().map(|(i, h)| (*i, h))).collect();
     let mut have = std::collections::HashSet::new();
     for (e, HorsePart(id, _), _) in &parts {
@@ -928,11 +992,53 @@ pub fn view(mut commands: Commands, sim: NonSend<crate::Sim>, mut meshes: ResMut
         let fwd = (fr[SHOULDERS].translation - fr[PELVIS].translation).with_z(0.0).normalize_or(Vec3::X);
         let side = fwd.cross(Vec3::Z);
         let touch = touches(h.animal);
+        let layer = bevy::camera::visibility::RenderLayers::layer(1);
+        if let Some(own) = crate::animal_fit::look(h.animal) {
+            let joints: Vec<Entity> = caps.iter().enumerate().map(|(k, &t)| commands.spawn((t, HorsePart(id, k), Visibility::Inherited)).id()).collect();
+            let bind = binds.add(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(
+                own.bind.iter().zip(&h.rest_shift).map(|(b, s)| *s * *b).collect::<Vec<Mat4>>()));
+            let mut tex = |t: &Option<crate::usd::Tex>, srgb: bool| -> Option<Handle<Image>> {
+                let t = t.as_ref()?;
+                let ext = std::path::Path::new(&t.name).extension().map_or("png".into(), |e| e.to_string_lossy().to_lowercase());
+                let img = Image::from_buffer(t.bytes.as_ref()?, bevy::image::ImageType::Extension(&ext), bevy::image::CompressedImageFormats::NONE, srgb,
+                                             bevy::image::ImageSampler::Default, bevy::asset::RenderAssetUsages::default()).ok()?;
+                Some(images.add(img))
+            };
+            let made: Vec<Handle<StandardMaterial>> = own.mats.iter().map(|q| mats.add(StandardMaterial {
+                base_color: Color::srgb(q.base[0], q.base[1], q.base[2]),
+                base_color_texture: tex(&q.base_tex, true),
+                normal_map_texture: tex(&q.normal_tex, false),
+                metallic: q.metallic,
+                perceptual_roughness: q.roughness,
+                alpha_mode: if q.base[3] < 1.0 { AlphaMode::Mask(0.5) } else { AlphaMode::Opaque },
+                double_sided: true,
+                cull_mode: None,
+                ..default()
+            })).collect();
+            let plain = mats.add(StandardMaterial { base_color: Color::srgb(0.7, 0.7, 0.7), perceptual_roughness: 0.8, double_sided: true, cull_mode: None, ..default() });
+            for q in &own.pieces {
+                let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, default())
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, q.pos.clone())
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, q.nrm.clone())
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_JOINT_INDEX, bevy::mesh::VertexAttributeValues::Uint16x4(q.joints.clone()))
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, q.weights.clone());
+                if !q.uv.is_empty() {
+                    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, q.uv.clone());
+                    let _ = mesh.generate_tangents();
+                }
+                let m = q.mat.and_then(|k| made.get(k).cloned()).unwrap_or(plain.clone());
+                let skin = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(m), Transform::default(), Visibility::Inherited,
+                                           bevy::mesh::skinning::SkinnedMesh { inverse_bindposes: bind.clone(), joints: joints.clone() },
+                                           bevy::camera::visibility::NoFrustumCulling, layer.clone())).id();
+                commands.entity(joints[0]).add_child(skin);
+            }
+            continue;
+        }
         for (k, (&t, p)) in caps.iter().zip(&h.build.parts).enumerate() {
-            let layer = bevy::camera::visibility::RenderLayers::layer(1);
             let m = mat(coat(h.animal, k, &p.name));
-            let shown = if (3..=6).contains(&h.animal) && p.name.starts_with("Tail") { Visibility::Hidden } else { Visibility::Inherited };
-            let mut e = commands.spawn((Mesh3d(meshes.add(Capsule3d::new(p.radius, p.half * 2.0))), MeshMaterial3d(m), t, HorsePart(id, k),
+            let shown = if crate::animal_fit::tailless(h.animal) && p.name.starts_with("Tail") { Visibility::Hidden } else { Visibility::Inherited };
+            let shape = meshes.add(Capsule3d::new(p.radius, p.half * 2.0));
+            let mut e = commands.spawn((Mesh3d(shape), MeshMaterial3d(m), t, HorsePart(id, k),
                                         layer.clone(), shown));
             for &(_, end, o, shape, size, col) in touch.iter().filter(|x| x.0 == p.name) {
                 let r = h.build.parts.iter().filter(|q| q.name.starts_with(p.name.as_str())).map(|q| q.radius).fold(p.radius, f32::max);
@@ -969,4 +1075,32 @@ pub fn view(mut commands: Commands, sim: NonSend<crate::Sim>, mut meshes: ResMut
 pub static FREEZE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn live() -> bool {
     std::env::var_os("HORSE_LIVE").is_some() || !FREEZE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub static BALANCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(255);
+const WIDE: &str = "1.4,1.1,1.5,1.4,1.5,1,1.5,1";
+
+pub fn balance() -> u8 {
+    match BALANCE.load(std::sync::atomic::Ordering::Relaxed) {
+        255 if std::env::var("HORSE_SHARE").is_ok_and(|v| v != "0") =>
+            if std::env::var("HORSE_STANDPOSE").is_ok_and(|v| v.ends_with("-normal")) { 1 } else { 2 },
+        255 => 0,
+        m => m,
+    }
+}
+
+pub fn set_balance(m: u8) {
+    let m = m.min(2);
+    BALANCE.store(m, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::current_exe().ok().and_then(|e| e.ancestors().skip(1)
+        .map(|d| d.join("tools").join(if m == 2 { "standpose" } else { "standpose-normal" })).find(|d| d.is_dir()));
+    unsafe {
+        let set = [("HORSE_LIVE", "1"), ("HORSE_SHARE", "1"), ("HORSE_LANDPICK", "0.5"), ("HORSE_MINSTEP", "0.03"), ("HORSE_NOCROSS", "1")];
+        for (k, v) in set { if m == 0 { std::env::remove_var(k) } else { std::env::set_var(k, v) } }
+        match (&dir, m) {
+            (Some(d), 1 | 2) => std::env::set_var("HORSE_STANDPOSE", d),
+            _ => std::env::remove_var("HORSE_STANDPOSE"),
+        }
+        if m == 2 { std::env::set_var("HORSE_WIDE", WIDE) } else { std::env::remove_var("HORSE_WIDE") }
+    }
 }

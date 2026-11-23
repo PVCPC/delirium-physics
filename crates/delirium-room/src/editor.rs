@@ -231,6 +231,55 @@ pub struct Level {
     pub fig_auto: bool,
 }
 
+fn spec_gloss(bytes: Vec<u8>) -> Vec<u8> {
+    const EXT: &str = "KHR_materials_pbrSpecularGlossiness";
+    let glb = bytes.starts_with(b"glTF");
+    let (json, rest) = if glb && bytes.len() >= 20 {
+        let n = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        (bytes.get(20..20 + n).unwrap_or(&[]), bytes.get(20 + n..).unwrap_or(&[]))
+    } else {
+        (&bytes[..], &[][..])
+    };
+    let Ok(mut j) = serde_json::from_slice::<serde_json::Value>(json) else { return bytes };
+    if !j.get("extensionsRequired").and_then(|r| r.as_array()).is_some_and(|r| r.iter().any(|e| e == EXT)) {
+        return bytes;
+    }
+    for k in ["extensionsRequired", "extensionsUsed"] {
+        if let Some(r) = j.get_mut(k).and_then(|r| r.as_array_mut()) {
+            r.retain(|e| e != EXT);
+        }
+    }
+    for m in j.get_mut("materials").and_then(|m| m.as_array_mut()).into_iter().flatten() {
+        let Some(sg) = m.get_mut("extensions").and_then(|e| e.as_object_mut()).and_then(|e| e.remove(EXT)) else { continue };
+        let mut pbr = serde_json::json!({ "metallicFactor": 0.0, "roughnessFactor": 1.0 - sg.get("glossinessFactor").and_then(|g| g.as_f64()).unwrap_or(1.0) });
+        if let Some(t) = sg.get("diffuseTexture") {
+            pbr["baseColorTexture"] = t.clone();
+        }
+        if let Some(c) = sg.get("diffuseFactor") {
+            pbr["baseColorFactor"] = c.clone();
+        }
+        m["pbrMetallicRoughness"] = pbr;
+    }
+    let Ok(mut out) = serde_json::to_vec(&j) else { return bytes };
+    if !glb {
+        return out;
+    }
+    while out.len() % 4 != 0 {
+        out.push(b' ');
+    }
+    let mut g = Vec::with_capacity(20 + out.len() + rest.len());
+    g.extend_from_slice(b"glTF");
+    g.extend_from_slice(&2u32.to_le_bytes());
+    g.extend_from_slice(&((20 + out.len() + rest.len()) as u32).to_le_bytes());
+    g.extend_from_slice(&(out.len() as u32).to_le_bytes());
+    g.extend_from_slice(b"JSON");
+    g.extend_from_slice(&out);
+    g.extend_from_slice(rest);
+    g
+}
+
+pub const BODY_DEPTH: f32 = -40.0;
+
 impl Level {
     pub fn local(&self, p: &Piece) -> (Vec<Vec3>, Vec<[u32; 3]>) {
         match p.shape {
@@ -472,6 +521,7 @@ pub fn load(path: &str, meshes: &mut Assets<Mesh>, mats: &mut Assets<StandardMat
             }
         }
     }
+    let bytes = spec_gloss(bytes);
     registry.insert_asset(std::path::PathBuf::new(), std::path::Path::new(&format!("{dir}/{name}")), bytes);
     m.scene = Some(assets.load(bevy::gltf::GltfAssetLabel::Scene(0).from_asset(format!("embedded://{dir}/{name}"))));
     m
@@ -524,13 +574,7 @@ fn fbx(path: &str) -> Result<crate::usd::Scene, String> {
         };
         let (m, nm) = (&node.geometry_to_world, ufbx::matrix_for_normals(&node.geometry_to_world));
         let first = out.mats.len();
-        out.mats.extend(mesh.materials.iter().map(|q| {
-            let (c, r, k) = (q.pbr.base_color.value_vec4, q.pbr.roughness.value_vec4.x, q.pbr.metalness.value_vec4.x);
-            let base_tex = fbx_tex(&q.pbr.base_color, path);
-            let c = if base_tex.is_some() { [1.0; 4] } else { [c.x as f32, c.y as f32, c.z as f32, 1.0] };
-            crate::usd::Mat { base: c, base_tex, normal_tex: fbx_tex(&q.pbr.normal_map, path), roughness: if q.pbr.roughness.has_value { r as f32 } else { 0.7 },
-                              metallic: k as f32, ..Default::default() }
-        }));
+        out.mats.extend(mesh.materials.iter().map(|q| fbx_mat(q, path)));
         let mut parts: Vec<crate::usd::Part> = (0..=mesh.materials.len()).map(|k| crate::usd::Part { mat: (k < mesh.materials.len()).then_some(first + k), ..Default::default() }).collect();
         let mut idx = vec![0u32; mesh.max_face_triangles * 3];
         for (f, face) in mesh.faces.iter().enumerate() {
@@ -557,6 +601,14 @@ fn fbx(path: &str) -> Result<crate::usd::Scene, String> {
         out.joints.iter_mut().for_each(|q| *q *= 0.01);
     }
     Ok(out)
+}
+
+pub(crate) fn fbx_mat(q: &ufbx::Material, path: &str) -> crate::usd::Mat {
+    let (c, r, k) = (q.pbr.base_color.value_vec4, q.pbr.roughness.value_vec4.x, q.pbr.metalness.value_vec4.x);
+    let base_tex = fbx_tex(&q.pbr.base_color, path);
+    let c = if base_tex.is_some() { [1.0; 4] } else { [c.x as f32, c.y as f32, c.z as f32, 1.0] };
+    crate::usd::Mat { base: c, base_tex, normal_tex: fbx_tex(&q.pbr.normal_map, path), roughness: if q.pbr.roughness.has_value { r as f32 } else { 0.7 },
+                      metallic: k as f32, ..Default::default() }
 }
 
 fn fbx_tex(map: &ufbx::MaterialMap, fbx: &str) -> Option<crate::usd::Tex> {
@@ -609,7 +661,7 @@ fn floppy_bones() {
     assert_eq!((of[2], of[3], of[4], of[6]), (Some(base), Some(base + 1), Some(base + 2), of[5]));
 }
 
-fn top4(w: &[f32]) -> ([u16; 4], [f32; 4]) {
+pub(crate) fn top4(w: &[f32]) -> ([u16; 4], [f32; 4]) {
     let mut o: Vec<usize> = (0..w.len()).collect();
     o.sort_by(|a, b| w[*b].total_cmp(&w[*a]));
     let sum = o[..4].iter().map(|&k| w[k]).sum::<f32>();
@@ -903,15 +955,18 @@ pub fn apply(level: &mut Level, room: &mut crate::world::Room, world: &mut delir
             let b = room.add_loose(&local, &tris, t.translation, t.rotation, l.kg, l.friction, l.bounce);
             room.loose.extend(b.map(|h| (h, i, false, l.float)));
             b
+        } else if p.shape == Shape::Model && p.pos.z < BODY_DEPTH {
+            None
         } else {
             world.add_chunk(LEVEL_CHUNK + i as u64, &pts, &tris, &vec![row; tris.len()]);
             room.add_piece(&pts, &tris)
         };
         level.bodies.push(body);
         let picked = level.selected == Some(i) && level.open;
+        let vis = if p.shape == Shape::Model && p.pos.z < BODY_DEPTH && !level.open { Visibility::Hidden } else { Visibility::default() };
         let model = level.models.get(&p.model).filter(|_| p.shape == Shape::Model);
         if let Some(parts) = model.map(|m| m.usd.clone()).filter(|u| !u.is_empty()) {
-            commands.spawn((p.transform(), Visibility::default(), RenderLayers::layer(1), LevelMesh(i))).with_children(|c| {
+            commands.spawn((p.transform(), vis, RenderLayers::layer(1), LevelMesh(i))).with_children(|c| {
                 for (mesh, mat) in parts {
                     c.spawn((Mesh3d(mesh), MeshMaterial3d(mat), Transform::default(), RenderLayers::layer(1)));
                 }
@@ -919,12 +974,12 @@ pub fn apply(level: &mut Level, room: &mut crate::world::Room, world: &mut delir
             continue;
         }
         if let Some((cloud, at)) = model.and_then(|m| m.splat.clone()) {
-            commands.spawn((p.transform(), Visibility::default(), RenderLayers::layer(1), LevelMesh(i)))
+            commands.spawn((p.transform(), vis, RenderLayers::layer(1), LevelMesh(i)))
                 .with_child((bevy_gaussian_splatting::PlanarGaussian3dHandle(cloud), bevy_gaussian_splatting::CloudSettings::default(), at, RenderLayers::layer(1)));
             continue;
         }
         if let Some(scene) = model.and_then(|m| m.scene.clone()) {
-            commands.spawn((p.transform(), Visibility::default(), RenderLayers::layer(1), LevelMesh(i)))
+            commands.spawn((p.transform(), vis, RenderLayers::layer(1), LevelMesh(i)))
                 .with_child((bevy::world_serialization::WorldAssetRoot(scene), Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), RenderLayers::layer(1)));
             continue;
         }
@@ -941,7 +996,7 @@ pub fn apply(level: &mut Level, room: &mut crate::world::Room, world: &mut delir
                                                emissive: if picked { LinearRgba::rgb(0.25, 0.18, 0.0) } else { LinearRgba::BLACK },
                                                alpha_mode: if c.alpha() < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque }, ..default() }
                         })),
-                        p.transform(), RenderLayers::layer(1), LevelMesh(i)))
+                        p.transform(), vis, RenderLayers::layer(1), LevelMesh(i)))
             .with_children(|c| if p.shape == Shape::Pool {
                 c.spawn((Mesh3d(meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(0.5)))),
                          MeshMaterial3d(mats.add(StandardMaterial { base_color: Color::srgba(0.12, 0.42, 0.62, 0.55), alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.02,

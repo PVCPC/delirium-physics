@@ -364,6 +364,8 @@ pub struct Core {
     legs: [Leg; 4],
     gait: i32,
     last_leg: usize,
+    net_o: [f32; NET_OUT],
+    net_f: Vec3,
     first_gait: usize,
     phase: f32,
     sigma: f32,
@@ -392,6 +394,7 @@ pub struct Core {
     rig: [LegRig; 4],
     scale: f32,
     unit: f32,
+    stand_h: Option<f32>,
 }
 
 impl Core {
@@ -503,6 +506,40 @@ fn tuned() -> bool {
 
 fn share_on() -> bool {
     std::env::var("HORSE_SHARE").is_ok_and(|v| v != "0") && !super::ours::hybrid()
+}
+
+fn knob_f(name: &str) -> Option<f32> {
+    knob(name).and_then(|v| v.parse::<f32>().ok())
+}
+
+const NET_IN: usize = 26;
+const NET_HID: usize = 32;
+const NET_OUT: usize = 12;
+const NET_URGE: f32 = 0.2;
+const NET_EDGE: f32 = 0.15;
+const NET_PICK: f32 = 0.1;
+const NET_REACH: f32 = 0.25;
+const NET_DEAD: f32 = 0.3;
+fn net() -> Option<&'static Vec<f32>> {
+    static NET: std::sync::OnceLock<Option<Vec<f32>>> = std::sync::OnceLock::new();
+    NET.get_or_init(|| {
+        let p = std::env::var("HORSE_NET").ok()?;
+        let w: Vec<f32> = std::fs::read_to_string(&p).ok()?.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+        let n = NET_HID * NET_IN + NET_HID + NET_OUT * NET_HID + NET_OUT;
+        if w.len() != n { eprintln!("horse  net {p}: {} numbers, want {n}; off", w.len()); return None; }
+        eprintln!("horse  net {p} loaded");
+        Some(w)
+    }).as_ref()
+}
+fn net_run(w: &[f32], x: &[f32; NET_IN]) -> [f32; NET_OUT] {
+    let (w1, r) = w.split_at(NET_HID * NET_IN);
+    let (b1, r) = r.split_at(NET_HID);
+    let (w2, b2) = r.split_at(NET_OUT * NET_HID);
+    let h: Vec<f32> = (0..NET_HID).map(|j| (b1[j] + (0..NET_IN).map(|i| w1[j * NET_IN + i] * x[i]).sum::<f32>()).tanh()).collect();
+    std::array::from_fn(|k| {
+        let o = (b2[k] + (0..NET_HID).map(|j| w2[k * NET_HID + j] * h[j]).sum::<f32>()).tanh();
+        o.signum() * ((o.abs() - NET_DEAD).max(0.0) / (1.0 - NET_DEAD))
+    })
 }
 
 fn ours_step() -> bool {
@@ -624,7 +661,7 @@ impl Horse {
                 self.doll.impulse(k, at, imp);
             }
         }
-        let rig = self.leg_rig(fr);
+        let rig = self.leg_rig(self.rest.as_deref().unwrap_or(fr));
         let tr = std::env::var_os("RDR2_TRACE").is_some();
         let v = &self.r;
         let (com, _, m) = self.com_rider();
@@ -632,6 +669,7 @@ impl Horse {
         let unit = rig.iter().map(|r| r.unit).sum::<f32>() / 4.0;
         let h = unit * p!(v, "height");
         let (w, ln, o) = (unit * p!(v, "0x6ce93cc5"), unit * p!(v, "0xe6200ae9"), unit * p!(v, "0x60b32079"));
+        let w = w * self.wide;
         let layout = [Vec3::new(0.0, w, -ln - o), Vec3::new(0.0, -w, -ln - o), Vec3::new(0.0, w, ln - o), Vec3::new(0.0, -w, ln - o)];
         let seed = (com.x.to_bits() as u64) ^ ((com.y.to_bits() as u64) << 21) ^ 0x1234_5678;
         let mut c = Core {
@@ -642,10 +680,16 @@ impl Horse {
             flail: 0.0, flail_t: 0.0, lying_t: 0.0, on_parts: false, lying: false, support_t: 0.0, out_t: 0.0, fs: 1.0, fs2: 1.0, fl: 1.0,
             legs: [Leg::default(); 4], gait: -1, last_leg: (p!(v, "gaitstate") as usize).min(4), first_gait: 4, phase: 0.0, sigma: 0.0, roll: 0.0,
             upright: 1.0, roll_go: 1.0, seed: [123.0, 321.0], writhe_t: 0.0, fade: [1.0; 2], push_lean: None, push_force: None,
-            ground_n: Vec3::Z, ground_p: com - Vec3::Z, rng: [seed | 1, (seed << 7) | 3], last: vec![], locked: vec![], shift: None, share_d: Vec3::ZERO, remeasured: false, hipw_done: false, hit_part: 0, width: [0.1, 0.65], fresh3_flag: false,
-            said: HashSet::new(), tr, rig, scale: (m / 618.0).sqrt(), unit,
+            ground_n: Vec3::Z, ground_p: com - Vec3::Z, rng: [seed | 1, (seed << 7) | 3], last: vec![], locked: vec![], shift: None, net_o: [0.0; NET_OUT], net_f: Vec3::X, share_d: Vec3::ZERO, remeasured: false, hipw_done: false, hit_part: 0, width: [0.1, 0.65], fresh3_flag: false,
+            said: HashSet::new(), tr, rig, scale: (m / 618.0).sqrt(), unit, stand_h: None,
         };
         c.seed = [c.rand(0) * 1000.0, c.rand(0) * 1000.0];
+        if crate::animal_fit::look(self.animal).is_some() {
+            let (y, s) = (fr[MID].rotation * self.spine_axis, fr[MID].translation + fr[MID].rotation * self.spine_cg);
+            let sole = (0..4).map(|i| self.sole_at(&c, fr, i)).sum::<Vec3>() / 4.0;
+            c.h = (s - sole).dot(y);
+            c.stand_h = Some(c.h);
+        }
         for i in 0..4 {
             c.legs[i].neutral = layout[i];
             c.legs[i].target = layout[i];
@@ -661,11 +705,21 @@ impl Horse {
                 hw += m.y.abs();
                 hl += m.z.abs();
             }
-            let wide = std::env::var("HORSE_WIDE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0);
+            let wide = self.wide;
             for i in 0..4 { c.legs[i].neutral.y *= wide; }
             hw *= wide;
             c.width = [hw * 0.25, hl * 0.25];
             say!(c, "0x2ad4518 measuresupport", "half width {:.3}, half length {:.3}", hw * 0.25, hl * 0.25);
+        }
+        if let Ok(dir) = std::env::var("HORSE_STANDPOSE") {
+            let v: Vec<f32> = std::fs::read_to_string(format!("{dir}/neutral_{}.txt", self.body)).unwrap_or_default().split_whitespace().filter_map(|x| x.parse().ok()).collect();
+            if v.len() == 10 {
+                for i in 0..4 {
+                    c.legs[i].neutral = Vec3::new(0.0, v[2 * i], v[2 * i + 1]);
+                    c.legs[i].target = c.legs[i].neutral;
+                }
+                c.width = [v[8], v[9]];
+            }
         }
         if let Some(f) = std::env::var("HORSE_FIT").ok().and_then(|v| v.parse::<f32>().ok()) {
             for i in 0..2 {
@@ -830,7 +884,11 @@ impl Horse {
                 continue;
             };
             let (Limit::BoneHinge { pf: f1, cf: g1, .. }, Limit::BoneHinge { pf: f2, cf: g2, .. }) = (self.build.parts[p1].limit, self.build.parts[p2].limit) else { continue };
-            let knee = r.knee_e * hinge_of(f1, g1, rel(self, p1)) + r.knee_centre;
+            let kr = match (&self.rest, knob_f("HORSE_WINHOLD").unwrap_or(1.0)) {
+                (Some(rf), t) if c.t < t => rf[self.build.parts[p1].parent.unwrap_or(0)].rotation.inverse() * rf[p1].rotation,
+                _ => rel(self, p1),
+            };
+            let knee = r.knee_e * hinge_of(f1, g1, kr) + r.knee_centre;
             let v = (knee - l.a38) * l.dir + l.a3c;
             let (a, b) = ((v + l.min - r.hock_centre) * r.hock_e, (v + l.max - r.hock_centre) * r.hock_e);
             let (lo, hi) = ((a.min(b) - jw).max(r.hock.lo), (a.max(b) + jw).min(r.hock.hi));
@@ -965,12 +1023,13 @@ impl Horse {
                 c.state = 0;
             } else if up < fail || c.airborne || c.lying {
                 say!(c, "0x2a2b438", "the core told it's falling");
+                if std::env::var_os("HORSE_STEPLOG").is_some() && c.state != 2 { eprintln!("hfall {:.2} up {up:.3} fail {fail:.3} air {} lying {}", c.t, c.airborne, c.lying); }
                 c.state = 2;
             } else {
                 c.state = (p!(pv, "step") != 0.0) as i32;
             }
             if c.state < 2 {
-                c.h += (c.unit * p!(pv, "height") - c.h) * 0.1;
+                c.h += (c.stand_h.unwrap_or(c.unit * p!(pv, "height")) - c.h) * 0.1;
             }
         }
         c.fresh3 = false;
@@ -996,6 +1055,28 @@ impl Horse {
             if c.state == 1 { c.support_t += dt; } else { c.support_t = 0.0; }
         }
         let (leg_st, ankle_on) = self.strength(&mut c, &pv, dt);
+        if std::env::var_os("HORSE_ROLLLOG").is_some() {
+            let lat = c.to_world(Vec3::Y) - c.to_world(Vec3::ZERO);
+            let vl = c.to_local(c.origin + vel - w * vel.dot(w)).y;
+            let s: Vec<String> = (0..4).map(|i| {
+                let d = c.legs[i].sole - c.legs[i].hip;
+                let l = c.to_local(c.origin + d);
+                format!("{} {:.1} {:.3} {:.3}", c.legs[i].planted as u8, l.y.atan2(-l.x).to_degrees(), d.length() / c.rig[i].reach_max, c.to_local(c.legs[i].sole).y)
+            }).collect();
+            eprintln!("hroll {:.3} {:.2} {:.3} {:.3} {}", c.t, (-lat.normalize().z).asin().to_degrees(), vl, com.z, s.join(" "));
+        }
+        if std::env::var_os("HORSE_FLEXLOG").is_some() {
+            let a = |k: usize| if let Limit::BoneHinge { pf, cf, .. } = self.build.parts[k].limit {
+                hinge_of(pf, cf, fr[self.build.parts[k].parent.unwrap_or(0)].rotation.inverse() * fr[k].rotation)
+            } else { 0.0 };
+            let s: Vec<String> = (0..4).map(|i| { let [_, p1, p2] = LEGS[LEG[i]]; format!("{} {:.4} {:.4}", c.legs[i].planted as u8, a(p1), a(p2)) }).collect();
+            eprintln!("hflex {:.3} {}", c.t, s.join(" "));
+        }
+        if std::env::var_os("HORSE_STEPLOG").is_some() && (c.t * 8.0).fract() < dt * 8.0 {
+            eprintln!("hdbg {:.2} up {up:.3} m {m:.3} st {} com {:.3} vel {:.2},{:.2},{:.2} legst {leg_st:.2?} planted {:?} sole_z {:?}", c.t, c.state, com.z, vel.x, vel.y, vel.z,
+                c.legs.iter().map(|l| l.planted as u8).collect::<Vec<_>>(), c.legs.iter().map(|l| (l.sole.z * 100.0).round() as i32).collect::<Vec<_>>());
+            eprintln!("hdbg2 {:.2} lstate {:?} tz {:?} share {:.3},{:.3} free {} out {:.2}", c.t, c.legs.iter().map(|l| l.state).collect::<Vec<_>>(), (0..4).map(|i| ((c.to_world(c.legs[i].target).z + c.share_d.z) * 100.0).round() as i32).collect::<Vec<_>>(), c.share_d.x, c.share_d.y, c.free, c.out_t);
+        }
         let kk = c.scale / (c.unit * c.unit);
 
         if let Some(at) = std::env::var("HORSE_REMEASURE").ok().and_then(|v| v.parse::<f32>().ok()) {
@@ -1007,6 +1088,29 @@ impl Horse {
                     c.legs[i].target = c.legs[i].neutral;
                 }
                 if c.tr { eprintln!("remeasured at {:.2}: {:?}", c.t, c.legs.iter().map(|l| (l.neutral.y, l.neutral.z)).collect::<Vec<_>>()); }
+            }
+        }
+        c.net_o = [0.0; NET_OUT];
+        if let Some(nw) = net().filter(|_| c.state < 2 && !c.free) {
+            let fwd = (fr[12].translation - fr[0].translation).with_z(0.0).normalize_or(Vec3::X);
+            let left = Vec3::Z.cross(fwd);
+            let soles = [c.legs[0].sole, c.legs[1].sole, c.legs[2].sole, c.legs[3].sole];
+            let cap = com + vel.with_z(0.0) * (c.com_h.max(0.1) / 9.81).sqrt();
+            if support_margin(&soles, cap.with_z(soles[0].z), Vec3::Z) < NET_EDGE * c.unit {
+                let s = c.unit.max(0.1);
+                let sv = s.sqrt();
+                let mut x = [0.0; NET_IN];
+                x[..9].copy_from_slice(&[a.dot(fwd), a.dot(left), a.z - 1.0, vel.dot(fwd) / sv, vel.dot(left) / sv, vel.z / sv,
+                                         omega.dot(fwd), omega.dot(left), omega.z]);
+                x[9] = c.com_h / s - 1.0;
+                for i in 0..4 {
+                    let lg = &c.legs[i];
+                    let d = lg.sole - com;
+                    let phase = if lg.state == 1 { ((c.t - lg.start) / (lg.end - lg.start).max(1e-3)).clamp(0.0, 1.0) } else { 0.0 };
+                    x[10 + 4 * i..14 + 4 * i].copy_from_slice(&[d.dot(fwd) / s, d.dot(left) / s, lg.planted as i32 as f32, phase]);
+                }
+                c.net_o = net_run(nw, &x);
+                c.net_f = fwd;
             }
         }
         let catch = ours_step() && c.state < 2 && !c.free && !any_step && {
@@ -1022,7 +1126,24 @@ impl Horse {
             }
             go
         };
-        if catch {
+        let net_step = !catch && c.state == 0 && !any_step && !c.free && {
+            let o = c.net_o;
+            let pick = (0..4).filter(|&i| c.legs[i].planted && o[3 * i] > NET_URGE).max_by(|&p, &q| o[3 * p].total_cmp(&o[3 * q]));
+            if let Some(i) = pick {
+                let (f, l) = (c.net_f, Vec3::Z.cross(c.net_f));
+                let mut to = c.to_world(c.legs[i].neutral) + (f * o[3 * i + 1] + l * o[3 * i + 2]) * NET_REACH * c.unit;
+                let hip = c.legs[i].hip;
+                let dz = hip.z - to.z;
+                let room = (c.rig[i].reach_max * 0.95).powi(2) - dz * dz;
+                let off = (to - hip).with_z(0.0);
+                if room > 0.0 && off.length() > room.sqrt() { to -= off - off.normalize() * room.sqrt(); }
+                if std::env::var_os("HORSE_STEPLOG").is_some() { eprintln!("hnet {i} {:.2}", c.t); }
+                c.last_leg = i;
+                self.step_to(&mut c, &pv, i, to);
+            }
+            pick.is_some()
+        };
+        if catch || net_step {
         } else if c.free || (c.state == 1 && c.out_t > 0.0) {
             self.step_trigger(&mut c, &pv, look, vel);
         } else if c.state == 0 && p!(pv, "step") != 0.0 && !any_step && p!(pv, "restepdistance") > 0.0 {
@@ -1061,7 +1182,7 @@ impl Horse {
         let body_f = if c.state == 0 { f1 } else { f0 + (f1 - f0) * (c.ground_t * 0.5).min(1.0) };
         let mut hooves_f = [f0; 4];
         if ((c.state == 2 && !c.free) || c.state == 3) && !c.airborne {
-            c.h += (c.unit * (p!(pv, "height") - (1.0 - c.roll_go) * 0.8) - c.h) * 0.1;
+            c.h += (c.stand_h.unwrap_or(c.unit * p!(pv, "height")) - c.unit * (1.0 - c.roll_go) * 0.8 - c.h) * 0.1;
         }
 
         let share_k = if share_on() { std::env::var("HORSE_SHARE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0) } else { 0.0 };
@@ -1173,7 +1294,11 @@ impl Horse {
                         force[k] += f;
                     }
                 }
-                let to = c.to_world(c.legs[i].target) + c.share_d;
+                let mut to = c.to_world(c.legs[i].target) + c.share_d;
+                if let Some(d) = knob_f("HORSE_PRESS") {
+                    let floor = c.legs.iter().map(|l| l.sole.z).fold(f32::MAX, f32::min);
+                    to.z = to.z.min(floor - d * c.unit);
+                }
                 say!(c, "0x2ae3f1c", "leg {i}: stance, target {to:.3}, sole {:.3}", c.legs[i].sole);
                 request = request.or(Some((to, None)));
             }
@@ -1509,6 +1634,17 @@ impl Horse {
         c.origin = origin + fw[0] * raise;
         fw = fw.map(|v| turn * v);
         c.rows = fw;
+        if std::env::var_os("HORSE_ROLLLOG").is_some() {
+            eprintln!("hframe {:.3} {roll:+.4} {pitch:+.4} {:+.4} {}", c.t, c.to_local(c.origin + c.share_d).y,
+                (0..4).map(|i| format!("{:+.3}", c.legs[i].target.y)).collect::<Vec<_>>().join(" "));
+        }
+        if let Ok(dir) = std::env::var("HORSE_NEUTRAL_OUT").map_err(|_| ()).and_then(|d| if (c.t * 60.0).round() as i32 == 540 { Ok(d) } else { Err(()) }) {
+            let mut s: Vec<String> = c.legs.iter().map(|l| format!("{} {}", l.neutral.y, l.neutral.z)).collect();
+            s.push(format!("{} {}", c.width[0], c.width[1]));
+            let _ = std::fs::write(format!("{dir}/neutral_{}.txt", self.body), s.join("
+") + "
+");
+        }
         if c.tr && std::env::var_os("HORSE_FK").is_some() && (c.t * 60.0).round() as i32 % 30 == 0 {
             let zs: Vec<String> = (0..4).map(|i| format!("{i}:{:+.3}/z{:+.2}", c.to_world(c.legs[i].neutral).z - c.ground_p.z, c.legs[i].neutral.z)).collect();
             eprintln!("tilt t {:.1} pitch {pitch:+.3} roll {roll:+.3} corner {corner} raise {raise:.3} neutral heights {}", c.t, zs.join(" "));
@@ -1590,22 +1726,36 @@ impl Horse {
                 }
                 return;
             }
+            let nocross = knob_f("HORSE_NOCROSS");
             let best = (0..4).map(|i| {
                 let hip = c.legs[i].hip;
                 let kx = std::env::var("HORSE_CATCHX").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.3);
                 let mut to = soles[i] + fall.clamp_length_max(c.unit * p!(pv, "maxsteplength")) * kx;
+                let nf = c.net_f;
+                to += (nf * c.net_o[3 * i + 1] + Vec3::Z.cross(nf) * c.net_o[3 * i + 2]) * NET_REACH * c.unit;
                 let dz = (hip - to).dot(u);
                 let room = (c.rig[i].reach_max * 0.95).powi(2) - dz * dz;
                 let off = flat(to - hip);
                 if room > 0.0 && off.length() > room.sqrt() {
                     to = to - off + off.normalize() * room.sqrt();
                 }
+                if let Some(k) = nocross {
+                    let (mut l, ny) = (c.to_local(to), c.legs[i].neutral.y);
+                    if l.y * ny.signum() < k * ny.abs() {
+                        l.y = k * ny;
+                        to = c.to_world(l);
+                    }
+                }
                 let mut q = soles;
                 q[i] = to;
                 let o: Vec<Vec3> = (0..4).filter(|&k| k != i).map(|k| flat(soles[k])).collect();
                 let lift = tri_margin([o[0], o[1], o[2]], flat(look), u);
-                (i, to, if lift > 0.0 { support_margin(&q, look, u) } else { -10.0 + lift })
-            }).max_by(|a, b| a.2.total_cmp(&b.2));
+                let tip = knob_f("HORSE_LANDPICK").map_or(-10.0 + lift, |a| -1.0 + support_margin(&q, look, u) + a * lift);
+                (i, to, if lift > 0.0 { support_margin(&q, look, u) } else { tip } + c.net_o[3 * i] * NET_PICK * c.unit)
+            })
+            .filter(|b| knob_f("HORSE_MINSTEP").is_none_or(|s| flat(b.1 - soles[b.0]).length() > s * c.unit))
+            .max_by(|a, b| a.2.total_cmp(&b.2));
+            if std::env::var_os("HORSE_STEPLOG").is_some() { if let Some(b) = best { eprintln!("hpick {} {:.2} {:.3} legs {:?} state {} fall {:.3?} soles_y {:.3?}", b.0, c.t, b.2, c.legs.iter().map(|l| l.state).collect::<Vec<_>>(), c.state, { let f = c.to_local(c.origin + fall); (f.y, f.z) }, (0..4).map(|k| c.to_local(soles[k]).y).collect::<Vec<_>>()); } }
             if let Some((i, to, m)) = best {
                 say!(c, "ours step", "leg {i}, margin then {m:.3}");
                 c.last_leg = i;
@@ -1710,7 +1860,7 @@ impl Horse {
         let f = c.to_local(c.legs[i].sole);
         let len = Vec3::new(0.0, l.y - f.y, l.z - f.z).length();
         let t = c.t;
-        if std::env::var_os("HORSE_STEPLOG").is_some() { eprintln!("hstep {i} {t:.2} {len:.3}"); }
+        if std::env::var_os("HORSE_STEPLOG").is_some() { eprintln!("hstep {i} {t:.2} {len:.3} y {:+.3} {:+.3}", f.y, l.y); }
         let lg = &mut c.legs[i];
         lg.target = l;
         lg.state = 1;

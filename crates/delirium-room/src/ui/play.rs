@@ -79,6 +79,55 @@ fn weapons(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
                  else if shoots { "Left click: blue portal, right click: orange.  Hold Ctrl: at the pointer." }
                  else { "The portal gun fires with Left click on Shoot." });
     }
+    fold(ui, "Damage", false, |ui| {
+        let free = |ui: &mut egui::Ui, name: &str, x: &mut f32, lo: f32, hi: f32, unit: &str, tip: &str| {
+            ui.add(egui::Slider::new(x, lo..=hi).logarithmic(true).clamping(egui::SliderClamping::Never).text(name).suffix(unit)).on_hover_text(tip).changed()
+        };
+        let mut hp = sim.hp_k * 200.0;
+        if free(ui, "Homer's health", &mut hp, 50.0, 2000.0, " HP", "His health (the game's 200), the spawned Homers' too. Headshots can still kill at once.") {
+            sim.hp_k = hp.max(1.0) / 200.0;
+        }
+        let i = sim.weapon;
+        if kind(i) == 0 {
+            let w = sim.weapons.iter().find(|w| w.name == WEAPONS[i].1);
+            let (d0, f0) = (w.map_or(0.0, |w| w.damage), w.map_or(WEAPONS[i].2, |w| w.force));
+            let name = weapon_name(i);
+            let mut d = sim.wdmg[i].unwrap_or(d0);
+            if free(ui, &format!("{name} damage"), &mut d, 1.0, 500.0, "", &format!("Each bullet's (or pellet's) damage off his health (the game's {d0:.0}).")) {
+                sim.wdmg[i] = Some(d.max(0.0));
+            }
+            let mut f = sim.wforce[i].unwrap_or(f0);
+            if free(ui, &format!("{name} bullet force"), &mut f, 1.0, 500.0, "", &format!("How hard each bullet (or pellet) pushes the part it hits (the game's {f0:.0}).")) {
+                sim.wforce[i] = Some(f.max(0.0));
+            }
+            let shotgun = w.map_or(WEAPONS[i].0 == "shotgun", |w| w.slot == "SHOTGUN");
+            let r0 = if shotgun { w.map_or(35.0, |w| w.range) } else { 60.0 };
+            let mut r = sim.wrange[i].unwrap_or(r0);
+            if free(ui, &format!("{name} range"), &mut r, 5.0, 500.0, " m", &format!("How far its shots reach (the game's {r0:.0} m).")) {
+                sim.wrange[i] = Some(r.max(0.5));
+            }
+            let a0 = w.map_or(0.0, |w| if w.slot == "SNIPER" { w.accuracy_fps } else { w.accuracy });
+            let mut a = sim.wspread[i].unwrap_or(a0);
+            if free(ui, &format!("{name} spread"), &mut a, 0.001, 1.0, "", &format!("{} (the game's {a0:.3}; 0: dead straight).", if shotgun { "How wide its pellets fan out, against the distance" } else { "How far a shot strays from the aim" })) {
+                sim.wspread[i] = Some(a.max(0.0));
+            }
+        }
+        free(ui, "Blast damage", &mut sim.blast_dmg, 10.0, 2000.0, " HP", &format!("A blast's damage right at its centre, less further out (the game's {BLAST_DAMAGE:.0})."));
+        sim.blast_dmg = sim.blast_dmg.max(0.0);
+        let mut r = sim.blast_k * BLAST_R;
+        if free(ui, "Blast radius", &mut r, 1.0, 15.0, " m", "Explosions' reach: rockets (RPG), grenades, the pile (the game's 5 m).") {
+            sim.blast_k = r.max(0.1) / BLAST_R;
+        }
+        if free(ui, "Molotov fire radius", &mut sim.fire_r, 0.3, 10.0, " m", &format!("How wide a molotov's fire is (the game's {FIRE_R} m).")) {
+            sim.fire_r = sim.fire_r.max(0.05);
+        }
+        if free(ui, "Molotov fire lasts", &mut sim.fire_life, 1.0, 120.0, " s", &format!("How long it burns (the game's {FIRE_LIFE:.0} s).")) {
+            sim.fire_life = sim.fire_life.max(0.1);
+        }
+        if ui.add(egui::Button::new("Game's values").min_size(egui::vec2(0.0, PILL_H))).on_hover_text("Every weapon, his health and blasts back to the game's").clicked() {
+            (sim.hp_k, sim.wdmg, sim.wforce, sim.wspread, sim.wrange, sim.blast_dmg, sim.blast_k, sim.fire_r, sim.fire_life) = (1.0, [None; 14], [None; 14], [None; 14], [None; 14], BLAST_DAMAGE, 1.0, FIRE_R, FIRE_LIFE);
+        }
+    });
     info(ui, if sim.aim_gun { "Click: fire.  Hold Ctrl: the gun stays put and aims at the pointer.  Shift + right click: a fatal shot." }
             else if sim.click_shoots { "Click a body part to shoot it.  Shift + right click: a fatal shot." }
             else { "Shift + click a body part to shoot it.  Shift + right click: a fatal shot." });

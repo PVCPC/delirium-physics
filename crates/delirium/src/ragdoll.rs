@@ -2521,6 +2521,8 @@ impl Ragdoll {
 
     pub fn vel(&self, k: usize) -> (Vec3, Vec3) { (self.bodies[k].v, self.bodies[k].w) }
     pub fn set_vel(&mut self, k: usize, v: Vec3) { self.bodies[k].v = v; }
+    pub fn lim_warm(&self) -> &[((u32, u32), f32)] { &self.lim_warm }
+    pub fn set_lim_warm(&mut self, w: Vec<((u32, u32), f32)>) { self.lim_warm = w; }
 
     pub fn tensor(&self, k: usize) -> DMat3 {
         self.bodies[k].tensor()

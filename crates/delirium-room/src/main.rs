@@ -44,6 +44,7 @@ mod skate_files;
 mod skate_hud_files;
 mod hom;
 mod horse;
+mod animal_fit;
 mod horse_ghost;
 mod gametask;
 mod rdr2files;
@@ -479,6 +480,9 @@ render_thread {}
 ", sim.part_colors.iter().flatten().map(|x| format!("{x:.3}")).collect::<Vec<_>>().join(" "))
         + &if sim.rdr2_dir.is_empty() { String::new() } else { format!("rdr2_dir {}\n", sim.rdr2_dir) }
         + &format!("sidebar_auto {}\n", b(sim.sidebar_auto))
+        + &match horse::BALANCE.load(std::sync::atomic::Ordering::Relaxed) { 255 => String::new(), m => format!("horse_balance {m}\n") }
+        + &format!("hp_k {}\nblast_k {}\nblast_dmg {}\nfire_r {}\nfire_life {}\n", sim.hp_k, sim.blast_k, sim.blast_dmg, sim.fire_r, sim.fire_life)
+        + &(0..WEAPONS.len()).map(|i| [("wdmg", sim.wdmg[i]), ("wforce", sim.wforce[i]), ("wspread", sim.wspread[i]), ("wrange", sim.wrange[i])].iter().filter_map(|(k, v)| v.map(|v| format!("{k} {i} {v}\n"))).collect::<String>()).collect::<String>()
         + &format!("dock_w {:.0}\n", sim.dock_w)
 }
 
@@ -519,6 +523,16 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             let v: Vec<f32> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
             for (c, x) in sim.part_colors.iter_mut().zip(v.chunks_exact(3)) {
                 *c = [x[0], x[1], x[2]];
+            }
+            continue;
+        }
+        if matches!(k, "wdmg" | "wforce" | "wspread" | "wrange") {
+            let mut w = v.split_whitespace().filter_map(|x| x.parse::<f32>().ok());
+            if let (Some(i), Some(x)) = (w.next(), w.next()) {
+                let row = match k { "wdmg" => &mut sim.wdmg, "wforce" => &mut sim.wforce, "wspread" => &mut sim.wspread, _ => &mut sim.wrange };
+                if let Some(r) = row.get_mut(i as usize) {
+                    *r = Some(x.clamp(0.0, 1e6));
+                }
             }
             continue;
         }
@@ -661,6 +675,12 @@ fn apply_settings(sim: &mut Sim, t: &str) {
             "vol_body" => sim.volume[4] = x.clamp(0.0, 1.0),
             "ui_scale" => sim.ui_scale = x.clamp(ui::UI_SCALE.0, ui::UI_SCALE.1),
             "sidebar_auto" => sim.sidebar_auto = on,
+            "hp_k" => sim.hp_k = x.clamp(0.0001, 1e6),
+            "blast_dmg" => sim.blast_dmg = x.clamp(0.0, 1e6),
+            "fire_r" => sim.fire_r = x.clamp(0.05, 100.0),
+            "fire_life" => sim.fire_life = x.clamp(0.1, 3600.0),
+            "horse_balance" => horse::set_balance(x.max(0.0) as u8),
+            "blast_k" => sim.blast_k = x.clamp(0.0001, 100.0),
             "dock_w" => sim.dock_w = x.clamp(ui::DOCK_W.0, ui::DOCK_W.1),
             "amb_theme" => sim.amb_theme = (x.max(0.0) as usize).min(sfx::AMB_THEMES.len() - 1),
             "dodge_gap" => sim.dodge_gap = x.clamp(0.0, 10.0),
@@ -761,7 +781,28 @@ fn BODIES() -> &'static [(&'static str, &'static str, f32, f32, f32); 14] { stat
                                                  ("X", "Brawler", 0.0, (*BRAWLER_BODY()).kg, 1.0), ("U", "Bruiser", 0.0, (*BRUISER_BODY()).kg, 1.0),
                                                  ("M", "Model", 0.0, 0.0, 1.0)] }; if delirium_data::kv::open() { V.get_or_init(f) } else { Box::leak(Box::new(f())) } }
 const FIGURE: usize = 13;
-static FIGURE_BODY: std::sync::Mutex<Option<(Vec<Vec3>, Vec<f32>)>> = std::sync::Mutex::new(None);
+static FIGURES: std::sync::Mutex<Vec<Option<(String, Vec<Vec3>, Vec<f32>)>>> = std::sync::Mutex::new(vec![]);
+const MODELS: usize = 6;
+
+fn figure_of(b: usize) -> Option<(String, Vec<Vec3>, Vec<f32>)> {
+    FIGURES.lock().unwrap().get(b.checked_sub(FIGURE)?).cloned().flatten()
+}
+
+fn body_key(key: &str) -> Option<usize> {
+    let key = key.trim();
+    if key == "M" {
+        return FIGURES.lock().unwrap().iter().rposition(Option::is_some).map(|k| FIGURE + k);
+    }
+    key.strip_prefix('M').and_then(|n| n.parse::<usize>().ok()).filter(|n| *n >= 1).map(|n| FIGURE + n - 1)
+        .or_else(|| (*BODIES()).iter().position(|b| b.0 == key))
+}
+
+fn key_of(b: usize) -> String {
+    if b >= FIGURE { format!("M{}", b - FIGURE + 1) } else { (*BODIES())[b].0.into() }
+}
+fn name_of(b: usize) -> String {
+    figure_of(b).and_then(|f| std::path::Path::new(&f.0).file_stem().map(|s| s.to_string_lossy().into_owned())).unwrap_or_else(|| (*BODIES())[b.min(FIGURE)].1.into())
+}
 const RANDOM: usize = 9;
 const CUSTOM: usize = 10;
 const BRAWLER: usize = 11;
@@ -807,11 +848,11 @@ fn hover_holo(sim: &Sim, g: &mut Gizmos, made: &mut Option<(usize, Vec<(Vec3, Ve
     }
     if made.as_ref().is_none_or(|m| m.0 != key) {
         let caps = if key >= HOLO_ANIMAL {
-            rdr2frag::ANIMALS.get(key - HOLO_ANIMAL).and_then(|a| rdr2frag::Frag::from_text(a.1).ok())
+            animal_fit::text(key - HOLO_ANIMAL).and_then(|a| rdr2frag::Frag::from_text(&a).ok())
                 .and_then(|f| horse::Horse::new(rdr2frag::BUILT_IN_XML, f, Vec3::ZERO, 0.0).ok())
                 .map_or(vec![], |h| h.capsules().into_iter().zip(&h.build.parts)
-                    .filter(|(_, p)| !((3..=6).contains(&(key - HOLO_ANIMAL)) && p.name.starts_with("Tail"))).map(|(c, _)| (c.0, c.1, c.2)).collect())
-        } else if key < (*BODIES()).len() {
+                    .filter(|(_, p)| !(animal_fit::tailless(key - HOLO_ANIMAL) && p.name.starts_with("Tail"))).map(|(c, _)| (c.0, c.1, c.2)).collect())
+        } else if key < HOLO_ANIMAL {
             let (b, f, _) = body_of(&sim.base.0, &sim.base.1, key);
             let start = Side::new(f.iter().map(|f| f.translation).collect());
             let turn = Quat::from_rotation_z(-start.fwd.y.atan2(start.fwd.x));
@@ -1320,6 +1361,7 @@ struct Sim {
     horse_frag: String,
     rdr2_dir: String,
     horse_body: u8,
+    horse_at: Option<(Vec3, f32)>,
     horse_loalco: bool,
     horse_wait: bool,
     horse_tasks: Option<String>,
@@ -1506,6 +1548,15 @@ struct Sim {
     level_change: u64,
     level_cmds: Vec<String>,
     poke: f32,
+    hp_k: f32,
+    wdmg: [Option<f32>; 14],
+    wforce: [Option<f32>; 14],
+    wspread: [Option<f32>; 14],
+    wrange: [Option<f32>; 14],
+    blast_dmg: f32,
+    fire_r: f32,
+    fire_life: f32,
+    blast_k: f32,
     game_dir: Option<String>,
     watch: Option<Watch>,
     bench: Vec<Benched>,
@@ -1689,7 +1740,7 @@ fn hero_task(tp: &TaskParams, task: &str, set: &str, head: Vec3, me: Vec3, fwd: 
 }
 
 fn body_of(build: &Build, frames: &[Transform], body: usize) -> (Build, Vec<Transform>, Option<(Vec<f32>, f32)>) {
-    let (_, name, h, m, l) = (*BODIES())[body];
+    let (_, name, h, m, l) = (*BODIES())[body.min(FIGURE)];
     let pivot = |k: usize| build.parts[k].parent.map_or(frames[k].translation, |_| frames[k].translation + frames[k].rotation * build.parts[k].anchor);
     if body == RANDOM {
         let (len, girth) = ROLLED.with_borrow_mut(|r| r.get_or_insert_with(|| roll_body(build)).clone());
@@ -1703,12 +1754,23 @@ fn body_of(build: &Build, frames: &[Transform], body: usize) -> (Build, Vec<Tran
         eprintln!("body  {name}: {:.2} m, {:.0} kg", b.height(&f), Ragdoll::new(&b, &f, Vec3::ZERO).mass());
         return (b, f, Some((len, leg)));
     }
-    if body == FIGURE && let Some((j, r)) = FIGURE_BODY.lock().unwrap().clone().filter(|f| f.0.len() == build.parts.len()) {
+    if let Some((_, j, r)) = figure_of(body).filter(|f| f.1.len() == build.parts.len()) {
         let (mut b, f) = build.fit(frames, &j);
         for (p, &r) in b.parts.iter_mut().zip(&r) {
             if p.boxed.is_none() && r > 0.0 {
                 p.radius = r.clamp(p.radius * 0.6, p.radius * 1.6);
             }
+        }
+        let tall = b.height(&f) / build.height(frames).max(0.1);
+        let mut f = f;
+        let feet: Vec<usize> = (0..b.parts.len()).filter(|&k| b.parts[k].lower && b.parts[k].boxed.is_some()).collect();
+        for k in feet {
+            let r = (tall / b.parts[k].size).clamp(0.5, 2.0);
+            let p = &mut b.parts[k];
+            let joint = f[k].translation + f[k].rotation * p.anchor;
+            (p.size, p.half, p.length, p.anchor, p.offset.translation) = (p.size * r, p.half * r, p.length * r, p.anchor * r, p.offset.translation * r);
+            (p.boxed, p.inertia, p.heft) = (p.boxed.map(|e| e * r), p.inertia * r * r, p.heft / (r * r * r));
+            f[k].translation = joint - f[k].rotation * p.anchor;
         }
         let k = Ragdoll::new(build, frames, Vec3::ZERO).mass() / Ragdoll::new(&b, &f, Vec3::ZERO).mass().max(1.0);
         for p in &mut b.parts {
@@ -1964,7 +2026,7 @@ impl Sim {
         self.stress = !self.crowd.is_empty();
     }
 
-    fn mix_n(&mut self, n: usize) {
+    fn mix_n(&mut self, n: usize, only: Option<usize>) {
         if !self.crowd.is_empty() {
             return self.say("room  mix: remove the crowd or spawned Homers first".into());
         }
@@ -1973,17 +2035,26 @@ impl Sim {
         let mid = (side as f32 - 1.0) / 2.0;
         let s = self.ours();
         let hips = (s.p(THIGH_L) + s.p(THIGH_R)) * 0.5;
-        let bodies: Vec<usize> = (0..(*BODIES()).len()).filter(|&b| b != RANDOM && b != CUSTOM && b != FIGURE).collect();
+        let gap = if only.is_some() { 1.1 } else { 1.8 };
+        let bodies: Vec<usize> = if only == Some(usize::MAX) {
+            (0..MODELS).map(|k| FIGURE + k).filter(|&b| figure_of(b).is_some()).collect()
+        } else {
+            (0..(*BODIES()).len()).filter(|&b| b != RANDOM && b != CUSTOM && b != FIGURE).collect()
+        };
+        if bodies.is_empty() {
+            return self.say("room  mix: no models picked (Cast > People > Model)".into());
+        }
+        let only = only.filter(|&b| b != usize::MAX);
         let mut seed = 0x9e37_79b9_u32;
-        let at: Vec<(f32, f32)> = (0..side * side).map(|i| (((i / side) as f32 - mid) * 1.8, ((i % side) as f32 - mid) * 1.8))
+        let at: Vec<(f32, f32)> = (0..side * side).map(|i| (((i / side) as f32 - mid) * gap, ((i % side) as f32 - mid) * gap))
             .filter(|&(f, x)| f.abs() + x.abs() > 0.5).take(n.saturating_sub(1)).collect();
         for (f, x) in at {
             seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
-            self.stand_homer(bodies[seed as usize % bodies.len()], hips + (s.fwd * f + s.left() * x).with_z(0.0), s.fwd);
+            self.stand_homer(only.unwrap_or(bodies[seed as usize % bodies.len()]), hips + (s.fwd * f + s.left() * x).with_z(0.0), s.fwd);
         }
         self.held = false;
         self.stress = true;
-        self.say(format!("room  mix: {} Homers, mixed bodies", self.crowd.len() + 1));
+        self.say(format!("room  mix: {} Homers, {}", self.crowd.len() + 1, only.map_or(format!("{} bodies mixed", bodies.len()), |b| format!("all {}", name_of(b)))));
     }
 
     fn stress_step(&mut self) {
@@ -2048,9 +2119,9 @@ impl Sim {
     }
 
     fn spawn(&mut self, key: &str) {
-        let Some(body) = (*BODIES()).iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  spawn: no body {key} (S A L K F T W G B R C X)")) };
-        if body == FIGURE && FIGURE_BODY.lock().unwrap().is_none() {
-            return self.say("room  spawn: Model is a 3D model's shape: in the level editor, pick a rigged model and press \"Be Homer's body\" first".into());
+        let Some(body) = body_key(key) else { return self.say(format!("room  spawn: no body {key} (S A L K F T W G B R C X M1..)")) };
+        if body >= FIGURE && figure_of(body).is_none() {
+            return self.say("room  spawn: no such model (Cast > People > Model picks one)".into());
         }
         if body == RANDOM {
             ROLLED.set(Some(roll_body(&self.base.0)));
@@ -2080,7 +2151,7 @@ impl Sim {
             self.button("balance");
         }
         self.held = false;
-        self.say(format!("room  spawned Homer {} ({}) at {}: {} Homers", self.bench[i].homer_id + 1, (*BODIES())[body].1, v3(to), self.bench.len() + 1));
+        self.say(format!("room  spawned Homer {} ({}) at {}: {} Homers", self.bench[i].homer_id + 1, name_of(body), v3(to), self.bench.len() + 1));
     }
 
     fn stand_homer(&mut self, body: usize, spot: Vec3, fwd: Vec3) -> (usize, Vec3) {
@@ -2104,7 +2175,7 @@ impl Sim {
     }
 
     fn tune_homer(&mut self, id: usize, body: usize, build: &Build, frames: &[Transform]) {
-        if (body < 6 || body >= CUSTOM) && body != FIGURE {
+        if (body < 6 || body >= CUSTOM) && body < FIGURE {
             return;
         }
         if let Some(t) = (body < RANDOM).then(|| TUNED.with_borrow(|m| m.get(&body).cloned())).flatten() {
@@ -2146,20 +2217,43 @@ impl Sim {
     }
 
     fn rebody(&mut self, key: &str) {
-        let Some(body) = (*BODIES()).iter().position(|b| b.0 == key.trim()) else { return self.say(format!("room  body: no body {key} (S A L K F T W G B R C X)")) };
+        let Some(body) = body_key(key) else { return self.say(format!("room  body: no body {key} (S A L K F T W G B R C X M1..)")) };
         if body == RANDOM {
             ROLLED.set(Some(roll_body(&self.base.0)));
         }
-        if body == FIGURE && FIGURE_BODY.lock().unwrap().is_none() {
-            return self.say("room  body: Model is a 3D model's shape: in the level editor, pick a rigged model and press \"Be Homer's body\" first".into());
+        if body >= FIGURE && figure_of(body).is_none() {
+            return self.say("room  body: no such model (Cast > People > Model picks one)".into());
         }
         self.spawn_body = body;
         let (s, id) = (self.ours(), self.homer_id);
         let (i, _) = self.stand_homer(body, (s.p(THIGH_L) + s.p(THIGH_R)) * 0.5, s.fwd);
+        let new = self.bench[i].homer_id;
         self.take_control(i);
         self.drop_homer(i);
         self.homer_id = id;
-        self.say(format!("room  body: Homer {} now {}", id + 1, (*BODIES())[body].1));
+        TUNING.with_borrow_mut(|t| t.iter_mut().filter(|e| e.0 == new).for_each(|e| e.0 = id));
+        self.say(format!("room  body: Homer {} now {}", id + 1, name_of(body)));
+    }
+
+    fn unmodel(&mut self, n: usize) {
+        let gone = FIGURE + n.saturating_sub(1);
+        let Some(f) = figure_of(gone) else { return self.say(format!("room  model {n}: no such model")) };
+        let me = self.homer_id;
+        while let Some(i) = self.bench.iter().position(|b| b.body == gone) {
+            self.take_control(i);
+            self.rebody("A");
+        }
+        if self.body == gone {
+            self.rebody("A");
+        }
+        if let Some(i) = self.bench.iter().position(|b| b.homer_id == me) {
+            self.take_control(i);
+        }
+        if self.spawn_body == gone {
+            self.spawn_body = 1;
+        }
+        FIGURES.lock().unwrap()[gone - FIGURE] = None;
+        self.say(format!("room  model {n} ({}): removed", f.0));
     }
 
     fn swap_homer(&mut self, i: usize) {
@@ -2207,7 +2301,7 @@ impl Sim {
         }
         self.take_control(i);
         let at = self.agent.doll.com().0;
-        self.say(format!("room  control: Homer {} ({}) at {}", self.homer_id + 1, (*BODIES())[self.body].1, v3(at)));
+        self.say(format!("room  control: Homer {} ({}) at {}", self.homer_id + 1, name_of(self.body), v3(at)));
     }
 
     fn take_control(&mut self, i: usize) {
@@ -2536,6 +2630,7 @@ impl Sim {
                                   vz: a.doll.vel(0).0.z, tough: false, player_cut: false, player: false, mission: false, quick_relax: false,
                                   agility: self.agility, gun: false, place: a.doll.frames().next().map_or(at, |f| f.translation), vel: Vec3::ZERO, standing_on: None };
             let Some((amount, _)) = bump::damage(&ped, &imp, &mut self.rand).filter(|d| d.0 >= 1.0) else { return };
+            let amount = amount / self.hp_k;
             let left = if i == 0 && self.god { 200.0 } else { (health - amount).max(1.0) };
             if i == 0 {
                 self.health = left;
@@ -2713,7 +2808,7 @@ impl Sim {
             "rollDownStairs"
         } else {
             if !self.god {
-                self.health = (self.health - (v.length() * 4.0).clamp(1.0, 40.0)).max(1.0);
+                self.health = (self.health - (v.length() * 4.0).clamp(1.0, 40.0) / self.hp_k).max(1.0);
             }
             self.send("catchFall start=true");
             "catchFall"
@@ -3214,13 +3309,14 @@ impl Sim {
     }
 
     fn hero_blast(&mut self, at: Vec3) {
-        if !self.hero.as_ref().is_some_and(|n| n.feet.distance(at) < BLAST_R + 1.0) || !self.hero_fall() {
+        let blast_r = BLAST_R * self.blast_k;
+        if !self.hero.as_ref().is_some_and(|n| n.feet.distance(at) < blast_r + 1.0) || !self.hero_fall() {
             return;
         }
         let Some(h) = self.hero_doll.as_ref() else { return };
         let o: Vec<String> = h.agent.doll.frames().enumerate().filter_map(|(k, f)| {
             let p = f.translation;
-            let s = 1.0 - p.distance(at) / BLAST_R;
+            let s = 1.0 - p.distance(at) / blast_r;
             let imp = ((p - at).normalize_or(Vec3::Z) + Vec3::Z * 0.5).normalize() * h.agent.doll.part_mass(k) * BLAST_DV * s;
             (s > 0.0).then(|| format!("applyImpulse partIndex={k} hitPoint={} impulse={}", v3(p), v3(imp)))
         }).chain(["catchFall start=true".to_string()]).collect();
@@ -3291,7 +3387,7 @@ impl Sim {
         let imp = |k: usize, at: Vec3, j: Vec3| format!("applyImpulse start=true partIndex={k} hitPoint={} impulse={}", v3(at), v3(j));
         let (task, mut o) = match hit {
             hero::Hit::Swing(dmg, at, j) => {
-                self.health = if self.god { 200.0 } else { (self.health - dmg).max(1.0) };
+                self.health = if self.god { 200.0 } else { (self.health - dmg / self.hp_k).max(1.0) };
                 let k = self.agent.doll.nearest(&self.build, at);
                 if kind(self.weapon) == 2 && (self.hero.is_none() || self.hero_gun) {
                     self.cut(k, at, -j.normalize_or(Vec3::Z), dmg);
@@ -3606,7 +3702,7 @@ impl Sim {
             let mut h = ped::Health { health: self.health, ..Default::default() };
             let (mut lost, mut instant) = (0.0, false);
             for p in std::iter::once(part).chain(more.iter().map(|m| m.0)) {
-                let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[p], ped::Attacker::Player { sure: true });
+                let hit = ped::Hit::new(self.wdmg[self.weapon].unwrap_or(w.damage) / self.hp_k, w, delirium_data::nm_asset::PART_BONES[p], ped::Attacker::Player { sure: true });
                 let o = ped::damage(&mut h, &hit, &ped::Victim::default(), &mut self.rand);
                 (lost, instant) = (lost + o.lost, instant || o.flags & ped::INSTANT() != 0);
             }
@@ -3641,7 +3737,7 @@ impl Sim {
         let w = self.weapons.iter().find(|w| w.name == name);
         let set = w.map_or("*", |w| delirium::nm::weapon_set(w, if self.weak { 2 } else { 3 }));
         let (at, d, n) = aim.unwrap_or((ours.p(part) + ours.fwd * 0.1, -ours.fwd, ours.fwd));
-        let force = w.map_or(WEAPONS[self.weapon].2, |w| w.force);
+        let force = self.wforce[self.weapon].unwrap_or(w.map_or(WEAPONS[self.weapon].2, |w| w.force));
         let bullet = |at: Vec3, d: Vec3| shottask::bullet(at, at - d.normalize() * BULLET_BACK(), force, false);
         let vel = bullet(at, d);
         let (hit, now) = (self.hit(), self.now());
@@ -3966,7 +4062,7 @@ impl Sim {
             w.as_ref().map_or(25.0, |w| {
                 use delirium_data::ped;
                 let mut h = ped::Health { health: hp, ..Default::default() };
-                let hit = ped::Hit::new(w.damage, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: true });
+                let hit = ped::Hit::new(self.wdmg[self.weapon].unwrap_or(w.damage) / self.hp_k, w, delirium_data::nm_asset::PART_BONES[part], ped::Attacker::Player { sure: true });
                 ped::damage(&mut h, &hit, &ped::Victim::default(), &mut self.rand).lost
             })
         };
@@ -3978,7 +4074,7 @@ impl Sim {
             *h = left;
         }
         self.pop(at, lost);
-        let vel = shottask::bullet(at, at - dir.normalize() * BULLET_BACK(), w.as_ref().map_or(WEAPONS[self.weapon].2, |w| w.force), false);
+        let vel = shottask::bullet(at, at - dir.normalize() * BULLET_BACK(), self.wforce[self.weapon].unwrap_or(w.as_ref().map_or(WEAPONS[self.weapon].2, |w| w.force)), false);
         let mut o = vec![format!("applyImpulse partIndex={part} hitPoint={} impulse={}", v3(at), v3(vel)),
                          format!("shot start=true bodyPart={part} hitPoint={} normal={} bulletVel={}", v3(at), v3(n), v3(vel))];
         if left <= 0.0 {
@@ -4363,8 +4459,13 @@ impl Sim {
 
     fn button(&mut self, b: &str) {
         match b {
-            b if b.starts_with("horse_body ") => return self.horse_body = b[11..].parse::<u8>().unwrap_or(1).min(8),
-            "horse_brain 1" | "horse_brain 0" => return self.horse_loalco = b.ends_with('1'),
+            b if b.starts_with("horse_body ") => return self.horse_body = b[11..].parse::<u8>().unwrap_or(1).min(1 + animal_fit::count() as u8),
+            "horse_brain 2" => return animal_fit::set_object((self.horse_body as usize).saturating_sub(2), true),
+            "horse_brain 1" | "horse_brain 0" => {
+                animal_fit::set_object((self.horse_body as usize).saturating_sub(2), false);
+                return self.horse_loalco = b.ends_with('1');
+            }
+            b if b.starts_with("horse_balance ") => return horse::set_balance(b[14..].parse::<u8>().unwrap_or(0)),
             _ => {}
         }
         match b {
@@ -4391,6 +4492,7 @@ impl Sim {
             _ if b.starts_with("body ") => return self.rebody(&b[5..]),
             _ if b.starts_with("spawn ") => return self.spawn(&b[6..]),
             _ if b.starts_with("control ") => return self.control_id(b[8..].trim().parse().unwrap_or(0)),
+            _ if b.starts_with("unmodel ") => return self.unmodel(b[8..].trim().parse().unwrap_or(0)),
             _ if b.starts_with("unspawn ") => return self.unspawn(b[8..].trim().parse().unwrap_or(0)),
             "jump" | "jump dive" => return self.jump_start(b == "jump dive", None),
             "dismember" => {
@@ -4494,6 +4596,9 @@ impl Sim {
         }
         (self.rises, self.still, self.nm_t, self.musc, self.learned) = ([None, None], [0.0; 2], [None, None], None, None);
         self.stop_walk_learned();
+        if b == "RESET here" && self.cam_horse {
+            return self.reset_animal_here();
+        }
         if b == "RESET pose" || b == "RESET here" {
             let was = self.ours();
             (self.health, self.lean_stop, self.shot_task, self.dead) = (200.0, None, None, false);
@@ -4502,9 +4607,11 @@ impl Sim {
             if b == "RESET here" {
                 self.reset_here(was);
             }
-            if self.horse.take().is_some() {
+            if let Some(h) = self.horse.take() {
                 self.ties.retain(|t| t.homer != HORSE_TIE);
+                let pick = std::mem::replace(&mut self.horse_body, h.body);
                 self.spawn_horse();
+                self.horse_body = pick;
             }
             return;
         }
@@ -4543,7 +4650,11 @@ impl Sim {
             "grid" => return self.grid(),
             "stress" => return self.stress(),
             s if s.strip_prefix("stress").is_some_and(|n| n.parse::<usize>().is_ok()) => return self.stress_n(s[6..].parse().unwrap()),
-            s if s.strip_prefix("mix").is_some_and(|n| n.parse::<usize>().is_ok()) => return self.mix_n(s[3..].parse().unwrap()),
+            s if s.strip_prefix("mix").is_some_and(|n| n.parse::<usize>().is_ok()) => return self.mix_n(s[3..].parse().unwrap(), None),
+            s if s.strip_prefix("mix").and_then(|r| r.split_once(' ')).is_some_and(|(n, k)| n.parse::<usize>().is_ok() && (k.trim() == "models" || body_key(k.trim()).is_some())) => {
+                let (n, k) = s[3..].split_once(' ').unwrap();
+                return self.mix_n(n.parse().unwrap(), if k.trim() == "models" { Some(usize::MAX) } else { body_key(k.trim()) });
+            }
             "car" => return self.car(),
             "push front" => return self.push(true, false),
             "push back" => return self.push(false, false),
@@ -4623,7 +4734,7 @@ impl Sim {
             self.grab = None;
         }
         self.swap_animal(i);
-        let name = self.horse.as_ref().map_or("", |h| rdr2frag::ANIMALS[h.animal.min(rdr2frag::ANIMALS.len() - 1)].0);
+        let name = self.horse.as_ref().map_or(String::new(), |h| animal_fit::name(h.animal));
         self.say(format!("ours  animal {}: selected ({name})", self.horse_id));
     }
 
@@ -4639,6 +4750,20 @@ impl Sim {
         if self.horse.is_none() && let Some((id, h)) = self.herd.pop() {
             (self.horse_id, self.horse) = (id, Some(h));
         }
+    }
+
+    fn reset_animal_here(&mut self) {
+        let Some(h) = self.horse.take() else { return };
+        let f: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
+        let fwd = f.get(12).map_or(Vec3::X, |&head| (head - f[0]).with_z(0.0).normalize_or(Vec3::X));
+        self.ties.retain(|t| t.homer != HORSE_TIE);
+        if self.grab.as_ref().is_some_and(|g| g.horse) {
+            self.grab = None;
+        }
+        let (id, pick) = (self.horse_id, std::mem::replace(&mut self.horse_body, h.body));
+        self.horse_at = Some((f[0], fwd.y.atan2(fwd.x)));
+        self.spawn_horse();
+        (self.horse_body, self.horse_id, self.cam_horse) = (pick, id, true);
     }
 
     fn remove_animal(&mut self) {
@@ -4691,7 +4816,7 @@ impl Sim {
             },
             ("!horse_poke", Some(a)) => if let (Some((k, d)), Some(h)) = (a.split_once(' '), self.horse.as_mut()) {
                 let mut v: Vec<f32> = d.split(',').filter_map(|x| x.parse().ok()).collect();
-                let k = k.parse::<usize>().unwrap_or(0);
+                let k = k.parse::<usize>().ok().or_else(|| h.build.parts.iter().position(|p| p.name.to_lowercase().contains(&k.to_lowercase()))).unwrap_or(0);
                 let at = h.doll.frames().nth(k).map_or(Vec3::ZERO, |f| f.translation);
                 if let Some(ms) = d.strip_prefix("side ").and_then(|x| x.parse::<f32>().ok()) {
                     let f: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
@@ -4700,11 +4825,49 @@ impl Sim {
                     eprintln!("horse  side poke {:.0} N s along {:.2} {:.2}, body {:.2} {:.2}", p.length(), left.x, left.y, (f[12] - f[0]).x, (f[12] - f[0]).y);
                     v = vec![p.x, p.y, p.z];
                 }
+                if let Some((along, ns)) = d.strip_prefix("click ").map(|x| (false, x)).or_else(|| d.strip_prefix("clickf ").map(|x| (true, x))).and_then(|(a, x)| Some((a, x.parse::<f32>().ok()?))) {
+                    let f: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
+                    let fwd = (f[12] - f[0]).with_z(0.0).normalize_or(Vec3::X);
+                    let left = if along { fwd } else { Vec3::Z.cross(fwd).normalize_or(Vec3::Y) };
+                    let p = left * ns * h.doll.mass() / (*BODIES())[1].3;
+                    eprintln!("horse  click poke {:.0} N s on {}", p.length(), h.build.parts[k].name);
+                    v = vec![p.x, p.y, p.z];
+                }
+                if let Some(ms) = d.strip_prefix("fwd ").and_then(|x| x.parse::<f32>().ok()) {
+                    let f: Vec<Vec3> = h.doll.frames().map(|f| f.translation).collect();
+                    let p = (f[12] - f[0]).with_z(0.0).normalize_or(Vec3::Y) * ms * h.doll.mass();
+                    v = vec![p.x, p.y, p.z];
+                }
                 if let &[x, y, z] = &v[..] {
                     h.poke(k, at, Vec3::new(x, y, z));
                 }
             },
+            ("!horse_legs", Some(a)) => if let Some(h) = self.horse.as_ref() {
+                let mut w = a.split_whitespace();
+                let s = w.next().and_then(|x| x.parse().ok()).unwrap_or(0.0);
+                crate::animal_fit::set_legs(h.animal, s, w.next() == Some("1"));
+            },
             ("!horse_rise", _) => if let Some(h) = self.horse.as_mut() { h.begin_rise() },
+            ("!horse_pose", Some(path)) => if let Some(h) = self.horse.as_ref() {
+                let (f, r): (Vec<Transform>, &Vec<Transform>) = (h.doll.frames().collect(), &h.pose);
+                let ground = self.world.ground(r[0].translation + Vec3::Z * 2.0, 4.0).unwrap_or(0.0);
+                let d = (r[12].translation - r[0].translation).with_z(0.0);
+                let back = Quat::from_rotation_z(-d.y.atan2(d.x));
+                let lines: Vec<String> = f.iter().map(|t| {
+                    let p = back * (t.translation - r[0].translation.with_z(ground));
+                    let q = back * t.rotation;
+                    format!("{} {} {} {} {} {} {}", p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+                }).collect();
+                let _ = std::fs::write(path.trim(), lines.join("
+") + "
+");
+                if let Ok(d) = std::env::var("HORSE_NEUTRAL_OUT") {
+                    let s: String = h.doll.lim_warm().iter().map(|((a, b), l)| format!("{a} {b} {l}
+")).collect();
+                    let _ = std::fs::write(format!("{d}/limwarm_{}.txt", h.body), s);
+                }
+                self.say(format!("horse  pose written to {}", path.trim()));
+            },
             ("!horse_at", a) => if let Some(h) = self.horse.as_ref() {
                 let k = a.and_then(|a| a.parse().ok()).or_else(|| a.and_then(|a| h.build.parts.iter().position(|p| p.name.to_lowercase().contains(&a.to_lowercase())))).unwrap_or(0);
                 let p = h.doll.frames().nth(k).map_or(Vec3::ZERO, |f| f.translation);
@@ -4725,7 +4888,7 @@ impl Sim {
         let (text, frag) = match (text, frag) {
             _ if built_in => (rdr2frag::BUILT_IN_XML.to_string(), rdr2frag::Frag::from_text(&match std::env::var("HORSE_FARM_TEXT") {
                 Ok(f) if body >= 2 => std::fs::read_to_string(f).unwrap_or_default(),
-                _ if body >= 2 => rdr2frag::ANIMALS[(body as usize - 2).min(6)].1.to_string(),
+                _ if body >= 2 => animal_fit::text(body as usize - 2).unwrap_or_else(|| rdr2frag::FARM_FRAG.to_string()),
                 _ => rdr2frag::BUILT_IN_FRAG.to_string(),
             })),
             (Ok(t), Ok(f)) => (String::from_utf8_lossy(&t).into_owned(), rdr2frag::read(&f)),
@@ -4748,17 +4911,44 @@ impl Sim {
         let spots = [side * 2.5, -side * 2.5, side * 3.5, -side * 3.5, fwd * 3.0, -fwd * 3.0, side * 5.0, -side * 5.0, side * 7.0, -side * 7.0, fwd * 6.0, -fwd * 6.0,
                      side * 9.0 + fwd * 3.0, -side * 9.0 + fwd * 3.0, side * 9.0 - fwd * 3.0, -side * 9.0 - fwd * 3.0];
         let ground_at = |at: Vec3| self.world.ground(at + Vec3::Z * 2.0, 4.0).unwrap_or(0.0);
-        let at = spots.iter().map(|d| ours.p(0) + *d).find(|&p| clear(p, ground_at(p))).unwrap_or(ours.p(0) + side * 2.5);
+        let here = self.horse_at.take();
+        let at = here.map(|h| h.0).unwrap_or_else(|| spots.iter().map(|d| ours.p(0) + *d).find(|&p| clear(p, ground_at(p))).unwrap_or(ours.p(0) + side * 2.5));
         let ground = ground_at(at);
-        match frag.and_then(|f| horse::Horse::new(&text, f, at.with_z(ground), ours.fwd.y.atan2(ours.fwd.x))) {
+        match frag.and_then(|f| horse::Horse::new(&text, f, at.with_z(ground), here.map_or(ours.fwd.y.atan2(ours.fwd.x), |h| h.1))) {
             Ok(mut h) => {
                 h.animal = (body as usize).saturating_sub(2);
+                h.body = self.horse_body;
                 if body == 2 { h.leg_cap = 2.0; }
                 if body == 6 { h.leg_cap = 3.0; }
+                if let Ok(dir) = std::env::var("HORSE_STANDPOSE") {
+                    let rec: Vec<[f32; 7]> = std::fs::read_to_string(format!("{dir}/pose_{body}.txt")).unwrap_or_default().lines()
+                        .filter_map(|l| l.split(' ').map(|x| x.parse().ok()).collect::<Option<Vec<f32>>>()?.try_into().ok()).collect();
+                    let f: Vec<Transform> = h.doll.frames().collect();
+                    if rec.len() == f.len() {
+                        let d = (f[12].translation - f[0].translation).with_z(0.0);
+                        let turn = Quat::from_rotation_z(d.y.atan2(d.x));
+                        let base = f[0].translation.with_z(ground);
+                        h.rest = Some(f.clone());
+                        for (k, r) in rec.iter().enumerate() {
+                            h.doll.set_body(k, base + turn * Vec3::new(r[0], r[1], r[2]), turn * Quat::from_xyzw(r[3], r[4], r[5], r[6]), Vec3::ZERO, Vec3::ZERO);
+                        }
+                        h.pose = h.doll.frames().collect();
+                        {
+                            let w = std::fs::read_to_string(format!("{dir}/limwarm_{body}.txt")).unwrap_or_default().lines()
+                                .filter_map(|l| { let v: Vec<&str> = l.split(' ').collect(); Some(((v.first()?.parse().ok()?, v.get(1)?.parse().ok()?), v.get(2)?.parse().ok()?)) }).collect();
+                            h.doll.set_lim_warm(w);
+                        }
+                    }
+                }
+                if std::env::var_os("HORSE_STEPLOG").is_some() { eprintln!("hparts {:?}", h.build.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>()); }
+                if let Ok(v) = std::env::var("HORSE_WIDE") {
+                    let f: Vec<f32> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                    h.wide = if f.len() == 1 { f[0] } else { f.get((body as usize).saturating_sub(1)).copied().unwrap_or(1.0) };
+                }
                 self.cam_horse = false;
                 self.horse = Some(h);
                 self.horse_id = self.herd.iter().map(|a| a.0 + 1).max().unwrap_or(0).max(self.horse_id + 1);
-                self.say(format!("ours  horse: {}, at {}", if !built_in { "from your RDR2" } else if body >= 2 { rdr2frag::ANIMALS[(body as usize - 2).min(6)].0 } else { "built in" }, v3(at)));
+                self.say(format!("ours  horse: {}, at {}", if !built_in { "from your RDR2".into() } else if body >= 2 { animal_fit::name(body as usize - 2) } else { "built in".into() }, v3(at)));
             }
             Err(e) => self.say(format!("ours  horse: {e}")),
         }
@@ -4868,7 +5058,7 @@ impl Sim {
         let (between, acc, case) = GUN_FALLBACK[self.weapon];
         let w = self.weapons.iter().find(|w| w.name == name);
         let shotgun = w.map_or(label == "shotgun", |w| w.slot == "SHOTGUN");
-        (w.map_or(between, |w| w.between_shots), w.map_or(acc, |w| if w.slot == "SNIPER" { w.accuracy_fps } else { w.accuracy }), if shotgun { PELLETS } else { 1 }, case)
+        (w.map_or(between, |w| w.between_shots), self.wspread[self.weapon].unwrap_or(w.map_or(acc, |w| if w.slot == "SNIPER" { w.accuracy_fps } else { w.accuracy })), if shotgun { PELLETS } else { 1 }, case)
     }
 
     fn gun_spread(&mut self, len: f32, acc: f32) -> (f32, f32) {
@@ -4885,8 +5075,8 @@ impl Sim {
             }
             return;
         }
-        let range = self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1).map_or(35.0, |w| w.range);
-        let reach = if pellets > 1 { PELLET_REACH() * range } else { 60.0 };
+        let range = self.wrange[self.weapon].unwrap_or(self.weapons.iter().find(|w| w.name == WEAPONS[self.weapon].1).map_or(35.0, |w| w.range));
+        let reach = if pellets > 1 { PELLET_REACH() * range } else { self.wrange[self.weapon].unwrap_or(60.0) };
         let side = dir.cross(Vec3::Z).normalize_or(Vec3::X);
         let (up, half) = (side.cross(dir), reach * acc);
         let mut r = delirium_data::rng::Rand::new(self.sg_seed);
@@ -5195,7 +5385,8 @@ impl Sim {
         for f in &mut self.gun.fires {
             f.1 += dt;
         }
-        self.gun.fires.retain(|f| f.1 < FIRE_LIFE);
+        let life = self.fire_life;
+        self.gun.fires.retain(|f| f.1 < life);
         self.napalm_frame(dt);
         if self.room.pool {
             let doused: Vec<Vec3> = self.gun.fires.iter().map(|f| f.0)
@@ -5224,8 +5415,8 @@ impl Sim {
                 self.say("room  the water puts Homer out".into());
             }
         }
-        let ours = self.ours();
-        let caught = self.gun.fires.iter().any(|&(at, _)| (0..ours.parts.len()).map(|k| ours.p(k)).any(|p| (p - at).with_z(0.0).length() < FIRE_R && p.z - at.z < 1.0));
+        let (ours, fire_r) = (self.ours(), self.fire_r);
+        let caught = self.gun.fires.iter().any(|&(at, _)| (0..ours.parts.len()).map(|k| ours.p(k)).any(|p| (p - at).with_z(0.0).length() < fire_r && p.z - at.z < 1.0));
         if caught {
             self.burning = BURN;
         }
@@ -5238,7 +5429,7 @@ impl Sim {
         self.burning -= dt;
         let burning = self.burning > 0.0;
         if burning {
-            self.health = if self.god { 200.0 } else { (self.health - BURN_DAMAGE() * dt).max(0.0) };
+            self.health = if self.god { 200.0 } else { (self.health - BURN_DAMAGE() * dt / self.hp_k).max(0.0) };
             let n = self.ours().parts.len();
             self.charred.resize(n, 0.0);
             for (k, c) in self.charred.iter_mut().enumerate() {
@@ -5278,18 +5469,19 @@ impl Sim {
     }
 
     fn blast_on(&mut self, at: Vec3, game: bool) {
+        let blast_r = BLAST_R * self.blast_k;
         self.sever_blast(at);
         let ours = self.ours();
         let near = (0..ours.parts.len()).map(|k| ours.p(k).distance(at)).fold(f32::MAX, f32::min);
         let who = if self.bench.is_empty() { "him".to_string() } else { self.who() };
-        if near >= BLAST_R {
+        if near >= blast_r {
             return if game { self.say(format!("room  blast: {near:.1} m from {who}")) };
         }
         let mut o = vec![];
         let mut hit = vec![];
         for k in 0..ours.parts.len() {
             let p = ours.p(k);
-            let f = 1.0 - p.distance(at) / BLAST_R;
+            let f = 1.0 - p.distance(at) / blast_r;
             if f <= 0.0 || self.agent.doll.gone >> k & 1 != 0 {
                 continue;
             }
@@ -5297,7 +5489,7 @@ impl Sim {
             hit.push((k, p, (at - p).normalize_or(Vec3::Z), f));
             o.push(format!("applyImpulse partIndex={k} hitPoint={} impulse={}", v3(p), v3(imp)));
         }
-        let lost = BLAST_DAMAGE * (1.0 - near / BLAST_R);
+        let lost = self.blast_dmg / self.hp_k * (1.0 - near / blast_r);
         for &(k, ..) in &hit {
             self.light(0, k, SHOT_GLOW);
         }
@@ -5606,7 +5798,7 @@ impl Sim {
             self.say(format!("{}  {} hits {} ({:.1} N s)", WHO[i], self.room.objs.get(j).map_or("piece", |o| (*world::KINDS())[o.kind].0),
                              delirium_data::nm_asset::PARTS.get(k).unwrap_or(&"?"), imp.length()));
             if i == 0 {
-                let amount = (imp.length() * 0.6).clamp(1.0, 35.0);
+                let amount = (imp.length() * 0.6).clamp(1.0, 35.0) / self.hp_k;
                 if !self.god {
                     self.health = (self.health - amount).max(1.0);
                 }
@@ -5890,7 +6082,7 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
             _ => eprintln!("--custom: legs,arms,trunk,width,kg[,head]"),
         }
     }
-    let body = a.iter().position(|x| x == "--body").and_then(|i| a.get(i + 1)).and_then(|n| (*BODIES()).iter().position(|b| b.0 == n)).unwrap_or(1);
+    let body = a.iter().position(|x| x == "--body").and_then(|i| a.get(i + 1)).and_then(|n| body_key(n)).filter(|&b| b < FIGURE || figure_of(b).is_some()).unwrap_or(1);
     let base = (build, frames);
     let (build, frames, grow) = body_of(&base.0, &base.1, body);
     let crowd_build = build.clone();
@@ -5926,9 +6118,9 @@ fn load(a: &[String], args: &[String], game_dir: Option<&str>, script: VecDeque<
                         weapons, weapon: 0, weak: false, param_edits: Default::default(), param_search: String::new(), param_changed_only: false, sel: 0, over_ui: false, held: true, cam_step: (0, Vec3::ZERO, Vec3::ZERO), floor_at: Vec2::ZERO,   show_ui: true, sens: 0.5, ui_scale: 1.0, dock_w: ui::DOCK_W.2, sidebar_auto: true, rec, health: 200.0, god: false, aim_gun: false, gun: Gun::default(), blast_task: None, burning: 0.0, shock: 0.0, charred: vec![], voxels: vec![], on_fire: None, hero_gun: false, hero_ots: true, ots_right: true, ots_dist: 2.0, ots: None, ots_on: false, passive: true, homer: None, homer_weapon: None, homer_wait: None, homer_wild: false, gun_ai: false, homer_combat: None, homer_guard: None, homer_rest: 0.0, ammo: 0, reloading: None, taxis: vec![], driving: false, pedals: (0.0, 0.0, false), car_tune: None, lean_stop: None, hurt: [0.0; 4], near_at: -9.0, near_last: -9.0, dived: false, no_dodge: false, dodge_gap: DODGE_GAP, look_stop: None, dodge_at: 0.0, dodging: false, look_after: None, fall: None, hold: None, airborne: false, wet: false, hero_alpha: 0.6, render_scale: 1.0, msaa: 4, msaa_max: 4, shadow_q: 3, frame_ms: 0.0, gpu: String::new(), gpu_now: String::new(), gpus: None, aa: AA_MSAA, smaa_q: 2, dlss_q: 0, fsr_q: 1, fsr_ok: false, xess_q: 1, xess_ok: false, sharpen: 0.0, sharp_by: [0.0; 9], ssao: 0, ao_strength: 1.0, bloom: 0.0, dof: 0.0, contact: 0.0, contact_k: 1.0, vignette: 0.0, lens: 0.0, chroma: 0.0, rt: 0, rt_ok: false, sky: 2, god_rays: false, restir: false, fire: 2, water_q: 1, real_fire: false, voxel_water: false, real_water: false, real_drain: false, pouring: false, real_surface: false, real_ripples: false, water_clear: true, wet_trail: true, water_impact: true, water_faucet: true, real_level: None, flow: vec![], hero_flow: vec![], water_caustics: false, water_spray: false, water_waves: false, water_pixels: false, water_haze: false, water_mirror: false, water_foam: false, water_mist: false, photons: false, water_fine: false, water_depth: true, water_relax: false, water_ghost: false, water_vort: false, water_spray_phys: false, safe: false, fire_light: true, fire_homer: false, shadow_filter: 0, water_wet: false, wet_film: false, wet_drips: false, sky_shade: false, water_traced: false, glass_tint: true, glass_shade: true, water_ripples: true, water_refract: false, flood: None, smoke: true, view_px: UVec2::ONE, defaults: String::new(), upscaler: UP_FSR1, dlss_ok: false, fps_limit: FPS_VSYNC, fullscreen: false, phys_thread: false, phys_queued: 0, render_thread: true, extra: false, extra_pick: 0x1ff, fire_react: true, dive: false, hang: None, was_fallen: false, curled: false, super_punch: false, partial: None, partial_r: 10.0, part: delirium::partial::Partial::new(delirium::partial::Mode::Legs), partial_mode: PARTIAL_PLANTED,  contact_air: vec![], contact_wait: vec![], contact_feet: vec![],   even: false, crush: None, cab_gas: 0.0, cam: None, look_z: 0.8, film: 0.0, photo: false, soft: true, shadows: true, sun_color: [1.0; 3], fill_k: 1.0, gun_reach: 1.0, gun_up: 0.0, gun_off: Vec3::ZERO, gun_aim_off: Vec3::ZERO, crane: None, crane_to: None, shadow: 0.0, strict: false, stairs_rolled: false, cam_head: false, cam_rig: None, spawn_at: None, tear_k: 1.0, sky_k: 1.0, kept_gun: None, cam_floor: f32::MIN, pov: false, film_vel: Vec3::ZERO, cam_prev: None, cam_vel: Vec3::ZERO, photo_pending: false, on_cue: vec![], photo_follow: false, detached: false, cam_at: None, cam_frame: None, right_at: None, cam2: None, cam2_queue: vec![], cam2_b: None, meat: None, meat_on: true, meat_wipe: false, skate3_bails: false, step_limit: false, carry_pushes: false, meat_screen: None, shot_scene: String::new(), photo_note: String::new(), script_walk: Vec3::ZERO, throw_speed: None, homer_shot: 0.0, hero_physics: true, hero_doll: None, tackle: None, cuts: vec![], hat: None, dismember: false, jump: None, steam: (0, vec![]), #[cfg(feature = "portal")] portal: portal::Portals::new(), click_at: None,
                         getup, rises: [None, None], still: [0.0; 2], tasks: false, exit: (*SHOT_EXIT()), nm_t: [None, None], failed: [false; 2], last: [Vec3::ZERO; 2], room, look: true, avoid: false, eye: Vec3::new(0.0, -4.0, 1.5), hover: None, map, crowd: vec![], stress: false, group: Default::default(), cars: vec![], lanes: None, pusher: None, pile_fuse: None, ice: None,   click_shoots: false,
                         grab: None, tail: vec![], horse: None, horse_id: 0, herd: vec![], horse_file: std::env::var("HORSE_XML").unwrap_or_default(), rdr2_dir: std::env::var("RDR2_DIR").unwrap_or_default(),
-                        horse_wait: false, horse_body: 2, horse_loalco: std::env::var_os("HORSE_OURS").is_some(), horse_tasks: None,
-                        horse_frag: std::env::var("HORSE_FRAG").unwrap_or_default(), ties: vec![], line_k: 1.0, line_leash: false, line_wrap: true, drag_hold: None, horse_hold: None, cam_horse: false, drag_len: 0.0, tie_hover: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: ui::code(1, 0), sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35, 0.015, 1.0], amb_theme: 0, blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
-                        scene: None, switch_to: None, poke: POKE, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, part_colors: std::array::from_fn(|k| part_color(0, delirium_data::nm_asset::PARTS[k], 1.0).to_srgba().to_f32_array_no_alpha()), body_alpha: BODY_ALPHA, eyes: true, bone_skin: false, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
+                        horse_wait: false, horse_at: None, horse_body: 2, horse_loalco: std::env::var_os("HORSE_OURS").is_some(), horse_tasks: None,
+                        horse_frag: std::env::var("HORSE_FRAG").unwrap_or_default(), ties: vec![], line_k: 1.0, line_leash: false, line_wrap: false, drag_hold: None, horse_hold: None, cam_horse: false, drag_len: 0.0, tie_hover: None, glow: vec![], rings: vec![], ripples: vec![], ripple_wait: vec![], tape: Default::default(), replay: None, throw_at: None, pops: vec![], pop_screen: vec![], show_pops: true, tab: ui::code(1, 0), sounds: vec![], sound: true, volume: [1.0, 1.0, 0.35, 0.015, 1.0], amb_theme: 0, blood: vec![], pixel_blood: true, gore: false, layers: true, wounds: vec![], show_ripples: false, infinite: false, fx_seed: 1, pointer: None, crowd_hp: vec![], car_hit: vec![], car_reacts: vec![], help: !help_seen(), auto_balance: true, dead: false, hero: None, skate: None, skate_link: skate_files::Link::new(), agility,
+                        scene: None, switch_to: None, poke: POKE, hp_k: 1.0, wdmg: [None; 14], wforce: [None; 14], wspread: [None; 14], wrange: [None; 14], blast_dmg: BLAST_DAMAGE, fire_r: FIRE_R, fire_life: FIRE_LIFE, blast_k: 1.0, game_dir: game_dir.map(str::to_string), walk: true, relock: false, cam_locked: true, walk_dir: Vec3::ZERO, wander: Default::default(), getup_mode: 0, musc: None, learned: None, walk_learned: None, preview_on: false, preview: None, preview_wait: false, preview_keys: (false, false), script_jog: false, watch: None, bench: vec![], homer_id: 0, spawn_body: body, base, crowd_build, body, skin: saved_look(), ped_color: 0, part_colors: std::array::from_fn(|k| part_color(0, delirium_data::nm_asset::PARTS[k], 1.0).to_srgba().to_f32_array_no_alpha()), body_alpha: BODY_ALPHA, eyes: true, bone_skin: false, brows: true, skel: true, skel_style: 0, clean: false, sun_dir: saved_sun() };
     sim.auto_balance = sim.script.is_empty();
     sim
 }
@@ -7350,6 +7542,16 @@ fn traceable(mesh: &mut Mesh) {
 #[derive(Component)]
 struct MapScenery;
 
+fn pick_animal(sim: &mut Sim, path: &str) {
+    match animal_fit::import(path) {
+        Ok((i, log)) => {
+            sim.horse_body = (i + 2) as u8;
+            sim.say(format!("ours  animal: {path} as {} (animal {i}, the next spawned): {log}", animal_fit::name(i)));
+        }
+        Err(e) => sim.say(format!("ours  animal: {path}: {e}")),
+    }
+}
+
 fn level_edit(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, buttons: Res<ButtonInput<MouseButton>>, keys: Res<ButtonInput<KeyCode>>,
               windows: Query<&Window>, cam: Query<(&Camera, &GlobalTransform), With<OursCam>>, mut commands: Commands,
               mut meshes: ResMut<Assets<Mesh>>, (mut mats, mut clouds): (ResMut<Assets<StandardMaterial>>, ResMut<Assets<bevy_gaussian_splatting::PlanarGaussian3d>>),
@@ -7413,6 +7615,7 @@ fn level_edit(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, button
             "mode" => level.mode = rest.trim().parse().unwrap_or(0),
             "joint" => { let v: Vec<f32> = rest.split_whitespace().filter_map(|x| x.parse().ok()).collect(); if v.len() == 4 && (v[0] as usize) < level.fig_joints.len() { editor::set_joint(&mut level, v[0] as usize, Vec3::new(v[1], v[2], v[3])); } }
             "pickfile" => if rest.trim().is_empty() { ui::pick_model(ui::PICK_BODY) } else { *ui::PICKED.lock().unwrap() = Some((ui::PICK_BODY, rest.trim().into())) },
+            "pickanimal" => if rest.trim().is_empty() { ui::pick_model(ui::PICK_ANIMAL) } else { pick_animal(&mut sim, rest.trim()) },
             "figure" => level.figure = rest.trim().parse::<usize>().ok().and_then(|i| level.pieces.get(i)).filter(|p| p.shape == editor::Shape::Model)
                 .map(|p| (p.model.clone(), p.transform().rotation)),
             "detail" => if let Some((i, n)) = rest.split_once(' ').and_then(|(i, n)| Some((i.parse::<usize>().ok()?, n.trim().parse().ok()?))) && i < level.pieces.len() {
@@ -7705,7 +7908,7 @@ fn switch(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut<A
         }
     }
     a.retain(|x| x != "--marge");
-    a.extend(["--body".to_string(), (*BODIES())[sim.body].0.to_string()]);
+    a.extend(["--body".to_string(), key_of(sim.body)]);
     let (map, ground) = match scene.as_str() {
         "stairs" => ("818.94,-348.88", None),
         "wall" => ("738.83,-467", None),
@@ -9225,7 +9428,7 @@ fn glow_view(sim: NonSend<Sim>, mut commands: Commands, mut meshes: ResMut<Asset
     let flick = |k: f32| 0.8 + 0.2 * (t * 11.0 + k * 1.7).sin() * (t * 7.3 + k).cos();
     let ball = sim.rt_now() > 0 || sim.fire == 0;
     let dark = !sim.fire_light;
-    let blasts = sim.gun.blasts.iter().map(|&(at, age)| (at, BLAST_R * 0.25 * (age / 0.3).min(1.0).max(0.1), 2.0 * (1.0 - age / 0.8).max(0.0)));
+    let blasts = sim.gun.blasts.iter().map(|&(at, age)| (at, BLAST_R * sim.blast_k * 0.25 * (age / 0.3).min(1.0).max(0.1), 2.0 * (1.0 - age / 0.8).max(0.0)));
     let fires = sim.gun.fires.iter().filter(|_| !dark).enumerate().map(|(k, &(at, age))| (at + Vec3::Z * 0.25, if ball { 0.4 } else { 0.001 }, 0.3 * (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0) * flick(k as f32)));
     let chest = sim.ours().p(0) + Vec3::Z * 0.3;
     let round = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y];
@@ -9276,7 +9479,7 @@ fn fire_view(sim: NonSend<Sim>, time: Res<Time>, cam: Query<&GlobalTransform, Wi
             x.extension.k.y = voxel;
         }
     }
-    let mut burns: Vec<fire::Source> = sim.gun.fires.iter().map(|&(at, age)| fire::Source { at, r: FIRE_R * 0.8, k: ((FIRE_LIFE - age) / 2.0).clamp(0.0, 1.0) }).collect();
+    let mut burns: Vec<fire::Source> = sim.gun.fires.iter().map(|&(at, age)| fire::Source { at, r: sim.fire_r * 0.8, k: ((sim.fire_life - age) / 2.0).clamp(0.0, 1.0) }).collect();
     burns.extend(sim.gun.napalm.iter().map(|&(at, _)| fire::Source { at, r: 0.05, k: 1.0 }));
     let dt = time.delta_secs();
     let (spilt, due, n) = &mut *spills;
@@ -9483,10 +9686,11 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
         g.cube(Transform::from_translation(p).looking_to(d, Vec3::Z).with_scale(Vec3::new(0.08, 0.08, 0.5)), Color::srgba(0.4, 0.95, 1.0, 0.9));
         g.line(p - d * 0.25, p - d * 1.2, Color::srgb(1.0, 0.6, 0.2));
     }
+    let blast_r = BLAST_R * sim.blast_k;
     for (at, age) in &mut sim.gun.blasts {
         let a = (1.0 - *age / 0.8).clamp(0.0, 1.0);
         for (k, c) in [(1.0, Color::srgba(1.0, 0.5, 0.15, a)), (0.6, Color::srgba(1.0, 0.8, 0.3, a)), (0.3, Color::srgba(1.0, 1.0, 0.7, a))] {
-            g.sphere(Isometry3d::from_translation(*at), BLAST_R * k * (*age / 0.3).min(1.0).max(0.05), c);
+            g.sphere(Isometry3d::from_translation(*at), blast_r * k * (*age / 0.3).min(1.0).max(0.05), c);
         }
         *age += dt;
     }
@@ -9497,10 +9701,10 @@ fn gun_view(mut sim: NonSendMut<Sim>, mut commands: Commands, mut meshes: ResMut
     }
     let flick = time.elapsed_secs() * 9.0;
     for &(at, age) in sim.gun.fires.iter().filter(|_| sim.fire == 0) {
-        let a = (1.0 - age / FIRE_LIFE).clamp(0.25, 1.0);
+        let a = (1.0 - age / sim.fire_life).clamp(0.25, 1.0);
         for k in 0..6 {
             let s = (flick + k as f32 * 1.7).sin() * 0.5 + 0.5;
-            g.circle(Isometry3d::from_translation(at + Vec3::Z * (0.02 + 0.12 * k as f32 * (0.5 + s))), FIRE_R * (1.0 - 0.14 * k as f32), Color::srgba(1.0, 0.35 + 0.1 * k as f32, 0.1, a));
+            g.circle(Isometry3d::from_translation(at + Vec3::Z * (0.02 + 0.12 * k as f32 * (0.5 + s))), sim.fire_r * (1.0 - 0.14 * k as f32), Color::srgba(1.0, 0.35 + 0.1 * k as f32, 0.1, a));
         }
     }
     if sim.burning > 0.0 && sim.fire == 0 {
@@ -9537,15 +9741,32 @@ struct Smooth {
 #[derive(Component)]
 struct FigBody;
 #[derive(Component)]
-struct FigJoint(usize);
-
-fn homers_own(p: &PartMesh) -> bool {
-    p.crowd.is_none() && p.watch.is_none()
+struct FigJoint;
+struct FigModel {
+    key: (String, Quat, Vec<[u32; 3]>),
+    made: u64,
+    skins: Vec<(Handle<Mesh>, Handle<StandardMaterial>)>,
+    splats: Vec<(usize, Handle<bevy_gaussian_splatting::PlanarGaussian3d>)>,
+    bind: Handle<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
+    nj: usize,
+    jp: Vec<Vec3>,
+    root: Vec3,
+    cap0: Vec<Transform>,
+    parent: Vec<Option<usize>>,
+    flop: Flop,
+}
+struct FigShown {
+    body: usize,
+    made: u64,
+    joints: Vec<Entity>,
+    skins: Vec<Entity>,
+    flop: Flop,
+    layer: RenderLayers,
 }
 
 fn fig_joints(build: &Build, rest: &[Transform], caps: &[Transform], v: &[Vec3], h0: f32, h1: f32) -> (Vec<Vec3>, Vec<Vec3>) {
     let n = rest.len().min(build.parts.len());
-    let hp: Vec<Vec3> = rest.iter().take(n).map(|t| t.translation).collect();
+    let hp: Vec<Vec3> = (0..n).map(|k| build.parts[k].parent.map_or(rest[k].translation, |_| rest[k].translation + rest[k].rotation * build.parts[k].anchor)).collect();
     let mid = hp[0];
     let idx = |name: &str| delirium_data::nm_asset::PARTS.iter().position(|p| *p == name).filter(|&k| k < n);
     let from = |k: usize| build.parts[k].parent.filter(|&p| p < n).map_or(hp[k], |p| hp[p]);
@@ -9585,6 +9806,7 @@ fn fig_joints(build: &Build, rest: &[Transform], caps: &[Transform], v: &[Vec3],
     eprintln!("figure  joints guess: neck {:.0}%, crotch {:.0}%, head's widest {:.0}%", 100.0 * at(neck), 100.0 * at(crotch), 100.0 * at(top));
     let neck = if (0.72..0.93).contains(&at(neck)) { neck } else { h0 + 0.85 * height };
     let crotch = if (0.3..0.6).contains(&at(crotch)) { crotch } else { h0 + 0.47 * height };
+    eprintln!("figure  joints used: neck {:.0}%, crotch {:.0}% (a guess outside a person's range: a person's)", 100.0 * at(neck), 100.0 * at(crotch));
     let bands = [(h0, h0), (hip_h, crotch), (neck_h, neck.max(crotch + 0.05)), (h1, h1)];
     let mapz = |z: f32| {
         let k = (1..3).find(|&k| z < bands[k].0).unwrap_or(3);
@@ -9610,8 +9832,53 @@ fn fig_joints(build: &Build, rest: &[Transform], caps: &[Transform], v: &[Vec3],
         n if n.contains("Arm") || n.starts_with("Hand") || n.starts_with("Clavicle") => (arm_f / arm_h.max(1e-3)).clamp(0.3, 3.0),
         _ => 1.0,
     };
-    let f = |p: Vec3, k: usize| Vec3::new(mid.x + (p.x - mid.x) * sx(k), p.y, mapz(p.z));
-    ((0..n).map(|k| f(hp[k], k)).collect(), (0..n).map(|k| f(hend[k], k)).collect())
+    let leg = |p: Vec3, k: usize, z: f32| {
+        let name = delirium_data::nm_asset::PARTS.get(k).copied().unwrap_or("");
+        let side = (p.x - mid.x).signum();
+        if !["Thigh", "Shin", "Foot"].iter().any(|l| name.starts_with(l)) || z > crotch + step {
+            return None;
+        }
+        let mut s: Vec<Vec3> = v.iter().filter(|q| (q.z - z).abs() < 3.0 * step && (q.x - mid.x) * side > 0.0).copied().collect();
+        s.sort_by(|a, b| (a.x - mid.x).abs().total_cmp(&(b.x - mid.x).abs()));
+        let end = s.windows(2).position(|w| (w[1].x - w[0].x).abs() > 4.0 * g).map_or(s.len(), |i| i + 1);
+        let c = &s[..end];
+        let (lo, hi) = c.iter().fold((Vec3::MAX, Vec3::MIN), |b, &q| (b.0.min(q), b.1.max(q)));
+        (c.len() >= 3).then(|| Vec3::new((lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5, z))
+    };
+    let ours = |p: Vec3, k: usize| Vec3::new(mid.x + (p.x - mid.x) * sx(k), p.y, mapz(p.z));
+    let its: Vec<Option<Vec3>> = (0..n).map(|k| leg(hp[k], k, mapz(hp[k].z))).collect();
+    let dy = mean(&(0..n).filter_map(|k| its[k].map(|q| q.y - ours(hp[k], k).y)).collect::<Vec<_>>());
+    let f = |p: Vec3, k: usize| { let o = ours(p, k); leg(p, k, o.z).map_or(o, |q| o.with_x(q.x)) + Vec3::Y * dy };
+    let (mut j, mut e): (Vec<Vec3>, Vec<Vec3>) = ((0..n).map(|k| f(hp[k], k)).collect(), (0..n).map(|k| f(hend[k], k)).collect());
+    for (side, sg) in [("Left", (hp[idx("Hand_Left").unwrap_or(0)].x - mid.x).signum()), ("Right", (hp[idx("Hand_Right").unwrap_or(0)].x - mid.x).signum())] {
+        let (Some(c), Some(u), Some(l), Some(hd)) = (idx(&format!("Clavicle_{side}")), idx(&format!("Upper_Arm_{side}")), idx(&format!("Lower_Arm_{side}")), idx(&format!("Hand_{side}"))) else { continue };
+        let mut out: Vec<&Vec3> = v.iter().filter(|p| (p.x - mid.x) * sg > 0.0 && p.z > crotch && p.z < neck + 0.05 * height).collect();
+        out.sort_by(|a, b| (b.x - mid.x).abs().total_cmp(&(a.x - mid.x).abs()));
+        let few = &out[..out.len().min((out.len() / 100).max(1))];
+        if few.is_empty() {
+            continue;
+        }
+        let tip = few.iter().fold(Vec3::ZERO, |t, &&p| t + p) / few.len() as f32;
+        if (tip.x - mid.x).abs() < 1.15 * (hend[hd].x - mid.x).abs() {
+            continue;
+        }
+        let shoulder = Vec3::new(hp[u].x, j[u].y, mapz(hp[u].z));
+        let segs = [hp[l].distance(hp[u]), hp[hd].distance(hp[l]), hend[hd].distance(hp[hd])];
+        let k = tip.distance(shoulder) / segs.iter().sum::<f32>().max(1e-3);
+        let dir = (tip - shoulder).normalize_or(Vec3::X * sg);
+        let elbow = shoulder + dir * segs[0] * k;
+        let wrist = elbow + dir * segs[1] * k;
+        (j[u], j[l], j[hd], e[c], e[u], e[l], e[hd]) = (shoulder, elbow, wrist, shoulder, elbow, wrist, tip);
+        eprintln!("figure  {side} arm out (T-pose): laid along it to {:.2},{:.2},{:.2}", tip.x, tip.y, tip.z);
+    }
+    for side in ["Left", "Right"] {
+        if let (Some(t), Some(s), Some(ft)) = (idx(&format!("Thigh_{side}")), idx(&format!("Shin_{side}")), idx(&format!("Foot_{side}"))) {
+            let k = ((j[s].z - j[t].z) / (j[ft].z - j[t].z)).clamp(0.0, 1.0);
+            let knee = j[t].lerp(j[ft], k).with_z(j[s].z);
+            (j[s], e[t]) = (knee, knee);
+        }
+    }
+    (j, e)
 }
 
 const OBJ_CHUNK: u64 = 0x0B1E_C700_0000;
@@ -9701,35 +9968,34 @@ fn loose_frame(mut sim: NonSendMut<Sim>, level: Res<editor::Level>, mut drawn: Q
 fn figure(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>,
           (mut binds, mut clouds): (ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>, ResMut<Assets<bevy_gaussian_splatting::PlanarGaussian3d>>),
           mut parts: Query<(&PartMesh, &Transform, &Visibility, &mut RenderLayers), (Without<FigJoint>, Without<FigBody>)>,
-          mut joints: Query<(Entity, &FigJoint, &mut Transform), (Without<PartMesh>, Without<FigBody>)>,
-          mut body: Query<(Entity, &mut Visibility), (With<FigBody>, Without<PartMesh>)>,
-          mut built: Local<Option<(String, Quat, Vec<[u32; 3]>)>>, mut layer: Local<Option<RenderLayers>>,
-          mut rig: Local<(Vec<Vec3>, Vec<Vec3>, Vec<Transform>, Vec<Option<usize>>)>, mut fitted: Local<(Vec<[u32; 3]>, usize)>,
-          (time, mut flop): (Res<Time>, Local<Flop>)) {
+          mut joints: Query<&mut Transform, (With<FigJoint>, Without<PartMesh>, Without<FigBody>)>,
+          mut body: Query<&mut Visibility, (With<FigBody>, Without<PartMesh>)>,
+          mut models: Local<Vec<Option<FigModel>>>, mut shown: Local<Vec<Option<FigShown>>>, mut made: Local<u64>, time: Res<Time>) {
     use bevy::mesh::VertexAttributeValues as V;
     let hidden = RenderLayers::layer(31);
-    let want = level.figure.clone().filter(|f| level.models.get(&f.0).is_some_and(|m| !m.drawn().is_empty() || !m.splats.is_empty() && m.tris.is_some()))
-        .map(|(p, q)| (p, q, level.fig_moved.iter().map(|v| v.to_array().map(f32::to_bits)).chain([[sim.body as u32; 3], [level.fig_auto as u32; 3]]).collect::<Vec<_>>()));
-    if want.is_none() && sim.body == FIGURE {
-        let was = (*BODIES())[fitted.1.min((*BODIES()).len() - 1)].0;
-        sim.rebody(if fitted.1 == FIGURE { "A" } else { was });
-        fitted.0.clear();
-    }
-    if want != *built {
-        for (e, ..) in &joints {
-            commands.entity(e).despawn();
-        }
-        for (e, _) in &body {
-            commands.entity(e).despawn();
-        }
-        if let Some(l) = layer.take() {
-            for (_, _, _, mut r) in parts.iter_mut().filter(|p| homers_own(p.0)) {
-                *r = l.clone();
+    let figs = FIGURES.lock().unwrap().clone();
+    for (k, m) in models.iter_mut().enumerate() {
+        if m.is_some() && figs.get(k).is_none_or(|f| f.is_none()) {
+            if level.figure.as_ref().is_some_and(|f| m.as_ref().is_some_and(|m| m.key.0 == f.0)) {
+                level.figure = None;
             }
+            *m = None;
         }
-        if let Some((path, turn, moved)) = &want {
+    }
+    let want = level.figure.clone().filter(|f| level.models.get(&f.0).is_some_and(|m| !m.drawn().is_empty() || !m.splats.is_empty() && m.tris.is_some()))
+        .map(|(p, q)| (p, q, level.fig_moved.iter().map(|v| v.to_array().map(f32::to_bits)).chain([[level.fig_auto as u32; 3]]).collect::<Vec<_>>()));
+    let slot = want.as_ref().and_then(|w| figs.iter().position(|f| f.as_ref().is_some_and(|f| f.0 == w.0)).or_else(|| figs.iter().position(Option::is_none))
+        .or_else(|| (figs.len() < MODELS).then_some(figs.len())));
+    if want.is_some() && slot.is_none() {
+        sim.say(format!("room  body: {MODELS} models at most (remove one first: the x on its tile)"));
+        level.figure = None;
+    }
+    if let (Some(fk), Some(w)) = (slot, want.as_ref()) && models.get(fk).and_then(|m| m.as_ref()).is_none_or(|m| m.key != *w) {
+        let built = &mut models;
+        {
+            let (path, turn, moved) = w;
             let own = &level.models[path].rig;
-            if own.is_empty() && built.as_ref().is_none_or(|b| b.0 != *path) {
+            if own.is_empty() && built.get(fk).and_then(|b| b.as_ref()).is_none_or(|b| b.key.0 != *path) {
                 sim.say(format!("room  body: {path} isn't rigged (no skeleton in it): auto-fitted, his joints guessed from its shape (moved by hand in the level editor: its piece, Is: Homer's body)"));
             }
             let side = |n: &str| delirium_data::nm_asset::PARTS.iter().position(|p| *p == n).and_then(|k| own.get(k)).filter(|j| j.is_finite()).map(|j| (*turn * *j).x);
@@ -9795,7 +10061,7 @@ fn figure(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, mut comman
             eprintln!("figure  {} of {} points its body's (a tail's out)", body.len(), got.iter().map(|g| g.0.len()).sum::<usize>());
             let s = (h1 - h0) / (hi.z - lo.z).max(1e-3);
             let foot = Vec3::new((lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5, lo.z);
-            let (base, b0) = (bf[0].translation.with_z(h0), bf[0].translation);
+            let base = bf[0].translation.with_z(h0);
             let at = |v: Vec3| (v - foot) * s + base;
             let back = |w: Vec3| turn.inverse() * ((w - base) / s + foot);
             let all: Vec<Vec3> = body.iter().map(|&v| at(v)).collect();
@@ -9993,10 +10259,41 @@ fn figure(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, mut comman
                 let sum: f32 = o[..4].iter().map(|&k| w[k]).sum::<f32>().max(1e-6);
                 (o[..4].iter().map(|&k| k as u16).collect::<Vec<_>>().try_into().unwrap(), o[..4].iter().map(|&k| w[k] / sum).collect::<Vec<_>>().try_into().unwrap())
             }).collect();
-            let l = parts.iter().find(|p| homers_own(p.0)).map(|p| p.3.clone()).unwrap_or_default();
-            let js: Vec<Entity> = (0..nj).map(|k| commands.spawn((Transform::default(), Visibility::default(), FigJoint(k))).id()).collect();
+            let (mut jp, mut ends) = (jp.clone(), ends.clone());
+            let mut swing: Vec<(Vec3, Quat, [usize; 3])> = vec![];
+            for side in ["Left", "Right"] {
+                let ix = |p: &str| delirium_data::nm_asset::PARTS.iter().position(|q| *q == format!("{p}{side}")).filter(|&k| k < n);
+                let (Some(u), Some(l), Some(hd)) = (ix("Upper_Arm_"), ix("Lower_Arm_"), ix("Hand_")) else { continue };
+                let his = |k: usize| bf[k].translation + bf[k].rotation * bb.parts[k].anchor;
+                let (want, got_) = ((his(hd) - his(u)).normalize_or_zero(), (jp[hd] - jp[u]).normalize_or_zero());
+                if want == Vec3::ZERO || got_ == Vec3::ZERO || want.angle_between(got_) < 0.35 {
+                    continue;
+                }
+                let q = Quat::from_rotation_arc(got_, want);
+                let sh = jp[u];
+                for k in [u, l, hd] {
+                    (jp[k], ends[k]) = (sh + q * (jp[k] - sh), sh + q * (ends[k] - sh));
+                }
+                eprintln!("figure  {side} arm swung down {:.0} degrees to his", want.angle_between(got_).to_degrees());
+                swing.push((sh, q, [u, l, hd]));
+            }
+            let posed = |p: Vec3, t: &([u16; 4], [f32; 4])| -> (Vec3, Quat) {
+                let mut out = (p, Quat::IDENTITY);
+                for (sh, q, arm) in &swing {
+                    let w: f32 = (0..4).filter(|&i| arm.contains(&(t.0[i] as usize))).map(|i| t.1[i]).sum();
+                    if w > 0.0 {
+                        let r = Quat::IDENTITY.slerp(*q, w.min(1.0));
+                        out = (*sh + r * (out.0 - *sh), r * out.1);
+                    }
+                }
+                out
+            };
+            for (q, t) in pts.iter_mut().zip(&top) {
+                *q = posed(*q, t).0;
+            }
             let bind = binds.add(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(vec![Mat4::IDENTITY; nj]));
-            *flop = Flop::new(&jp, &fl, &level.models[path].floppy[..fl.len().min(level.models[path].floppy.len())]);
+            let (mut skins, mut splats) = (vec![], vec![]);
+            let flop = Flop::new(&jp, &fl, &level.models[path].floppy[..fl.len().min(level.models[path].floppy.len())]);
             let plain = mats.add(StandardMaterial { base_color: Color::srgb(0.85, 0.85, 0.85), perceptual_roughness: 0.6, ..default() });
             if splat {
                 let m = &level.models[path];
@@ -10016,24 +10313,26 @@ fn figure(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, mut comman
                     by[bone(w, &any)].push(g);
                 }
                 for (k, b) in by.into_iter().enumerate().filter(|b| !b.1.is_empty()) {
-                    commands.entity(js[k]).insert((bevy_gaussian_splatting::PlanarGaussian3dHandle(clouds.add(bevy_gaussian_splatting::PlanarGaussian3d::from(b))),
-                                                   bevy_gaussian_splatting::CloudSettings::default(), RenderLayers::layer(1)));
+                    splats.push((k, clouds.add(bevy_gaussian_splatting::PlanarGaussian3d::from(b))));
                 }
             }
             for ((p, nr, uv, idx, m), wd) in got.iter().zip(&welded).filter(|_| !splat) {
                 let corners: Vec<usize> = idx.iter().map(|&i| i as usize).collect();
                 let w: Vec<([u16; 4], [f32; 4])> = corners.iter().map(|&i| top[wd[i]]).collect();
                 let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, default())
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, corners.iter().map(|&i| at(p[i]).to_array()).collect::<Vec<_>>())
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, corners.iter().map(|&i| nr[i].to_array()).collect::<Vec<_>>())
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, corners.iter().map(|&i| posed(at(p[i]), &top[wd[i]]).0.to_array()).collect::<Vec<_>>())
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, corners.iter().map(|&i| (posed(at(p[i]), &top[wd[i]]).1 * Vec3::from(nr[i])).to_array()).collect::<Vec<_>>())
                     .with_inserted_attribute(Mesh::ATTRIBUTE_JOINT_INDEX, V::Uint16x4(w.iter().map(|w| w.0).collect()))
                     .with_inserted_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, w.iter().map(|w| w.1).collect::<Vec<_>>());
                 if let Some(u) = uv {
                     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, corners.iter().map(|&i| u[i]).collect::<Vec<_>>());
+                    let _ = mesh.generate_tangents();
                 }
-                commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(m.clone().unwrap_or(plain.clone())), Transform::default(), Visibility::Hidden,
-                                bevy::mesh::skinning::SkinnedMesh { inverse_bindposes: bind.clone(), joints: js.clone() },
-                                bevy::camera::visibility::NoFrustumCulling, l.clone(), FigBody));
+                let m = m.clone().map(|h| match mats.get(&h).filter(|q| matches!(q.alpha_mode, AlphaMode::Blend)).cloned() {
+                    Some(q) => mats.add(StandardMaterial { alpha_mode: AlphaMode::Mask(0.5), ..q }),
+                    None => h,
+                });
+                skins.push((meshes.add(mesh), m.unwrap_or(plain.clone())));
             }
             let mut far: Vec<Vec<f32>> = vec![vec![]; n];
             for (q, w) in pts.iter().zip(&wt) {
@@ -10045,68 +10344,106 @@ fn figure(mut sim: NonSendMut<Sim>, mut level: ResMut<editor::Level>, mut comman
                 far[k].push(q.distance(jp[k] + d * ((*q - jp[k]).dot(d) / d.length_squared().max(1e-8)).clamp(0.0, 1.0)));
             }
             let radii: Vec<f32> = far.iter_mut().map(|f| { f.sort_by(f32::total_cmp); f.get(f.len() / 2).copied().unwrap_or(0.0) }).collect();
-            let key: Vec<[u32; 3]> = jp.iter().map(|v| v.to_array().map(f32::to_bits)).collect();
-            if sim.body != FIGURE || fitted.0 != key {
-                *FIGURE_BODY.lock().unwrap() = Some((jp.clone(), radii));
-                if sim.body != FIGURE {
-                    fitted.1 = sim.body;
+            let fresh = figs.get(fk).cloned().flatten().is_none_or(|f| f.1 != jp);
+            {
+                let mut f = FIGURES.lock().unwrap();
+                if f.len() <= fk {
+                    f.resize(fk + 1, None);
                 }
-                fitted.0 = key;
-                sim.rebody("M");
+                f[fk] = Some((path.clone(), jp.clone(), radii));
             }
-            let cur: Vec<Transform> = Ragdoll::new(&sim.build, &sim.frames, Vec3::ZERO).capsules().collect();
-            let off = if sim.body == FIGURE { Vec3::ZERO } else { jp[0] - b0 };
-            *rig = (jp, vec![sim.frames[0].translation, off], cur, parent);
-            *layer = Some(l);
-        }
-        *built = want;
-        return;
-    }
-    if built.is_none() {
-        return;
-    }
-    let (jp, hp, cap0, parent) = &*rig;
-    let n = jp.len();
-    let mut now: Vec<Option<Transform>> = vec![None; n];
-    let mut shown = Visibility::Hidden;
-    for (p, t, v, mut r) in parts.iter_mut().filter(|p| homers_own(p.0)) {
-        r.set_if_neq(hidden.clone());
-        if p.k < n {
-            now[p.k] = Some(*t);
-            if p.k == 0 {
-                shown = *v;
+            let (fb, ff, _) = body_of(bb, bf, FIGURE + fk);
+            let cur: Vec<Transform> = Ragdoll::new(&fb, &ff, Vec3::ZERO).capsules().collect();
+            if fresh || sim.body != FIGURE + fk {
+                sim.rebody(&key_of(FIGURE + fk));
             }
+            *made += 1;
+            if built.len() <= fk {
+                built.resize_with(fk + 1, || None);
+            }
+            built[fk] = Some(FigModel { key: w.clone(), made: *made, skins, splats, bind, nj, jp, root: ff[0].translation, cap0: cur, parent, flop });
         }
     }
-    let turn: Vec<Quat> = (0..n).map(|k| now[k].map_or(Quat::IDENTITY, |t| t.rotation * cap0[k].rotation.inverse())).collect();
-    let Some(root) = now[0].map(|t| t.translation + turn[0] * (hp[0] - cap0[0].translation)) else { return };
-    let mut place: Vec<Option<Vec3>> = vec![None; n];
-    place[0] = Some(root + turn[0] * hp[1]);
-    for _ in 0..n {
-        for k in 1..n {
-            if place[k].is_none() && let Some(p) = parent[k] && let Some(a) = place[p] {
-                place[k] = Some(a + turn[p] * (jp[k] - jp[p]));
+    let homers = 1 + sim.bench.len();
+    shown.resize_with(HOMERS, || None);
+    for h in 0..HOMERS {
+        let b = if h == 0 { Some(sim.body) } else { sim.bench.get(h - 1).map(|b| b.body) };
+        let m = b.filter(|_| h < homers).and_then(|b| Some((b, models.get(b.checked_sub(FIGURE)?)?.as_ref()?)));
+        if shown[h].as_ref().is_some_and(|s| m.is_none_or(|(b, m)| s.body != b || s.made != m.made)) {
+            let s = shown[h].take().unwrap();
+            for e in s.joints.iter().chain(&s.skins) {
+                commands.entity(*e).despawn();
+            }
+            for (_, _, _, mut r) in parts.iter_mut().filter(|p| p.0.homer() == Some(h)) {
+                *r = s.layer.clone();
             }
         }
-    }
-    let pin = sim.grab.as_ref().filter(|g| g.pulling).and_then(|g| Some((g.tail?, sim.agent.doll.frames().nth(g.part).map(|f| f.translation + f.rotation * g.local)?)));
-    let hang = flop.step(&jp, &place, &turn, time.delta_secs().min(1.0 / 30.0) * if sim.paused { 0.0 } else { 1.0 }, pin);
-    sim.tail = flop.now.iter().zip(&flop.root).map(|(p, &k)| (k, p.0)).collect();
-    for (_, j, mut t) in &mut joints {
-        let k = j.0;
-        if k >= n {
-            t.set_if_neq(hang.get(k - n).copied().unwrap_or_default());
-            continue;
+        if let (None, Some((b, m))) = (&shown[h], m) {
+            let Some(l) = parts.iter().find(|p| p.0.homer() == Some(h)).map(|p| p.3.clone()) else { continue };
+            let l = if l == hidden { RenderLayers::layer(1) } else { l };
+            let js: Vec<Entity> = (0..m.nj).map(|_| commands.spawn((Transform::default(), Visibility::default(), FigJoint)).id()).collect();
+            for (k, c) in &m.splats {
+                commands.entity(js[*k]).insert((bevy_gaussian_splatting::PlanarGaussian3dHandle(c.clone()), bevy_gaussian_splatting::CloudSettings::default(), RenderLayers::layer(1)));
+            }
+            let skins = m.skins.iter().map(|(mesh, mat)| commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), Visibility::Hidden,
+                bevy::mesh::skinning::SkinnedMesh { inverse_bindposes: m.bind.clone(), joints: js.clone() }, bevy::camera::visibility::NoFrustumCulling, l.clone(), FigBody)).id()).collect();
+            shown[h] = Some(FigShown { body: b, made: m.made, joints: js, skins, flop: m.flop.clone(), layer: l });
         }
-        let at = place[k].unwrap_or(jp[k]);
-        t.set_if_neq(Transform { translation: at - turn[k] * jp[k], rotation: turn[k], scale: Vec3::ONE });
     }
-    for (_, mut v) in &mut body {
-        v.set_if_neq(shown);
+    if shown[0].is_none() {
+        sim.tail.clear();
+    }
+    for h in 0..HOMERS {
+        let Some(s) = shown[h].as_mut() else { continue };
+        let Some(m) = models.get(s.body - FIGURE).and_then(|m| m.as_ref()) else { continue };
+        let (flop, hp) = (&mut s.flop, [m.root, Vec3::ZERO]);
+        let (jp, cap0, parent) = (&m.jp, &m.cap0, &m.parent);
+        let n = jp.len();
+        let mut now: Vec<Option<Transform>> = vec![None; n];
+        let mut seen = Visibility::Hidden;
+        for (p, t, v, mut r) in parts.iter_mut().filter(|p| p.0.homer() == Some(h)) {
+            r.set_if_neq(hidden.clone());
+            if p.k < n {
+                now[p.k] = Some(*t);
+                if p.k == 0 {
+                    seen = *v;
+                }
+            }
+        }
+        let turn: Vec<Quat> = (0..n).map(|k| now[k].map_or(Quat::IDENTITY, |t| t.rotation * cap0[k].rotation.inverse())).collect();
+        let Some(root) = now[0].map(|t| t.translation + turn[0] * (hp[0] - cap0[0].translation)) else { continue };
+        let mut place: Vec<Option<Vec3>> = (0..n).map(|k| now[k].map(|t| t.transform_point(cap0[k].compute_affine().inverse().transform_point3(jp[k])))).collect();
+        place[0] = place[0].or(Some(root + turn[0] * hp[1]));
+        for _ in 0..n {
+            for k in 1..n {
+                if place[k].is_none() && let Some(p) = parent[k] && let Some(a) = place[p] {
+                    place[k] = Some(a + turn[p] * (jp[k] - jp[p]));
+                }
+            }
+        }
+        let pin = sim.grab.as_ref().filter(|g| g.pulling && h == 0).and_then(|g| Some((g.tail?, sim.agent.doll.frames().nth(g.part).map(|f| f.translation + f.rotation * g.local)?)));
+        let hang = flop.step(&jp, &place, &turn, time.delta_secs().min(1.0 / 30.0) * if sim.paused { 0.0 } else { 1.0 }, pin);
+        if h == 0 {
+            sim.tail = flop.now.iter().zip(&flop.root).map(|(p, &k)| (k, p.0)).collect();
+        }
+        for (k, e) in s.joints.iter().enumerate() {
+            let Ok(mut t) = joints.get_mut(*e) else { continue };
+            if k >= n {
+                t.set_if_neq(hang.get(k - n).copied().unwrap_or_default());
+                continue;
+            }
+            let at = place[k].unwrap_or(jp[k]);
+            t.set_if_neq(Transform { translation: at - turn[k] * jp[k], rotation: turn[k], scale: Vec3::ONE });
+        }
+        for e in &s.skins {
+            if let Ok(mut v) = body.get_mut(*e) {
+                v.set_if_neq(seen);
+            }
+        }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Flop {
     rest: Vec<Vec3>,
     from: Vec<Option<usize>>,
@@ -10322,7 +10659,7 @@ fn keys(mut sim: NonSendMut<Sim>, k: Res<ButtonInput<KeyCode>>, mut contexts: Eg
     }
     if k.just_pressed(KeyCode::KeyN) {
         let b = if k.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
-            format!("spawn {}", (*BODIES())[sim.spawn_body].0)
+            format!("spawn {}", key_of(sim.spawn_body))
         } else if k.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
             "remove homer".into()
         } else {
@@ -10838,6 +11175,13 @@ fn mouse(mut sim: NonSendMut<Sim>, mut contexts: EguiContexts, buttons: Res<Butt
                 at = at.lerp(c, 0.4);
             }
         }
+        #[cfg(feature = "portal")]
+        if let Some((a, b, w)) = sim.portal.framing(time.delta_secs()) {
+            let mid = (a + b + at) / 3.0;
+            let span = a.distance(b).max(a.distance(at)).max(b.distance(at));
+            at = at.lerp(mid, w);
+            dist = dist + (dist.max(span * 1.2 + 2.0) - dist) * w;
+        }
         let z = o.target.z + (at.z - o.target.z) * if sim.film > 0.0 && !sim.strict || sim.film == 0.0 && !sim.cam_head { (time.delta_secs() * 2.0).min(1.0) } else { k };
         o.target = o.target.lerp(at, k).with_z(z);
     }
@@ -11243,7 +11587,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                     g.target = Vec3::new(*x, *y, *z);
                 }
             }
-            ("!horse_poke", Some(_)) | ("!horse_walk", Some(_)) | ("!horse_rise", _) | ("!horse_at", _) => { let (c, a) = (line.split(' ').next().unwrap_or(""), line.splitn(2, ' ').nth(1)); sim.horse_line(c, a) }
+            ("!horse_poke", Some(_)) | ("!horse_walk", Some(_)) | ("!horse_legs", Some(_)) | ("!horse_rise", _) | ("!horse_at", _) => { let (c, a) = (line.split(' ').next().unwrap_or(""), line.splitn(2, ' ').nth(1)); sim.horse_line(c, a) }
             ("!grab", Some(a)) => {
                 let mut w = a.split_whitespace();
                 let first = w.next();
@@ -11350,8 +11694,8 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
             ("!camhead", _) => sim.cam_head = true,
             ("!camhorse", _) => sim.cam_horse = true,
             ("!frame_ms", _) => { let m = sim.frame_ms; sim.say(format!("ours  frame {m:.2} ms")) }
-            ("!hologram", a) => *HOVER_HOLO.lock().unwrap() = a.and_then(|a| (*BODIES()).iter().position(|b| b.0 == a.trim())
-                .or_else(|| rdr2frag::ANIMALS.iter().position(|x| x.0.eq_ignore_ascii_case(a.trim())).map(|i| HOLO_ANIMAL + i)))
+            ("!hologram", a) => *HOVER_HOLO.lock().unwrap() = a.and_then(|a| body_key(a)
+                .or_else(|| (0..animal_fit::count()).position(|i| animal_fit::name(i).eq_ignore_ascii_case(a.trim())).map(|i| HOLO_ANIMAL + i)))
                 .map(|k| (k, std::time::Instant::now() + std::time::Duration::from_secs(3600))),
             ("!gore", _) => sim.gore = !sim.gore,
             ("!dropgrid", Some(a)) => if let [c, r, g] = a.split_whitespace().filter_map(|x| x.parse().ok()).collect::<Vec<f32>>()[..] {
@@ -11541,7 +11885,7 @@ fn scripted(mut sim: NonSendMut<Sim>, time: Res<Time>, mut commands: Commands, m
                 let scene = sim.scene.clone().unwrap_or_else(|| "room".into());
                 sim.switch_to = Some((scene, n == "marge"));
             }
-            ("!body", Some(n)) => if let Some(i) = (*BODIES()).iter().position(|b| b.0 == n) {
+            ("!body", Some(n)) => if let Some(i) = body_key(n) {
                 sim.body = i;
                 sim.switch_to = Some((sim.scene.clone().unwrap_or_else(|| "room".into()), nm() == delirium::nmrs::MARGE));
             },
@@ -11888,7 +12232,7 @@ impl Sim {
             if *t <= 0.0 {
                 let at = *at;
                 self.pile_fuse = None;
-                self.room.blast(self.on_sides(at), 14.0, 6.0);
+                self.room.blast(self.on_sides(at), 14.0, 6.0 * self.blast_k);
                 self.explode(at);
             }
         }
@@ -11967,7 +12311,19 @@ fn headless(mut sim: Sim, n: usize) {
                 let mut w = line.splitn(2, ' ');
                 match (w.next().unwrap_or(""), w.next()) {
                     ("!button", Some(b)) => sim.button(b),
+                    ("!level", Some(l)) if l.starts_with("pickanimal ") => pick_animal(&mut sim, l[11..].trim()),
                     ("!quit", _) => return,
+                    ("!set", Some(k)) => apply_settings(&mut sim, k),
+                    ("!weapon", Some(i)) => sim.weapon = i.trim().parse::<usize>().unwrap_or(0).min(WEAPONS.len() - 1),
+                    ("!shoot", Some(a)) => {
+                        let mut w = a.split_whitespace();
+                        let part = w.next().and_then(|k| k.parse().ok()).unwrap_or(0);
+                        sim.fire(part, None, w.next() == Some("fatal"), &[]);
+                    }
+                    ("!blast", Some(a)) => {
+                        let v: Vec<f32> = a.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                        sim.explode(Vec3::new(v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)));
+                    }
                     (c, a) if c.starts_with("!horse_") => sim.horse_line(c, a),
                     ("!horse", Some(d)) if d.trim().starts_with("ghost") => horse_ghost::command(&sim, d.trim()),
                     ("!horse", Some(d)) if d.starts_with("shoot") => if let Some(c) = sim.horse.as_ref().and_then(|h| h.doll.frames().next()).map(|f| f.translation) {
@@ -12638,7 +12994,7 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
                 format!("{which}{kind}      Alt + Scroll Wheel  length ({:.2} m)      K  wrap round walls ({wrap})      T  cut it      Shift+T  cut all", sim.ties[i].len)
             }
         };
-        egui::Area::new("line keys".into()).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(view.center_bottom() - egui::vec2(0.0, 14.0)).interactable(false).show(ctx, |ui| {
+        egui::Area::new("line keys".into()).pivot(egui::Align2::CENTER_TOP).fixed_pos(view.center_top() + egui::vec2(0.0, 14.0)).interactable(false).show(ctx, |ui| {
             egui::Frame::new().fill(egui::Color32::from_black_alpha(150)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(10, 5)).show(ui, |ui| {
                 ui.add(egui::Label::new(egui::RichText::new(t).small().color(egui::Color32::from_gray(235))).extend());
             });
@@ -12836,7 +13192,15 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
             None => {}
         }
     }
-    if let Some((why, path)) = ui::PICKED.lock().unwrap().take() {
+    let picked = ui::PICKED.lock().unwrap().take();
+    let picked = match picked {
+        Some((ui::PICK_ANIMAL, path)) => {
+            pick_animal(&mut sim, &path);
+            None
+        }
+        p => p,
+    };
+    if let Some((why, path)) = picked {
         let at = if why == ui::PICK_BODY { Vec3::new(0.0, 0.0, -50.0) } else { level.ahead };
         level.import(&path, at);
         let ok = level.note.starts_with("Imported");
@@ -12845,7 +13209,6 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
         } else if let Some(p) = level.pieces.last().filter(|_| ok) {
             level.figure = Some((p.model.clone(), p.transform().rotation));
             (level.fig_moved, level.fig_pick) = (vec![], None);
-            sim.spawn_body = FIGURE;
             sim.say(format!("room  body: {path} as Homer's body (fitting it...)"));
         } else {
             sim.say(format!("room  body: {}", level.note));
@@ -12863,9 +13226,15 @@ WASD/QE move (Shift fast)  right-drag turn  wheel zoom  Space play/freeze  K kee
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(VIEW_RECT), view_rect));
     sim.over_ui = ctx.is_pointer_over_egui() || ctx.egui_wants_pointer_input() || ctx.pointer_hover_pos().is_some_and(|p| !view_rect.contains(p));
     if let Some((c, s)) = sim.hover.clone() {
-        egui::Area::new("hover".into()).fixed_pos([c.x / ctx.zoom_factor() + 14.0, c.y / ctx.zoom_factor() + 4.0]).interactable(false).show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(mono(s)));
-        });
+        let at = egui::pos2(c.x / ctx.zoom_factor() + 14.0, c.y / ctx.zoom_factor() + 4.0);
+        let size = ctx.fonts_mut(|f| f.layout_no_wrap(s.clone(), egui::FontId::monospace(13.0), egui::Color32::WHITE).size()) + egui::vec2(20.0, 16.0);
+        let pass = ctx.cumulative_pass_nr();
+        let bar = ctx.data(|d| d.get_temp::<(u64, egui::Rect)>(egui::Id::new(ui::QUICK_PLAY_RECT))).filter(|b| b.0 + 1 >= pass).map(|b| b.1);
+        if !bar.is_some_and(|b| b.intersects(egui::Rect::from_min_size(at, size))) {
+            egui::Area::new("hover".into()).fixed_pos(at).interactable(false).show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| ui.add(egui::Label::new(mono(s)).extend()));
+            });
+        }
     }
 
     if let Some(p) = pressed {

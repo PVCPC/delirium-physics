@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.3
+
+- Damage settings (Play > Weapons & click > Damage), in the game's own units: Homer's health (HP), each weapon's
+  damage and bullet push, each gun's range and spread, blast damage and radius (m), and molotov fire radius and burn
+  time. Values can be typed beyond the sliders' ranges.
+
+- Model bodies: each Homer can wear his own model. Models made in a T-pose or A-pose have their arms swung down to
+  Homer's pose; normal maps and spec-gloss glTF models draw correctly. Hidden model pieces have no colliders, so
+  many model Homers run much faster (100 of them: 18 -> 65 FPS here).
+
+- Animals: Cast > Animals > Stepping picks how a four-legged animal keeps its feet: RDR2's own, the Delirium
+  balancer (catch steps and weight sharing), or the balancer with a wider stance.
+
+- Animals from your own models (work in progress): Animals' + Model tile imports an .fbx or .obj as a four-legged
+  animal. A rigged model's legs come from its bones (a Mixamo rig's arms become front legs); an unrigged one's are
+  found from its shape. It is drawn as the file is, in its own colours and textures, skinned to the body. Leg
+  joints: Bendy to Stiff, and Lock knees for perfectly straight legs.
+
+- Object (furniture) brain for imported models (a living chair): stands in its own shape, wobbles when poked, tips
+  over when hit hard, and waddles when told to walk.
+
+- Portals: Homer dropping in and out of portals runs faster (the copy of him drawn coming out of the other portal
+  no longer casts a shadow), and while he keeps going through the camera eases out to keep both openings in view.
+
+- Fixed: importing a model on the Cast page added a second + Model tile instead of a tile for the model.
+
+- Fixed: a model picked as a body was also drawn in the room as a giant.
+
 ## 0.9.2
 
 - Fixed: on DirectX 12 the room closed with a graphics error ("BindGroupLayout ... not compatible", mesh

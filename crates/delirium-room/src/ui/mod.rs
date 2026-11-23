@@ -18,6 +18,8 @@ pub const RED: egui::Color32 = egui::Color32::from_rgb(255, 110, 160);
 pub const LIVE: egui::Color32 = egui::Color32::from_rgb(128, 218, 177);
 pub const AMBER: egui::Color32 = egui::Color32::from_rgb(255, 190, 90);
 
+pub const QUICK_PLAY_RECT: &str = "quick play rect";
+
 pub fn wip(ui: &mut egui::Ui, why: &str) -> egui::Response {
     ui.label(egui::RichText::new(" WIP ").small().strong().color(BLACK).background_color(AMBER)).on_hover_text(format!("Work in progress: {why}"))
 }
@@ -155,14 +157,16 @@ fn edge_strip(ctx: &egui::Context, area: egui::Rect, sim: &mut Sim, pressed: &mu
             ui.label(egui::RichText::new(format!("Panel: left edge or {}", DOCK_KEY.name())).small().color(DIM));
         });
     });
-    egui::Area::new("quick play edge".into()).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(egui::pos2(area.left() + 14.0, area.bottom() - 8.0)).show(ctx, |ui| {
+    let r = egui::Area::new("quick play edge".into()).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(egui::pos2(area.left() + 14.0, area.bottom() - 8.0)).show(ctx, |ui| {
         egui::Frame::new().fill(WINDOW).corner_radius(10.0).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
             ui.set_width(360.0);
             let mut open = !st.strip_shut;
             play::strip(ui, sim, pressed, &mut open);
             st.strip_shut = !open;
         });
-    });
+    }).response.rect;
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(QUICK_PLAY_RECT), (pass, r)));
 }
 
 pub const fn code(tab: u8, page: u8) -> u16 {
@@ -427,6 +431,7 @@ pub fn pop_head(ui: &mut egui::Ui, st: &mut State, k: usize, name: &str) -> bool
 pub static PICKED: std::sync::Mutex<Option<(u8, String)>> = std::sync::Mutex::new(None);
 pub const PICK_BODY: u8 = 0;
 pub const PICK_IMPORT: u8 = 1;
+pub const PICK_ANIMAL: u8 = 2;
 static PICKING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const MODEL_EXTS: [&str; 9] = ["glb", "gltf", "obj", "fbx", "usd", "usdz", "usdc", "usda", "ply"];
 
@@ -437,7 +442,11 @@ pub fn pick_model(why: u8) {
     std::thread::spawn(move || {
         #[cfg(windows)]
         {
-            let title = if why == PICK_BODY { "Pick a 3D model to be Homer's body (rigged or not: an unrigged one is auto-fitted)" } else { "Import a model or splat" };
+            let title = match why {
+                PICK_BODY => "Pick a 3D model to be Homer's body (rigged or not: an unrigged one is auto-fitted)",
+                PICK_ANIMAL => "Pick a four-legged 3D model (.fbx or .obj) to be an animal (rigged or not)",
+                _ => "Import a model or splat",
+            };
             if let Some(p) = rfd::FileDialog::new().set_title(title).add_filter("3D models", &MODEL_EXTS).add_filter("All files", &["*"]).pick_file() {
                 *PICKED.lock().unwrap() = Some((why, p.to_string_lossy().into_owned()));
             }
@@ -536,7 +545,7 @@ fn status_card(ui: &mut egui::Ui, sim: &mut Sim) {
     }
     card(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(section_title(&if sim.body == 1 { who.to_string() } else { format!("{who} · {}", BODIES()[sim.body].1) }));
+            ui.label(section_title(&if sim.body == 1 { who.to_string() } else { format!("{who} · {}", name_of(sim.body)) }));
             ui.label(egui::RichText::new(if state.is_empty() { "Ready" } else { &state }).color(DIM));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let on = tab == HELP;
@@ -621,8 +630,8 @@ pub fn top_bar(ui: &mut egui::Ui, sim: &mut Sim, pressed: &mut Option<String>) {
         if ui.button("Stop reactions").on_hover_text("Stop every active behaviour (X)").clicked() { *pressed = Some("STOP all".into()); }
         ui.separator();
         if ui.add_enabled(sim.bench.len() + 1 < HOMERS, egui::Button::new("+ Spawn Homer"))
-            .on_hover_text(format!("Another Homer, {} (Cast > People picks the body), 2 m in front of the one you control (Shift+N); up to {HOMERS}", BODIES()[sim.spawn_body].1)).clicked() {
-            *pressed = Some(format!("spawn {}", BODIES()[sim.spawn_body].0));
+            .on_hover_text(format!("Another Homer, {} (Cast > People picks the body), 2 m in front of the one you control (Shift+N); up to {HOMERS}", name_of(sim.spawn_body))).clicked() {
+            *pressed = Some(format!("spawn {}", key_of(sim.spawn_body)));
         }
         if ui.add_enabled(!sim.bench.is_empty(), egui::Button::new("Next (N)")).on_hover_text("Control the next Homer: keys, pokes, drags, buttons and camera (N)").clicked() {
             *pressed = Some("next homer".into());
